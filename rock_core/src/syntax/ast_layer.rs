@@ -122,7 +122,6 @@ pub trait AstNode<'syn> {
     fn cast(node: &'syn Node) -> Option<Self>
     where
         Self: Sized;
-    fn node(&self) -> &Node<'syn>;
 }
 
 pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
@@ -176,10 +175,6 @@ macro_rules! ast_node_impl {
                 } else {
                     None
                 }
-            }
-
-            fn node(&self) -> &Node<'syn> {
-                self.0
             }
         }
 
@@ -346,16 +341,6 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             _ => None,
         }
     }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Item::Proc(item) => item.0,
-            Item::Enum(item) => item.0,
-            Item::Struct(item) => item.0,
-            Item::Const(item) => item.0,
-            Item::Global(item) => item.0,
-            Item::Import(item) => item.0,
-        }
-    }
 }
 
 impl<'syn> Item<'syn> {
@@ -391,16 +376,6 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
             SyntaxKind::TYPE_ARRAY_SLICE => Some(Type::ArraySlice(TypeArraySlice(node))),
             SyntaxKind::TYPE_ARRAY_STATIC => Some(Type::ArrayStatic(TypeArrayStatic(node))),
             _ => None,
-        }
-    }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Type::Basic(ty) => ty.0,
-            Type::Custom(ty) => ty.0,
-            Type::Reference(ty) => ty.0,
-            Type::Procedure(ty) => ty.0,
-            Type::ArraySlice(ty) => ty.0,
-            Type::ArrayStatic(ty) => ty.0,
         }
     }
 }
@@ -444,19 +419,6 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             SyntaxKind::STMT_EXPR_SEMI => Some(Stmt::ExprSemi(StmtExprSemi(node))),
             SyntaxKind::STMT_EXPR_TAIL => Some(Stmt::ExprTail(StmtExprTail(node))),
             _ => None,
-        }
-    }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Stmt::Break(stmt) => stmt.0,
-            Stmt::Continue(stmt) => stmt.0,
-            Stmt::Return(stmt) => stmt.0,
-            Stmt::Defer(stmt) => stmt.0,
-            Stmt::Loop(stmt) => stmt.0,
-            Stmt::Local(stmt) => stmt.0,
-            Stmt::Assign(stmt) => stmt.0,
-            Stmt::ExprSemi(stmt) => stmt.0,
-            Stmt::ExprTail(stmt) => stmt.0,
         }
     }
 }
@@ -536,31 +498,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             }
         }
     }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Expr::Paren(expr) => expr.0,
-            Expr::Lit(lit) => lit.node(),
-            Expr::If(expr) => expr.0,
-            Expr::Block(block) => block.0,
-            Expr::Match(expr) => expr.0,
-            Expr::Field(expr) => expr.0,
-            Expr::Index(expr) => expr.0,
-            Expr::Slice(expr) => expr.0,
-            Expr::Call(expr) => expr.0,
-            Expr::Cast(expr) => expr.0,
-            Expr::Sizeof(expr) => expr.0,
-            Expr::Item(expr) => expr.0,
-            Expr::Variant(expr) => expr.0,
-            Expr::StructInit(expr) => expr.0,
-            Expr::ArrayInit(expr) => expr.0,
-            Expr::ArrayRepeat(expr) => expr.0,
-            Expr::Deref(expr) => expr.0,
-            Expr::Address(expr) => expr.0,
-            Expr::Range(range) => range.node(),
-            Expr::Unary(expr) => expr.0,
-            Expr::Binary(expr) => expr.0,
-        }
-    }
 }
 
 impl<'syn> Expr<'syn> {
@@ -611,15 +548,6 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
             _ => None,
         }
     }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Pat::Wild(pat) => pat.0,
-            Pat::Lit(pat) => pat.0,
-            Pat::Item(pat) => pat.0,
-            Pat::Variant(pat) => pat.0,
-            Pat::Or(pat) => pat.0,
-        }
-    }
 }
 
 impl<'syn> Pat<'syn> {
@@ -654,16 +582,6 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
             SyntaxKind::LIT_CHAR => Some(Lit::Char(LitChar(node))),
             SyntaxKind::LIT_STRING => Some(Lit::String(LitString(node))),
             _ => None,
-        }
-    }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Lit::Null(lit) => lit.0,
-            Lit::Bool(lit) => lit.0,
-            Lit::Int(lit) => lit.0,
-            Lit::Float(lit) => lit.0,
-            Lit::Char(lit) => lit.0,
-            Lit::String(lit) => lit.0,
         }
     }
 }
@@ -701,16 +619,6 @@ impl<'syn> AstNode<'syn> for Range<'syn> {
             SyntaxKind::RANGE_EXCLUSIVE => Some(Range::Exclusive(RangeExclusive(node))),
             SyntaxKind::RANGE_INCLUSIVE => Some(Range::Inclusive(RangeInclusive(node))),
             _ => None,
-        }
-    }
-    fn node(&self) -> &Node<'syn> {
-        match self {
-            Range::Full(range) => range.0,
-            Range::ToExclusive(range) => range.0,
-            Range::ToInclusive(range) => range.0,
-            Range::From(range) => range.0,
-            Range::Exclusive(range) => range.0,
-            Range::Inclusive(range) => range.0,
         }
     }
 }
@@ -933,6 +841,7 @@ impl<'syn> StmtReturn<'syn> {
 
 impl<'syn> StmtDefer<'syn> {
     find_first!(block, Block);
+    find_first!(stmt, Stmt);
 }
 
 impl<'syn> StmtLoop<'syn> {

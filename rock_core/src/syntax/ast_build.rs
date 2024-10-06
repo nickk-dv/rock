@@ -568,21 +568,17 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
     ast::Type { kind, range }
 }
 
-fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt: cst::Stmt) -> ast::Stmt<'ast> {
-    let range = stmt.range(ctx.tree);
+fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
+    let range = stmt_cst.range(ctx.tree);
 
-    let kind = match stmt {
+    let kind = match stmt_cst {
         cst::Stmt::Break(_) => ast::StmtKind::Break,
         cst::Stmt::Continue(_) => ast::StmtKind::Continue,
         cst::Stmt::Return(ret) => {
             let expr = ret.expr(ctx.tree).map(|e| expr(ctx, e));
             ast::StmtKind::Return(expr)
         }
-        cst::Stmt::Defer(defer) => {
-            let block = block(ctx, defer.block(ctx.tree).unwrap());
-            let block = ctx.arena.alloc(block);
-            ast::StmtKind::Defer(block)
-        }
+        cst::Stmt::Defer(defer) => ast::StmtKind::Defer(stmt_defer(ctx, defer)),
         cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
         cst::Stmt::Local(local) => ast::StmtKind::Local(stmt_local(ctx, local)),
         cst::Stmt::Assign(assign) => ast::StmtKind::Assign(stmt_assign(ctx, assign)),
@@ -597,6 +593,24 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt: cst::Stmt) -> ast:
     };
 
     ast::Stmt { kind, range }
+}
+
+fn stmt_defer<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    defer: cst::StmtDefer,
+) -> &'ast ast::Block<'ast> {
+    if let Some(block_cst) = defer.block(ctx.tree) {
+        let block = block(ctx, block_cst);
+        ctx.arena.alloc(block)
+    } else {
+        let stmt = stmt(ctx, defer.stmt(ctx.tree).unwrap());
+        let stmts = ctx.arena.alloc_slice(&[stmt]);
+        let block = ast::Block {
+            stmts,
+            range: stmt.range,
+        };
+        ctx.arena.alloc(block)
+    }
 }
 
 fn stmt_loop<'ast>(

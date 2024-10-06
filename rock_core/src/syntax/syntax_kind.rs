@@ -101,3 +101,34 @@ pub enum SyntaxKind {
     BIND_LIST,
     ARGS_LIST,
 }
+
+#[derive(Clone, Copy)]
+pub struct SyntaxSet {
+    mask: u128,
+}
+
+impl SyntaxSet {
+    pub const fn new(syntax: &[SyntaxKind]) -> SyntaxSet {
+        let mut mask = 0u128;
+        let mut i = 0;
+        while i < syntax.len() {
+            mask |= 1u128 << syntax[i] as u8;
+            i += 1;
+        }
+        SyntaxSet { mask }
+    }
+    #[inline]
+    pub const fn empty() -> SyntaxSet {
+        SyntaxSet { mask: 0 }
+    }
+    #[inline]
+    pub const fn combine(self, other: SyntaxSet) -> SyntaxSet {
+        SyntaxSet {
+            mask: self.mask | other.mask,
+        }
+    }
+    #[inline]
+    pub const fn contains(&self, syntax: SyntaxKind) -> bool {
+        self.mask & 1u128 << syntax as u8 != 0
+    }
+}

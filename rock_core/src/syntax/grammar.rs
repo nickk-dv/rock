@@ -567,8 +567,9 @@ fn stmt(p: &mut Parser) {
             p.bump(T![defer]);
             if p.at(T!['{']) {
                 block(p);
+                p.eat(T![;]);
             } else {
-                block_short(p);
+                stmt(p);
             }
             m.complete(p, SyntaxKind::STMT_DEFER);
         }
@@ -907,12 +908,6 @@ fn block(p: &mut Parser) -> MarkerClosed {
     }
     p.expect(T!['}']);
     m.complete(p, SyntaxKind::BLOCK)
-}
-
-fn block_short(p: &mut Parser) {
-    let m = p.start();
-    stmt(p);
-    m.complete(p, SyntaxKind::BLOCK);
 }
 
 fn block_expect(p: &mut Parser) {

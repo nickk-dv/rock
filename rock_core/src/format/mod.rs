@@ -1,10 +1,16 @@
 use crate::ast;
 use crate::support::AsStr;
 use crate::syntax::ast_layer::{self as cst, AstNode};
-use crate::syntax::syntax_kind::SyntaxKind;
+use crate::syntax::syntax_kind::{SyntaxKind, SyntaxSet};
 use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 use crate::token::Trivia;
+
+//@choose .next().is_none vs content_empty() for empty format lists (related to trivia)
+//@interleaved_node_list() support same-line line comments
+//@aligned padded line comments (eg: after struct fields)
+//@unify repeated wrapped lists formatting (generic fn)
+//@trim line comment trailing whitespace
 
 #[must_use]
 pub fn format(tree: &SyntaxTree, source: &str) -> String {
@@ -12,6 +18,7 @@ pub fn format(tree: &SyntaxTree, source: &str) -> String {
         tree,
         source,
         tab_depth: 0,
+        line_offset: 0,
         buffer: String::with_capacity(source.len()),
     };
     source_file(&mut fmt, tree.source_file());
@@ -22,21 +29,31 @@ struct Formatter<'syn> {
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
     tab_depth: u32,
+    line_offset: u32,
     buffer: String,
 }
 
 impl<'syn> Formatter<'syn> {
+    const TAB_STR: &'static str = "    ";
+    const TAB_LEN: u32 = 4;
+    const WRAP_THRESHOLD: u32 = 90;
+    const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
+
     fn space(&mut self) {
+        self.line_offset += 1;
         self.buffer.push(' ');
     }
     fn new_line(&mut self) {
+        self.line_offset = 0;
         self.buffer.push('\n');
     }
 
     fn write(&mut self, c: char) {
+        self.line_offset += 1;
         self.buffer.push(c);
     }
     fn write_str(&mut self, string: &str) {
+        self.line_offset += string.len() as u32;
         self.buffer.push_str(string);
     }
     fn write_range(&mut self, range: TextRange) {
@@ -52,17 +69,20 @@ impl<'syn> Formatter<'syn> {
         self.tab_depth -= 1;
     }
     fn tab_single(&mut self) {
-        self.write_str("    ");
+        self.line_offset += Formatter::TAB_LEN;
+        self.write_str(Formatter::TAB_STR);
     }
     fn tab_depth(&mut self) {
         for _ in 0..self.tab_depth {
             self.tab_single();
         }
     }
-}
 
-const WRAP_THRESHOLD: u32 = 90;
-const SUBWRAP_SYMBOL_THRESHOLD: u32 = 40;
+    fn wrap(&self, node: &Node) -> bool {
+        let offset = self.line_offset + content_len(self, node);
+        offset > Formatter::WRAP_THRESHOLD
+    }
+}
 
 #[must_use]
 fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
@@ -83,7 +103,7 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
 }
 
 #[must_use]
-fn content_len(fmt: &mut Formatter, node: &Node) -> u32 {
+fn content_len(fmt: &Formatter, node: &Node) -> u32 {
     let mut len = 0;
     for not in node.content {
         match *not {
@@ -101,16 +121,15 @@ fn content_len(fmt: &mut Formatter, node: &Node) -> u32 {
     len
 }
 
-fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
+fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
-                if node.kind != halt {
-                    trivia_lift(fmt, node, halt);
-                } else {
-                    return;
+                if halt.contains(node.kind) {
+                    continue;
                 }
+                trivia_lift(fmt, node, halt);
             }
             NodeOrToken::Trivia(trivia_id) => {
                 let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
@@ -128,15 +147,15 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxKind) {
     }
 }
 
-fn interleaved_node_list<'syn, N: AstNode<'syn>, I: AstNode<'syn>>(
+fn interleaved_node_list<'syn, I: AstNode<'syn>>(
     fmt: &mut Formatter<'syn>,
-    cst_node: N,
+    node_list: &Node<'syn>,
     format_fn: fn(&mut Formatter<'syn>, I),
 ) {
     let mut first = true;
     let mut new_line = false;
 
-    for not in cst_node.node().content {
+    for not in node_list.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 if new_line {
@@ -182,7 +201,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn>, I: AstNode<'syn>>(
 //==================== SOURCE FILE ====================
 
 fn source_file<'syn>(fmt: &mut Formatter<'syn>, source_file: cst::SourceFile<'syn>) {
-    interleaved_node_list(fmt, source_file, item);
+    interleaved_node_list(fmt, source_file.0, item);
 }
 
 fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
@@ -196,16 +215,13 @@ fn attr(fmt: &mut Formatter, attr: cst::Attr) {
     fmt.write('#');
     fmt.write('[');
     name(fmt, attr.name(fmt.tree).unwrap());
-
-    let wrap = content_len(fmt, attr.0) > WRAP_THRESHOLD;
     if let Some(param_list) = attr.param_list(fmt.tree) {
-        attr_param_list(fmt, param_list, wrap);
+        attr_param_list(fmt, param_list);
     }
-
     fmt.write(']');
 }
 
-fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bool) {
+fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList) {
     if param_list.params(fmt.tree).next().is_none() {
         fmt.write('(');
         fmt.write(')');
@@ -213,6 +229,7 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList, wrap: bo
     }
 
     fmt.write('(');
+    let wrap = fmt.wrap(param_list.0);
     if wrap {
         fmt.new_line();
     }
@@ -269,7 +286,8 @@ fn item<'syn>(fmt: &mut Formatter<'syn>, item: cst::Item<'syn>) {
 }
 
 fn proc_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ProcItem<'syn>) {
-    trivia_lift(fmt, item.0, SyntaxKind::BLOCK);
+    const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::BLOCK]);
+    trivia_lift(fmt, item.0, HALT);
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -302,11 +320,8 @@ fn param_list<'syn>(fmt: &mut Formatter<'syn>, param_list: cst::ParamList<'syn>)
         fmt.write(')');
         return;
     }
-
-    //@rework wrap to be based on current line len + content_len
-    let wrap = content_len(fmt, param_list.0) > WRAP_THRESHOLD;
-
     fmt.write('(');
+    let wrap = fmt.wrap(param_list.0);
     if wrap {
         fmt.new_line();
     }
@@ -329,7 +344,6 @@ fn param_list<'syn>(fmt: &mut Formatter<'syn>, param_list: cst::ParamList<'syn>)
     }
 
     let is_variadic = param_list.is_variadic(fmt.tree);
-
     if is_variadic {
         fmt.write(',');
         fmt.space();
@@ -357,7 +371,8 @@ fn param<'syn>(fmt: &mut Formatter<'syn>, param: cst::Param<'syn>) {
 }
 
 fn enum_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::EnumItem<'syn>) {
-    trivia_lift(fmt, item.0, SyntaxKind::VARIANT_LIST);
+    const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::VARIANT_LIST]);
+    trivia_lift(fmt, item.0, HALT);
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -381,7 +396,7 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn>, variant_list: cst::VariantList<
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, variant_list, variant);
+    interleaved_node_list(fmt, variant_list.0, variant);
     fmt.tab_dec();
 
     fmt.write('}');
@@ -410,7 +425,8 @@ fn variant_field_list<'syn>(fmt: &mut Formatter<'syn>, field_list: cst::VariantF
 }
 
 fn struct_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::StructItem<'syn>) {
-    trivia_lift(fmt, item.0, SyntaxKind::FIELD_LIST);
+    const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::FIELD_LIST]);
+    trivia_lift(fmt, item.0, HALT);
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -434,7 +450,7 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn>, field_list: cst::FieldList<'syn>)
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, field_list, field);
+    interleaved_node_list(fmt, field_list.0, field);
     fmt.tab_dec();
 
     fmt.write('}');
@@ -449,7 +465,7 @@ fn field<'syn>(fmt: &mut Formatter<'syn>, field: cst::Field<'syn>) {
 }
 
 fn const_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ConstItem<'syn>) {
-    trivia_lift(fmt, item.0, SyntaxKind::TOMBSTONE);
+    trivia_lift(fmt, item.0, SyntaxSet::empty());
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -469,7 +485,7 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ConstItem<'syn>) {
 }
 
 fn global_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::GlobalItem<'syn>) {
-    trivia_lift(fmt, item.0, SyntaxKind::TOMBSTONE);
+    trivia_lift(fmt, item.0, SyntaxSet::empty());
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -493,7 +509,7 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::GlobalItem<'syn>) {
 }
 
 fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
-    trivia_lift(fmt, item.0, SyntaxKind::TOMBSTONE);
+    trivia_lift(fmt, item.0, SyntaxSet::empty());
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
@@ -512,8 +528,7 @@ fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
 
     if let Some(symbol_list) = item.import_symbol_list(fmt.tree) {
         fmt.write('.');
-        let wrap = content_len(fmt, item.0) > WRAP_THRESHOLD;
-        import_symbol_list(fmt, symbol_list, wrap);
+        import_symbol_list(fmt, symbol_list);
     } else {
         fmt.write(';');
     }
@@ -530,7 +545,7 @@ fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
     }
 }
 
-fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbolList, wrap: bool) {
+fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbolList) {
     if import_symbol_list.import_symbols(fmt.tree).next().is_none() {
         fmt.write('{');
         fmt.write('}');
@@ -538,6 +553,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
     }
 
     fmt.write('{');
+    let wrap = fmt.wrap(import_symbol_list.0);
     if wrap {
         fmt.new_line();
     }
@@ -545,12 +561,14 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
     let mut first = true;
     let mut total_len = 0;
 
-    for import_symbol in import_symbol_list.import_symbols(fmt.tree) {
-        let sub_wrap = total_len > SUBWRAP_SYMBOL_THRESHOLD;
+    for import_symbol_cst in import_symbol_list.import_symbols(fmt.tree) {
+        let sub_wrap = total_len > Formatter::SUBWRAP_IMPORT_SYMBOL;
         if sub_wrap {
             total_len = 0;
         }
-        total_len += content_len(fmt, import_symbol.0);
+        if wrap {
+            total_len += content_len(fmt, import_symbol_cst.0);
+        }
 
         if !first {
             fmt.write(',');
@@ -564,7 +582,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
             fmt.tab_single();
         }
         first = false;
-        import_symbol_fmt(fmt, import_symbol);
+        import_symbol(fmt, import_symbol_cst);
     }
 
     if wrap {
@@ -574,7 +592,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
     fmt.write('}');
 }
 
-fn import_symbol_fmt(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
+fn import_symbol(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
     name(fmt, import_symbol.name(fmt.tree).unwrap());
     if let Some(rename) = import_symbol.rename(fmt.tree) {
         import_symbol_rename(fmt, rename);
@@ -680,7 +698,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>, carry: bool) 
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, block, stmt);
+    interleaved_node_list(fmt, block.0, stmt);
     fmt.tab_dec();
 
     fmt.tab_depth();
@@ -689,8 +707,8 @@ fn block<'syn>(fmt: &mut Formatter<'syn>, block: cst::Block<'syn>, carry: bool) 
 
 fn stmt<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::Stmt<'syn>) {
     match stmt {
-        cst::Stmt::Break(stmt) => stmt_break(fmt, stmt),
-        cst::Stmt::Continue(stmt) => stmt_continue(fmt, stmt),
+        cst::Stmt::Break(_) => stmt_break(fmt),
+        cst::Stmt::Continue(_) => stmt_continue(fmt),
         cst::Stmt::Return(stmt) => stmt_return(fmt, stmt),
         cst::Stmt::Defer(stmt) => stmt_defer(fmt, stmt),
         cst::Stmt::Loop(stmt) => stmt_loop(fmt, stmt),
@@ -701,14 +719,12 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::Stmt<'syn>) {
     }
 }
 
-fn stmt_break<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtBreak<'syn>) {
-    trivia_lift(fmt, stmt.0, SyntaxKind::TOMBSTONE);
+fn stmt_break<'syn>(fmt: &mut Formatter<'syn>) {
     fmt.write_str("break");
     fmt.write(';');
 }
 
-fn stmt_continue<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtContinue<'syn>) {
-    trivia_lift(fmt, stmt.0, SyntaxKind::TOMBSTONE);
+fn stmt_continue<'syn>(fmt: &mut Formatter<'syn>) {
     fmt.write_str("continue");
     fmt.write(';');
 }
@@ -722,10 +738,14 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtReturn<'syn>) {
     fmt.write(';');
 }
 
-fn stmt_defer<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtDefer<'syn>) {
+fn stmt_defer<'syn>(fmt: &mut Formatter<'syn>, defer: cst::StmtDefer<'syn>) {
     fmt.write_str("defer");
     fmt.space();
-    block(fmt, stmt.block(fmt.tree).unwrap(), false); //@support short block with `;`
+    if let Some(block_cst) = defer.block(fmt.tree) {
+        block(fmt, block_cst, false);
+    } else {
+        stmt(fmt, defer.stmt(fmt.tree).unwrap());
+    }
 }
 
 fn stmt_loop<'syn>(fmt: &mut Formatter<'syn>, stmt: cst::StmtLoop<'syn>) {
@@ -881,7 +901,7 @@ fn expr_match<'syn>(fmt: &mut Formatter<'syn>, match_: cst::ExprMatch<'syn>) {
 
     fmt.tab_inc();
     let match_arm_list = match_.match_arm_list(fmt.tree).unwrap();
-    interleaved_node_list(fmt, match_arm_list, match_arm);
+    interleaved_node_list(fmt, match_arm_list.0, match_arm);
     fmt.tab_dec();
 
     fmt.tab_depth();
