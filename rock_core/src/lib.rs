@@ -19,6 +19,7 @@ pub mod support;
 pub mod syntax;
 pub mod text;
 pub mod token;
+mod vfs;
 
 use package::semver::Semver;
 
