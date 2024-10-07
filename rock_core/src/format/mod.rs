@@ -35,7 +35,6 @@ struct Formatter<'syn> {
 
 impl<'syn> Formatter<'syn> {
     const TAB_STR: &'static str = "    ";
-    const TAB_LEN: u32 = 4;
     const WRAP_THRESHOLD: u32 = 90;
     const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
 
@@ -69,7 +68,6 @@ impl<'syn> Formatter<'syn> {
         self.tab_depth -= 1;
     }
     fn tab_single(&mut self) {
-        self.line_offset += Formatter::TAB_LEN;
         self.write_str(Formatter::TAB_STR);
     }
     fn tab_depth(&mut self) {
@@ -165,6 +163,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                     }
                 }
                 first = false;
+
                 let node = fmt.tree.node(node_id);
                 fmt.tab_depth();
                 format_fn(fmt, I::cast(node).unwrap());
@@ -188,8 +187,11 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                             }
                         }
                         first = false;
+
                         fmt.tab_depth();
-                        fmt.write_range(range);
+                        let comment = &fmt.source[range.as_usize()];
+                        let comment = comment.trim_end();
+                        fmt.write_str(comment);
                         fmt.new_line();
                     }
                 }

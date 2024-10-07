@@ -162,9 +162,7 @@ fn attached_trivia(
     let can_attach_inner = match kind {
         SyntaxKind::PROC_ITEM
         | SyntaxKind::ENUM_ITEM
-        | SyntaxKind::VARIANT
         | SyntaxKind::STRUCT_ITEM
-        | SyntaxKind::FIELD
         | SyntaxKind::CONST_ITEM
         | SyntaxKind::GLOBAL_ITEM
         | SyntaxKind::IMPORT_ITEM => true,
