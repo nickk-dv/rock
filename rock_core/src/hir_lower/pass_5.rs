@@ -303,7 +303,9 @@ pub fn typecheck_expr<'hir>(
             typecheck_struct_init(ctx, expect, struct_init, expr.range)
         }
         ast::ExprKind::ArrayInit { input } => typecheck_array_init(ctx, expect, input, expr.range),
-        ast::ExprKind::ArrayRepeat { expr, len } => typecheck_array_repeat(ctx, expect, expr, len),
+        ast::ExprKind::ArrayRepeat { value, len } => {
+            typecheck_array_repeat(ctx, expect, value, len)
+        }
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs),
         ast::ExprKind::Range { .. } => unimplemented!("typecheck expr range"),
@@ -1604,7 +1606,7 @@ fn typecheck_array_init<'hir>(
 fn typecheck_array_repeat<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
-    expr: &ast::Expr,
+    value: &ast::Expr,
     len: ast::ConstExpr,
 ) -> TypeResult<'hir> {
     expect = match expect {
@@ -1615,7 +1617,7 @@ fn typecheck_array_repeat<'hir>(
         },
     };
 
-    let expr_res = typecheck_expr(ctx, expect, expr);
+    let expr_res = typecheck_expr(ctx, expect, value);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
     let value = constant::resolve_const_expr(
@@ -1636,7 +1638,7 @@ fn typecheck_array_repeat<'hir>(
         });
         let array_repeat = ctx.arena.alloc(hir::ArrayRepeat {
             elem_ty: expr_res.ty,
-            expr: expr_res.expr,
+            value: expr_res.expr,
             len,
         });
         let kind = hir::ExprKind::ArrayRepeat { array_repeat };

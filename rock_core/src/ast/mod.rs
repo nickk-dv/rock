@@ -254,7 +254,7 @@ pub enum ExprKind<'ast> {
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
-    ArrayRepeat { expr: &'ast Expr<'ast>, len: ConstExpr<'ast> },
+    ArrayRepeat { value: &'ast Expr<'ast>, len: ConstExpr<'ast> },
     Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Range       { range: &'ast Range<'ast> },

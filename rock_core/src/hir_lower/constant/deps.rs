@@ -828,8 +828,8 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             }
             Ok(())
         }
-        ast::ExprKind::ArrayRepeat { expr, len } => {
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, expr)?;
+        ast::ExprKind::ArrayRepeat { value, len } => {
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, value)?;
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }

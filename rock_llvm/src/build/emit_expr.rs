@@ -725,7 +725,7 @@ fn codegen_array_repeat<'c>(
         Expect::Store(ptr_val) => ptr_val,
     };
 
-    let copied_val = codegen_expr_value(cg, proc_cg, array_repeat.expr);
+    let copied_val = codegen_expr_value(cg, proc_cg, array_repeat.value);
     let count_ptr = cg.entry_alloca(proc_cg, cg.ptr_sized_int(), "rep_count");
     cg.build.store(cg.const_usize_zero(), count_ptr);
 

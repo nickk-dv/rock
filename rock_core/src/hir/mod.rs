@@ -467,7 +467,7 @@ pub struct ArrayInit<'hir> {
 #[derive(Copy, Clone)]
 pub struct ArrayRepeat<'hir> {
     pub elem_ty: Type<'hir>,
-    pub expr: &'hir Expr<'hir>,
+    pub value: &'hir Expr<'hir>,
     pub len: u64,
 }
 

@@ -1,4 +1,4 @@
-use super::ast_layer as cst;
+use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
 use crate::error::ErrorBuffer;
@@ -168,10 +168,9 @@ fn attr_list<'ast>(
 }
 
 fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, attr: cst::Attr) -> ast::Attr<'ast> {
-    //@assuming range of ident token without any trivia
+    let range = attr.find_range(ctx.tree);
     let name = name(ctx, attr.name(ctx.tree).unwrap());
     let params = attr_param_list(ctx, attr.param_list(ctx.tree));
-    let range = attr.range(ctx.tree);
 
     ast::Attr {
         name,
@@ -180,7 +179,6 @@ fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, attr: cst::Attr) ->
     }
 }
 
-//@in general make sure range doesnt include trivia tokens
 fn attr_param_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     param_list: Option<cst::AttrParamList>,
@@ -192,7 +190,7 @@ fn attr_param_list<'ast>(
             ctx.s.attr_params.add(param);
         }
         let params = ctx.s.attr_params.take(offset, &mut ctx.arena);
-        Some((params, param_list.range(ctx.tree)))
+        Some((params, param_list.find_range(ctx.tree)))
     } else {
         None
     }
@@ -204,8 +202,8 @@ fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
     let value = match param.value(ctx.tree) {
         Some(cst_string) => {
             //@only using id, these literals are included in codegen (wrong)
+            let range = cst_string.find_range(ctx.tree);
             let value = string_lit(ctx).id;
-            let range = cst_string.range(ctx.tree);
             Some((value, range))
         }
         None => None,
@@ -213,16 +211,18 @@ fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
     ast::AttrParam { name, value }
 }
 
-fn vis(is_pub: bool) -> ast::Vis {
-    if is_pub {
+#[inline]
+fn vis(vis: Option<cst::Visibility>) -> ast::Vis {
+    if vis.is_some() {
         ast::Vis::Public
     } else {
         ast::Vis::Private
     }
 }
 
-fn mutt(is_mut: bool) -> ast::Mut {
-    if is_mut {
+#[inline]
+fn mutt(t_mut: Option<TextRange>) -> ast::Mut {
+    if t_mut.is_some() {
         ast::Mut::Mutable
     } else {
         ast::Mut::Immutable
@@ -234,7 +234,7 @@ fn proc_item<'ast>(
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.params.start();
@@ -244,7 +244,7 @@ fn proc_item<'ast>(
     }
     let params = ctx.s.params.take(offset, &mut ctx.arena);
 
-    let is_variadic = param_list.is_variadic(ctx.tree);
+    let is_variadic = param_list.t_dotdot(ctx.tree).is_some();
     let return_ty = ty(ctx, item.return_ty(ctx.tree).unwrap());
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
@@ -261,7 +261,7 @@ fn proc_item<'ast>(
 }
 
 fn param(ctx: &mut AstBuild, param: cst::Param) {
-    let mutt = mutt(param.is_mut(ctx.tree));
+    let mutt = mutt(param.t_mut(ctx.tree));
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let ty = ty(ctx, param.ty(ctx.tree).unwrap());
 
@@ -274,7 +274,7 @@ fn enum_item<'ast>(
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.variants.start();
@@ -320,7 +320,7 @@ fn struct_item<'ast>(
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.fields.start();
@@ -340,7 +340,7 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
-    let vis = vis(field.visibility(ctx.tree).is_some());
+    let vis = vis(field.visibility(ctx.tree));
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
@@ -353,7 +353,7 @@ fn const_item<'ast>(
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
@@ -373,9 +373,9 @@ fn global_item<'ast>(
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree).is_some());
+    let vis = vis(item.visibility(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let mutt = mutt(item.is_mut(ctx.tree));
+    let mutt = mutt(item.t_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
@@ -442,7 +442,7 @@ fn import_symbol_rename(
         if let Some(alias) = rename.alias(ctx.tree) {
             ast::SymbolRename::Alias(name(ctx, alias))
         } else {
-            let (_, range) = rename.discard(ctx.tree);
+            let range = rename.t_discard(ctx.tree).unwrap();
             ast::SymbolRename::Discard(range)
         }
     } else {
@@ -451,7 +451,7 @@ fn import_symbol_rename(
 }
 
 fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
-    let range = name.range(ctx.tree);
+    let range = name.find_range(ctx.tree);
     let string = &ctx.source[range.as_usize()];
     let id = ctx.intern_name.intern(string);
     ast::Name { range, id }
@@ -470,12 +470,11 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'as
 
 fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
     if let Some(name_cst) = bind.name(ctx.tree) {
-        let mutt = mutt(bind.is_mut(ctx.tree));
+        let mutt = mutt(bind.t_mut(ctx.tree));
         let name = name(ctx, name_cst);
         ast::Binding::Named(mutt, name)
     } else {
-        //@in general use `content range` without including any trivia tokens, verify all range semantics
-        let range = bind.range(ctx.tree); //@should use token range instead of this?
+        let range = bind.t_discard(ctx.tree).unwrap();
         ast::Binding::Discard(range)
     }
 }
@@ -484,6 +483,8 @@ fn bind_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     bind_list: cst::BindList,
 ) -> &'ast ast::BindingList<'ast> {
+    let range = bind_list.find_range(ctx.tree);
+
     let offset = ctx.s.binds.start();
     for bind_cst in bind_list.binds(ctx.tree) {
         let bind = bind(ctx, bind_cst);
@@ -491,7 +492,6 @@ fn bind_list<'ast>(
     }
     let binds = ctx.s.binds.take(offset, &mut ctx.arena);
 
-    let range = bind_list.range(ctx.tree);
     let bind_list = ast::BindingList { binds, range };
     ctx.arena.alloc(bind_list)
 }
@@ -500,6 +500,8 @@ fn args_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     args_list: cst::ArgsList,
 ) -> &'ast ast::ArgumentList<'ast> {
+    let range = args_list.find_range(ctx.tree);
+
     let offset = ctx.s.exprs.start();
     for expr_cst in args_list.exprs(ctx.tree) {
         let expr = expr(ctx, expr_cst);
@@ -507,17 +509,16 @@ fn args_list<'ast>(
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
 
-    let range = args_list.range(ctx.tree);
     let args_list = ast::ArgumentList { exprs, range };
     ctx.arena.alloc(args_list)
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
-    let range = ty_cst.range(ctx.tree);
+    let range = ty_cst.find_range(ctx.tree);
 
     let kind = match ty_cst {
         cst::Type::Basic(ty_cst) => {
-            let basic = ty_cst.basic(ctx.tree);
+            let (basic, _) = ty_cst.basic(ctx.tree).unwrap();
             ast::TypeKind::Basic(basic)
         }
         cst::Type::Custom(ty_cst) => {
@@ -525,7 +526,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             ast::TypeKind::Custom(path)
         }
         cst::Type::Reference(ty_cst) => {
-            let mutt = mutt(ty_cst.is_mut(ctx.tree));
+            let mutt = mutt(ty_cst.t_mut(ctx.tree));
             let ref_ty = ty(ctx, ty_cst.ref_ty(ctx.tree).unwrap());
             ast::TypeKind::Reference(ctx.arena.alloc(ref_ty), mutt)
         }
@@ -538,7 +539,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             }
             let param_types = ctx.s.types.take(offset, &mut ctx.arena);
 
-            let is_variadic = type_list.is_variadic(ctx.tree);
+            let is_variadic = type_list.t_dotdot(ctx.tree).is_some();
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
             let return_ty = ty(ctx, return_ty);
 
@@ -550,7 +551,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {
-            let mutt = mutt(slice.is_mut(ctx.tree));
+            let mutt = mutt(slice.t_mut(ctx.tree));
             let elem_ty = ty(ctx, slice.elem_ty(ctx.tree).unwrap());
 
             let slice = ast::ArraySlice { mutt, elem_ty };
@@ -569,7 +570,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
 }
 
 fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
-    let range = stmt_cst.range(ctx.tree);
+    let range = stmt_cst.find_range(ctx.tree);
 
     let kind = match stmt_cst {
         cst::Stmt::Break(_) => ast::StmtKind::Break,
@@ -658,10 +659,9 @@ fn stmt_assign<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     assign: cst::StmtAssign,
 ) -> &'ast ast::Assign<'ast> {
-    let (op, op_range) = assign.assign_op_with_range(ctx.tree).unwrap();
-    let mut lhs_rhs_iter: cst::AstNodeIterator<cst::Expr> = assign.lhs_rhs_iter(ctx.tree);
-    let lhs = expr(ctx, lhs_rhs_iter.next().unwrap());
-    let rhs = expr(ctx, lhs_rhs_iter.next().unwrap());
+    let (op, op_range) = assign.assign_op(ctx.tree).unwrap();
+    let lhs = expr(ctx, assign.lhs(ctx.tree).unwrap());
+    let rhs = expr(ctx, assign.rhs(ctx.tree).unwrap());
 
     let assign = ast::Assign {
         op,
@@ -672,18 +672,17 @@ fn stmt_assign<'ast>(
     ctx.arena.alloc(assign)
 }
 
-//@rename expr_cst back to expr when each arm has a function
 fn expr<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     expr_cst: cst::Expr,
 ) -> &'ast ast::Expr<'ast> {
+    let range = expr_cst.find_range(ctx.tree);
     let kind = expr_kind(ctx, expr_cst);
-    let range = expr_cst.range(ctx.tree);
-
     let expr = ast::Expr { kind, range };
     ctx.arena.alloc(expr)
 }
 
+//@rename expr_cst back to expr when each arm has a function
 fn expr_kind<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     expr_cst: cst::Expr,
@@ -743,16 +742,14 @@ fn expr_kind<'ast>(
             ast::ExprKind::Field { target, name }
         }
         cst::Expr::Index(index) => {
-            let mut target_index_iter = index.target_index_iter(ctx.tree);
-            let target = expr(ctx, target_index_iter.next().unwrap());
-            let index = expr(ctx, target_index_iter.next().unwrap());
+            let target = expr(ctx, index.target(ctx.tree).unwrap());
+            let index = expr(ctx, index.index(ctx.tree).unwrap());
             ast::ExprKind::Index { target, index }
         }
         cst::Expr::Slice(slice) => {
-            let mut target_range_iter = slice.target_range_iter(ctx.tree);
-            let target = expr(ctx, target_range_iter.next().unwrap());
-            let mutt = mutt(slice.is_mut(ctx.tree));
-            let range = expr(ctx, target_range_iter.next().unwrap());
+            let target = expr(ctx, slice.target(ctx.tree).unwrap());
+            let mutt = mutt(slice.t_mut(ctx.tree));
+            let range = expr(ctx, slice.range_(ctx.tree).unwrap());
             ast::ExprKind::Slice {
                 target,
                 mutt,
@@ -818,8 +815,8 @@ fn expr_kind<'ast>(
         }
         cst::Expr::ArrayInit(array_init) => {
             let offset = ctx.s.exprs.start();
-            for input in array_init.inputs(ctx.tree) {
-                let expr = expr(ctx, input);
+            for expr_cst in array_init.input(ctx.tree) {
+                let expr = expr(ctx, expr_cst);
                 ctx.s.exprs.add(expr);
             }
             let input = ctx.s.exprs.take(offset, &mut ctx.arena);
@@ -827,11 +824,10 @@ fn expr_kind<'ast>(
             ast::ExprKind::ArrayInit { input }
         }
         cst::Expr::ArrayRepeat(array_repeat) => {
-            let mut expr_len = array_repeat.expr_len_iter(ctx.tree);
-            let value = expr(ctx, expr_len.next().unwrap());
-            let len = ast::ConstExpr(expr(ctx, expr_len.next().unwrap()));
+            let value = expr(ctx, array_repeat.value(ctx.tree).unwrap());
+            let len = ast::ConstExpr(expr(ctx, array_repeat.len(ctx.tree).unwrap()));
 
-            ast::ExprKind::ArrayRepeat { expr: value, len }
+            ast::ExprKind::ArrayRepeat { value, len }
         }
         cst::Expr::Deref(deref) => {
             let expr = expr(ctx, deref.expr(ctx.tree).unwrap());
@@ -839,7 +835,7 @@ fn expr_kind<'ast>(
             ast::ExprKind::Deref { rhs: expr }
         }
         cst::Expr::Address(address) => {
-            let mutt = mutt(address.is_mut(ctx.tree));
+            let mutt = mutt(address.t_mut(ctx.tree));
             let expr = expr(ctx, address.expr(ctx.tree).unwrap());
 
             ast::ExprKind::Address { mutt, rhs: expr }
@@ -851,16 +847,15 @@ fn expr_kind<'ast>(
             ast::ExprKind::Range { range }
         }
         cst::Expr::Unary(unary) => {
-            let (op, op_range) = unary.un_op_with_range(ctx.tree);
+            let (op, op_range) = unary.un_op(ctx.tree).unwrap();
             let rhs = expr(ctx, unary.rhs(ctx.tree).unwrap());
 
             ast::ExprKind::Unary { op, op_range, rhs }
         }
         cst::Expr::Binary(binary) => {
-            let (op, op_range) = binary.bin_op_with_range(ctx.tree);
-            let mut lhs_rhs_iter = binary.lhs_rhs_iter(ctx.tree);
-            let lhs = expr(ctx, lhs_rhs_iter.next().unwrap());
-            let rhs = expr(ctx, lhs_rhs_iter.next().unwrap());
+            let (op, op_range) = binary.bin_op(ctx.tree).unwrap();
+            let lhs = expr(ctx, binary.lhs(ctx.tree).unwrap());
+            let rhs = expr(ctx, binary.rhs(ctx.tree).unwrap());
 
             let bin = ast::BinExpr { lhs, rhs };
             let bin = ctx.arena.alloc(bin);
@@ -891,6 +886,8 @@ fn match_arm<'ast>(
 }
 
 fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
+    let range = pat_cst.find_range(ctx.tree);
+
     let kind = match pat_cst {
         cst::Pat::Wild(_) => ast::PatKind::Wild,
         cst::Pat::Lit(pat) => {
@@ -918,7 +915,6 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
         }
     };
 
-    let range = pat_cst.range(ctx.tree);
     ast::Pat { kind, range }
 }
 
@@ -926,7 +922,7 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     match lit {
         cst::Lit::Null(_) => ast::Lit::Null,
         cst::Lit::Bool(lit) => {
-            let val = lit.value(ctx.tree);
+            let (val, _) = lit.value(ctx.tree).unwrap();
             ast::Lit::Bool(val)
         }
         cst::Lit::Int(_) => {
@@ -974,21 +970,21 @@ fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, range: cst::Range) -> a
             ast::Range::From(start)
         }
         cst::Range::Exclusive(range) => {
-            let mut start_end_iter = range.start_end_iter(ctx.tree);
-            let start = expr(ctx, start_end_iter.next().unwrap());
-            let end = expr(ctx, start_end_iter.next().unwrap());
+            let start = expr(ctx, range.start(ctx.tree).unwrap());
+            let end = expr(ctx, range.end(ctx.tree).unwrap());
             ast::Range::Exclusive(start, end)
         }
         cst::Range::Inclusive(range) => {
-            let mut start_end_iter = range.start_end_iter(ctx.tree);
-            let start = expr(ctx, start_end_iter.next().unwrap());
-            let end = expr(ctx, start_end_iter.next().unwrap());
+            let start = expr(ctx, range.start(ctx.tree).unwrap());
+            let end = expr(ctx, range.end(ctx.tree).unwrap());
             ast::Range::Inclusive(start, end)
         }
     }
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
+    let range = block.find_range(ctx.tree);
+
     let offset = ctx.s.stmts.start();
     for stmt_cst in block.stmts(ctx.tree) {
         let stmt = stmt(ctx, stmt_cst);
@@ -996,8 +992,5 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> a
     }
     let stmts = ctx.s.stmts.take(offset, &mut ctx.arena);
 
-    ast::Block {
-        stmts,
-        range: block.range(ctx.tree),
-    }
+    ast::Block { stmts, range }
 }

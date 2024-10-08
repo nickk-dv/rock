@@ -5,6 +5,49 @@ use crate::text::TextRange;
 use crate::token::{Token, T};
 use std::marker::PhantomData;
 
+pub trait AstNode<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Self>
+    where
+        Self: Sized;
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange;
+}
+
+pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
+    tree: &'syn SyntaxTree<'syn>,
+    iter: std::slice::Iter<'syn, NodeOrToken<'syn>>,
+    phantom: PhantomData<T>,
+}
+
+impl<'syn, T: AstNode<'syn>> AstNodeIterator<'syn, T> {
+    fn new(tree: &'syn SyntaxTree<'syn>, node: &'syn Node<'syn>) -> AstNodeIterator<'syn, T> {
+        AstNodeIterator {
+            tree,
+            iter: node.content.iter(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.iter.next().copied() {
+                Some(NodeOrToken::Node(node_id)) => {
+                    let node = self.tree.node(node_id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                Some(NodeOrToken::Token(_)) => {}
+                Some(NodeOrToken::Trivia(_)) => {}
+                None => return None,
+            }
+        }
+    }
+}
+
 impl<'syn> SyntaxTree<'syn> {
     pub fn source_file(&'syn self) -> SourceFile<'syn> {
         let root = self.root();
@@ -13,25 +56,163 @@ impl<'syn> SyntaxTree<'syn> {
 }
 
 impl<'syn> Node<'syn> {
-    fn find_first<T: AstNode<'syn>>(&'syn self, tree: &'syn SyntaxTree<'syn>) -> Option<T> {
-        AstNodeIterator::new(tree, self).next()
+    fn node_find<T: AstNode<'syn>>(&self, tree: &'syn SyntaxTree<'syn>) -> Option<T> {
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(_) => {}
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
     }
 
-    fn find_by_token<T, F>(&self, tree: &'syn SyntaxTree<'syn>, predicate: F) -> Option<T>
+    fn node_after_token<T: AstNode<'syn>>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        after: Token,
+    ) -> Option<T> {
+        let mut found = false;
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    if !found {
+                        continue;
+                    }
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(id) => {
+                    if found {
+                        continue;
+                    }
+                    let token = tree.tokens().token(id);
+                    found = token == after;
+                }
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
+    }
+
+    fn node_after_token_predicate<T: AstNode<'syn>, F, P>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        predicate: F,
+    ) -> Option<T>
     where
-        F: Fn(Token) -> Option<T>,
+        F: Fn(Token) -> Option<P>,
     {
-        for node_or_token in self.content.iter().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(value) = predicate(tree.tokens().token(token_id)) {
-                    return Some(value);
+        let mut found = false;
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    if !found {
+                        continue;
+                    }
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(id) => {
+                    if found {
+                        continue;
+                    }
+                    let token = tree.tokens().token(id);
+                    found = predicate(token).is_some();
+                }
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
+    }
+
+    fn node_before_token<T: AstNode<'syn>>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        before: Token,
+    ) -> Option<T> {
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(id) => {
+                    let token = tree.tokens().token(id);
+                    if token == before {
+                        return None;
+                    }
+                }
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
+    }
+
+    fn node_before_token_predicate<T: AstNode<'syn>, F, P>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        predicate: F,
+    ) -> Option<T>
+    where
+        F: Fn(Token) -> Option<P>,
+    {
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(id) => {
+                    let token = tree.tokens().token(id);
+                    if predicate(token).is_some() {
+                        return None;
+                    }
+                }
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
+    }
+
+    fn token_find(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TextRange> {
+        for not in self.content.iter().copied() {
+            if let NodeOrToken::Token(id) = not {
+                let (token, range) = tree.tokens().token_and_range(id);
+                if token == find {
+                    return Some(range);
                 }
             }
         }
         None
     }
 
-    fn find_by_token_with_range<T, F>(
+    fn token_find_rev(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TextRange> {
+        for not in self.content.iter().rev().copied() {
+            if let NodeOrToken::Token(id) = not {
+                let (token, range) = tree.tokens().token_and_range(id);
+                if token == find {
+                    return Some(range);
+                }
+            }
+        }
+        None
+    }
+
+    fn token_find_predicate<T, F>(
         &self,
         tree: &'syn SyntaxTree<'syn>,
         predicate: F,
@@ -39,39 +220,17 @@ impl<'syn> Node<'syn> {
     where
         F: Fn(Token) -> Option<T>,
     {
-        for node_or_token in self.content.iter().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if let Some(value) = predicate(tree.tokens().token(token_id)) {
-                    return Some((value, tree.tokens().token_range(token_id)));
+        for not in self.content.iter().copied() {
+            if let NodeOrToken::Token(id) = not {
+                let (token, range) = tree.tokens().token_and_range(id);
+                if let Some(value) = predicate(token) {
+                    return Some((value, range));
                 }
             }
         }
         None
     }
 
-    fn find_token(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
-        for node_or_token in self.content.iter().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if token == tree.tokens().token(token_id) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    fn find_token_rev(&self, tree: &'syn SyntaxTree<'syn>, token: Token) -> bool {
-        for node_or_token in self.content.iter().rev().copied() {
-            if let NodeOrToken::Token(token_id) = node_or_token {
-                if token == tree.tokens().token(token_id) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    //@can get stuck if no tokens are present, which is maybe possible in incomplete tree?
     fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         let start;
         let end;
@@ -118,47 +277,7 @@ impl<'syn> Node<'syn> {
     }
 }
 
-pub trait AstNode<'syn> {
-    fn cast(node: &'syn Node) -> Option<Self>
-    where
-        Self: Sized;
-}
-
-pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
-    tree: &'syn SyntaxTree<'syn>,
-    iter: std::slice::Iter<'syn, NodeOrToken<'syn>>,
-    phantom: PhantomData<T>,
-}
-
-impl<'syn, T: AstNode<'syn>> AstNodeIterator<'syn, T> {
-    fn new(tree: &'syn SyntaxTree<'syn>, node: &'syn Node<'syn>) -> AstNodeIterator<'syn, T> {
-        AstNodeIterator {
-            tree,
-            iter: node.content.iter(),
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.iter.next() {
-                Some(NodeOrToken::Node(node_id)) => {
-                    let node = self.tree.node(*node_id);
-                    if let Some(ast_node) = T::cast(node) {
-                        return Some(ast_node);
-                    }
-                }
-                Some(NodeOrToken::Token(_)) => {}
-                Some(NodeOrToken::Trivia(_)) => {}
-                None => return None,
-            }
-        }
-    }
-}
+//==================== AST NODE MACROS ====================
 
 macro_rules! ast_node_impl {
     ($name:ident, $kind_pat:pat) => {
@@ -166,7 +285,7 @@ macro_rules! ast_node_impl {
         pub struct $name<'syn>(pub &'syn Node<'syn>);
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
-            fn cast(node: &'syn Node) -> Option<Self>
+            fn cast(node: &'syn Node<'syn>) -> Option<Self>
             where
                 Self: Sized,
             {
@@ -176,36 +295,9 @@ macro_rules! ast_node_impl {
                     None
                 }
             }
-        }
-
-        impl<'syn> $name<'syn> {
-            pub fn range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+            fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
                 self.0.find_range(tree)
             }
-        }
-    };
-}
-
-macro_rules! find_first {
-    ($fn_name:ident, $find_ty:ident) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
-            self.0.find_first(tree)
-        }
-    };
-}
-
-macro_rules! find_token {
-    ($fn_name:ident, $find_token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
-            self.0.find_token(tree, $find_token)
-        }
-    };
-}
-
-macro_rules! find_token_rev {
-    ($fn_name:ident, $find_token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
-            self.0.find_token_rev(tree, $find_token)
         }
     };
 }
@@ -220,6 +312,72 @@ macro_rules! node_iter {
         }
     };
 }
+
+macro_rules! node_find {
+    ($fn_name:ident, $find_ty:ident) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_find(tree)
+        }
+    };
+}
+
+macro_rules! node_after_token {
+    ($fn_name:ident, $find_ty:ident, $token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_after_token(tree, $token)
+        }
+    };
+}
+
+macro_rules! node_after_token_predicate {
+    ($fn_name:ident, $find_ty:ident, $predicate:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_after_token_predicate(tree, $predicate)
+        }
+    };
+}
+
+macro_rules! node_before_token {
+    ($fn_name:ident, $find_ty:ident, $token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_before_token(tree, $token)
+        }
+    };
+}
+
+macro_rules! node_before_token_predicate {
+    ($fn_name:ident, $find_ty:ident, $predicate:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_before_token_predicate(tree, $predicate)
+        }
+    };
+}
+
+macro_rules! token_find {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TextRange> {
+            self.0.token_find(tree, $find_token)
+        }
+    };
+}
+
+macro_rules! token_find_rev {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TextRange> {
+            self.0.token_find_rev(tree, $find_token)
+        }
+    };
+}
+
+macro_rules! token_find_predicate {
+    ($fn_name:ident, $predicate:expr, $pred_ty:ty) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<($pred_ty, TextRange)> {
+            self.0.token_find_predicate(tree, $predicate)
+        }
+    };
+}
+
+//==================== AST NODE IMPL ====================
 
 ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
@@ -330,7 +488,7 @@ pub enum Item<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Item<'syn> {
-    fn cast(node: &'syn Node) -> Option<Item<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Item<'syn>> {
         match node.kind {
             SyntaxKind::PROC_ITEM => Some(Item::Proc(ProcItem(node))),
             SyntaxKind::ENUM_ITEM => Some(Item::Enum(EnumItem(node))),
@@ -341,17 +499,14 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Item<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Item::Proc(item) => item.range(tree),
-            Item::Enum(item) => item.range(tree),
-            Item::Struct(item) => item.range(tree),
-            Item::Const(item) => item.range(tree),
-            Item::Global(item) => item.range(tree),
-            Item::Import(item) => item.range(tree),
+            Item::Proc(item) => item.find_range(tree),
+            Item::Enum(item) => item.find_range(tree),
+            Item::Struct(item) => item.find_range(tree),
+            Item::Const(item) => item.find_range(tree),
+            Item::Global(item) => item.find_range(tree),
+            Item::Import(item) => item.find_range(tree),
         }
     }
 }
@@ -367,7 +522,7 @@ pub enum Type<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Type<'syn> {
-    fn cast(node: &'syn Node) -> Option<Type<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Type<'syn>> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
@@ -378,17 +533,14 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Type<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Type::Basic(ty) => ty.range(tree),
-            Type::Custom(ty) => ty.range(tree),
-            Type::Reference(ty) => ty.range(tree),
-            Type::Procedure(ty) => ty.range(tree),
-            Type::ArraySlice(ty) => ty.range(tree),
-            Type::ArrayStatic(ty) => ty.range(tree),
+            Type::Basic(ty) => ty.find_range(tree),
+            Type::Custom(ty) => ty.find_range(tree),
+            Type::Reference(ty) => ty.find_range(tree),
+            Type::Procedure(ty) => ty.find_range(tree),
+            Type::ArraySlice(ty) => ty.find_range(tree),
+            Type::ArrayStatic(ty) => ty.find_range(tree),
         }
     }
 }
@@ -407,7 +559,7 @@ pub enum Stmt<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Stmt<'syn> {
-    fn cast(node: &'syn Node) -> Option<Stmt<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Stmt<'syn>> {
         match node.kind {
             SyntaxKind::STMT_BREAK => Some(Stmt::Break(StmtBreak(node))),
             SyntaxKind::STMT_CONTINUE => Some(Stmt::Continue(StmtContinue(node))),
@@ -421,20 +573,17 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Stmt<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Stmt::Break(stmt) => stmt.range(tree),
-            Stmt::Continue(stmt) => stmt.range(tree),
-            Stmt::Return(stmt) => stmt.range(tree),
-            Stmt::Defer(stmt) => stmt.range(tree),
-            Stmt::Loop(stmt) => stmt.range(tree),
-            Stmt::Local(stmt) => stmt.range(tree),
-            Stmt::Assign(stmt) => stmt.range(tree),
-            Stmt::ExprSemi(stmt) => stmt.range(tree),
-            Stmt::ExprTail(stmt) => stmt.range(tree),
+            Stmt::Break(stmt) => stmt.find_range(tree),
+            Stmt::Continue(stmt) => stmt.find_range(tree),
+            Stmt::Return(stmt) => stmt.find_range(tree),
+            Stmt::Defer(stmt) => stmt.find_range(tree),
+            Stmt::Loop(stmt) => stmt.find_range(tree),
+            Stmt::Local(stmt) => stmt.find_range(tree),
+            Stmt::Assign(stmt) => stmt.find_range(tree),
+            Stmt::ExprSemi(stmt) => stmt.find_range(tree),
+            Stmt::ExprTail(stmt) => stmt.find_range(tree),
         }
     }
 }
@@ -465,7 +614,7 @@ pub enum Expr<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Expr<'syn> {
-    fn cast(node: &'syn Node) -> Option<Expr<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Expr<'syn>> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
@@ -488,42 +637,39 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             _ => {
                 if let Some(lit) = Lit::cast(node) {
                     Some(Expr::Lit(lit))
-                } else if let Some(range) = Range::cast(node) {
-                    Some(Expr::Range(range))
                 } else if let Some(block) = Block::cast(node) {
                     Some(Expr::Block(block))
+                } else if let Some(range) = Range::cast(node) {
+                    Some(Expr::Range(range))
                 } else {
                     None
                 }
             }
         }
     }
-}
-
-impl<'syn> Expr<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Expr::Paren(expr) => expr.range(tree),
-            Expr::Lit(expr) => expr.range(tree),
-            Expr::If(expr) => expr.range(tree),
-            Expr::Block(expr) => expr.range(tree),
-            Expr::Match(expr) => expr.range(tree),
-            Expr::Field(expr) => expr.range(tree),
-            Expr::Index(expr) => expr.range(tree),
-            Expr::Slice(expr) => expr.range(tree),
-            Expr::Call(expr) => expr.range(tree),
-            Expr::Cast(expr) => expr.range(tree),
-            Expr::Sizeof(expr) => expr.range(tree),
-            Expr::Item(expr) => expr.range(tree),
-            Expr::Variant(expr) => expr.range(tree),
-            Expr::StructInit(expr) => expr.range(tree),
-            Expr::ArrayInit(expr) => expr.range(tree),
-            Expr::ArrayRepeat(expr) => expr.range(tree),
-            Expr::Deref(expr) => expr.range(tree),
-            Expr::Address(expr) => expr.range(tree),
-            Expr::Range(expr) => expr.range(tree),
-            Expr::Unary(expr) => expr.range(tree),
-            Expr::Binary(expr) => expr.range(tree),
+            Expr::Paren(expr) => expr.find_range(tree),
+            Expr::Lit(lit) => lit.find_range(tree),
+            Expr::If(expr) => expr.find_range(tree),
+            Expr::Block(block) => block.find_range(tree),
+            Expr::Match(expr) => expr.find_range(tree),
+            Expr::Field(expr) => expr.find_range(tree),
+            Expr::Index(expr) => expr.find_range(tree),
+            Expr::Slice(expr) => expr.find_range(tree),
+            Expr::Call(expr) => expr.find_range(tree),
+            Expr::Cast(expr) => expr.find_range(tree),
+            Expr::Sizeof(expr) => expr.find_range(tree),
+            Expr::Item(expr) => expr.find_range(tree),
+            Expr::Variant(expr) => expr.find_range(tree),
+            Expr::StructInit(expr) => expr.find_range(tree),
+            Expr::ArrayInit(expr) => expr.find_range(tree),
+            Expr::ArrayRepeat(expr) => expr.find_range(tree),
+            Expr::Deref(expr) => expr.find_range(tree),
+            Expr::Address(expr) => expr.find_range(tree),
+            Expr::Range(range) => range.find_range(tree),
+            Expr::Unary(expr) => expr.find_range(tree),
+            Expr::Binary(expr) => expr.find_range(tree),
         }
     }
 }
@@ -538,7 +684,7 @@ pub enum Pat<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Pat<'syn> {
-    fn cast(node: &'syn Node) -> Option<Pat<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Pat<'syn>> {
         match node.kind {
             SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
             SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
@@ -548,16 +694,13 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Pat<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Pat::Wild(pat) => pat.range(tree),
-            Pat::Lit(pat) => pat.range(tree),
-            Pat::Item(pat) => pat.range(tree),
-            Pat::Variant(pat) => pat.range(tree),
-            Pat::Or(pat) => pat.range(tree),
+            Pat::Wild(pat) => pat.find_range(tree),
+            Pat::Lit(pat) => pat.find_range(tree),
+            Pat::Item(pat) => pat.find_range(tree),
+            Pat::Variant(pat) => pat.find_range(tree),
+            Pat::Or(pat) => pat.find_range(tree),
         }
     }
 }
@@ -573,7 +716,7 @@ pub enum Lit<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Lit<'syn> {
-    fn cast(node: &'syn Node) -> Option<Lit<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Lit<'syn>> {
         match node.kind {
             SyntaxKind::LIT_NULL => Some(Lit::Null(LitNull(node))),
             SyntaxKind::LIT_BOOL => Some(Lit::Bool(LitBool(node))),
@@ -584,17 +727,14 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Lit<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Lit::Null(lit) => lit.range(tree),
-            Lit::Bool(lit) => lit.range(tree),
-            Lit::Int(lit) => lit.range(tree),
-            Lit::Float(lit) => lit.range(tree),
-            Lit::Char(lit) => lit.range(tree),
-            Lit::String(lit) => lit.range(tree),
+            Lit::Null(lit) => lit.find_range(tree),
+            Lit::Bool(lit) => lit.find_range(tree),
+            Lit::Int(lit) => lit.find_range(tree),
+            Lit::Float(lit) => lit.find_range(tree),
+            Lit::Char(lit) => lit.find_range(tree),
+            Lit::String(lit) => lit.find_range(tree),
         }
     }
 }
@@ -610,7 +750,7 @@ pub enum Range<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Range<'syn> {
-    fn cast(node: &'syn Node) -> Option<Range<'syn>> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Range<'syn>> {
         match node.kind {
             SyntaxKind::RANGE_FULL => Some(Range::Full(RangeFull(node))),
             SyntaxKind::RANGE_TO_EXCLUSIVE => Some(Range::ToExclusive(RangeToExclusive(node))),
@@ -621,20 +761,19 @@ impl<'syn> AstNode<'syn> for Range<'syn> {
             _ => None,
         }
     }
-}
-
-impl<'syn> Range<'syn> {
-    pub fn range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
-            Range::Full(range) => range.range(tree),
-            Range::ToExclusive(range) => range.range(tree),
-            Range::ToInclusive(range) => range.range(tree),
-            Range::From(range) => range.range(tree),
-            Range::Exclusive(range) => range.range(tree),
-            Range::Inclusive(range) => range.range(tree),
+            Range::Full(range) => range.find_range(tree),
+            Range::ToExclusive(range) => range.find_range(tree),
+            Range::ToInclusive(range) => range.find_range(tree),
+            Range::From(range) => range.find_range(tree),
+            Range::Exclusive(range) => range.find_range(tree),
+            Range::Inclusive(range) => range.find_range(tree),
         }
     }
 }
+
+//==================== ITEMS ====================
 
 impl<'syn> SourceFile<'syn> {
     node_iter!(items, Item);
@@ -645,8 +784,8 @@ impl<'syn> AttrList<'syn> {
 }
 
 impl<'syn> Attr<'syn> {
-    find_first!(name, Name);
-    find_first!(param_list, AttrParamList);
+    node_find!(name, Name);
+    node_find!(param_list, AttrParamList);
 }
 
 impl<'syn> AttrParamList<'syn> {
@@ -654,39 +793,39 @@ impl<'syn> AttrParamList<'syn> {
 }
 
 impl<'syn> AttrParam<'syn> {
-    find_first!(name, Name);
-    find_first!(value, LitString);
+    node_find!(name, Name);
+    node_find!(value, LitString);
 }
 
 impl<'syn> Visibility<'syn> {
-    find_token!(is_pub, T![pub]);
+    token_find!(t_pub, T![pub]);
 }
 
 impl<'syn> ProcItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility);
-    find_first!(name, Name);
-    find_first!(param_list, ParamList);
-    find_first!(return_ty, Type);
-    find_first!(block, Block);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility);
+    node_find!(name, Name);
+    node_find!(param_list, ParamList);
+    node_find!(return_ty, Type);
+    node_find!(block, Block);
 }
 
 impl<'syn> ParamList<'syn> {
     node_iter!(params, Param);
-    find_token_rev!(is_variadic, T![..]);
+    token_find_rev!(t_dotdot, T![..]);
 }
 
 impl<'syn> Param<'syn> {
-    find_token!(is_mut, T![mut]);
-    find_first!(name, Name);
-    find_first!(ty, Type);
+    token_find!(t_mut, T![mut]);
+    node_find!(name, Name);
+    node_find!(ty, Type);
 }
 
 impl<'syn> EnumItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility);
-    find_first!(name, Name);
-    find_first!(variant_list, VariantList);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility);
+    node_find!(name, Name);
+    node_find!(variant_list, VariantList);
 }
 
 impl<'syn> VariantList<'syn> {
@@ -694,9 +833,9 @@ impl<'syn> VariantList<'syn> {
 }
 
 impl<'syn> Variant<'syn> {
-    find_first!(name, Name);
-    find_first!(value, Expr);
-    find_first!(field_list, VariantFieldList);
+    node_find!(name, Name);
+    node_find!(value, Expr);
+    node_find!(field_list, VariantFieldList);
 }
 
 impl<'syn> VariantFieldList<'syn> {
@@ -704,10 +843,10 @@ impl<'syn> VariantFieldList<'syn> {
 }
 
 impl<'syn> StructItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility);
-    find_first!(name, Name);
-    find_first!(field_list, FieldList);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility);
+    node_find!(name, Name);
+    node_find!(field_list, FieldList);
 }
 
 impl<'syn> FieldList<'syn> {
@@ -715,35 +854,35 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
-    find_first!(visibility, Visibility);
-    find_first!(name, Name);
-    find_first!(ty, Type);
+    node_find!(visibility, Visibility);
+    node_find!(name, Name);
+    node_find!(ty, Type);
 }
 
 impl<'syn> ConstItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility);
-    find_first!(name, Name);
-    find_first!(ty, Type);
-    find_first!(value, Expr);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+    node_find!(value, Expr);
 }
 
 impl<'syn> GlobalItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility);
-    find_token!(is_mut, T![mut]);
-    find_first!(name, Name);
-    find_first!(ty, Type);
-    find_first!(value, Expr);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility);
+    token_find!(t_mut, T![mut]);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+    node_find!(value, Expr);
 }
 
 impl<'syn> ImportItem<'syn> {
-    find_first!(attr_list, AttrList);
-    find_first!(visibility, Visibility); //@exists but ignored
-    find_first!(package, Name);
-    find_first!(import_path, ImportPath);
-    find_first!(rename, ImportSymbolRename);
-    find_first!(import_symbol_list, ImportSymbolList);
+    node_find!(attr_list, AttrList);
+    node_find!(visibility, Visibility); //@exists but ignored
+    node_find!(package, Name);
+    node_find!(import_path, ImportPath);
+    node_find!(rename, ImportSymbolRename);
+    node_find!(import_symbol_list, ImportSymbolList);
 }
 
 impl<'syn> ImportPath<'syn> {
@@ -755,77 +894,51 @@ impl<'syn> ImportSymbolList<'syn> {
 }
 
 impl<'syn> ImportSymbol<'syn> {
-    find_first!(name, Name);
-    find_first!(rename, ImportSymbolRename);
+    node_find!(name, Name);
+    node_find!(rename, ImportSymbolRename);
 }
 
 impl<'syn> ImportSymbolRename<'syn> {
-    find_first!(alias, Name);
-
-    pub fn discard(&self, tree: &'syn SyntaxTree<'syn>) -> ((), TextRange) {
-        self.0.find_by_token_with_range(tree, |_| Some(())).unwrap()
-    }
+    node_find!(alias, Name);
+    token_find!(t_discard, T![_]);
 }
 
-impl<'syn> Name<'syn> {}
-
-impl<'syn> Path<'syn> {
-    node_iter!(names, Name);
-}
-
-//@find `_` token range
-impl<'syn> Bind<'syn> {
-    find_token!(is_mut, T![mut]);
-    find_first!(name, Name);
-}
-
-impl<'syn> BindList<'syn> {
-    node_iter!(binds, Bind);
-}
-
-impl<'syn> ArgsList<'syn> {
-    node_iter!(exprs, Expr);
-}
+//==================== TYPE ====================
 
 impl<'syn> TypeBasic<'syn> {
-    pub fn basic(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BasicType {
-        self.0.find_by_token(tree, Token::as_basic_type).unwrap()
-    }
-    pub fn basic_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::BasicType, TextRange) {
-        self.0
-            .find_by_token_with_range(tree, Token::as_basic_type)
-            .unwrap()
-    }
+    token_find_predicate!(basic, Token::as_basic_type, ast::BasicType);
 }
 
 impl<'syn> TypeCustom<'syn> {
-    find_first!(path, Path);
+    node_find!(path, Path);
 }
 
 impl<'syn> TypeReference<'syn> {
-    find_token!(is_mut, T![mut]);
-    find_first!(ref_ty, Type);
+    token_find!(t_mut, T![mut]);
+    node_find!(ref_ty, Type);
 }
 
 impl<'syn> TypeProcedure<'syn> {
-    find_first!(type_list, ParamTypeList);
-    find_first!(return_ty, Type);
+    node_find!(type_list, ParamTypeList);
+    node_find!(return_ty, Type);
 }
 
 impl<'syn> ParamTypeList<'syn> {
     node_iter!(types, Type);
-    find_token_rev!(is_variadic, T![..]);
+    token_find_rev!(t_dotdot, T![..]);
 }
 
 impl<'syn> TypeArraySlice<'syn> {
-    find_token!(is_mut, T![mut]);
-    find_first!(elem_ty, Type);
+    token_find!(t_mut, T![mut]);
+    node_find!(elem_ty, Type);
 }
 
 impl<'syn> TypeArrayStatic<'syn> {
-    find_first!(len, Expr);
-    find_first!(elem_ty, Type);
+    node_find!(len, Expr);
+    node_find!(elem_ty, Type);
 }
+
+//==================== STMT ====================
 
 impl<'syn> Block<'syn> {
     node_iter!(stmts, Stmt);
@@ -836,81 +949,75 @@ impl<'syn> StmtBreak<'syn> {}
 impl<'syn> StmtContinue<'syn> {}
 
 impl<'syn> StmtReturn<'syn> {
-    find_first!(expr, Expr);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> StmtDefer<'syn> {
-    find_first!(block, Block);
-    find_first!(stmt, Stmt);
+    node_find!(block, Block);
+    node_find!(stmt, Stmt);
 }
 
 impl<'syn> StmtLoop<'syn> {
-    find_first!(while_header, LoopWhileHeader);
-    find_first!(clike_header, LoopCLikeHeader);
-    find_first!(block, Block);
+    node_find!(while_header, LoopWhileHeader);
+    node_find!(clike_header, LoopCLikeHeader);
+    node_find!(block, Block);
 }
 
 impl<'syn> LoopWhileHeader<'syn> {
-    find_first!(cond, Expr);
+    node_find!(cond, Expr);
 }
 
 impl<'syn> LoopCLikeHeader<'syn> {
-    find_first!(local, StmtLocal);
-    find_first!(cond, Expr);
-    find_first!(assign, StmtAssign);
+    node_find!(local, StmtLocal);
+    node_find!(cond, Expr);
+    node_find!(assign, StmtAssign);
 }
 
 impl<'syn> StmtLocal<'syn> {
-    find_first!(bind, Bind);
-    find_first!(ty, Type);
-    find_first!(init, Expr);
+    node_find!(bind, Bind);
+    node_find!(ty, Type);
+    node_find!(init, Expr);
 }
 
 impl<'syn> StmtAssign<'syn> {
-    pub fn assign_op(&self, tree: &'syn SyntaxTree<'syn>) -> Option<ast::AssignOp> {
-        self.0.find_by_token(tree, Token::as_assign_op)
-    }
-    pub fn assign_op_with_range(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-    ) -> Option<(ast::AssignOp, TextRange)> {
-        self.0.find_by_token_with_range(tree, Token::as_assign_op)
-    }
-    //@ambiguity in incomplete tree
-    node_iter!(lhs_rhs_iter, Expr);
+    token_find_predicate!(assign_op, Token::as_assign_op, ast::AssignOp);
+    node_before_token_predicate!(lhs, Expr, Token::as_assign_op);
+    node_after_token_predicate!(rhs, Expr, Token::as_assign_op);
 }
 
 impl<'syn> StmtExprSemi<'syn> {
-    find_first!(expr, Expr);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> StmtExprTail<'syn> {
-    find_first!(expr, Expr);
+    node_find!(expr, Expr);
 }
 
+//==================== EXPR ====================
+
 impl<'syn> ExprParen<'syn> {
-    find_first!(expr, Expr);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprIf<'syn> {
-    find_first!(entry_branch, BranchEntry);
+    node_find!(entry_branch, BranchEntry);
     node_iter!(else_if_branches, BranchElseIf);
-    find_first!(else_block, Block);
+    node_find!(else_block, Block);
 }
 
 impl<'syn> BranchEntry<'syn> {
-    find_first!(cond, Expr);
-    find_first!(block, Block);
+    node_find!(cond, Expr);
+    node_find!(block, Block);
 }
 
 impl<'syn> BranchElseIf<'syn> {
-    find_first!(cond, Expr);
-    find_first!(block, Block);
+    node_find!(cond, Expr);
+    node_find!(block, Block);
 }
 
 impl<'syn> ExprMatch<'syn> {
-    find_first!(on_expr, Expr);
-    find_first!(match_arm_list, MatchArmList);
+    node_find!(on_expr, Expr);
+    node_find!(match_arm_list, MatchArmList);
 }
 
 impl<'syn> MatchArmList<'syn> {
@@ -918,51 +1025,53 @@ impl<'syn> MatchArmList<'syn> {
 }
 
 impl<'syn> MatchArm<'syn> {
-    find_first!(pat, Pat);
-    find_first!(expr, Expr);
+    node_find!(pat, Pat);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprField<'syn> {
-    find_first!(target, Expr);
-    find_first!(name, Name);
+    node_find!(target, Expr);
+    node_find!(name, Name);
 }
 
 impl<'syn> ExprIndex<'syn> {
-    node_iter!(target_index_iter, Expr);
+    node_before_token!(target, Expr, T!['[']);
+    node_after_token!(index, Expr, T!['[']);
 }
 
 impl<'syn> ExprSlice<'syn> {
-    find_token!(is_mut, T![mut]);
-    node_iter!(target_range_iter, Expr);
+    token_find!(t_mut, T![mut]);
+    node_before_token!(target, Expr, T!['[']);
+    node_after_token!(range_, Expr, T!['[']);
 }
 
 impl<'syn> ExprCall<'syn> {
-    find_first!(target, Expr);
-    find_first!(args_list, ArgsList);
+    node_find!(target, Expr);
+    node_find!(args_list, ArgsList);
 }
 
 impl<'syn> ExprCast<'syn> {
-    find_first!(target, Expr);
-    find_first!(into_ty, Type);
+    node_find!(target, Expr);
+    node_find!(into_ty, Type);
 }
 
 impl<'syn> ExprSizeof<'syn> {
-    find_first!(ty, Type);
+    node_find!(ty, Type);
 }
 
 impl<'syn> ExprItem<'syn> {
-    find_first!(path, Path);
-    find_first!(args_list, ArgsList);
+    node_find!(path, Path);
+    node_find!(args_list, ArgsList);
 }
 
 impl<'syn> ExprVariant<'syn> {
-    find_first!(name, Name);
-    find_first!(args_list, ArgsList);
+    node_find!(name, Name);
+    node_find!(args_list, ArgsList);
 }
 
 impl<'syn> ExprStructInit<'syn> {
-    find_first!(path, Path);
-    find_first!(field_init_list, FieldInitList);
+    node_find!(path, Path);
+    node_find!(field_init_list, FieldInitList);
 }
 
 impl<'syn> FieldInitList<'syn> {
@@ -970,61 +1079,37 @@ impl<'syn> FieldInitList<'syn> {
 }
 
 impl<'syn> FieldInit<'syn> {
-    find_first!(name, Name);
-    find_first!(expr, Expr);
+    node_find!(name, Name);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprArrayInit<'syn> {
-    node_iter!(inputs, Expr);
+    node_iter!(input, Expr);
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {
-    //@ambiguity in incomplete tree
-    node_iter!(expr_len_iter, Expr);
+    node_before_token!(value, Expr, T![;]);
+    node_after_token!(len, Expr, T![;]);
 }
 
 impl<'syn> ExprDeref<'syn> {
-    find_first!(expr, Expr);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprAddress<'syn> {
-    find_token!(is_mut, T![mut]);
-    find_first!(expr, Expr);
+    token_find!(t_mut, T![mut]);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprUnary<'syn> {
-    pub fn un_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::UnOp {
-        self.0.find_by_token(tree, Token::as_un_op).unwrap()
-    }
-    pub fn un_op_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::UnOp, TextRange) {
-        self.0
-            .find_by_token_with_range(tree, Token::as_un_op)
-            .unwrap()
-    }
-    find_first!(rhs, Expr);
+    token_find_predicate!(un_op, Token::as_un_op, ast::UnOp);
+    node_find!(rhs, Expr);
 }
 
-//@support no range versions of `find_by_token`?
-// fmt doesnt need ranges and some other uses
 impl<'syn> ExprBinary<'syn> {
-    pub fn bin_op(&self, tree: &'syn SyntaxTree<'syn>) -> ast::BinOp {
-        self.0.find_by_token(tree, Token::as_bin_op).unwrap()
-    }
-    pub fn bin_op_with_range(&self, tree: &'syn SyntaxTree<'syn>) -> (ast::BinOp, TextRange) {
-        self.0
-            .find_by_token_with_range(tree, Token::as_bin_op)
-            .unwrap()
-    }
-    //@ambiguity in incomplete tree
-    node_iter!(lhs_rhs_iter, Expr);
-}
-
-impl<'syn> LitNull<'syn> {}
-
-impl<'syn> LitBool<'syn> {
-    pub fn value(&self, tree: &'syn SyntaxTree<'syn>) -> bool {
-        self.0.find_by_token(tree, Token::as_bool).unwrap()
-    }
+    token_find_predicate!(bin_op, Token::as_bin_op, ast::BinOp);
+    node_before_token_predicate!(lhs, Expr, Token::as_bin_op);
+    node_after_token_predicate!(rhs, Expr, Token::as_bin_op);
 }
 
 //==================== PAT ====================
@@ -1032,17 +1117,17 @@ impl<'syn> LitBool<'syn> {
 impl<'syn> PatWild<'syn> {}
 
 impl<'syn> PatLit<'syn> {
-    find_first!(lit, Lit);
+    node_find!(lit, Lit);
 }
 
 impl<'syn> PatItem<'syn> {
-    find_first!(path, Path);
-    find_first!(bind_list, BindList);
+    node_find!(path, Path);
+    node_find!(bind_list, BindList);
 }
 
 impl<'syn> PatVariant<'syn> {
-    find_first!(name, Name);
-    find_first!(bind_list, BindList);
+    node_find!(name, Name);
+    node_find!(bind_list, BindList);
 }
 
 impl<'syn> PatOr<'syn> {
@@ -1050,6 +1135,12 @@ impl<'syn> PatOr<'syn> {
 }
 
 //==================== LIT ====================
+
+impl<'syn> LitNull<'syn> {}
+
+impl<'syn> LitBool<'syn> {
+    token_find_predicate!(value, Token::as_bool, bool);
+}
 
 impl<'syn> LitInt<'syn> {}
 
@@ -1064,21 +1155,47 @@ impl<'syn> LitString<'syn> {}
 impl<'syn> RangeFull<'syn> {}
 
 impl<'syn> RangeToExclusive<'syn> {
-    find_first!(end, Expr);
+    node_find!(end, Expr);
 }
 
 impl<'syn> RangeToInclusive<'syn> {
-    find_first!(end, Expr);
+    node_find!(end, Expr);
 }
 
 impl<'syn> RangeFrom<'syn> {
-    find_first!(start, Expr);
+    node_find!(start, Expr);
 }
 
 impl<'syn> RangeExclusive<'syn> {
-    node_iter!(start_end_iter, Expr);
+    node_before_token!(start, Expr, T!["..<"]);
+    node_after_token!(end, Expr, T!["..<"]);
 }
 
 impl<'syn> RangeInclusive<'syn> {
-    node_iter!(start_end_iter, Expr);
+    node_before_token!(start, Expr, T!["..="]);
+    node_after_token!(end, Expr, T!["..="]);
+}
+
+//==================== COMMON ====================
+
+impl<'syn> Name<'syn> {
+    token_find!(ident, T![ident]);
+}
+
+impl<'syn> Path<'syn> {
+    node_iter!(names, Name);
+}
+
+impl<'syn> Bind<'syn> {
+    token_find!(t_mut, T![mut]);
+    node_find!(name, Name);
+    token_find!(t_discard, T![_]);
+}
+
+impl<'syn> BindList<'syn> {
+    node_iter!(binds, Bind);
+}
+
+impl<'syn> ArgsList<'syn> {
+    node_iter!(exprs, Expr);
 }

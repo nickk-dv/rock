@@ -340,8 +340,8 @@ fn fold_array_repeat<'hir>(
     src: SourceRange,
     array_repeat: &hir::ArrayRepeat<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let src = SourceRange::new(src.module_id(), array_repeat.expr.range);
-    let value = fold_const_expr(ctx, src, array_repeat.expr)?;
+    let src = SourceRange::new(src.module_id(), array_repeat.value.range);
+    let value = fold_const_expr(ctx, src, array_repeat.value)?;
 
     Ok(hir::ConstValue::ArrayRepeat {
         value: ctx.const_intern.intern(value),
