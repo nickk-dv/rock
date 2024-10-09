@@ -385,7 +385,7 @@ ast_node_impl!(AttrList, SyntaxKind::ATTR_LIST);
 ast_node_impl!(Attr, SyntaxKind::ATTR);
 ast_node_impl!(AttrParamList, SyntaxKind::ATTR_PARAM_LIST);
 ast_node_impl!(AttrParam, SyntaxKind::ATTR_PARAM);
-ast_node_impl!(Visibility, SyntaxKind::VISIBILITY);
+ast_node_impl!(Vis, SyntaxKind::VISIBILITY);
 
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
 ast_node_impl!(ParamList, SyntaxKind::PARAM_LIST);
@@ -434,8 +434,7 @@ ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
-ast_node_impl!(BranchEntry, SyntaxKind::BRANCH_ENTRY);
-ast_node_impl!(BranchElseIf, SyntaxKind::BRANCH_ELSE_IF);
+ast_node_impl!(IfBranch, SyntaxKind::IF_BRANCH);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
@@ -797,13 +796,13 @@ impl<'syn> AttrParam<'syn> {
     node_find!(value, LitString);
 }
 
-impl<'syn> Visibility<'syn> {
+impl<'syn> Vis<'syn> {
     token_find!(t_pub, T![pub]);
 }
 
 impl<'syn> ProcItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(param_list, ParamList);
     node_find!(return_ty, Type);
@@ -823,7 +822,7 @@ impl<'syn> Param<'syn> {
 
 impl<'syn> EnumItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(variant_list, VariantList);
 }
@@ -844,7 +843,7 @@ impl<'syn> VariantFieldList<'syn> {
 
 impl<'syn> StructItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(field_list, FieldList);
 }
@@ -854,14 +853,14 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(ty, Type);
 }
 
 impl<'syn> ConstItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(ty, Type);
     node_find!(value, Expr);
@@ -869,7 +868,7 @@ impl<'syn> ConstItem<'syn> {
 
 impl<'syn> GlobalItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility);
+    node_find!(vis, Vis);
     token_find!(t_mut, T![mut]);
     node_find!(name, Name);
     node_find!(ty, Type);
@@ -878,7 +877,7 @@ impl<'syn> GlobalItem<'syn> {
 
 impl<'syn> ImportItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(visibility, Visibility); //@exists but ignored
+    node_find!(vis, Vis); //@exists but ignored
     node_find!(package, Name);
     node_find!(import_path, ImportPath);
     node_find!(rename, ImportSymbolRename);
@@ -1000,17 +999,11 @@ impl<'syn> ExprParen<'syn> {
 }
 
 impl<'syn> ExprIf<'syn> {
-    node_find!(entry_branch, BranchEntry);
-    node_iter!(else_if_branches, BranchElseIf);
+    node_iter!(branches, IfBranch);
     node_find!(else_block, Block);
 }
 
-impl<'syn> BranchEntry<'syn> {
-    node_find!(cond, Expr);
-    node_find!(block, Block);
-}
-
-impl<'syn> BranchElseIf<'syn> {
+impl<'syn> IfBranch<'syn> {
     node_find!(cond, Expr);
     node_find!(block, Block);
 }

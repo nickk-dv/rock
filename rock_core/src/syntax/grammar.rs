@@ -880,18 +880,16 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     p.bump(T![if]);
     expr(p);
     block_expect(p);
-    me.complete(p, SyntaxKind::BRANCH_ENTRY);
+    me.complete(p, SyntaxKind::IF_BRANCH);
 
-    while p.at(T![else]) {
-        if p.at_next(T![if]) {
+    while p.eat(T![else]) {
+        if p.at(T![if]) {
             let mb = p.start();
-            p.bump(T![else]);
             p.bump(T![if]);
             expr(p);
             block_expect(p);
-            mb.complete(p, SyntaxKind::BRANCH_ELSE_IF);
+            mb.complete(p, SyntaxKind::IF_BRANCH);
         } else {
-            p.bump(T![else]);
             block_expect(p);
             break;
         }
@@ -1032,12 +1030,9 @@ fn field_init_list(p: &mut Parser) {
 
 fn field_init(p: &mut Parser) {
     let m = p.start();
-    if p.at_next(T![:]) {
-        name(p);
-        p.bump(T![:]);
+    name(p);
+    if p.eat(T![:]) {
         expr(p);
-    } else {
-        name(p);
     }
     m.complete(p, SyntaxKind::FIELD_INIT);
 }

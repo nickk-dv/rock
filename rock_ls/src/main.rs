@@ -634,8 +634,7 @@ fn semantic_visit_node(
 
                     SyntaxKind::EXPR_PAREN => None,
                     SyntaxKind::EXPR_IF => None,
-                    SyntaxKind::BRANCH_ENTRY => None,
-                    SyntaxKind::BRANCH_ELSE_IF => None,
+                    SyntaxKind::IF_BRANCH => None,
                     SyntaxKind::EXPR_MATCH => None,
                     SyntaxKind::MATCH_ARM_LIST => None,
                     SyntaxKind::MATCH_ARM => None,

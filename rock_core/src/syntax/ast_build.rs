@@ -212,7 +212,7 @@ fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
 }
 
 #[inline]
-fn vis(vis: Option<cst::Visibility>) -> ast::Vis {
+fn vis(vis: Option<cst::Vis>) -> ast::Vis {
     if vis.is_some() {
         ast::Vis::Public
     } else {
@@ -234,7 +234,7 @@ fn proc_item<'ast>(
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree));
+    let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.params.start();
@@ -274,7 +274,7 @@ fn enum_item<'ast>(
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree));
+    let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.variants.start();
@@ -320,7 +320,7 @@ fn struct_item<'ast>(
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree));
+    let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
 
     let offset = ctx.s.fields.start();
@@ -340,7 +340,7 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
-    let vis = vis(field.visibility(ctx.tree));
+    let vis = vis(field.vis(ctx.tree));
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
@@ -353,7 +353,7 @@ fn const_item<'ast>(
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree));
+    let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
@@ -373,7 +373,7 @@ fn global_item<'ast>(
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.visibility(ctx.tree));
+    let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.t_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
@@ -697,17 +697,19 @@ fn expr_kind<'ast>(
             ast::ExprKind::Lit { lit }
         }
         cst::Expr::If(if_) => {
-            let entry = if_.entry_branch(ctx.tree).unwrap();
+            let mut branches = if_.branches(ctx.tree);
+
+            let entry = branches.next().unwrap();
             let entry = ast::Branch {
                 cond: expr(ctx, entry.cond(ctx.tree).unwrap()),
                 block: block(ctx, entry.block(ctx.tree).unwrap()),
             };
 
             let offset = ctx.s.branches.start();
-            for branch_cst in if_.else_if_branches(ctx.tree) {
+            for branch in branches {
                 let branch = ast::Branch {
-                    cond: expr(ctx, branch_cst.cond(ctx.tree).unwrap()),
-                    block: block(ctx, branch_cst.block(ctx.tree).unwrap()),
+                    cond: expr(ctx, branch.cond(ctx.tree).unwrap()),
+                    block: block(ctx, branch.block(ctx.tree).unwrap()),
                 };
                 ctx.s.branches.add(branch);
             }

@@ -269,7 +269,7 @@ fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
     }
 }
 
-fn vis(fmt: &mut Formatter, vis: Option<cst::Visibility>) {
+fn vis(fmt: &mut Formatter, vis: Option<cst::Vis>) {
     if vis.is_some() {
         fmt.write_str("pub");
         fmt.space();
@@ -293,7 +293,7 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ProcItem<'syn>) {
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
-    vis(fmt, item.visibility(fmt.tree));
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("proc");
     fmt.space();
@@ -378,7 +378,7 @@ fn enum_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::EnumItem<'syn>) {
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
-    vis(fmt, item.visibility(fmt.tree));
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("enum");
     fmt.space();
@@ -432,7 +432,7 @@ fn struct_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::StructItem<'syn>) {
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
-    vis(fmt, item.visibility(fmt.tree));
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("struct");
     fmt.space();
@@ -471,7 +471,7 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::ConstItem<'syn>) {
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
-    vis(fmt, item.visibility(fmt.tree));
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("const");
     fmt.space();
@@ -491,7 +491,7 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn>, item: cst::GlobalItem<'syn>) {
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
-    vis(fmt, item.visibility(fmt.tree));
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("global");
     fmt.space();
@@ -864,14 +864,16 @@ fn expr_paren<'syn>(fmt: &mut Formatter<'syn>, paren: cst::ExprParen<'syn>) {
 }
 
 fn expr_if<'syn>(fmt: &mut Formatter<'syn>, if_: cst::ExprIf<'syn>) {
-    let entry = if_.entry_branch(fmt.tree).unwrap();
+    let mut branches = if_.branches(fmt.tree);
+
+    let entry = branches.next().unwrap();
     fmt.write_str("if");
     fmt.space();
     expr(fmt, entry.cond(fmt.tree).unwrap());
     fmt.space();
     block(fmt, entry.block(fmt.tree).unwrap(), true);
 
-    for branch in if_.else_if_branches(fmt.tree) {
+    for branch in branches {
         fmt.space();
         fmt.write_str("else");
         fmt.space();
