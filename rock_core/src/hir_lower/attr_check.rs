@@ -64,9 +64,18 @@ pub fn check_attrs_proc<'ast>(
         if attr_set.contains(ProcFlag::External) {
             attr_set.set(ProcFlag::Variadic);
         } else {
-            //@use err:: for this unique case
             ctx.emit.error(Error::new(
                 "`variadic` procedures must be `external`",
+                SourceRange::new(origin_id, item.name.range),
+                None,
+            ));
+        }
+    }
+
+    if attr_set.contains(hir::ProcFlag::Variadic) {
+        if item.params.is_empty() {
+            ctx.emit.error(Error::new(
+                "variadic procedures must have at least one named parameter",
                 SourceRange::new(origin_id, item.name.range),
                 None,
             ));
@@ -85,7 +94,6 @@ pub fn check_attrs_proc<'ast>(
                 cfg_state.combine(state);
                 continue;
             }
-            AttrResolved::Test => ProcFlag::Test,
             AttrResolved::Builtin => ProcFlag::Builtin,
             AttrResolved::Inline => ProcFlag::Inline,
             _ => {
@@ -370,10 +378,6 @@ fn resolve_attr(
             let state = resolve_cfg_params(ctx, origin_id, module, params, op)?;
             AttrResolved::Cfg(state)
         }
-        AttrKind::Test => {
-            let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
-            AttrResolved::Test
-        }
         AttrKind::Builtin => {
             let _ = expect_no_params(ctx, origin_id, attr, attr_name)?;
             AttrResolved::Builtin
@@ -581,7 +585,6 @@ struct AttrResolvedData {
 
 enum AttrResolved {
     Cfg(CfgState),
-    Test,
     Builtin,
     Inline,
     Repr(ReprKind),
@@ -637,7 +640,6 @@ crate::enum_as_str! {
         Cfg "cfg",
         CfgNot "cfg_not",
         CfgAny "cfg_any",
-        Test "test",
         Builtin "builtin",
         Inline "inline",
         Repr "repr",
@@ -729,7 +731,6 @@ impl DataFlag<ProcFlag> for ProcFlag {
         ProcFlag::External,
         ProcFlag::Variadic,
         ProcFlag::Main,
-        ProcFlag::Test,
         ProcFlag::Builtin,
         ProcFlag::Inline,
     ];
@@ -739,7 +740,6 @@ impl DataFlag<ProcFlag> for ProcFlag {
             ProcFlag::External => "external",
             ProcFlag::Variadic => "variadic",
             ProcFlag::Main => "main",
-            ProcFlag::Test => "test",
             ProcFlag::Builtin => "builtin",
             ProcFlag::Inline => "inline",
         }
@@ -753,7 +753,6 @@ impl DataFlag<ProcFlag> for ProcFlag {
             ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
             ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
             ProcFlag::Main => false,
-            ProcFlag::Test => matches!(other, ProcFlag::Inline),
             ProcFlag::Builtin => matches!(other, ProcFlag::Inline),
             ProcFlag::Inline => !matches!(other, ProcFlag::Main),
         }

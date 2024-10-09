@@ -21,34 +21,6 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
     let item = ctx.registry.proc_item(proc_id);
     let data = ctx.registry.proc_data(proc_id);
 
-    if data.attr_set.contains(hir::ProcFlag::Variadic) {
-        if data.params.is_empty() {
-            ctx.emit.error(Error::new(
-                "variadic procedures must have at least one named parameter",
-                SourceRange::new(data.origin_id, data.name.range),
-                None,
-            ));
-        }
-    }
-
-    if data.attr_set.contains(hir::ProcFlag::Test) {
-        if !data.params.is_empty() {
-            ctx.emit.error(Error::new(
-                "procedures with #[test] attribute cannot have any input parameters",
-                SourceRange::new(data.origin_id, data.name.range),
-                None,
-            ));
-        }
-        //@allow never
-        if !data.return_ty.is_void() {
-            ctx.emit.error(Error::new(
-                "procedures with #[test] attribute can only return `void`",
-                SourceRange::new(data.origin_id, item.return_ty.range),
-                None,
-            ));
-        }
-    }
-
     if let Some(block) = item.block {
         let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));

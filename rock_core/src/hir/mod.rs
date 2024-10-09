@@ -53,7 +53,6 @@ pub enum ProcFlag {
     External,
     Variadic,
     Main,
-    Test,
     Builtin,
     Inline,
 }
