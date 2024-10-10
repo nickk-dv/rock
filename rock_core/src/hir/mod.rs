@@ -3,7 +3,7 @@ use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
 use crate::intern::InternName;
 use crate::session::ModuleID;
-use crate::support::{Arena, BitSet, IndexID, ID};
+use crate::support::{Arena, AsStr, BitSet, IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -47,16 +47,6 @@ pub struct Param<'hir> {
     pub ty_range: TextRange,
 }
 
-#[repr(u32)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum ProcFlag {
-    External,
-    Variadic,
-    Main,
-    Builtin,
-    Inline,
-}
-
 pub type EnumID<'hir> = ID<EnumData<'hir>>;
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
@@ -91,13 +81,6 @@ pub struct VariantField<'hir> {
 pub type VariantEvalID<'hir> = ID<VariantEval<'hir>>;
 pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 
-#[repr(u32)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum EnumFlag {
-    HasRepr,
-    HasFields,
-}
-
 pub type StructID<'hir> = ID<StructData<'hir>>;
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
@@ -115,12 +98,6 @@ pub struct Field<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub ty_range: TextRange,
-}
-
-#[repr(u32)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum StructFlag {
-    ReprC,
 }
 
 pub type ConstID<'hir> = ID<ConstData<'hir>>;
@@ -141,12 +118,6 @@ pub struct GlobalData<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
-}
-
-#[repr(u32)]
-#[derive(Copy, Clone, PartialEq)]
-pub enum GlobalFlag {
-    ThreadLocal,
 }
 
 pub type ImportID = ID<ImportData>;
@@ -495,15 +466,6 @@ pub enum BasicInt {
     Usize,
 }
 
-#[derive(Copy, Clone)]
-pub enum BasicIntSigned {
-    S8,
-    S16,
-    S32,
-    S64,
-    Ssize,
-}
-
 #[derive(Copy, Clone, PartialEq, Hash)]
 pub enum BasicFloat {
     F32,
@@ -565,11 +527,127 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
+//==================== SIZE LOCK ====================
+
 use crate::size_lock;
 size_lock!(16, Type);
 size_lock!(16, Stmt);
 size_lock!(32, Expr);
 size_lock!(16, ConstValue);
+
+//==================== ITEM FLAGS ====================
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum ProcFlag {
+        External "external",
+        Variadic "variadic",
+        Main "main",
+        Builtin "builtin",
+        Inline "inline",
+    }
+}
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum EnumFlag {
+        HasRepr "has repr",
+        HasFields "has fields"
+    }
+}
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum StructFlag {
+        ReprC "repr(C)",
+    }
+}
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum GlobalFlag {
+        ThreadLocal "threadlocal",
+    }
+}
+
+impl Into<u32> for ProcFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
+impl Into<u32> for EnumFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
+impl Into<u32> for StructFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
+impl Into<u32> for GlobalFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
+
+pub trait ItemFlag
+where
+    Self: PartialEq,
+{
+    fn compatible(self, other: Self) -> bool;
+}
+
+impl ItemFlag for ProcFlag {
+    fn compatible(self, other: ProcFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
+            ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
+            ProcFlag::Main => false,
+            ProcFlag::Builtin => matches!(other, ProcFlag::Inline),
+            ProcFlag::Inline => !matches!(other, ProcFlag::Main),
+        }
+    }
+}
+
+impl ItemFlag for EnumFlag {
+    fn compatible(self, other: EnumFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            EnumFlag::HasRepr => true,
+            EnumFlag::HasFields => true,
+        }
+    }
+}
+
+impl ItemFlag for StructFlag {
+    fn compatible(self, other: StructFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            StructFlag::ReprC => false,
+        }
+    }
+}
+
+impl ItemFlag for GlobalFlag {
+    fn compatible(self, other: GlobalFlag) -> bool {
+        if self == other {
+            unreachable!()
+        }
+        match self {
+            GlobalFlag::ThreadLocal => false,
+        }
+    }
+}
+
+//==================== HIR IMPL ====================
 
 impl<'hir> Hir<'hir> {
     pub fn proc_data(&self, id: ProcID<'hir>) -> &ProcData<'hir> {
@@ -858,14 +936,11 @@ impl BasicInt {
                 TargetPtrWidth::Bit_32 => i32::MIN as i128,
                 TargetPtrWidth::Bit_64 => i64::MIN as i128,
             },
-            BasicInt::U8 => u8::MIN as i128,
-            BasicInt::U16 => u16::MIN as i128,
-            BasicInt::U32 => u32::MIN as i128,
-            BasicInt::U64 => u64::MIN as i128,
-            BasicInt::Usize => match ptr_width {
-                TargetPtrWidth::Bit_32 => u32::MIN as i128,
-                TargetPtrWidth::Bit_64 => u64::MIN as i128,
-            },
+            BasicInt::U8 => 0,
+            BasicInt::U16 => 0,
+            BasicInt::U32 => 0,
+            BasicInt::U64 => 0,
+            BasicInt::Usize => 0,
         }
     }
 
@@ -887,39 +962,6 @@ impl BasicInt {
                 TargetPtrWidth::Bit_32 => u32::MAX as i128,
                 TargetPtrWidth::Bit_64 => u64::MAX as i128,
             },
-        }
-    }
-}
-
-impl BasicIntSigned {
-    pub fn from_basic(basic: ast::BasicType) -> Option<BasicIntSigned> {
-        match basic {
-            ast::BasicType::S8 => Some(BasicIntSigned::S8),
-            ast::BasicType::S16 => Some(BasicIntSigned::S16),
-            ast::BasicType::S32 => Some(BasicIntSigned::S32),
-            ast::BasicType::S64 => Some(BasicIntSigned::S64),
-            ast::BasicType::Ssize => Some(BasicIntSigned::Ssize),
-            _ => None,
-        }
-    }
-
-    pub fn into_basic(self) -> ast::BasicType {
-        match self {
-            BasicIntSigned::S8 => ast::BasicType::S8,
-            BasicIntSigned::S16 => ast::BasicType::S16,
-            BasicIntSigned::S32 => ast::BasicType::S32,
-            BasicIntSigned::S64 => ast::BasicType::S64,
-            BasicIntSigned::Ssize => ast::BasicType::Ssize,
-        }
-    }
-
-    pub fn into_int(self) -> BasicInt {
-        match self {
-            BasicIntSigned::S8 => BasicInt::S8,
-            BasicIntSigned::S16 => BasicInt::S16,
-            BasicIntSigned::S32 => BasicInt::S32,
-            BasicIntSigned::S64 => BasicInt::S64,
-            BasicIntSigned::Ssize => BasicInt::Ssize,
         }
     }
 }

@@ -58,10 +58,10 @@ pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::
     let flag = hir::ProcFlag::Main;
     let item_src = SourceRange::new(data.origin_id, data.name.range);
 
-    attr_check::check_attr_flag(
+    attr_check::apply_item_flag(
         &mut ctx.emit,
-        flag,
         &mut data.attr_set,
+        flag,
         None,
         item_src,
         "procedures",

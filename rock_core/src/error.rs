@@ -58,12 +58,6 @@ impl Info {
     }
 }
 
-// creation usage:
-// + message
-// + new
-// - new_ctx_msg
-// + new_info_vec
-
 impl Error {
     pub fn message(msg: impl Into<StringOrStr>) -> Error {
         let data = DiagnosticData::Message;
@@ -93,12 +87,6 @@ impl Error {
         &self.0
     }
 }
-
-// creation usage:
-// - message
-// + new
-// - new_ctx_msg
-// - new_info_vec
 
 impl Warning {
     pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Warning {

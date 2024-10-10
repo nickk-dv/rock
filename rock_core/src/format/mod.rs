@@ -10,7 +10,6 @@ use crate::token::Trivia;
 //@interleaved_node_list() support same-line line comments
 //@aligned padded line comments (eg: after struct fields)
 //@unify repeated wrapped lists formatting (generic fn)
-//@trim line comment trailing whitespace
 
 #[must_use]
 pub fn format(tree: &SyntaxTree, source: &str) -> String {
@@ -892,18 +891,23 @@ fn expr_if<'syn>(fmt: &mut Formatter<'syn>, if_: cst::ExprIf<'syn>) {
     }
 }
 
-//@no empty mode
 fn expr_match<'syn>(fmt: &mut Formatter<'syn>, match_: cst::ExprMatch<'syn>) {
     fmt.write_str("match");
     fmt.space();
     expr(fmt, match_.on_expr(fmt.tree).unwrap());
     fmt.space();
 
+    let match_arm_list = match_.match_arm_list(fmt.tree).unwrap();
+    if content_empty(fmt, match_arm_list.0) {
+        fmt.write('{');
+        fmt.write('}');
+        return;
+    }
+
     fmt.write('{');
     fmt.new_line();
 
     fmt.tab_inc();
-    let match_arm_list = match_.match_arm_list(fmt.tree).unwrap();
     interleaved_node_list(fmt, match_arm_list.0, match_arm);
     fmt.tab_dec();
 

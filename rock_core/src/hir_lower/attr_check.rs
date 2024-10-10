@@ -105,10 +105,10 @@ pub fn check_attrs_proc<'ast>(
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(
+        apply_item_flag(
             &mut ctx.emit,
-            flag,
             &mut attr_set,
+            flag,
             attr_data,
             item_src,
             "procedures",
@@ -158,10 +158,10 @@ pub fn check_attrs_enum<'ast>(
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(
+        apply_item_flag(
             &mut ctx.emit,
-            flag,
             &mut attr_set,
+            flag,
             attr_data,
             item_src,
             "enums",
@@ -213,10 +213,10 @@ pub fn check_attrs_struct<'ast>(
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(
+        apply_item_flag(
             &mut ctx.emit,
-            flag,
             &mut attr_set,
+            flag,
             attr_data,
             item_src,
             "structs",
@@ -268,10 +268,10 @@ pub fn check_attrs_global<'ast>(
 
         let item_src = SourceRange::new(origin_id, item.name.range);
         let attr_data = Some((resolved.kind, attr_src));
-        check_attr_flag(
+        apply_item_flag(
             &mut ctx.emit,
-            flag,
             &mut attr_set,
+            flag,
             attr_data,
             item_src,
             "globals",
@@ -658,15 +658,15 @@ crate::enum_as_str! {
     }
 }
 
-pub fn check_attr_flag<T>(
+pub fn apply_item_flag<T: hir::ItemFlag>(
     emit: &mut ErrorWarningBuffer,
-    new_flag: T,
     attr_set: &mut BitSet<T>,
+    new_flag: T,
     attr_data: Option<(AttrKind, SourceRange)>,
     item_src: SourceRange,
     item_kinds: &'static str,
 ) where
-    T: Copy + Clone + Into<u32> + DataFlag<T> + 'static,
+    T: Copy + Clone + Into<u32> + AsStr,
 {
     if attr_set.contains(new_flag) {
         if let Some((kind, attr_src)) = attr_data {
@@ -681,11 +681,11 @@ pub fn check_attr_flag<T>(
         }
     }
 
-    for flag in T::ALL_FLAGS {
-        if !attr_set.contains(*flag) {
+    for flag in T::ALL.iter().copied() {
+        if !attr_set.contains(flag) {
             continue;
         }
-        if new_flag.compatible(*flag) {
+        if new_flag.compatible(flag) {
             continue;
         }
 
@@ -714,129 +714,4 @@ pub fn check_attr_flag<T>(
     }
 
     attr_set.set(new_flag);
-}
-
-pub trait DataFlag<T: PartialEq + Into<u32> + 'static>
-where
-    Self: Sized + PartialEq,
-{
-    const ALL_FLAGS: &'static [T];
-
-    fn as_str(self) -> &'static str;
-    fn compatible(self, other: T) -> bool;
-}
-
-impl DataFlag<ProcFlag> for ProcFlag {
-    const ALL_FLAGS: &'static [ProcFlag] = &[
-        ProcFlag::External,
-        ProcFlag::Variadic,
-        ProcFlag::Main,
-        ProcFlag::Builtin,
-        ProcFlag::Inline,
-    ];
-
-    fn as_str(self) -> &'static str {
-        match self {
-            ProcFlag::External => "external",
-            ProcFlag::Variadic => "variadic",
-            ProcFlag::Main => "main",
-            ProcFlag::Builtin => "builtin",
-            ProcFlag::Inline => "inline",
-        }
-    }
-
-    fn compatible(self, other: ProcFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
-            ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
-            ProcFlag::Main => false,
-            ProcFlag::Builtin => matches!(other, ProcFlag::Inline),
-            ProcFlag::Inline => !matches!(other, ProcFlag::Main),
-        }
-    }
-}
-
-impl DataFlag<EnumFlag> for EnumFlag {
-    //@replace with AstStr::ALL?
-    const ALL_FLAGS: &'static [EnumFlag] = &[EnumFlag::HasRepr, EnumFlag::HasFields];
-
-    //@replace with AstStr as_str()?
-    fn as_str(self) -> &'static str {
-        match self {
-            EnumFlag::HasRepr => "repr",
-            EnumFlag::HasFields => "has fields",
-        }
-    }
-
-    fn compatible(self, other: EnumFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            EnumFlag::HasRepr => true,
-            EnumFlag::HasFields => true,
-        }
-    }
-}
-
-impl DataFlag<StructFlag> for StructFlag {
-    const ALL_FLAGS: &'static [StructFlag] = &[StructFlag::ReprC];
-
-    fn as_str(self) -> &'static str {
-        match self {
-            StructFlag::ReprC => "repr(C)",
-        }
-    }
-
-    fn compatible(self, other: StructFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            StructFlag::ReprC => false,
-        }
-    }
-}
-
-impl DataFlag<GlobalFlag> for GlobalFlag {
-    const ALL_FLAGS: &'static [GlobalFlag] = &[GlobalFlag::ThreadLocal];
-
-    fn as_str(self) -> &'static str {
-        match self {
-            GlobalFlag::ThreadLocal => "thread_local",
-        }
-    }
-
-    fn compatible(self, other: GlobalFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            GlobalFlag::ThreadLocal => false,
-        }
-    }
-}
-
-impl Into<u32> for ProcFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for EnumFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for StructFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
-}
-impl Into<u32> for GlobalFlag {
-    fn into(self) -> u32 {
-        self as u32
-    }
 }
