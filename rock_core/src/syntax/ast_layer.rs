@@ -612,6 +612,12 @@ pub enum Expr<'syn> {
     Binary(ExprBinary<'syn>),
 }
 
+impl<'syn> Expr<'syn> {
+    pub fn is_paren(self) -> bool {
+        matches!(self, Expr::Paren(_))
+    }
+}
+
 impl<'syn> AstNode<'syn> for Expr<'syn> {
     fn cast(node: &'syn Node<'syn>) -> Option<Expr<'syn>> {
         match node.kind {

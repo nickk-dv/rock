@@ -1,15 +1,17 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::ErrorBuffer;
+use crate::error::{ErrorBuffer, SourceRange};
+use crate::errors as err;
 use crate::intern::{InternLit, InternName, InternPool};
-use crate::session::Session;
+use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, Timer, ID};
 use crate::text::TextRange;
 
 struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
+    module_id: ModuleID,
     int_id: ID<u64>,
     float_id: ID<f64>,
     char_id: ID<char>,
@@ -43,12 +45,14 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
     fn new(
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
+        module_id: ModuleID,
         intern_name: &'src mut InternPool<'s, InternName>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild {
             arena: Arena::new(),
             tree,
+            module_id,
             int_id: ID::new_raw(0),
             float_id: ID::new_raw(0),
             char_id: ID::new_raw(0),
@@ -109,8 +113,13 @@ pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
 
         match tree_result {
             Ok(tree) => {
-                let mut ctx =
-                    AstBuild::new(&tree, &module.source, &mut session.intern_name, &mut state);
+                let mut ctx = AstBuild::new(
+                    &tree,
+                    &module.source,
+                    module_id,
+                    &mut session.intern_name,
+                    &mut state,
+                );
                 let items = source_file(&mut ctx, tree.source_file());
                 let ast = ctx.finish(items);
                 //@will not lineup with ModuleID's if some Asts failed to be created
@@ -125,6 +134,8 @@ pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
     }
 
     t_total.stop("ast parse (tree) total");
+    //@non lexer / syntax errors (binary prec confict error)
+    //should not result in Ast parsing failing
     state.errors.result(())
 }
 
@@ -856,14 +867,51 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Binary(binary) => {
             let (op, op_range) = binary.bin_op(ctx.tree).unwrap();
-            let lhs = expr(ctx, binary.lhs(ctx.tree).unwrap());
-            let rhs = expr(ctx, binary.rhs(ctx.tree).unwrap());
+            let lhs_cst = binary.lhs(ctx.tree).unwrap();
+            let rhs_cst = binary.rhs(ctx.tree).unwrap();
+            let lhs = expr(ctx, lhs_cst);
+            let rhs = expr(ctx, rhs_cst);
+
+            if !lhs_cst.is_paren() {
+                check_bin_op_prec_conflit(ctx, op, op_range, lhs, rhs);
+            }
 
             let bin = ast::BinExpr { lhs, rhs };
             let bin = ctx.arena.alloc(bin);
             ast::ExprKind::Binary { op, op_range, bin }
         }
     }
+}
+
+fn check_bin_op_prec_conflit(
+    ctx: &mut AstBuild,
+    op: ast::BinOp,
+    op_range: TextRange,
+    lhs: &ast::Expr,
+    rhs: &ast::Expr,
+) {
+    let group = match op.prec_conflit() {
+        Some(group) => group,
+        None => return,
+    };
+
+    let lhs_group = match lhs.kind {
+        ast::ExprKind::Binary { op, .. } => match op.prec_conflit() {
+            Some(lhs_group) => lhs_group,
+            None => return,
+        },
+        _ => return,
+    };
+
+    if group != lhs_group {
+        return;
+    }
+
+    let op_src = SourceRange::new(ctx.module_id, op_range);
+    let lhs_src = SourceRange::new(ctx.module_id, lhs.range);
+    let bin_range = TextRange::new(lhs.range.start(), rhs.range.end());
+    let bin_src = SourceRange::new(ctx.module_id, bin_range);
+    err::parse_bin_op_prec_conflit(&mut ctx.s.errors, op_src, lhs_src, bin_src);
 }
 
 fn match_arm_list<'ast>(

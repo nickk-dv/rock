@@ -229,7 +229,7 @@ const fn severity_name(severity: Severity) -> &'static str {
 
 const fn severity_marker(severity: Severity) -> &'static str {
     match severity {
-        Severity::Info => "-",
+        Severity::Info => "─",
         Severity::Error | Severity::Warning => "^",
     }
 }

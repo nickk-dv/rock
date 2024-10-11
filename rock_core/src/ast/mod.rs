@@ -482,7 +482,6 @@ crate::size_lock!(16, Binding);
 
 //==================== AST IMPL ====================
 
-//@work in progress, some relations might be non-obvious
 impl BinOp {
     pub fn prec(&self) -> u32 {
         match self {
@@ -496,7 +495,25 @@ impl BinOp {
             | BinOp::GreaterEq => 3,
             BinOp::Add | BinOp::Sub => 4,
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
-            BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitShl | BinOp::BitShr => 6,
+            BinOp::BitShl | BinOp::BitShr => 6,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 7,
+        }
+    }
+
+    pub fn prec_conflit(&self) -> Option<u32> {
+        match self {
+            BinOp::LogicOr => None,
+            BinOp::LogicAnd => None,
+            BinOp::IsEq
+            | BinOp::NotEq
+            | BinOp::Less
+            | BinOp::LessEq
+            | BinOp::Greater
+            | BinOp::GreaterEq => Some(3),
+            BinOp::Add | BinOp::Sub => None,
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => Some(5),
+            BinOp::BitShl | BinOp::BitShr => None,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => None,
         }
     }
 }
