@@ -17,10 +17,10 @@ pub struct FileData {
 }
 
 impl Vfs {
-    pub fn new() -> Vfs {
+    pub fn new(cap: usize) -> Vfs {
         Vfs {
-            files: Vec::with_capacity(64),
-            paths: HashMap::with_capacity(64),
+            files: Vec::with_capacity(cap),
+            paths: HashMap::with_capacity(cap),
         }
     }
 

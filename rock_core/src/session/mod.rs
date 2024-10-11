@@ -7,10 +7,12 @@ use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::{IndexID, ID};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::text::{self, TextRange};
+use crate::vfs::Vfs;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct Session<'s> {
+    pub vfs: Vfs,
     pub cwd: PathBuf,
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
@@ -142,6 +144,7 @@ impl RockDirectory {
 
 fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
     let mut session = Session {
+        vfs: Vfs::new(64),
         cwd: fs_env::dir_get_current_working()?,
         intern_lit: InternPool::new(),
         intern_name: InternPool::new(),
@@ -198,6 +201,8 @@ fn process_package(
     root_dir: &PathBuf,
     dependency: bool,
 ) -> Result<PackageID, Error> {
+    //@package folder name should match the name in manifest?
+    // what determines the package name? allow directory name to be different?
     let package_name = fs_env::filename_stem(root_dir)?;
     let name_id = session.intern_name.intern(package_name);
 
@@ -218,7 +223,8 @@ fn process_package(
     }
 
     let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
-    let manifest = package::manifest_deserialize(manifest_text, &manifest_path)?;
+    let manifest = package::manifest_deserialize(&manifest_text, &manifest_path)?;
+
     if dependency && manifest.package.kind == PackageKind::Bin {
         //@which dependency and for which package and where? not enough information
         return Err(Error::message(

@@ -15,10 +15,10 @@ pub fn manifest_serialize(manifest: &manifest::Manifest) -> Result<String, Error
 }
 
 pub fn manifest_deserialize(
-    manifest: String,
+    manifest: &str,
     manifest_path: &PathBuf,
 ) -> Result<manifest::Manifest, Error> {
-    basic_toml::from_str(&manifest).map_err(|error| {
+    basic_toml::from_str(manifest).map_err(|error| {
         Error::message(format!(
             "failed to parse manifest file: `{}`\nreason: {}",
             manifest_path.to_string_lossy(),

@@ -302,7 +302,7 @@ fn check_const_dependency_cycle<'hir>(
         let first = idx == 0;
         let last = idx + 2 == cycle_deps.len();
 
-        let prefix = if first { "" } else { "whitch " };
+        let prefix = if first { "" } else { "which " };
         let postfix = if last {
             ", completing the cycle..."
         } else {
