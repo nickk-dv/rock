@@ -2,7 +2,7 @@ use super::syntax_kind::SyntaxKind;
 use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
 use crate::session::ModuleID;
 use crate::support::ID;
-use crate::token::{Token, TokenList, TokenSet, T};
+use crate::token::{Token, TokenList, TokenSet};
 use std::cell::Cell;
 
 pub struct Parser {
@@ -58,12 +58,12 @@ impl Parser {
         self.peek_next() == token
     }
 
-    pub fn at_prev(&self, token: Token) -> bool {
-        self.tokens.token(self.cursor.dec()) == token
-    }
-
     pub fn at_set(&self, token_set: TokenSet) -> bool {
         token_set.contains(self.peek())
+    }
+
+    pub fn at_prev(&self, token: Token) -> bool {
+        self.tokens.token(self.cursor.dec()) == token
     }
 
     pub fn peek(&self) -> Token {
@@ -77,11 +77,12 @@ impl Parser {
     }
 
     pub fn eat(&mut self, token: Token) -> bool {
-        if !self.at(token) {
-            return false;
+        if self.at(token) {
+            self.do_bump();
+            true
+        } else {
+            false
         }
-        self.do_bump();
-        true
     }
 
     pub fn expect(&mut self, token: Token) {
@@ -92,6 +93,23 @@ impl Parser {
 
     pub fn bump(&mut self, token: Token) {
         assert!(self.eat(token));
+    }
+
+    fn do_bump(&mut self) {
+        self.cursor = self.cursor.inc();
+        self.steps.set(0);
+        self.events.push(Event::Token);
+    }
+
+    fn do_bump_any(&mut self) {
+        if self.peek() != Token::Eof {
+            self.do_bump();
+        }
+    }
+
+    fn step_bump(&self) {
+        self.steps.set(self.steps.get() + 1);
+        assert!(self.steps.get() < 1_000_000, "parser is stuck");
     }
 
     pub fn error_bump(&mut self, msg: impl Into<StringOrStr>) {
@@ -106,25 +124,14 @@ impl Parser {
 
         let m = self.start();
         self.error(msg);
-        self.bump_any();
-        m.complete(self, SyntaxKind::ERROR);
-    }
-
-    pub fn sync_to(&mut self, token_set: TokenSet) {
-        if self.at_set(token_set) || self.at(Token::Eof) {
-            return;
-        }
-        let m = self.start();
-        while !self.at_set(token_set) && !self.at(Token::Eof) {
-            self.bump_any();
-        }
+        self.do_bump_any();
         m.complete(self, SyntaxKind::ERROR);
     }
 
     //@tweak where error is displayed (currently next or last token)
     // might display it right after current token with empty range (maybe for some tokens like , ; etc)
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let range = if self.at(T![eof]) {
+        let range = if self.at(Token::Eof) {
             self.tokens.token_range(self.cursor.dec())
         } else {
             self.tokens.token_range(self.cursor)
@@ -134,23 +141,21 @@ impl Parser {
         self.errors.error(Error::new(msg, src, None));
     }
 
-    fn bump_any(&mut self) {
-        if self.peek() == Token::Eof {
+    pub fn sync_to(&mut self, token_set: TokenSet) {
+        if self.at_set(token_set) || self.at(Token::Eof) {
             return;
         }
-        self.do_bump();
-    }
-
-    fn do_bump(&mut self) {
-        self.cursor = self.cursor.inc();
-        self.step_reset();
-        self.push_event(Event::Token);
+        let m = self.start();
+        while !self.at_set(token_set) && !self.at(Token::Eof) {
+            self.do_bump_any();
+        }
+        m.complete(self, SyntaxKind::ERROR);
     }
 
     #[must_use]
     pub fn start(&mut self) -> Marker {
         let event_idx = self.events.len() as u32;
-        self.push_event(Event::StartNode {
+        self.events.push(Event::StartNode {
             kind: SyntaxKind::TOMBSTONE,
             forward_parent: None,
         });
@@ -158,13 +163,13 @@ impl Parser {
     }
 
     #[must_use]
-    pub fn start_before(&mut self, m: MarkerClosed) -> Marker {
+    pub fn start_before(&mut self, mc: MarkerClosed) -> Marker {
         let event_idx = self.events.len() as u32;
-        self.push_event(Event::StartNode {
+        self.events.push(Event::StartNode {
             kind: SyntaxKind::TOMBSTONE,
             forward_parent: None,
         });
-        match &mut self.events[m.index()] {
+        match &mut self.events[mc.event_idx as usize] {
             Event::StartNode { forward_parent, .. } => {
                 assert!(forward_parent.is_none());
                 *forward_parent = Some(event_idx);
@@ -172,19 +177,6 @@ impl Parser {
             _ => unreachable!(),
         }
         Marker::new(event_idx)
-    }
-
-    fn push_event(&mut self, event: Event) {
-        self.events.push(event);
-    }
-
-    fn step_reset(&self) {
-        self.steps.set(0);
-    }
-
-    fn step_bump(&self) {
-        self.steps.set(self.steps.get() + 1);
-        assert!(self.steps.get() < 1_000_000, "parser is stuck");
     }
 }
 
@@ -196,33 +188,21 @@ impl Marker {
         }
     }
 
-    fn index(&self) -> usize {
-        self.event_idx as usize
-    }
-
     pub fn complete(mut self, p: &mut Parser, kind: SyntaxKind) -> MarkerClosed {
         self.handled = true;
-        match &mut p.events[self.index()] {
+        match &mut p.events[self.event_idx as usize] {
             Event::StartNode { kind: start, .. } => *start = kind,
             _ => unreachable!(),
         }
-        p.push_event(Event::EndNode);
-        MarkerClosed::new(self.event_idx)
+        p.events.push(Event::EndNode);
+        MarkerClosed {
+            event_idx: self.event_idx,
+        }
     }
 }
 
 impl Drop for Marker {
     fn drop(&mut self) {
-        assert!(self.handled, "marker must be completed or abandoned");
-    }
-}
-
-impl MarkerClosed {
-    fn new(event_idx: u32) -> MarkerClosed {
-        MarkerClosed { event_idx }
-    }
-
-    fn index(&self) -> usize {
-        self.event_idx as usize
+        assert!(self.handled, "internal: marker must be completed");
     }
 }

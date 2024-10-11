@@ -405,7 +405,7 @@ fn ty(p: &mut Parser) {
     match p.peek() {
         T![ident] => {
             let m = p.start();
-            path_type(p);
+            path(p);
             m.complete(p, SyntaxKind::TYPE_CUSTOM);
         }
         T![&] => {
@@ -474,6 +474,24 @@ fn type_slice_or_array(p: &mut Parser) {
 }
 
 //==================== STMT ====================
+
+fn block(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    p.bump(T!['{']);
+    while !p.at(T!['}']) && !p.at(T![eof]) {
+        stmt(p);
+    }
+    p.expect(T!['}']);
+    m.complete(p, SyntaxKind::BLOCK)
+}
+
+fn block_expect(p: &mut Parser) {
+    if p.at(T!['{']) {
+        block(p);
+    } else {
+        p.error("expected block");
+    }
+}
 
 fn stmt(p: &mut Parser) {
     match p.peek() {
@@ -631,16 +649,14 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         expr(p);
         p.expect(T![')']);
         let mc = m.complete(p, SyntaxKind::EXPR_PAREN);
-        let mc = tail_expr(p, mc);
-        return mc;
+        return tail_expr(p, mc);
     }
 
     if p.peek().as_un_op().is_some() {
         let m = p.start();
         p.bump(p.peek());
         primary_expr(p);
-        let mc = m.complete(p, SyntaxKind::EXPR_UNARY);
-        return mc;
+        return m.complete(p, SyntaxKind::EXPR_UNARY);
     }
 
     let mc = match p.peek() {
@@ -651,51 +667,15 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         | T![float_lit]
         | T![char_lit]
         | T![string_lit] => lit(p),
-        T![if] => if_(p),
+        T![if] => expr_if(p),
         T!['{'] => block(p),
-        T![match] => match_(p),
-        T![sizeof] => sizeof(p),
-        T![ident] => {
-            let m = p.start();
-            let field_list = path_expr(p);
-            if field_list && p.at(T!['{']) {
-                field_init_list(p);
-                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
-            } else {
-                if p.at(T!['(']) {
-                    args_list(p);
-                }
-                m.complete(p, SyntaxKind::EXPR_ITEM)
-            }
-        }
-        T![.] => {
-            let m = p.start();
-            p.bump(T![.]);
-            if p.at(T!['{']) {
-                field_init_list(p);
-                m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
-            } else {
-                name(p);
-                if p.at(T!['(']) {
-                    args_list(p);
-                }
-                m.complete(p, SyntaxKind::EXPR_VARIANT)
-            }
-        }
-        T!['['] => array_expr(p),
-        T![*] => {
-            let m = p.start();
-            p.bump(T![*]);
-            expr(p);
-            m.complete(p, SyntaxKind::EXPR_DEREF)
-        }
-        T![&] => {
-            let m = p.start();
-            p.bump(T![&]);
-            p.eat(T![mut]);
-            expr(p);
-            m.complete(p, SyntaxKind::EXPR_ADDRESS)
-        }
+        T![match] => expr_match(p),
+        T![sizeof] => expr_sizeof(p),
+        T![ident] => expr_item_or_struct_init(p),
+        T![.] => expr_variant_or_struct_init(p),
+        T!['['] => expr_array_init_or_repeat(p),
+        T![*] => expr_deref(p),
+        T![&] => expr_address(p),
         T![..] => {
             let m = p.start();
             p.bump(T![..]);
@@ -781,7 +761,7 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
     }
 }
 
-fn if_(p: &mut Parser) -> MarkerClosed {
+fn expr_if(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
 
     let me = p.start();
@@ -806,25 +786,7 @@ fn if_(p: &mut Parser) -> MarkerClosed {
     m.complete(p, SyntaxKind::EXPR_IF)
 }
 
-fn block(p: &mut Parser) -> MarkerClosed {
-    let m = p.start();
-    p.bump(T!['{']);
-    while !p.at(T!['}']) && !p.at(T![eof]) {
-        stmt(p);
-    }
-    p.expect(T!['}']);
-    m.complete(p, SyntaxKind::BLOCK)
-}
-
-fn block_expect(p: &mut Parser) {
-    if p.at(T!['{']) {
-        block(p);
-    } else {
-        p.error("expected block");
-    }
-}
-
-fn match_(p: &mut Parser) -> MarkerClosed {
+fn expr_match(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![match]);
     expr(p);
@@ -857,13 +819,50 @@ fn match_arm(p: &mut Parser) {
     m.complete(p, SyntaxKind::MATCH_ARM);
 }
 
-fn sizeof(p: &mut Parser) -> MarkerClosed {
+fn expr_sizeof(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![sizeof]);
     p.expect(T!['(']);
     ty(p);
     p.expect(T![')']);
     m.complete(p, SyntaxKind::EXPR_SIZEOF)
+}
+
+fn expr_item_or_struct_init(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+
+    let mp = p.start();
+    name(p);
+    while p.eat(T![.]) {
+        if p.at(T!['{']) {
+            mp.complete(p, SyntaxKind::PATH);
+            field_init_list(p);
+            return m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+        }
+        name(p);
+    }
+    mp.complete(p, SyntaxKind::PATH);
+
+    if p.at(T!['(']) {
+        args_list(p);
+    }
+    m.complete(p, SyntaxKind::EXPR_ITEM)
+}
+
+fn expr_variant_or_struct_init(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    p.bump(T![.]);
+
+    if p.at(T!['{']) {
+        field_init_list(p);
+        m.complete(p, SyntaxKind::EXPR_STRUCT_INIT)
+    } else {
+        name(p);
+        if p.at(T!['(']) {
+            args_list(p);
+        }
+        m.complete(p, SyntaxKind::EXPR_VARIANT)
+    }
 }
 
 fn field_init_list(p: &mut Parser) {
@@ -876,8 +875,7 @@ fn field_init_list(p: &mut Parser) {
                 p.expect(T![,]);
             }
         } else {
-            //@bump or not?
-            p.error_bump("expected field initializer");
+            p.error("expected field initializer");
             break;
         }
     }
@@ -894,7 +892,7 @@ fn field_init(p: &mut Parser) {
     m.complete(p, SyntaxKind::FIELD_INIT);
 }
 
-fn array_expr(p: &mut Parser) -> MarkerClosed {
+fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['[']);
     while !p.at(T![']']) && !p.at(T![eof]) {
@@ -910,6 +908,21 @@ fn array_expr(p: &mut Parser) -> MarkerClosed {
     }
     p.expect(T![']']);
     m.complete(p, SyntaxKind::EXPR_ARRAY_INIT)
+}
+
+fn expr_deref(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    p.bump(T![*]);
+    expr(p);
+    m.complete(p, SyntaxKind::EXPR_DEREF)
+}
+
+fn expr_address(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    p.bump(T![&]);
+    p.eat(T![mut]);
+    expr(p);
+    m.complete(p, SyntaxKind::EXPR_ADDRESS)
 }
 
 //==================== PAT ====================
@@ -945,10 +958,8 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             m.complete(p, SyntaxKind::PAT_LIT)
         }
         T![ident] => {
-            //@rename `path_type`? or rework how path works
-            // special cast for struct init is in path_expr
             let m = p.start();
-            path_type(p);
+            path(p);
             if p.at(T!['(']) {
                 bind_list(p);
             }
@@ -1017,28 +1028,13 @@ fn name(p: &mut Parser) {
     m.complete(p, SyntaxKind::NAME);
 }
 
-fn path_type(p: &mut Parser) {
+fn path(p: &mut Parser) {
     let m = p.start();
     name(p);
     while p.eat(T![.]) {
         name(p);
     }
     m.complete(p, SyntaxKind::PATH);
-}
-
-//@remove state
-fn path_expr(p: &mut Parser) -> bool {
-    let m = p.start();
-    name(p);
-    while p.eat(T![.]) {
-        if p.at(T!['{']) {
-            m.complete(p, SyntaxKind::PATH);
-            return true;
-        }
-        name(p);
-    }
-    m.complete(p, SyntaxKind::PATH);
-    false
 }
 
 fn bind(p: &mut Parser) {
