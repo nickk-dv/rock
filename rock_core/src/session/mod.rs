@@ -7,12 +7,10 @@ use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::{IndexID, ID};
 use crate::syntax::syntax_tree::SyntaxTree;
 use crate::text::{self, TextRange};
-use crate::vfs::Vfs;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct Session<'s> {
-    pub vfs: Vfs,
     pub cwd: PathBuf,
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
@@ -144,10 +142,9 @@ impl RockDirectory {
 
 fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
     let mut session = Session {
-        vfs: Vfs::new(64),
         cwd: fs_env::dir_get_current_working()?,
-        intern_lit: InternPool::new(),
-        intern_name: InternPool::new(),
+        intern_lit: InternPool::new(1024),
+        intern_name: InternPool::new(1024),
         pkg_storage: PackageStorage {
             modules: Vec::new(),
             packages: Vec::new(),

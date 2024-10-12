@@ -61,6 +61,10 @@ impl Vfs {
     pub fn file_mut(&mut self, file_id: FileID) -> &mut FileData {
         &mut self.files[file_id.index()]
     }
+    #[inline]
+    pub fn path_to_file_id<P: AsRef<Path>>(&self, p: P) -> Option<FileID> {
+        self.paths.get(p.as_ref()).copied()
+    }
 }
 
 impl FileID {

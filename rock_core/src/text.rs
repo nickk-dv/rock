@@ -156,6 +156,8 @@ impl fmt::Debug for TextLocation {
     }
 }
 
+//@opt for re-using existing line_ranges Vec in Vfs
+//@opt lines().count() for exact capacity?
 pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
     let mut ranges = Vec::new();
     let mut range = TextRange::zero();
@@ -224,7 +226,7 @@ fn test() {
     use crate::support::ID;
 
     let text = "foo\nbaz";
-    let mut intern_lit = InternPool::new();
+    let mut intern_lit = InternPool::new(0);
     let (tokens, _) = lexer::lex(text, &mut intern_lit, ModuleID::dummy(), false);
 
     let line_ranges = find_line_ranges(text);

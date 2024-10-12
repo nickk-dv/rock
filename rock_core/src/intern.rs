@@ -14,11 +14,11 @@ pub struct InternPool<'intern, T> {
 }
 
 impl<'intern, T> InternPool<'intern, T> {
-    pub fn new() -> InternPool<'intern, T> {
+    pub fn new(cap: usize) -> InternPool<'intern, T> {
         InternPool {
             arena: Arena::new(),
-            values: Vec::with_capacity(1024),
-            intern_map: HashMap::with_capacity_and_hasher(1024, Fnv1aHasher),
+            values: Vec::with_capacity(cap),
+            intern_map: HashMap::with_capacity_and_hasher(cap, Fnv1aHasher),
             phantom: PhantomData,
         }
     }
