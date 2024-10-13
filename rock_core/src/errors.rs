@@ -72,8 +72,17 @@ pub fn session_src_not_found(path: &PathBuf) -> Error {
     Error::message(msg)
 }
 
-pub fn session_pkg_dep_cycle(relation: String) -> Error {
-    let msg = format!("package dependency cycle detected:\n{relation}");
+//@add more context information
+pub fn session_dep_on_bin() -> Error {
+    let msg = format!("cannot depend on a binary package",);
+    Error::message(msg)
+}
+
+pub fn session_pkg_dep_cycle(relation: String, manifest_path: &PathBuf) -> Error {
+    let msg = format!(
+        "package dependency cycle detected\nfrom package manifest in `{}`\n{relation}",
+        manifest_path.to_string_lossy()
+    );
     Error::message(msg)
 }
 

@@ -7,7 +7,7 @@ use crate::errors as err;
 use crate::fs_env;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::package;
-use crate::package::manifest::Manifest;
+use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::ID;
 use crate::syntax::syntax_tree::SyntaxTree;
 use graph::PackageGraph;
@@ -49,6 +49,8 @@ pub struct Directory {
     modules: Vec<ModuleID>,
     sub_dirs: Vec<Directory>,
 }
+
+pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
 
 impl<'s> Session<'s> {
     #[inline]
@@ -183,17 +185,20 @@ impl Directory {
 
 pub fn create_session<'s>() -> Result<Session<'s>, Error> {
     let mut session = Session {
-        vfs: Vfs::new(128),
+        vfs: Vfs::new(64),
         curr_exe_dir: fs_env::current_exe_path()?,
         curr_work_dir: fs_env::dir_get_current_working()?,
         intern_lit: InternPool::new(512),
         intern_name: InternPool::new(1024),
-        graph: PackageGraph::new(16),
-        modules: Vec::with_capacity(128),
+        graph: PackageGraph::new(8),
+        modules: Vec::with_capacity(64),
     };
 
+    let core_dir = session.curr_exe_dir.join("core");
+    process_package(&mut session, &core_dir, None, true)?;
+
     let root_dir = session.curr_work_dir.clone();
-    process_package(&mut session, &root_dir, None)?;
+    process_package(&mut session, &root_dir, None, false)?;
     Ok(session)
 }
 
@@ -201,6 +206,7 @@ fn process_package(
     session: &mut Session,
     root_dir: &PathBuf,
     dep_from: Option<PackageID>,
+    is_core: bool,
 ) -> Result<PackageID, Error> {
     if dep_from.is_some() && !root_dir.exists() {
         return Err(err::session_pkg_not_found(root_dir));
@@ -219,7 +225,10 @@ fn process_package(
     let manifest = fs_env::file_read_to_string(&manifest_path)?;
     let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
     let name_id = session.intern_name.intern(&manifest.package.name);
-    //@check if dep_from.is_some() & package is binary
+
+    if dep_from.is_some() && manifest.package.kind == PackageKind::Bin {
+        return Err(err::session_dep_on_bin());
+    }
 
     let package_id = session.graph.next_id();
     let src = process_directory(session, &src_dir, package_id)?;
@@ -227,20 +236,24 @@ fn process_package(
 
     //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
     let dependencies = manifest.dependencies.clone();
-    #[rustfmt::skip]
-    let package = Package { name_id, src, manifest, deps: vec![], modules };
-    let package_id = session.graph.add(package);
 
-    //@semver not used, dependency package may be duplicated
-    // no unique name set or `already processed` detection exists
-    //@dedup by root_path? might be overall effective
+    assert!(!is_core || manifest.dependencies.is_empty());
+    #[rustfmt::skip]
+    let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
+    #[rustfmt::skip]
+    let package = Package { name_id, src, manifest, deps, modules };
+    let package_id = session.graph.add(package, root_dir);
+
+    //@semver not considered
     for (dep_name, _) in dependencies.iter() {
         let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
-        let dep_id = process_package(session, &dep_root_dir, Some(package_id))?;
-        //@no cycle possible without dedup detection
+        let dep_id = match session.graph.get_unique(&dep_root_dir) {
+            Some(dep_id) => dep_id,
+            None => process_package(session, &dep_root_dir, Some(package_id), false)?,
+        };
         session
             .graph
-            .add_dep(package_id, dep_id, &session.intern_name)?;
+            .add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
     }
     Ok(package_id)
 }

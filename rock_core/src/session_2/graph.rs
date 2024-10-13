@@ -3,17 +3,20 @@ use crate::errors as err;
 use crate::intern::{InternName, InternPool};
 use crate::session_2::{Package, PackageID};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 //@hashmap can be replaced with a vec
 // unless dynamic graph mutation is required,
 // in that case use incrementing ids + hashmap
 pub struct PackageGraph {
+    unique: HashMap<PathBuf, PackageID>,
     packages: HashMap<PackageID, Package>,
 }
 
 impl PackageGraph {
     pub(super) fn new(cap: usize) -> PackageGraph {
         PackageGraph {
+            unique: HashMap::with_capacity(cap),
             packages: HashMap::with_capacity(cap),
         }
     }
@@ -32,11 +35,16 @@ impl PackageGraph {
         PackageID(self.packages.len() as u32)
     }
 
+    #[inline]
+    pub(super) fn get_unique(&self, root_dir: &PathBuf) -> Option<PackageID> {
+        self.unique.get(root_dir).copied()
+    }
+
     #[must_use]
-    pub(super) fn add(&mut self, package: Package) -> PackageID {
+    pub(super) fn add(&mut self, package: Package, root_dir: &PathBuf) -> PackageID {
         let package_id = PackageID(self.packages.len() as u32);
-        let existing = self.packages.insert(package_id, package);
-        assert!(existing.is_none());
+        assert!(self.packages.insert(package_id, package).is_none());
+        assert!(self.unique.insert(root_dir.clone(), package_id).is_none());
         package_id
     }
 
@@ -46,12 +54,13 @@ impl PackageGraph {
         from: PackageID,
         to: PackageID,
         intern_name: &InternPool<'_, InternName>,
+        manifest_path: &PathBuf,
     ) -> Result<(), Error> {
         let mut path = vec![from];
 
         if self.find_cycle(from, to, &mut path) {
             let relation = self.cycle_relation_msg(&path, intern_name);
-            Err(err::session_pkg_dep_cycle(relation))
+            Err(err::session_pkg_dep_cycle(relation, manifest_path))
         } else {
             let package = self.package_mut(from);
             let existing = package.deps.iter().find(|&&p| p == to);

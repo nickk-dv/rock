@@ -141,6 +141,9 @@ impl RockDirectory {
 }
 
 fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
+    //@session 2 test
+    let _ = crate::session_2::create_session()?;
+
     let mut session = Session {
         cwd: fs_env::dir_get_current_working()?,
         intern_lit: InternPool::new(1024),
