@@ -24,6 +24,19 @@ impl Vfs {
         }
     }
 
+    #[inline]
+    pub fn file(&self, file_id: FileID) -> &FileData {
+        &self.files[file_id.index()]
+    }
+    #[inline]
+    pub fn file_mut(&mut self, file_id: FileID) -> &mut FileData {
+        &mut self.files[file_id.index()]
+    }
+    #[inline]
+    pub fn path_to_file_id<P: AsRef<Path>>(&self, p: P) -> Option<FileID> {
+        self.paths.get(p.as_ref()).copied()
+    }
+
     #[must_use]
     pub fn open<P: AsRef<Path>>(&mut self, path: P, source: String) -> FileID {
         let line_ranges = text::find_line_ranges(source.as_str());
@@ -51,19 +64,6 @@ impl Vfs {
         let file = self.file_mut(file_id);
         file.source = String::new();
         file.line_ranges = Vec::new();
-    }
-
-    #[inline]
-    pub fn file(&self, file_id: FileID) -> &FileData {
-        &self.files[file_id.index()]
-    }
-    #[inline]
-    pub fn file_mut(&mut self, file_id: FileID) -> &mut FileData {
-        &mut self.files[file_id.index()]
-    }
-    #[inline]
-    pub fn path_to_file_id<P: AsRef<Path>>(&self, p: P) -> Option<FileID> {
-        self.paths.get(p.as_ref()).copied()
     }
 }
 

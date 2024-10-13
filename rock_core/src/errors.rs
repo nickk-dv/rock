@@ -1,4 +1,5 @@
 use crate::error::{Error, ErrorSink, Info, SourceRange, Warning, WarningSink};
+use std::path::PathBuf;
 
 //==================== COMMAND ====================
 
@@ -45,6 +46,35 @@ pub fn cmd_option_unknown(emit: &mut impl ErrorSink, opt: &str) {
 pub fn cmd_option_duplicate(emit: &mut impl ErrorSink, opt: &str) {
     let msg = format!("option `--{opt}` cannot be used multiple times");
     emit.error(Error::message(msg));
+}
+
+//==================== SESSION ====================
+
+pub fn session_pkg_not_found(path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!(
+        "could not find dependency package in `{path}`
+package fetch from remote index is not yet implemented
+currently dependecy packages must be placed in `<rock_install>/packages`"
+    );
+    Error::message(msg)
+}
+
+pub fn session_manifest_not_found(path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("could not find `Rock.toml` manifest in `{path}`");
+    Error::message(msg)
+}
+
+pub fn session_src_not_found(path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("could not find `src` directory in `{path}`");
+    Error::message(msg)
+}
+
+pub fn session_pkg_dep_cycle(relation: String) -> Error {
+    let msg = format!("package dependency cycle detected:\n{relation}");
+    Error::message(msg)
 }
 
 //==================== LEXER ====================

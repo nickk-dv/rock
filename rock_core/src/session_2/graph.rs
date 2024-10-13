@@ -1,0 +1,113 @@
+use crate::error::Error;
+use crate::errors as err;
+use crate::intern::{InternName, InternPool};
+use crate::session_2::{Package, PackageID};
+use std::collections::HashMap;
+
+//@hashmap can be replaced with a vec
+// unless dynamic graph mutation is required,
+// in that case use incrementing ids + hashmap
+pub struct PackageGraph {
+    packages: HashMap<PackageID, Package>,
+}
+
+impl PackageGraph {
+    pub(super) fn new(cap: usize) -> PackageGraph {
+        PackageGraph {
+            packages: HashMap::with_capacity(cap),
+        }
+    }
+
+    #[inline]
+    pub fn package(&self, package_id: PackageID) -> &Package {
+        self.packages.get(&package_id).unwrap()
+    }
+    #[inline]
+    pub fn package_mut(&mut self, package_id: PackageID) -> &mut Package {
+        self.packages.get_mut(&package_id).unwrap()
+    }
+
+    #[must_use]
+    pub(super) fn next_id(&self) -> PackageID {
+        PackageID(self.packages.len() as u32)
+    }
+
+    #[must_use]
+    pub(super) fn add(&mut self, package: Package) -> PackageID {
+        let package_id = PackageID(self.packages.len() as u32);
+        let existing = self.packages.insert(package_id, package);
+        assert!(existing.is_none());
+        package_id
+    }
+
+    #[must_use]
+    pub(super) fn add_dep(
+        &mut self,
+        from: PackageID,
+        to: PackageID,
+        intern_name: &InternPool<'_, InternName>,
+    ) -> Result<(), Error> {
+        let mut path = vec![from];
+
+        if self.find_cycle(from, to, &mut path) {
+            let relation = self.cycle_relation_msg(&path, intern_name);
+            Err(err::session_pkg_dep_cycle(relation))
+        } else {
+            let package = self.package_mut(from);
+            let existing = package.deps.iter().find(|&&p| p == to);
+            assert!(existing.is_none());
+            package.deps.push(to);
+            Ok(())
+        }
+    }
+
+    fn find_cycle(&self, target: PackageID, current: PackageID, path: &mut Vec<PackageID>) -> bool {
+        path.push(current);
+        if target == current {
+            return true;
+        }
+        let data = self.package(current);
+        for &dep in &data.deps {
+            if self.find_cycle(target, dep, path) {
+                return true;
+            }
+        }
+        path.pop();
+        false
+    }
+
+    fn cycle_relation_msg(
+        &self,
+        path: &Vec<PackageID>,
+        intern_name: &InternPool<'_, InternName>,
+    ) -> String {
+        let mut msg = String::with_capacity(128);
+        let relation_count = path.len() - 1;
+
+        for relation_idx in 0..relation_count {
+            let from_id = path[relation_idx];
+            let to_id = path[relation_idx + 1];
+            let from_name = intern_name.get(self.package(from_id).name_id);
+            let to_name = intern_name.get(self.package(to_id).name_id);
+
+            if relation_idx == 0 {
+                msg.push_str("attempting to add dependency from `");
+                msg.push_str(from_name);
+                msg.push_str("` to `");
+                msg.push_str(to_name);
+                msg.push_str("`");
+            } else {
+                msg.push_str("which depends on `");
+                msg.push_str(to_name);
+                msg.push_str("`");
+            }
+
+            if relation_idx + 1 == relation_count {
+                msg.push_str(", completing the cycle...");
+            } else {
+                msg.push_str("...\n");
+            }
+        }
+        msg
+    }
+}

@@ -1,26 +1,27 @@
+mod graph;
 mod vfs;
 
 use crate::ast::Ast;
+use crate::error::Error;
+use crate::errors as err;
+use crate::fs_env;
 use crate::intern::{InternLit, InternName, InternPool};
+use crate::package;
 use crate::package::manifest::Manifest;
 use crate::support::ID;
 use crate::syntax::syntax_tree::SyntaxTree;
-use std::collections::HashMap;
+use graph::PackageGraph;
 use std::path::PathBuf;
 use vfs::{FileID, Vfs};
 
 pub struct Session<'s> {
     pub vfs: Vfs,
-    pub cwd: PathBuf,
+    pub curr_exe_dir: PathBuf,
+    pub curr_work_dir: PathBuf,
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
     pub graph: PackageGraph,
     modules: Vec<Module<'s>>,
-}
-
-#[derive(Default)]
-pub struct PackageGraph {
-    packages: HashMap<PackageID, Package>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -58,16 +59,12 @@ impl<'s> Session<'s> {
     pub fn module_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
         &mut self.modules[module_id.index()]
     }
-}
 
-impl PackageGraph {
-    #[inline]
-    pub fn package(&self, package_id: PackageID) -> &Package {
-        self.packages.get(&package_id).unwrap()
-    }
-    #[inline]
-    pub fn package_mut(&mut self, package_id: PackageID) -> &mut Package {
-        self.packages.get_mut(&package_id).unwrap()
+    #[must_use]
+    fn add(&mut self, module: Module<'s>) -> ModuleID {
+        let module_id = ModuleID(self.modules.len() as u32);
+        self.modules.push(module);
+        module_id
     }
 }
 
@@ -182,4 +179,133 @@ impl Directory {
         }
         ModuleOrDirectory::None
     }
+}
+
+pub fn create_session<'s>() -> Result<Session<'s>, Error> {
+    let mut session = Session {
+        vfs: Vfs::new(128),
+        curr_exe_dir: fs_env::current_exe_path()?,
+        curr_work_dir: fs_env::dir_get_current_working()?,
+        intern_lit: InternPool::new(512),
+        intern_name: InternPool::new(1024),
+        graph: PackageGraph::new(16),
+        modules: Vec::with_capacity(128),
+    };
+
+    let root_dir = session.curr_work_dir.clone();
+    process_package(&mut session, &root_dir, None)?;
+    Ok(session)
+}
+
+fn process_package(
+    session: &mut Session,
+    root_dir: &PathBuf,
+    dep_from: Option<PackageID>,
+) -> Result<PackageID, Error> {
+    if dep_from.is_some() && !root_dir.exists() {
+        return Err(err::session_pkg_not_found(root_dir));
+    }
+
+    let manifest_path = root_dir.join("Rock.toml");
+    if !manifest_path.exists() {
+        return Err(err::session_manifest_not_found(root_dir));
+    }
+
+    let src_dir = root_dir.join("src");
+    if !src_dir.exists() {
+        return Err(err::session_src_not_found(root_dir));
+    }
+
+    let manifest = fs_env::file_read_to_string(&manifest_path)?;
+    let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
+    let name_id = session.intern_name.intern(&manifest.package.name);
+    //@check if dep_from.is_some() & package is binary
+
+    let package_id = session.graph.next_id();
+    let src = process_directory(session, &src_dir, package_id)?;
+    let modules = directory_all_modules(&src);
+
+    //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
+    let dependencies = manifest.dependencies.clone();
+    #[rustfmt::skip]
+    let package = Package { name_id, src, manifest, deps: vec![], modules };
+    let package_id = session.graph.add(package);
+
+    //@semver not used, dependency package may be duplicated
+    // no unique name set or `already processed` detection exists
+    //@dedup by root_path? might be overall effective
+    for (dep_name, _) in dependencies.iter() {
+        let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
+        let dep_id = process_package(session, &dep_root_dir, Some(package_id))?;
+        //@no cycle possible without dedup detection
+        session
+            .graph
+            .add_dep(package_id, dep_id, &session.intern_name)?;
+    }
+    Ok(package_id)
+}
+
+fn process_directory(
+    session: &mut Session,
+    path: &PathBuf,
+    origin: PackageID,
+) -> Result<Directory, Error> {
+    let filename = fs_env::filename_stem(&path)?;
+    let name_id = session.intern_name.intern(filename);
+
+    let mut modules = Vec::new();
+    let mut sub_dirs = Vec::new();
+
+    let read_dir = fs_env::dir_read(&path)?;
+    for entry_result in read_dir {
+        let entry = fs_env::dir_entry_validate(&path, entry_result)?;
+        let entry_path = entry.path();
+
+        if entry_path.is_file() {
+            let extension = fs_env::file_extension(&entry_path);
+            if matches!(extension, Some("rock")) {
+                let module_id = process_module(session, &entry_path, origin)?;
+                modules.push(module_id);
+            }
+        } else if entry_path.is_dir() {
+            let sub_dir = process_directory(session, &entry_path, origin)?;
+            sub_dirs.push(sub_dir);
+        } else {
+            panic!("internal: unknown file type")
+        }
+    }
+
+    #[rustfmt::skip]
+    let dir = Directory { name_id, modules, sub_dirs };
+    Ok(dir)
+}
+
+fn process_module(
+    session: &mut Session,
+    path: &PathBuf,
+    origin: PackageID,
+) -> Result<ModuleID, Error> {
+    let filename = fs_env::filename_stem(&path)?;
+    let name_id = session.intern_name.intern(filename);
+
+    let source = fs_env::file_read_to_string(path)?;
+    let file_id = session.vfs.open(path, source);
+
+    #[rustfmt::skip]
+    let module = Module { origin, name_id, file_id, tree: None, ast: None };
+    let module_id = session.add(module);
+    Ok(module_id)
+}
+
+fn directory_all_modules(dir: &Directory) -> Vec<ModuleID> {
+    let mut modules = Vec::new();
+    let mut dir_stack = vec![dir];
+
+    while let Some(dir) = dir_stack.pop() {
+        modules.extend(&dir.modules);
+        for sub_dir in dir.sub_dirs.iter().rev() {
+            dir_stack.push(sub_dir);
+        }
+    }
+    modules
 }
