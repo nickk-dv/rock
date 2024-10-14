@@ -177,6 +177,7 @@ impl Directory {
         self.name_id
     }
 
+    #[must_use]
     pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
             if session.module(module_id).name_id == name_id {
@@ -203,6 +204,10 @@ pub fn create_session<'s>() -> Result<Session<'s>, Error> {
         modules: Vec::with_capacity(64),
     };
 
+    //@when working on a `core` itself this does not work
+    // leads to core as `root` package depending on itself
+    //@ROOT_PACKAGE_ID and CORE_PACKAGE_ID can differ from 1 and 0
+    // make sure core based mappings work when working on `core` itself
     let core_dir = session.curr_exe_dir.join("core");
     process_package(&mut session, &core_dir, None, true)?;
 

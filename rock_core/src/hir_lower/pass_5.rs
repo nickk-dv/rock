@@ -7,7 +7,7 @@ use crate::error::{
 };
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
-use crate::session::ModuleID;
+use crate::session::{self, ModuleID};
 use crate::support::{AsStr, ID};
 use crate::text::TextRange;
 
@@ -280,7 +280,7 @@ pub fn typecheck_expr<'hir>(
         }
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs),
-        ast::ExprKind::Range { .. } => unimplemented!("typecheck expr range"),
+        ast::ExprKind::Range { range } => typecheck_range(ctx, range, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
@@ -1769,6 +1769,146 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
         hir::ExprKind::Address { .. } => Addressability::Temporary,
         hir::ExprKind::Unary { .. } => Addressability::Temporary,
         hir::ExprKind::Binary { .. } => Addressability::Temporary,
+    }
+}
+
+fn typecheck_range<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    range: &ast::Range,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let struct_name = match range {
+        ast::Range::Full => "RangeFull",
+        ast::Range::ToExclusive(_) => "RangeTo",
+        ast::Range::ToInclusive(_) => "RangeToInclusive",
+        ast::Range::From(_) => "RangeFrom",
+        ast::Range::Exclusive(_, _) => "Range",
+        ast::Range::Inclusive(_, _) => "RangeInclusive",
+    };
+
+    let (struct_id, range_id) = match core_find_struct(ctx, expr_range, "range", struct_name) {
+        Some(value) => value,
+        None => {
+            let msg = format!("failed to locate struct `{struct_name}` in `core:range`");
+            let src = SourceRange::new(ctx.proc.origin(), expr_range);
+            ctx.emit.error(Error::new(msg, src, None));
+            return TypeResult::error();
+        }
+    };
+
+    macro_rules! range_full {
+        () => {{
+            let kind = hir::ExprKind::StructInit {
+                struct_id,
+                input: &[],
+            };
+            TypeResult::new(hir::Type::Struct(struct_id), kind)
+        }};
+    }
+
+    macro_rules! range_single {
+        ($one:expr) => {{
+            let one_src = ctx
+                .registry
+                .struct_data(struct_id)
+                .fields
+                .get(0)
+                .map(|f| SourceRange::new(range_id, f.ty_range));
+            let one_res =
+                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, one_src), $one);
+
+            let input = [hir::FieldInit {
+                field_id: ID::new_raw(0),
+                expr: one_res.expr,
+            }];
+            let kind = hir::ExprKind::StructInit {
+                struct_id,
+                input: ctx.arena.alloc_slice(&input),
+            };
+            TypeResult::new(hir::Type::Struct(struct_id), kind)
+        }};
+    }
+
+    macro_rules! range_double {
+        ($one:expr, $two:expr) => {{
+            let one_src = ctx
+                .registry
+                .struct_data(struct_id)
+                .fields
+                .get(0)
+                .map(|f| SourceRange::new(range_id, f.ty_range));
+            let two_src = ctx
+                .registry
+                .struct_data(struct_id)
+                .fields
+                .get(1)
+                .map(|f| SourceRange::new(range_id, f.ty_range));
+            let one_res =
+                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, one_src), $one);
+            let two_res =
+                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, two_src), $two);
+
+            let input = [
+                hir::FieldInit {
+                    field_id: ID::new_raw(0),
+                    expr: one_res.expr,
+                },
+                hir::FieldInit {
+                    field_id: ID::new_raw(1),
+                    expr: two_res.expr,
+                },
+            ];
+            let kind = hir::ExprKind::StructInit {
+                struct_id,
+                input: ctx.arena.alloc_slice(&input),
+            };
+            TypeResult::new(hir::Type::Struct(struct_id), kind)
+        }};
+    }
+
+    match *range {
+        ast::Range::Full => range_full!(),
+        ast::Range::ToExclusive(end) => range_single!(end),
+        ast::Range::ToInclusive(end) => range_single!(end),
+        ast::Range::From(start) => range_single!(start),
+        ast::Range::Exclusive(start, end) => range_double!(start, end),
+        ast::Range::Inclusive(start, end) => range_double!(start, end),
+    }
+}
+
+fn core_find_struct<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    dummy_range: TextRange,
+    module_name: &'static str,
+    struct_name: &'static str,
+) -> Option<(hir::StructID<'hir>, ModuleID)> {
+    let module_name = ctx.session.intern_name.get_id(module_name)?;
+    let struct_name = ctx.session.intern_name.get_id(struct_name)?;
+
+    let core_package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
+    let target_id = match core_package.src().find(ctx.session, module_name) {
+        session::ModuleOrDirectory::None => return None,
+        session::ModuleOrDirectory::Module(module_id) => module_id,
+        session::ModuleOrDirectory::Directory(_) => return None,
+    };
+
+    let dummy_name = ast::Name {
+        id: struct_name,
+        range: dummy_range,
+    };
+
+    match ctx
+        .scope
+        .symbol_from_scope(&ctx.registry, ctx.proc.origin(), target_id, dummy_name)
+    {
+        Ok(struct_id) => match struct_id {
+            SymbolKind::Struct(id) => Some((id, target_id)),
+            _ => None,
+        },
+        Err(error) => {
+            error.emit(ctx);
+            None
+        }
     }
 }
 
