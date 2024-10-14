@@ -359,6 +359,19 @@ impl IRBuilder {
         unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) };
     }
 
+    pub fn gep(&self, ptr_ty: Type, ptr_val: ValuePtr, indices: &[Value], name: &str) -> ValuePtr {
+        ValuePtr(unsafe {
+            core::LLVMBuildGEP2(
+                self.builder,
+                ptr_ty.0,
+                ptr_val.0,
+                indices.as_ptr() as *mut sys::LLVMValueRef,
+                indices.len() as u32,
+                self.cstr_buf.cstr(name),
+            )
+        })
+    }
+
     pub fn gep_inbounds(
         &self,
         ptr_ty: Type,

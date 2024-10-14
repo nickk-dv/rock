@@ -339,9 +339,10 @@ impl<'c> ProcCodegen<'c> {
 
 impl CodegenCache {
     fn new(context: &llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
+        let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
-        let slice_fields = &[context.ptr_type(), ptr_sized_int];
-        let slice_type = context.struct_type_inline(slice_fields, false);
+        let slice_type = context.struct_create_named("rock.slice");
+        context.struct_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
 
         CodegenCache {
             int_1: context.int_1(),
@@ -351,7 +352,7 @@ impl CodegenCache {
             int_64: context.int_64(),
             float_32: context.float_32(),
             float_64: context.float_64(),
-            ptr_type: context.ptr_type(),
+            ptr_type,
             void_type: context.void_type(),
             ptr_sized_int,
             slice_type,

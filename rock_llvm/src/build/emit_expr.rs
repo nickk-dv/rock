@@ -211,7 +211,7 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
     } else {
         let string = cg.intern_lit.get(string_lit.id);
         let slice_len = cg.const_usize(string.len() as u64);
-        llvm::const_struct_inline(&[global_ptr.as_val(), slice_len], false)
+        llvm::const_struct_named(cg.slice_type(), &[global_ptr.as_val(), slice_len])
     }
 }
 
@@ -463,29 +463,35 @@ fn codegen_index<'c>(
         target_ptr
     };
 
+    //@bounds check
     let index_val = codegen_expr_value(cg, proc_cg, access.index);
 
+    //@add back inbounds and nuw | nusw to gep?
     let elem_ptr = match access.kind {
-        hir::IndexKind::Slice { elem_size } => {
-            let elem_size = cg.const_usize(elem_size);
-            let byte_offset = codegen_binary_op(cg, hir::BinOp::Mul_Int, index_val, elem_size);
+        hir::IndexKind::Slice => {
             let slice_ptr = cg
                 .build
                 .load(cg.ptr_type(), target_ptr, "slice_ptr")
                 .into_ptr();
-            cg.build.gep_inbounds(
-                cg.basic_type(ast::BasicType::U8),
+            cg.build.gep(
+                cg.ty(access.elem_ty),
                 slice_ptr,
-                &[byte_offset],
-                "elem_ptr",
+                &[index_val],
+                "slice_elem_ptr",
             )
         }
-        hir::IndexKind::Array { array } => cg.build.gep_inbounds(
-            cg.array_type(array),
-            target_ptr,
-            &[cg.const_usize_zero(), index_val],
-            "elem_ptr",
-        ),
+        hir::IndexKind::Array(len) => {
+            let elem_ty = cg.ty(access.elem_ty);
+            let len = cg.array_len(len);
+            let array_ty = llvm::array_type(elem_ty, len);
+
+            cg.build.gep(
+                array_ty,
+                target_ptr,
+                &[cg.const_usize_zero(), index_val],
+                "array_elem_ptr",
+            )
+        }
     };
 
     match expect {

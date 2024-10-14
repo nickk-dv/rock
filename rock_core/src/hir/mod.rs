@@ -358,14 +358,14 @@ pub enum SliceField {
 pub struct IndexAccess<'hir> {
     pub deref: bool,
     pub elem_ty: Type<'hir>,
-    pub kind: IndexKind<'hir>,
+    pub kind: IndexKind,
     pub index: &'hir Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]
-pub enum IndexKind<'hir> {
-    Slice { elem_size: u64 },
-    Array { array: &'hir ArrayStatic<'hir> },
+pub enum IndexKind {
+    Slice,
+    Array(ArrayStaticLen),
 }
 
 #[derive(Copy, Clone)]

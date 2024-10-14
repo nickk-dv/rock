@@ -977,7 +977,7 @@ struct CollectionType<'hir> {
 }
 
 enum SliceOrArray<'hir> {
-    Slice(&'hir hir::ArraySlice<'hir>),
+    Slice,
     Array(&'hir hir::ArrayStatic<'hir>),
 }
 
@@ -985,17 +985,17 @@ impl<'hir> CollectionType<'hir> {
     fn from(ty: hir::Type<'hir>) -> Result<Option<CollectionType<'hir>>, ()> {
         fn type_collection(ty: hir::Type, deref: bool) -> Result<Option<CollectionType>, ()> {
             match ty {
+                hir::Type::Error => Ok(None),
                 hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
                     deref,
                     elem_ty: slice.elem_ty,
-                    kind: SliceOrArray::Slice(slice),
+                    kind: SliceOrArray::Slice,
                 })),
                 hir::Type::ArrayStatic(array) => Ok(Some(CollectionType {
                     deref,
                     elem_ty: array.elem_ty,
                     kind: SliceOrArray::Array(array),
                 })),
-                hir::Type::Error => Ok(None),
                 _ => Err(()),
             }
         }
@@ -1011,32 +1011,23 @@ fn typecheck_index<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     target: &ast::Expr,
     index: &ast::Expr,
-    expr_range: TextRange, //@use range of brackets? `[]` 08.05.24
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let expect_usize = Expectation::HasType(hir::Type::USIZE, None);
-    let index_res = typecheck_expr(ctx, expect_usize, index);
+    let index_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), index);
 
     match CollectionType::from(target_res.ty) {
         Ok(Some(collection)) => {
+            let kind = match collection.kind {
+                SliceOrArray::Slice => hir::IndexKind::Slice,
+                SliceOrArray::Array(array) => hir::IndexKind::Array(array.len),
+            };
             let access = hir::IndexAccess {
                 deref: collection.deref,
                 elem_ty: collection.elem_ty,
-                kind: match collection.kind {
-                    SliceOrArray::Slice(slice) => hir::IndexKind::Slice {
-                        elem_size: constant::type_layout(
-                            ctx,
-                            slice.elem_ty,
-                            SourceRange::new(ctx.proc.origin(), expr_range), //@review source range for this type_size error 10.05.24
-                        )
-                        .unwrap_or(hir::Layout::new(0, 1))
-                        .size(),
-                    },
-                    SliceOrArray::Array(array) => hir::IndexKind::Array { array },
-                },
+                kind,
                 index: index_res.expr,
             };
-
             let kind = hir::ExprKind::Index {
                 target: target_res.expr,
                 access: ctx.arena.alloc(access),
@@ -1045,17 +1036,14 @@ fn typecheck_index<'hir>(
         }
         Ok(None) => TypeResult::error(),
         Err(()) => {
+            //@use brackets range instead!
             ctx.emit.error(Error::new(
                 format!(
                     "cannot index value of type `{}`",
                     type_format(ctx, target_res.ty).as_str()
                 ),
                 SourceRange::new(ctx.proc.origin(), expr_range),
-                // is this info needed? test if its useful
-                Info::new(
-                    format!("has `{}` type", type_format(ctx, target_res.ty).as_str()),
-                    SourceRange::new(ctx.proc.origin(), target.range),
-                ),
+                None,
             ));
             TypeResult::error()
         }

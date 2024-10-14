@@ -418,6 +418,15 @@ pub mod core {
             val: LLVMValueRef,
             ptr_val: LLVMValueRef,
         ) -> LLVMValueRef;
+
+        pub fn LLVMBuildGEP2(
+            b: LLVMBuilderRef,
+            ptr_ty: LLVMTypeRef,
+            ptr_val: LLVMValueRef,
+            indices: *mut LLVMValueRef,
+            indices_count: c_uint,
+            name: *const c_char,
+        ) -> LLVMValueRef;
         pub fn LLVMBuildInBoundsGEP2(
             b: LLVMBuilderRef,
             ptr_ty: LLVMTypeRef,
