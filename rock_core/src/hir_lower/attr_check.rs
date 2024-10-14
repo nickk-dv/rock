@@ -4,7 +4,7 @@ use crate::config;
 use crate::error::{Error, ErrorSink, ErrorWarningBuffer, SourceRange, Warning, WarningSink};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
-use crate::session::{ModuleID, RockModule};
+use crate::session::{Module, ModuleID};
 use crate::support::{AsStr, BitSet};
 
 pub struct AttrFeedbackProc {
@@ -354,8 +354,9 @@ fn resolve_attr(
     origin_id: ModuleID,
     attr: &ast::Attr,
 ) -> Result<AttrResolvedData, ()> {
-    let module = ctx.session.pkg_storage.module(origin_id);
-    let attr_name = &module.source[attr.name.range.as_usize()];
+    let module = ctx.session.module(origin_id);
+    let file = ctx.session.vfs.file(module.file_id());
+    let attr_name = &file.source[attr.name.range.as_usize()];
 
     let kind = match AttrKind::from_str(attr_name) {
         Some(kind) => kind,
@@ -375,7 +376,7 @@ fn resolve_attr(
                 _ => unreachable!(),
             };
             let params = expect_multiple_params(ctx, origin_id, attr, attr_name)?;
-            let state = resolve_cfg_params(ctx, origin_id, module, params, op)?;
+            let state = resolve_cfg_params(ctx, origin_id, params, op)?;
             AttrResolved::Cfg(state)
         }
         AttrKind::Builtin => {
@@ -388,7 +389,7 @@ fn resolve_attr(
         }
         AttrKind::Repr => {
             let param = expect_single_param(ctx, origin_id, attr, attr_name)?;
-            let repr_kind = resolve_repr_param(ctx, origin_id, module, param)?;
+            let repr_kind = resolve_repr_param(ctx, origin_id, param)?;
             AttrResolved::Repr(repr_kind)
         }
         AttrKind::ThreadLocal => {
@@ -467,14 +468,15 @@ fn expect_multiple_params<'ast>(
 fn resolve_cfg_params(
     ctx: &mut HirCtx,
     origin_id: ModuleID,
-    module: &RockModule,
     params: &[ast::AttrParam],
     op: CfgOp,
 ) -> Result<CfgState, ()> {
     let mut cfg_state = CfgState::new_enabled();
 
     for param in params {
-        let param_name = &module.source[param.name.range.as_usize()];
+        let module = ctx.session.module(origin_id);
+        let file = ctx.session.vfs.file(module.file_id());
+        let param_name = &file.source[param.name.range.as_usize()];
 
         let param_kind = match CfgParamKind::from_str(param_name) {
             Some(param_kind) => param_kind,
@@ -554,10 +556,11 @@ fn resolve_cfg_params(
 fn resolve_repr_param(
     ctx: &mut HirCtx,
     origin_id: ModuleID,
-    module: &RockModule,
     param: &ast::AttrParam,
 ) -> Result<ReprKind, ()> {
-    let param_name = &module.source[param.name.range.as_usize()];
+    let module = ctx.session.module(origin_id);
+    let file = ctx.session.vfs.file(module.file_id());
+    let param_name = &file.source[param.name.range.as_usize()];
 
     let mut repr_kind = if param_name == "C" {
         Ok(ReprKind::ReprC)

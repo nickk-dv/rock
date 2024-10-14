@@ -1,133 +1,185 @@
-use crate::ast;
+mod graph;
+mod vfs;
+
+use crate::ast::Ast;
 use crate::error::Error;
+use crate::errors as err;
 use crate::fs_env;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
-use crate::support::{IndexID, ID};
+use crate::support::ID;
 use crate::syntax::syntax_tree::SyntaxTree;
-use crate::text::{self, TextRange};
-use std::collections::HashMap;
+use graph::PackageGraph;
 use std::path::PathBuf;
+use vfs::{FileID, Vfs};
 
 pub struct Session<'s> {
-    pub cwd: PathBuf,
+    pub vfs: Vfs,
+    pub curr_exe_dir: PathBuf,
+    pub curr_work_dir: PathBuf,
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
-    pub pkg_storage: PackageStorage,
-    pub module_asts: Vec<ast::Ast<'s>>,
-    pub module_trees: Vec<Option<SyntaxTree<'s>>>,
+    pub graph: PackageGraph,
+    modules: Vec<Module<'s>>,
 }
 
-pub struct PackageStorage {
-    modules: Vec<RockModule>,
-    packages: Vec<RockPackage>,
-}
-
-pub type PackageID = ID<RockPackage>;
-pub struct RockPackage {
-    pub name_id: ID<InternName>,
-    pub root_dir: PathBuf,
-    pub src: RockDirectory,
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct PackageID(u32);
+pub struct Package {
+    name_id: ID<InternName>,
+    src: Directory,
     manifest: Manifest,
-    dependency_map: HashMap<ID<InternName>, PackageID>,
-}
-
-pub struct RockDirectory {
-    pub name_id: ID<InternName>,
-    pub path: PathBuf,
+    deps: Vec<PackageID>,
     modules: Vec<ModuleID>,
-    sub_dirs: Vec<RockDirectory>,
 }
 
-pub type ModuleID = ID<RockModule>;
-pub struct RockModule {
-    pub name_id: ID<InternName>,
-    pub path: PathBuf,
-    pub source: String,
-    pub line_ranges: Vec<TextRange>,
-    pub package_id: PackageID,
+#[derive(Copy, Clone, PartialEq)]
+pub struct ModuleID(u32);
+pub struct Module<'s> {
+    origin: PackageID,
+    name_id: ID<InternName>,
+    file_id: FileID,
+    tree: Option<SyntaxTree<'s>>,
+    ast: Option<Ast<'s>>,
 }
 
-pub enum ModuleOrDirectory<'src> {
-    None,
-    Module(ModuleID),
-    Directory(&'src RockDirectory),
+pub struct Directory {
+    name_id: ID<InternName>,
+    modules: Vec<ModuleID>,
+    sub_dirs: Vec<Directory>,
 }
 
-//@hack to support "mutable" files in ls
-// while still using the normal Session create flow
-pub struct FileCache {
-    file_map: HashMap<PathBuf, String>,
-}
-
-impl FileCache {
-    pub fn new() -> FileCache {
-        FileCache {
-            file_map: HashMap::new(),
-        }
-    }
-    pub fn change(&mut self, path: PathBuf, source: Option<String>) {
-        if let Some(source) = source {
-            self.file_map.insert(path, source);
-        } else {
-            self.file_map.remove(&path);
-        }
-    }
-    pub fn get(&self, path: &PathBuf) -> Option<String> {
-        self.file_map.get(path).cloned()
-    }
-}
+pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
+pub const ROOT_PACKAGE_ID: PackageID = PackageID(1);
 
 impl<'s> Session<'s> {
-    pub const ROOT_ID: PackageID = PackageID::new_raw(0);
+    #[inline]
+    pub fn module(&self, module_id: ModuleID) -> &Module<'s> {
+        &self.modules[module_id.index()]
+    }
+    #[inline]
+    pub fn module_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
+        &mut self.modules[module_id.index()]
+    }
 
-    pub fn new(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
-        session_create(cache, building)
-    }
-}
-
-impl PackageStorage {
-    pub fn module(&self, id: ModuleID) -> &RockModule {
-        &self.modules[id.raw_index()]
-    }
-    pub fn module_mut(&mut self, id: ModuleID) -> &mut RockModule {
-        &mut self.modules[id.raw_index()]
-    }
     pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
-        (0..self.modules.len()).map(ModuleID::new_raw)
+        (0..(self.modules.len() as u32)).map(ModuleID)
     }
-    pub fn package(&self, id: PackageID) -> &RockPackage {
-        &self.packages.id_get(id)
-    }
-    pub fn package_ids(&self) -> impl Iterator<Item = PackageID> {
-        (0..self.packages.len()).map(PackageID::new_raw)
-    }
-    pub fn find_module_by_path(&self, path: &PathBuf) -> Option<ModuleID> {
-        for module_id in self.module_ids() {
-            let module = self.module(module_id);
-            if &module.path == path {
-                return Some(module_id);
-            }
-        }
-        None
+
+    #[must_use]
+    fn add(&mut self, module: Module<'s>) -> ModuleID {
+        let module_id = ModuleID(self.modules.len() as u32);
+        self.modules.push(module);
+        module_id
     }
 }
 
-impl RockPackage {
+impl Package {
+    #[inline]
+    pub fn name(&self) -> ID<InternName> {
+        self.name_id
+    }
+    #[inline]
+    pub fn src(&self) -> &Directory {
+        &self.src
+    }
+    #[inline]
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
     }
-    pub fn dependency(&self, name_id: ID<InternName>) -> Option<PackageID> {
-        self.dependency_map.get(&name_id).copied()
+    #[inline]
+    pub fn dep_ids(&self) -> &[PackageID] {
+        &self.deps
+    }
+    #[inline]
+    pub fn module_ids(&self) -> &[ModuleID] {
+        &self.modules
     }
 }
 
-impl RockDirectory {
-    pub fn find(&self, pkg_storage: &PackageStorage, name_id: ID<InternName>) -> ModuleOrDirectory {
+impl PackageID {
+    #[inline]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl<'s> Module<'s> {
+    #[inline]
+    pub fn origin(&self) -> PackageID {
+        self.origin
+    }
+    #[inline]
+    pub fn name(&self) -> ID<InternName> {
+        self.name_id
+    }
+    #[inline]
+    pub fn file_id(&self) -> FileID {
+        self.file_id
+    }
+
+    #[inline]
+    pub fn tree(&self) -> Option<&SyntaxTree<'s>> {
+        self.tree.as_ref()
+    }
+    #[inline]
+    pub fn tree_expect(&self) -> &SyntaxTree<'s> {
+        self.tree.as_ref().unwrap()
+    }
+    #[inline]
+    pub fn ast(&self) -> Option<&SyntaxTree<'s>> {
+        self.tree.as_ref()
+    }
+    #[inline]
+    pub fn ast_expect(&self) -> &Ast<'s> {
+        self.ast.as_ref().unwrap()
+    }
+
+    #[inline]
+    pub fn set_ast<'ast: 's>(&mut self, ast: Ast<'ast>) {
+        self.ast = Some(ast);
+    }
+    #[inline]
+    pub fn set_tree<'syn: 's>(&mut self, tree: SyntaxTree<'syn>) {
+        self.tree = Some(tree);
+    }
+    #[inline]
+    pub fn unload_ast(&mut self) {
+        self.ast = None;
+    }
+    #[inline]
+    pub fn unload_tree(&mut self) {
+        self.tree = None;
+    }
+}
+
+impl ModuleID {
+    #[inline]
+    pub fn dummy() -> ModuleID {
+        ModuleID(u32::MAX)
+    }
+    #[inline]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub enum ModuleOrDirectory<'s> {
+    None,
+    Module(ModuleID),
+    Directory(&'s Directory),
+}
+
+impl Directory {
+    #[inline]
+    pub fn name(&self) -> ID<InternName> {
+        self.name_id
+    }
+
+    pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
-            let module = pkg_storage.module(module_id);
-            if module.name_id == name_id {
+            if session.module(module_id).name_id == name_id {
                 return ModuleOrDirectory::Module(module_id);
             }
         }
@@ -140,161 +192,89 @@ impl RockDirectory {
     }
 }
 
-fn session_create<'s>(cache: &FileCache, building: bool) -> Result<Session<'s>, Error> {
-    //@session 2 test
-    let _ = crate::session_2::create_session()?;
-
+pub fn create_session<'s>() -> Result<Session<'s>, Error> {
     let mut session = Session {
-        cwd: fs_env::dir_get_current_working()?,
-        intern_lit: InternPool::new(1024),
+        vfs: Vfs::new(64),
+        curr_exe_dir: fs_env::current_exe_path()?,
+        curr_work_dir: fs_env::dir_get_current_working()?,
+        intern_lit: InternPool::new(512),
         intern_name: InternPool::new(1024),
-        pkg_storage: PackageStorage {
-            modules: Vec::new(),
-            packages: Vec::new(),
-        },
-        module_asts: Vec::new(),
-        module_trees: Vec::new(),
+        graph: PackageGraph::new(8),
+        modules: Vec::with_capacity(64),
     };
 
-    let root_dir = session.cwd.clone();
-    let root_id = process_package(&mut session, cache, &root_dir, false)?;
-    let root_manifest = &session.pkg_storage.package(root_id).manifest;
+    let core_dir = session.curr_exe_dir.join("core");
+    process_package(&mut session, &core_dir, None, true)?;
 
-    if building && root_manifest.package.kind == PackageKind::Lib {
-        return Err(Error::message(
-            r#"cannot build or run a library package
-use `rock check` to check your library package,
-or you can change [package] `kind` to `bin` in the Rock.toml manifest"#,
-        ));
-    }
-
-    //@experimental resolver usage
-    //package::resolver::resolve_dependencies(&root_manifest.dependencies)?;
-
-    //@no package fetch (only using `$EXE_PATH/packages` directory)
-    let mut cache_dir = fs_env::current_exe_path()?;
-    cache_dir.push("packages");
-
-    //@no version resolution or transitive dependencies (only root deps)
-    let root_dependencies: Vec<String> = root_manifest
-        .dependencies
-        .keys()
-        .map(|name| name.clone())
-        .collect();
-    let mut root_dependency_map = HashMap::new();
-
-    for dependency in root_dependencies.iter() {
-        let package_id = process_package(&mut session, cache, &cache_dir.join(dependency), true)?;
-        let name_id = session.pkg_storage.package(package_id).name_id;
-        root_dependency_map.insert(name_id, package_id);
-    }
-
-    //@only creating dependency map for root
-    // package resultion process is not done yet
-    session.pkg_storage.packages[0].dependency_map = root_dependency_map;
+    let root_dir = session.curr_work_dir.clone();
+    process_package(&mut session, &root_dir, None, false)?;
     Ok(session)
 }
 
 fn process_package(
     session: &mut Session,
-    cache: &FileCache,
     root_dir: &PathBuf,
-    dependency: bool,
+    dep_from: Option<PackageID>,
+    is_core: bool,
 ) -> Result<PackageID, Error> {
-    //@package folder name should match the name in manifest?
-    // what determines the package name? allow directory name to be different?
-    let package_name = fs_env::filename_stem(root_dir)?;
-    let name_id = session.intern_name.intern(package_name);
-
-    if dependency && !root_dir.exists() {
-        return Err(Error::message(format!(
-            "could not find package directory, package fetch is not yet implemented\nexpected path: `{}`",
-            root_dir.to_string_lossy()
-        )));
+    if dep_from.is_some() && !root_dir.exists() {
+        return Err(err::session_pkg_not_found(root_dir));
     }
 
     let manifest_path = root_dir.join("Rock.toml");
     if !manifest_path.exists() {
-        let in_kind = if dependency { "dependency" } else { "current" };
-        return Err(Error::message(format!(
-            "could not find manifest `Rock.toml` in {in_kind} directory\npath: `{}`",
-            manifest_path.to_string_lossy()
-        )));
-    }
-
-    let manifest_text = fs_env::file_read_to_string(&manifest_path)?;
-    let manifest = package::manifest_deserialize(&manifest_text, &manifest_path)?;
-
-    if dependency && manifest.package.kind == PackageKind::Bin {
-        //@which dependency and for which package and where? not enough information
-        return Err(Error::message(
-            "cannot depend on executable package, only library dependencies are allowed",
-        ));
+        return Err(err::session_manifest_not_found(root_dir));
     }
 
     let src_dir = root_dir.join("src");
     if !src_dir.exists() {
-        //@duplicate, standardize `in` `kind` directory vs package messaging
-        // for package related errors
-        let in_kind = if dependency { "dependency" } else { "current" };
-        return Err(Error::message(format!(
-            "could not find `src` directory in {in_kind} directory\npath: `{}`",
-            src_dir.to_string_lossy()
-        )));
+        return Err(err::session_src_not_found(root_dir));
     }
 
-    let package_id = PackageID::new(&session.pkg_storage.packages);
-    let src = process_directory(session, cache, package_id, src_dir)?;
+    let manifest = fs_env::file_read_to_string(&manifest_path)?;
+    let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
+    let name_id = session.intern_name.intern(&manifest.package.name);
 
-    if let Some(lib_paths) = &manifest.build.lib_paths {
-        let location = format!(
-            "\nmanifest path: `{}`\nmanifest key: [build] `lib_paths`",
-            manifest_path.to_string_lossy()
-        );
-        //@relative path doesnt guarantee that libraries
-        // are located within the same package (eg: ../../dir)
-        for path in lib_paths {
-            if !path.is_relative() {
-                return Err(Error::message(format!(
-                    "library path `{}` must be relative{location}",
-                    path.to_string_lossy()
-                )));
-            }
-            let lib_path = root_dir.join(path);
-            if !lib_path.exists() {
-                return Err(Error::message(format!(
-                    "library path `{}` does not exist{location}",
-                    lib_path.to_string_lossy()
-                )));
-            }
-            if !lib_path.is_dir() {
-                return Err(Error::message(format!(
-                    "library path `{}` must be a directory{location}",
-                    lib_path.to_string_lossy()
-                )));
-            }
-        }
+    if dep_from.is_some() && manifest.package.kind == PackageKind::Bin {
+        return Err(err::session_dep_on_bin());
     }
 
-    let package = RockPackage {
-        name_id,
-        root_dir: root_dir.clone(),
-        src,
-        manifest,
-        dependency_map: HashMap::new(), //@no deps are set
-    };
-    session.pkg_storage.packages.push(package);
+    let package_id = session.graph.next_id();
+    let src = process_directory(session, &src_dir, package_id)?;
+    let modules = directory_all_modules(&src);
+
+    //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
+    let dependencies = manifest.dependencies.clone();
+
+    assert!(!is_core || manifest.dependencies.is_empty());
+    #[rustfmt::skip]
+    let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
+    #[rustfmt::skip]
+    let package = Package { name_id, src, manifest, deps, modules };
+    let package_id = session.graph.add(package, root_dir);
+
+    //@semver not considered
+    for (dep_name, _) in dependencies.iter() {
+        let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
+        let dep_id = match session.graph.get_unique(&dep_root_dir) {
+            Some(dep_id) => dep_id,
+            None => process_package(session, &dep_root_dir, Some(package_id), false)?,
+        };
+        session
+            .graph
+            .add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
+    }
     Ok(package_id)
 }
 
 fn process_directory(
     session: &mut Session,
-    cache: &FileCache,
-    package_id: PackageID,
-    path: PathBuf,
-) -> Result<RockDirectory, Error> {
+    path: &PathBuf,
+    origin: PackageID,
+) -> Result<Directory, Error> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
+
     let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
@@ -302,57 +282,52 @@ fn process_directory(
     for entry_result in read_dir {
         let entry = fs_env::dir_entry_validate(&path, entry_result)?;
         let entry_path = entry.path();
-        fs_env::symlink_forbid(&entry_path)?;
 
         if entry_path.is_file() {
             let extension = fs_env::file_extension(&entry_path);
             if matches!(extension, Some("rock")) {
-                modules.push(process_file(session, cache, package_id, entry_path)?);
+                let module_id = process_module(session, &entry_path, origin)?;
+                modules.push(module_id);
             }
         } else if entry_path.is_dir() {
-            sub_dirs.push(process_directory(session, cache, package_id, entry_path)?);
+            let sub_dir = process_directory(session, &entry_path, origin)?;
+            sub_dirs.push(sub_dir);
         } else {
-            unreachable!()
+            panic!("internal: unknown file type")
         }
     }
 
-    let directory = RockDirectory {
-        name_id,
-        path,
-        modules,
-        sub_dirs,
-    };
-    Ok(directory)
+    #[rustfmt::skip]
+    let dir = Directory { name_id, modules, sub_dirs };
+    Ok(dir)
 }
 
-fn process_file(
+fn process_module(
     session: &mut Session,
-    cache: &FileCache,
-    package_id: PackageID,
-    path: PathBuf,
+    path: &PathBuf,
+    origin: PackageID,
 ) -> Result<ModuleID, Error> {
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
-    let source = read_file(cache, &path)?;
-    let line_ranges = text::find_line_ranges(&source);
 
-    let module = RockModule {
-        name_id,
-        path,
-        source,
-        line_ranges,
-        package_id,
-    };
+    let source = fs_env::file_read_to_string(path)?;
+    let file_id = session.vfs.open(path, source);
 
-    let module_id = ModuleID::new(&session.pkg_storage.modules);
-    session.pkg_storage.modules.push(module);
+    #[rustfmt::skip]
+    let module = Module { origin, name_id, file_id, tree: None, ast: None };
+    let module_id = session.add(module);
     Ok(module_id)
 }
 
-fn read_file(cache: &FileCache, path: &PathBuf) -> Result<String, Error> {
-    if let Some(source) = cache.get(path) {
-        Ok(source)
-    } else {
-        fs_env::file_read_to_string(path)
+fn directory_all_modules(dir: &Directory) -> Vec<ModuleID> {
+    let mut modules = Vec::new();
+    let mut dir_stack = vec![dir];
+
+    while let Some(dir) = dir_stack.pop() {
+        modules.extend(&dir.modules);
+        for sub_dir in dir.sub_dirs.iter().rev() {
+            dir_stack.push(sub_dir);
+        }
     }
+    modules
 }

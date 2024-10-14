@@ -7,7 +7,7 @@ use rock_core::config::{BuildKind, TargetOS, TargetTriple};
 use rock_core::error::Error;
 use rock_core::fs_env;
 use rock_core::hir;
-use rock_core::session::Session;
+use rock_core::session::{self, Session};
 use rock_core::support::AsStr;
 use std::path::PathBuf;
 
@@ -28,7 +28,7 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
     build_path.push(options.kind.as_str());
     fs_env::dir_create(&build_path, false)?;
 
-    let manifest = session.pkg_storage.package(Session::ROOT_ID).manifest();
+    let manifest = session.graph.package(session::ROOT_PACKAGE_ID).manifest();
     let bin_name = match &manifest.build.bin_name {
         Some(name) => name.clone(),
         None => manifest.package.name.clone(),

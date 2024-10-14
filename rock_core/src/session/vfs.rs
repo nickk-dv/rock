@@ -7,7 +7,7 @@ pub struct Vfs {
     paths: HashMap<PathBuf, FileID>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct FileID(u32);
 
 pub struct FileData {

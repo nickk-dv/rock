@@ -8,8 +8,7 @@ use rock_core::hir_lower;
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
-use rock_core::session::FileCache;
-use rock_core::session::Session;
+use rock_core::session::{self, Session};
 use rock_core::support::AsStr;
 use rock_core::syntax::ast_build;
 use std::collections::BTreeMap;
@@ -127,8 +126,7 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
 }
 
 fn check() -> Result<(), Error> {
-    let cache = FileCache::new();
-    let mut session = Session::new(&cache, false)?;
+    let mut session = session::create_session()?;
 
     match check_impl(&mut session) {
         Ok(warn) => error_print::print_warnings(Some(&session), warn),
@@ -144,8 +142,7 @@ fn check() -> Result<(), Error> {
 }
 
 fn build(data: CommandBuild) -> Result<(), Error> {
-    let cache = FileCache::new();
-    let mut session = Session::new(&cache, true)?;
+    let mut session = session::create_session()?;
 
     match build_impl(&mut session, data) {
         Ok(()) => (),
@@ -177,8 +174,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
 }
 
 fn run(data: CommandRun) -> Result<(), Error> {
-    let cache = FileCache::new();
-    let mut session = Session::new(&cache, true)?;
+    let mut session = session::create_session()?;
 
     match run_impl(&mut session, data) {
         Ok(()) => (),
@@ -208,7 +204,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         println!("  {g}Finished{r} `{}`", data.kind.as_str());
 
         let run_path = bin_path
-            .strip_prefix(&session.cwd)
+            .strip_prefix(&session.curr_work_dir)
             .unwrap_or_else(|_| &bin_path);
         println!("   {g}Running{r} {}\n", run_path.to_string_lossy());
 
@@ -221,8 +217,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
 }
 
 fn fmt() -> Result<(), Error> {
-    let cache = FileCache::new();
-    let mut session = Session::new(&cache, false)?;
+    let mut session = session::create_session()?;
 
     match fmt_impl(&mut session) {
         Ok(()) => (),
@@ -231,21 +226,19 @@ fn fmt() -> Result<(), Error> {
     return Ok(());
 
     fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
+        //@only parse current package!
+        //@also no need to establish a full "correct" session
+        // but its done by default right now
         ast_build::parse(session)?;
 
-        for module_id in session.pkg_storage.module_ids() {
-            let module = session.pkg_storage.module(module_id);
-            //@current way to iterate over all modules of a package
-            // package doesn't know which modules it has directly
-            if module.package_id != Session::ROOT_ID {
-                continue;
-            }
-            let tree = session.module_trees[module_id.raw_index()]
-                .as_ref()
-                .unwrap(); //@assumed be Some after parsing
+        let root_package = session.graph.package(session::ROOT_PACKAGE_ID);
+        for module_id in root_package.module_ids().iter().copied() {
+            let module = session.module(module_id);
+            let file = session.vfs.file(module.file_id());
 
-            let formatted = format::format(tree, &module.source);
-            fs_env::file_create_or_rewrite(&module.path, &formatted)?;
+            let tree = module.tree_expect();
+            let formatted = format::format(tree, &file.source);
+            fs_env::file_create_or_rewrite(file.path(), &formatted)?;
         }
         Ok(())
     }

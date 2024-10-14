@@ -133,16 +133,12 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
 }
 
 struct ServerContext<'s> {
-    cache: FileCache,
     session: Option<Session<'s>>,
 }
 
 impl<'s> ServerContext<'s> {
     fn new() -> ServerContext<'s> {
-        ServerContext {
-            cache: FileCache::new(),
-            session: None,
-        }
+        ServerContext { session: None }
     }
 }
 
@@ -201,32 +197,36 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::Format\n - document: {:?}", &path);
 
-            let session = match &context.session {
+            let session = match &mut context.session {
                 Some(session) => session,
                 None => {
                     eprintln!(" - session is None");
                     return;
                 }
             };
-            let module_id = match session.pkg_storage.find_module_by_path(&path) {
+            let module_id = match module_id_from_path(session, &path) {
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
                     return;
                 }
             };
+            let module = session.module(module_id);
 
-            if let Some(tree) = session.module_trees[module_id.raw_index()].as_ref() {
-                let module = session.pkg_storage.module(module_id);
-                let formatted = rock_core::format::format(tree, &module.source);
-                context.cache.change(path, Some(formatted.clone())); //@hack
+            if let Some(tree) = module.tree() {
+                let file = session.vfs.file(module.file_id());
+                let formatted = rock_core::format::format(tree, &file.source);
 
                 //@hack overshoot by 1 line to ignore last line chars
-                let end_line = module.line_ranges.len() as u32 + 1;
+                let end_line = file.line_ranges.len() as u32 + 1;
                 let edit_start = lsp::Position::new(0, 0);
                 let edit_end = lsp::Position::new(end_line, 0);
                 let edit_range = lsp::Range::new(edit_start, edit_end);
-                let text_edit = lsp::TextEdit::new(edit_range, formatted);
+                //@forced clone due to open also requiring a moved in String
+                let text_edit = lsp::TextEdit::new(edit_range, formatted.clone());
+
+                //@full file update
+                session.vfs.open(path, formatted);
 
                 let json = serde_json::to_value(vec![text_edit]).expect("json value");
                 send_response(conn, id, json);
@@ -249,7 +249,8 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                     return;
                 }
             };
-            let module_id = match session.pkg_storage.find_module_by_path(&path) {
+
+            let module_id = match module_id_from_path(session, &path) {
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
@@ -258,7 +259,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             };
 
             //@should produce semantic tokens even for incomplete syntax trees
-            if let Some(tree) = session.module_trees[module_id.raw_index()].as_ref() {
+            if let Some(tree) = session.module(module_id).tree() {
                 let semantic_tokens = semantic_tokens(session, module_id, tree);
                 eprintln!(
                     "[SEND: Response] SemanticTokens ({})",
@@ -282,15 +283,9 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
         Notification::SourceFileChanged { path, text } => {
             eprintln!("[HANDLE] Notification::SourceFileChanged: {:?}", &path);
             if let Some(session) = &mut context.session {
-                if let Some(module_id) = session.pkg_storage.find_module_by_path(&path) {
-                    context.cache.change(path, Some(text.clone())); //@hack
-                    let module = session.pkg_storage.module_mut(module_id);
-                    module.line_ranges = text::find_line_ranges(&text);
-                    module.source = text;
-                    eprintln!(" - updated source & line_ranges");
-                } else {
-                    eprintln!(" - module not found");
-                }
+                //@fully update source + line_ranges for the file
+                session.vfs.open(path, text);
+                eprintln!(" - updated source & line_ranges");
             } else {
                 eprintln!(" - session is None");
             }
@@ -345,7 +340,7 @@ use rock_core::error::{
     Diagnostic, DiagnosticData, ErrorWarningBuffer, Severity, SourceRange, WarningBuffer,
 };
 use rock_core::hir_lower;
-use rock_core::session::{FileCache, ModuleID, Session};
+use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax::ast_build;
 use rock_core::text::{self, TextRange};
 
@@ -369,6 +364,17 @@ fn url_from_path(path: &PathBuf) -> lsp::Url {
     }
 }
 
+fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
+    if let Some(file_id) = session.vfs.path_to_file_id(&path) {
+        for module_id in session.module_ids() {
+            if session.module(module_id).file_id() == file_id {
+                return Some(module_id);
+            }
+        }
+    }
+    None
+}
+
 fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
     match severity {
         Severity::Info => Some(lsp::DiagnosticSeverity::HINT),
@@ -381,19 +387,20 @@ fn source_to_range_and_path<'s, 's_ref: 's>(
     session: &'s_ref Session<'s>,
     source: SourceRange,
 ) -> (Range, &'s PathBuf) {
-    let module = session.pkg_storage.module(source.module_id());
+    let module = session.module(source.module_id());
+    let file = session.vfs.file(module.file_id());
 
     let start_location =
-        text::find_text_location(&module.source, source.range().start(), &module.line_ranges);
+        text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
     let end_location =
-        text::find_text_location(&module.source, source.range().end(), &module.line_ranges);
+        text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
 
     let range = Range::new(
         Position::new(start_location.line() - 1, start_location.col() - 1),
         Position::new(end_location.line() - 1, end_location.col() - 1),
     );
 
-    (range, &module.path)
+    (range, file.path())
 }
 
 fn create_diagnostic<'src>(
@@ -476,7 +483,7 @@ fn run_diagnostics(
     let mut messages = Vec::<lsp::Diagnostic>::new();
     let mut diagnostics_map = HashMap::new();
 
-    let mut session = match Session::new(&context.cache, false) {
+    let mut session = match session::create_session() {
         Ok(value) => value,
         Err(error) => {
             let params = lsp::ShowMessageParams {
@@ -497,9 +504,10 @@ fn run_diagnostics(
         Err(errw) => errw.collect(),
     };
 
-    for module_id in session.pkg_storage.module_ids() {
-        let path = session.pkg_storage.module(module_id).path.clone();
-        diagnostics_map.insert(path, Vec::new());
+    for module_id in session.module_ids() {
+        let module = session.module(module_id);
+        let file = session.vfs.file(module.file_id());
+        diagnostics_map.insert(file.path().clone(), Vec::new());
     }
 
     // generate diagnostics
@@ -554,15 +562,14 @@ fn semantic_tokens(
     // store even broken SyntaxTree in the module (without creating the Ast)
     tree: &SyntaxTree, //@dont pass if can get from module_id
 ) -> Vec<lsp::SemanticToken> {
-    let module = session.pkg_storage.module(module_id);
-    let source = module.source.as_str();
-    let line_ranges = module.line_ranges.as_slice();
+    let module = session.module(module_id);
+    let file = session.vfs.file(module.file_id());
 
     let mut builder = SemanticTokenBuilder {
         curr_line: 0,
         prev_range: None,
-        source,
-        line_ranges,
+        source: file.source.as_str(),
+        line_ranges: file.line_ranges.as_slice(),
         //@temp semantic token count estimate
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
     };

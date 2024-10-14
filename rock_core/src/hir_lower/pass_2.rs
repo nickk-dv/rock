@@ -13,35 +13,37 @@ pub fn resolve_imports(ctx: &mut HirCtx) {
 }
 
 fn resolve_import(ctx: &mut HirCtx, origin_id: ModuleID, import: &ast::ImportItem) {
-    let mut source_package = ctx
-        .session
-        .pkg_storage
-        .package(ctx.session.pkg_storage.module(origin_id).package_id);
+    let source_package_id = ctx.session.module(origin_id).origin();
+    let mut source_package = ctx.session.graph.package(source_package_id);
 
     if let Some(package_name) = import.package {
-        if let Some(dependency_id) = source_package.dependency(package_name.id) {
-            source_package = ctx.session.pkg_storage.package(dependency_id);
+        if let Some(dep_id) = ctx
+            .session
+            .graph
+            .find_package_dep(source_package_id, package_name.id)
+        {
+            source_package = ctx.session.graph.package(dep_id);
         } else {
             let src = SourceRange::new(origin_id, package_name.range);
             let dep_name = ctx.name_str(package_name.id);
-            let src_name = ctx.name_str(source_package.name_id);
+            let src_name = ctx.name_str(source_package.name());
             err::import_package_dependency_not_found(&mut ctx.emit, src, dep_name, src_name);
             return;
         }
-    }
+    };
 
     assert!(!import.import_path.is_empty());
     let directory_count = import.import_path.len() - 1;
     let directory_names = &import.import_path[0..directory_count];
     let module_name = *import.import_path.last().unwrap();
-    let mut target_dir = &source_package.src;
+    let mut target_dir = source_package.src();
 
     for name in directory_names {
-        match target_dir.find(&ctx.session.pkg_storage, name.id) {
+        match target_dir.find(&ctx.session, name.id) {
             ModuleOrDirectory::None => {
                 let src = SourceRange::new(origin_id, name.range);
                 let dir_name = ctx.name_str(name.id);
-                let pkg_name = ctx.name_str(source_package.name_id);
+                let pkg_name = ctx.name_str(source_package.name());
                 err::import_expected_dir_not_found(&mut ctx.emit, src, dir_name, pkg_name);
                 return;
             }
@@ -57,11 +59,11 @@ fn resolve_import(ctx: &mut HirCtx, origin_id: ModuleID, import: &ast::ImportIte
         }
     }
 
-    let target_id = match target_dir.find(&ctx.session.pkg_storage, module_name.id) {
+    let target_id = match target_dir.find(&ctx.session, module_name.id) {
         ModuleOrDirectory::None => {
             let src = SourceRange::new(origin_id, module_name.range);
             let module_name = ctx.name_str(module_name.id);
-            let pkg_name = ctx.name_str(source_package.name_id);
+            let pkg_name = ctx.name_str(source_package.name());
             err::import_expected_mod_not_found(&mut ctx.emit, src, module_name, pkg_name);
             return;
         }

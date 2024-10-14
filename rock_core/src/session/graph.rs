@@ -1,7 +1,8 @@
 use crate::error::Error;
 use crate::errors as err;
 use crate::intern::{InternName, InternPool};
-use crate::session_2::{Package, PackageID};
+use crate::session::{Package, PackageID};
+use crate::support::ID;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -28,6 +29,19 @@ impl PackageGraph {
     #[inline]
     pub fn package_mut(&mut self, package_id: PackageID) -> &mut Package {
         self.packages.get_mut(&package_id).unwrap()
+    }
+
+    #[inline]
+    pub fn find_package_dep(
+        &self,
+        package_id: PackageID,
+        dep_name: ID<InternName>,
+    ) -> Option<PackageID> {
+        let package = self.package(package_id);
+        package.deps.iter().copied().find(|&dep_id| {
+            let dep = self.package(dep_id);
+            dep.name_id == dep_name
+        })
     }
 
     #[must_use]

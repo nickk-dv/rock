@@ -105,31 +105,30 @@ pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
     // try later if no lifetime conflits will occur
     let mut state = AstBuildState::new();
 
-    for module_id in session.pkg_storage.module_ids() {
-        let module = session.pkg_storage.module(module_id);
+    for module_id in session.module_ids() {
+        let module = session.module(module_id);
+        let file = session.vfs.file(module.file_id());
         //@with trivia depends on a task, fmt / ls require it, basic compile doesnt need it.
         let tree_result =
-            super::parse_tree_complete(&module.source, &mut session.intern_lit, module_id, true);
+            super::parse_tree_complete(&file.source, &mut session.intern_lit, module_id, true);
 
         match tree_result {
             Ok(tree) => {
                 let mut ctx = AstBuild::new(
                     &tree,
-                    &module.source,
+                    &file.source,
                     module_id,
                     &mut session.intern_name,
                     &mut state,
                 );
                 let items = source_file(&mut ctx, tree.source_file());
                 let ast = ctx.finish(items);
-                //@will not lineup with ModuleID's if some Asts failed to be created
-                session.module_asts.push(ast);
-                session.module_trees.push(Some(tree));
+
+                let module = session.module_mut(module_id);
+                module.set_ast(ast);
+                module.set_tree(tree);
             }
-            Err(errors) => {
-                state.errors.join_e(errors);
-                session.module_trees.push(None);
-            }
+            Err(errors) => state.errors.join_e(errors),
         }
     }
 

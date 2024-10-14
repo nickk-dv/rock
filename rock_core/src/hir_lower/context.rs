@@ -101,7 +101,7 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
     }
     #[inline]
     pub fn ast_items(&self, module_id: ModuleID) -> &'ast [ast::Item<'ast>] {
-        self.session.module_asts[module_id.raw_index()].items
+        self.session.module(module_id).ast_expect().items
     }
 
     pub fn hir_emit(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
@@ -163,11 +163,13 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
 }
 
 impl<'hir> HirScope<'hir> {
-    //@hacky corresponding vec of module scopes
     pub fn new(session: &Session) -> HirScope<'hir> {
-        let mut modules = Vec::with_capacity(session.module_asts.len());
+        let mut modules = Vec::with_capacity(session.module_ids().count());
 
-        for ast in session.module_asts.iter() {
+        for module_id in session.module_ids() {
+            let module = session.module(module_id);
+            let ast = module.ast_expect();
+
             let mut symbol_count = 0;
             for item in ast.items {
                 symbol_count += 1;
@@ -175,22 +177,22 @@ impl<'hir> HirScope<'hir> {
                     symbol_count += import.symbols.len();
                 }
             }
-            let name_id = session
-                .pkg_storage
-                .module(ID::new_raw(modules.len()))
-                .name_id;
+
             let symbols = HashMap::with_capacity(symbol_count);
-            modules.push(ModuleScope { name_id, symbols });
+            modules.push(ModuleScope {
+                name_id: module.name(),
+                symbols,
+            });
         }
 
         HirScope { modules }
     }
 
-    fn module(&self, id: ModuleID) -> &ModuleScope<'hir> {
-        &self.modules[id.raw_index()]
+    fn module(&self, module_id: ModuleID) -> &ModuleScope<'hir> {
+        &self.modules[module_id.index()]
     }
-    fn module_mut(&mut self, id: ModuleID) -> &mut ModuleScope<'hir> {
-        &mut self.modules[id.raw_index()]
+    fn module_mut(&mut self, module_id: ModuleID) -> &mut ModuleScope<'hir> {
+        &mut self.modules[module_id.index()]
     }
 
     pub fn add_symbol(&mut self, origin_id: ModuleID, id: ID<InternName>, symbol: Symbol<'hir>) {
@@ -377,7 +379,10 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let mut global_count = 0;
         let mut import_count = 0;
 
-        for ast in session.module_asts.iter() {
+        for module_id in session.module_ids() {
+            let module = session.module(module_id);
+            let ast = module.ast_expect();
+
             for item in ast.items {
                 match item {
                     ast::Item::Proc(_) => proc_count += 1,

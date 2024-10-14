@@ -15,7 +15,6 @@ pub mod intern;
 mod lexer;
 pub mod package;
 pub mod session;
-pub mod session_2;
 pub mod support;
 pub mod syntax;
 pub mod text;

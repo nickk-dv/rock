@@ -4,11 +4,11 @@ use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange};
 use crate::hir;
 use crate::package::manifest::PackageKind;
-use crate::session::{ModuleOrDirectory, Session};
+use crate::session::{self, ModuleOrDirectory, Session};
 use crate::text::TextRange;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {
-    let root_package = ctx.session.pkg_storage.package(Session::ROOT_ID);
+    let root_package = ctx.session.graph.package(session::ROOT_PACKAGE_ID);
     let root_manifest = root_package.manifest();
     if root_manifest.package.kind != PackageKind::Bin {
         return;
@@ -24,7 +24,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
         }
     };
 
-    let module_or_directory = root_package.src.find(&ctx.session.pkg_storage, main_id);
+    let module_or_directory = root_package.src().find(&ctx.session, main_id);
 
     let origin_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,

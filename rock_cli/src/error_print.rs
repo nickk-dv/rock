@@ -3,7 +3,7 @@ use rock_core::error::{
     Diagnostic, DiagnosticContext, DiagnosticData, Error, ErrorBuffer, ErrorWarningBuffer,
     Severity, Warning, WarningBuffer,
 };
-use rock_core::session::{RockModule, Session};
+use rock_core::session::{Module, Session};
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
@@ -58,7 +58,7 @@ struct StateFmt<'src> {
 }
 
 struct ContextFmt<'src> {
-    module: &'src RockModule,
+    source: &'src str,
     path: &'src Path,
     message: &'src str,
     range: TextRange,
@@ -94,19 +94,20 @@ impl<'src> ContextFmt<'src> {
         context: &'src DiagnosticContext,
         severity: Severity,
     ) -> ContextFmt<'src> {
-        let module = session.pkg_storage.module(context.src().module_id());
-        let path = module
-            .path
-            .strip_prefix(&session.cwd)
-            .unwrap_or_else(|_| &module.path);
+        let module = session.module(context.src().module_id());
+        let file = session.vfs.file(module.file_id());
+        let path = file
+            .path()
+            .strip_prefix(&session.curr_work_dir)
+            .unwrap_or_else(|_| file.path());
 
         let range = context.src().range();
-        let location = text::find_text_location(&module.source, range.start(), &module.line_ranges);
+        let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
         let line_num = location.line().to_string();
-        let line_range = module.line_ranges[location.line_index()];
+        let line_range = file.line_ranges[location.line_index()];
 
         ContextFmt {
-            module,
+            source: &file.source,
             path,
             message: context.msg(),
             range,
@@ -184,9 +185,9 @@ fn print_context(
         (fmt.line_range.end() - 1.into()).min(fmt.range.end()),
     );
 
-    let line_str = &fmt.module.source[fmt.line_range.as_usize()];
-    let prefix_str = &fmt.module.source[prefix_range.as_usize()];
-    let source_str = &fmt.module.source[source_range.as_usize()];
+    let line_str = &fmt.source[fmt.line_range.as_usize()];
+    let prefix_str = &fmt.source[prefix_range.as_usize()];
+    let source_str = &fmt.source[source_range.as_usize()];
 
     let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
     let marker_pad = " ".repeat(normalized_tab_len(prefix_str));
