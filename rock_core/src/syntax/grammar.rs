@@ -660,7 +660,8 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
     }
 
     let mc = match p.peek() {
-        T![null]
+        T![void]
+        | T![null]
         | T![true]
         | T![false]
         | T![int_lit]
@@ -946,7 +947,8 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             p.bump(T![_]);
             m.complete(p, SyntaxKind::PAT_WILD)
         }
-        T![null]
+        T![void]
+        | T![null]
         | T![true]
         | T![false]
         | T![int_lit]
@@ -986,6 +988,11 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
 
 fn lit(p: &mut Parser) -> MarkerClosed {
     match p.peek() {
+        T![void] => {
+            let m = p.start();
+            p.bump(T![void]);
+            m.complete(p, SyntaxKind::LIT_VOID)
+        }
         T![null] => {
             let m = p.start();
             p.bump(T![null]);

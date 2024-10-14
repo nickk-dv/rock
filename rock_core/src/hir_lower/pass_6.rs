@@ -4,7 +4,7 @@ use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange};
 use crate::hir;
 use crate::package::manifest::PackageKind;
-use crate::session::{self, ModuleOrDirectory, Session};
+use crate::session::{self, ModuleOrDirectory};
 use crate::text::TextRange;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {

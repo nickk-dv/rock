@@ -1,6 +1,6 @@
 use super::constant;
 use super::context::HirCtx;
-use super::pass_5::{self, Expectation};
+use super::pass_5::Expectation;
 use crate::ast;
 use crate::error::{Error, ErrorSink, Info, SourceRange};
 use crate::hir;
@@ -162,7 +162,6 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
         } else {
             let ty_range = param.ty.range;
             let ty = type_resolve_delayed(ctx, origin_id, param.ty);
-            pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, param.ty.range));
 
             let param = hir::Param {
                 mutt: param.mutt,
@@ -322,7 +321,6 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'
         } else {
             let ty_range = field.ty.range;
             let ty = type_resolve_delayed(ctx, origin_id, field.ty);
-            pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, field.ty.range));
 
             let field = hir::Field {
                 vis: field.vis,
@@ -341,8 +339,6 @@ fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID<'hi
     let origin_id = ctx.registry.const_data(id).origin_id;
     let item = ctx.registry.const_item(id);
     let ty = type_resolve_delayed(ctx, origin_id, item.ty);
-
-    pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, item.ty.range));
     ctx.registry.const_data_mut(id).ty = ty;
 }
 
@@ -350,7 +346,5 @@ fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID<'
     let origin_id = ctx.registry.global_data(id).origin_id;
     let item = ctx.registry.global_item(id);
     let ty = type_resolve_delayed(ctx, origin_id, item.ty);
-
-    pass_5::require_value_type(ctx, ty, SourceRange::new(origin_id, item.ty.range));
     ctx.registry.global_data_mut(id).ty = ty;
 }

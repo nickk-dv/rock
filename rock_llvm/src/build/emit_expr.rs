@@ -163,6 +163,7 @@ fn codegen_expr<'c>(
 
 pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
+        hir::ConstValue::Void => codegen_const_void(cg),
         hir::ConstValue::Null => codegen_const_null(cg),
         hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
         hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),
@@ -175,6 +176,11 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { value, len } => codegen_const_array_repeat(cg, value, len),
     }
+}
+
+#[inline]
+fn codegen_const_void(cg: &Codegen) -> llvm::Value {
+    llvm::const_struct_named(cg.void_val_type(), &[])
 }
 
 #[inline]
@@ -237,8 +243,11 @@ fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
         values.push(value);
     }
 
-    //@type of zero sized arrays is not stored, will crash
-    let elem_ty = llvm::typeof_value(values[0]);
+    let elem_ty = if let Some(val) = values.get(0) {
+        llvm::typeof_value(*val)
+    } else {
+        cg.void_val_type().as_ty()
+    };
     llvm::const_array(elem_ty, &values)
 }
 
@@ -247,8 +256,11 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     let value = codegen_const(cg, cg.hir.const_value(value_id));
     values.resize(len as usize, value);
 
-    //@zero sized array repeat is counter intuitive
-    let elem_ty = llvm::typeof_value(values[0]);
+    let elem_ty = if let Some(val) = values.get(0) {
+        llvm::typeof_value(*val)
+    } else {
+        cg.void_val_type().as_ty()
+    };
     llvm::const_array(elem_ty, &values)
 }
 
@@ -463,16 +475,38 @@ fn codegen_index<'c>(
         target_ptr
     };
 
-    //@bounds check
     let index_val = codegen_expr_value(cg, proc_cg, access.index);
 
-    //@add back inbounds and nuw | nusw to gep?
+    let bound = match access.kind {
+        hir::IndexKind::Slice => {
+            let slice_len_ptr =
+                cg.build
+                    .gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
+            cg.build
+                .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+        }
+        hir::IndexKind::Array(len) => {
+            let len = cg.array_len(len);
+            cg.const_usize(len)
+        }
+    };
+
+    let check_bb = cg.append_bb(proc_cg, "bounds_check");
+    let exit_bb = cg.append_bb(proc_cg, "bounds_exit");
+    let cond = codegen_binary_op(cg, hir::BinOp::GreaterEq_IntU, index_val, bound);
+    cg.build.cond_br(cond, check_bb, exit_bb);
+    cg.build.position_at_end(check_bb);
+    //@insert panic call (cannot get reference to it currently)
+    cg.build.br(exit_bb); //@insert unrechable as hint?
+    cg.build.position_at_end(exit_bb);
+
     let elem_ptr = match access.kind {
         hir::IndexKind::Slice => {
             let slice_ptr = cg
                 .build
                 .load(cg.ptr_type(), target_ptr, "slice_ptr")
                 .into_ptr();
+
             cg.build.gep(
                 cg.ty(access.elem_ty),
                 slice_ptr,

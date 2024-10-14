@@ -163,13 +163,22 @@ fn codegen_function_values(cg: &mut Codegen) {
         } else {
             "rock_proc"
         };
+
         let linkage = if is_main || is_external {
             llvm::Linkage::LLVMExternalLinkage
         } else {
             llvm::Linkage::LLVMInternalLinkage
         };
 
-        let fn_ty = llvm::function_type(cg.ty(data.return_ty), &param_types, is_variadic);
+        let return_ty = match data.return_ty {
+            hir::Type::Basic(ast::BasicType::Void) => cg.void_type(),
+            hir::Type::Basic(ast::BasicType::Never) => cg.void_type(),
+            _ => cg.ty(data.return_ty),
+        };
+
+        //@add noreturn attribute on `never` returning functions
+        //- inline hint when #[inline] is present
+        let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
         cg.procs.push((fn_val, fn_ty));
     }

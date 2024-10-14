@@ -272,6 +272,7 @@ pub type ConstValueID<'hir> = ID<ConstValue<'hir>>;
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
+    Void,
     Null,
     Bool        { val: bool },
     Int         { val: u64, neg: bool, int_ty: BasicInt },
@@ -707,7 +708,8 @@ impl<'hir> Eq for ConstValue<'hir> {}
 impl<'hir> Hash for ConstValue<'hir> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match *self {
-            ConstValue::Null => 0.hash(state),
+            ConstValue::Void => 0.hash(state),
+            ConstValue::Null => 1.hash(state),
             ConstValue::Bool { val } => val.hash(state),
             ConstValue::Int { val, neg, int_ty } => (val, neg, int_ty).hash(state),
             ConstValue::Float { val, float_ty } => (val.to_bits(), float_ty).hash(state),

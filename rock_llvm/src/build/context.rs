@@ -71,6 +71,8 @@ struct CodegenCache {
     void_type: llvm::Type,
     ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
+    void_val_type: llvm::TypeStruct,
+    never_val_type: llvm::TypeStruct,
 }
 
 impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
@@ -135,13 +137,21 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             ast::BasicType::Bool => self.cache.int_1,
             ast::BasicType::Char => self.cache.int_32,
             ast::BasicType::Rawptr => self.cache.ptr_type,
-            ast::BasicType::Void => self.cache.void_type,
-            ast::BasicType::Never => self.cache.void_type,
+            ast::BasicType::Void => self.cache.void_val_type.as_ty(),
+            ast::BasicType::Never => self.cache.never_val_type.as_ty(),
         }
     }
 
     pub fn bool_type(&self) -> llvm::Type {
         self.cache.int_1
+    }
+
+    pub fn void_type(&self) -> llvm::Type {
+        self.cache.void_type
+    }
+
+    pub fn void_val_type(&self) -> llvm::TypeStruct {
+        self.cache.void_val_type
     }
 
     pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
@@ -341,8 +351,13 @@ impl CodegenCache {
     fn new(context: &llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
         let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
+
         let slice_type = context.struct_create_named("rock.slice");
+        let void_val_type = context.struct_create_named("rock.void");
+        let never_val_type = context.struct_create_named("rock.never");
         context.struct_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
+        context.struct_set_body(void_val_type, &[], false);
+        context.struct_set_body(never_val_type, &[], false);
 
         CodegenCache {
             int_1: context.int_1(),
@@ -356,6 +371,8 @@ impl CodegenCache {
             void_type: context.void_type(),
             ptr_sized_int,
             slice_type,
+            void_val_type,
+            never_val_type,
         }
     }
 }

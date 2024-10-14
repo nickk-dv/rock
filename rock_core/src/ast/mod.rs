@@ -326,6 +326,7 @@ pub enum PatKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub enum Lit {
+    Void,
     Null,
     Bool(bool),
     Int(u64),

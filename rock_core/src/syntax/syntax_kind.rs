@@ -80,6 +80,7 @@ pub enum SyntaxKind {
     PAT_VARIANT,
     PAT_OR,
 
+    LIT_VOID,
     LIT_NULL,
     LIT_BOOL,
     LIT_INT,

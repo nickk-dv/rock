@@ -301,6 +301,10 @@ fn typecheck_lit<'hir>(
     lit: ast::Lit,
 ) -> TypeResult<'hir> {
     let (value, ty) = match lit {
+        ast::Lit::Void => {
+            let value = hir::ConstValue::Void;
+            (value, hir::Type::Basic(BasicType::Void))
+        }
         ast::Lit::Null => {
             let value = hir::ConstValue::Null;
             (value, hir::Type::Basic(BasicType::Rawptr))
@@ -2495,35 +2499,6 @@ fn typecheck_assign<'hir>(
         lhs_ty: lhs_res.ty,
     };
     ctx.arena.alloc(assign)
-}
-
-// these calls are only done for items so far @26.04.24
-// locals or input params etc not checked yet (need to find a reasonable strategy)
-// proc return type is allowed to be never or void unlike other instances where types are used
-pub fn require_value_type(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) {
-    if !type_is_value_type(ty) {
-        ctx.emit.error(Error::new(
-            format!(
-                "expected value type, found `{}`",
-                type_format(ctx, ty).as_str()
-            ),
-            src,
-            None,
-        ))
-    }
-}
-
-pub fn type_is_value_type(ty: hir::Type) -> bool {
-    match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => !matches!(basic, BasicType::Void | BasicType::Never),
-        hir::Type::Enum(_) => true,
-        hir::Type::Struct(_) => true,
-        hir::Type::Reference(ref_ty, _) => type_is_value_type(*ref_ty),
-        hir::Type::Procedure(_) => true,
-        hir::Type::ArraySlice(slice) => type_is_value_type(slice.elem_ty),
-        hir::Type::ArrayStatic(array) => type_is_value_type(array.elem_ty),
-    }
 }
 
 //==================== UNUSED CHECK ====================

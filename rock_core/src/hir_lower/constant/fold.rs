@@ -61,7 +61,8 @@ fn fold_const<'hir>(
     match value {
         hir::ConstValue::Int { val, int_ty, .. } => int_range_check(ctx, src, val.into(), int_ty),
         hir::ConstValue::Float { val, float_ty } => float_range_check(ctx, src, val, float_ty),
-        hir::ConstValue::Null
+        hir::ConstValue::Void
+        | hir::ConstValue::Null
         | hir::ConstValue::Bool { .. }
         | hir::ConstValue::Char { .. }
         | hir::ConstValue::String { .. }

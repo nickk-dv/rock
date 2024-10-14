@@ -969,6 +969,7 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
 
 fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     match lit {
+        cst::Lit::Void(_) => ast::Lit::Void,
         cst::Lit::Null(_) => ast::Lit::Null,
         cst::Lit::Bool(lit) => {
             let (val, _) = lit.value(ctx.tree).unwrap();

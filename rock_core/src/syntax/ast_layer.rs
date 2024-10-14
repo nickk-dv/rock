@@ -462,6 +462,7 @@ ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
 ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
 ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
 
+ast_node_impl!(LitVoid, SyntaxKind::LIT_VOID);
 ast_node_impl!(LitNull, SyntaxKind::LIT_NULL);
 ast_node_impl!(LitBool, SyntaxKind::LIT_BOOL);
 ast_node_impl!(LitInt, SyntaxKind::LIT_INT);
@@ -712,6 +713,7 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
 
 #[derive(Copy, Clone)]
 pub enum Lit<'syn> {
+    Void(LitVoid<'syn>),
     Null(LitNull<'syn>),
     Bool(LitBool<'syn>),
     Int(LitInt<'syn>),
@@ -723,6 +725,7 @@ pub enum Lit<'syn> {
 impl<'syn> AstNode<'syn> for Lit<'syn> {
     fn cast(node: &'syn Node<'syn>) -> Option<Lit<'syn>> {
         match node.kind {
+            SyntaxKind::LIT_VOID => Some(Lit::Void(LitVoid(node))),
             SyntaxKind::LIT_NULL => Some(Lit::Null(LitNull(node))),
             SyntaxKind::LIT_BOOL => Some(Lit::Bool(LitBool(node))),
             SyntaxKind::LIT_INT => Some(Lit::Int(LitInt(node))),
@@ -734,6 +737,7 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
     }
     fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
+            Lit::Void(lit) => lit.find_range(tree),
             Lit::Null(lit) => lit.find_range(tree),
             Lit::Bool(lit) => lit.find_range(tree),
             Lit::Int(lit) => lit.find_range(tree),
@@ -1134,6 +1138,8 @@ impl<'syn> PatOr<'syn> {
 }
 
 //==================== LIT ====================
+
+impl<'syn> LitVoid<'syn> {}
 
 impl<'syn> LitNull<'syn> {}
 

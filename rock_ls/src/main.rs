@@ -669,6 +669,7 @@ fn semantic_visit_node(
                     SyntaxKind::PAT_VARIANT => Some(SemanticToken::EnumMember),
                     SyntaxKind::PAT_OR => None,
 
+                    SyntaxKind::LIT_VOID => None,
                     SyntaxKind::LIT_NULL => None,
                     SyntaxKind::LIT_BOOL => None,
                     SyntaxKind::LIT_INT => None,
@@ -695,6 +696,7 @@ fn semantic_visit_node(
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
 
+                //@color void differently (type vs void literal, number color?)
                 let semantic = match token {
                     Token::Eof => continue,
                     Token::Ident => match ident_style {
