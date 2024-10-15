@@ -1,7 +1,7 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::{ErrorBuffer, SourceRange};
+use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::{ModuleID, Session};
@@ -95,46 +95,48 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-//@wasteful since asts are not needed
-// if any of the syntax trees failed to parse
-// current `in-bulk` apis are bad
-pub fn parse<'ast>(session: &mut Session) -> Result<(), ErrorBuffer> {
+pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBuffer> {
     let t_total = Timer::new();
-
-    //@state could be re-used via storing it in Session,
-    // try later if no lifetime conflits will occur
     let mut state = AstBuildState::new();
 
-    for module_id in session.module_ids() {
-        let module = session.module(module_id);
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
-        //@with trivia depends on a task, fmt / ls require it, basic compile doesnt need it.
-        let tree_result =
-            super::parse_tree_complete(&file.source, &mut session.intern_lit, module_id, true);
 
+        let tree_result = super::parse_tree_complete(
+            &file.source,
+            &mut session.intern_lit,
+            module_id,
+            with_trivia,
+        );
         match tree_result {
-            Ok(tree) => {
-                let mut ctx = AstBuild::new(
-                    &tree,
-                    &file.source,
-                    module_id,
-                    &mut session.intern_name,
-                    &mut state,
-                );
-                let items = source_file(&mut ctx, tree.source_file());
-                let ast = ctx.finish(items);
-
-                let module = session.module_mut(module_id);
-                module.set_ast(ast);
-                module.set_tree(tree);
-            }
+            Ok(tree) => session.module.get_mut(module_id).set_tree(tree),
             Err(errors) => state.errors.join_e(errors),
         }
     }
 
+    if state.errors.error_count() > 0 {
+        return state.errors.result(());
+    }
+
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
+        let file = session.vfs.file(module.file_id());
+        let tree = module.tree_expect();
+
+        let mut ctx = AstBuild::new(
+            &tree,
+            &file.source,
+            module_id,
+            &mut session.intern_name,
+            &mut state,
+        );
+        let items = source_file(&mut ctx, tree.source_file());
+        let ast = ctx.finish(items);
+        session.module.get_mut(module_id).set_ast(ast);
+    }
+
     t_total.stop("ast parse (tree) total");
-    //@non lexer / syntax errors (binary prec confict error)
-    //should not result in Ast parsing failing
     state.errors.result(())
 }
 

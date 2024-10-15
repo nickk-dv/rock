@@ -354,7 +354,7 @@ fn resolve_attr(
     origin_id: ModuleID,
     attr: &ast::Attr,
 ) -> Result<AttrResolvedData, ()> {
-    let module = ctx.session.module(origin_id);
+    let module = ctx.session.module.get(origin_id);
     let file = ctx.session.vfs.file(module.file_id());
     let attr_name = &file.source[attr.name.range.as_usize()];
 
@@ -474,7 +474,7 @@ fn resolve_cfg_params(
     let mut cfg_state = CfgState::new_enabled();
 
     for param in params {
-        let module = ctx.session.module(origin_id);
+        let module = ctx.session.module.get(origin_id);
         let file = ctx.session.vfs.file(module.file_id());
         let param_name = &file.source[param.name.range.as_usize()];
 
@@ -558,7 +558,7 @@ fn resolve_repr_param(
     origin_id: ModuleID,
     param: &ast::AttrParam,
 ) -> Result<ReprKind, ()> {
-    let module = ctx.session.module(origin_id);
+    let module = ctx.session.module.get(origin_id);
     let file = ctx.session.vfs.file(module.file_id());
     let param_name = &file.source[param.name.range.as_usize()];
 

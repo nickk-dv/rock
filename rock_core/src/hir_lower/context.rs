@@ -101,7 +101,7 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
     }
     #[inline]
     pub fn ast_items(&self, module_id: ModuleID) -> &'ast [ast::Item<'ast>] {
-        self.session.module(module_id).ast_expect().items
+        self.session.module.get(module_id).ast_expect().items
     }
 
     pub fn hir_emit(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
@@ -164,10 +164,10 @@ impl<'hir, 'ast, 's_ref> HirCtx<'hir, 'ast, 's_ref> {
 
 impl<'hir> HirScope<'hir> {
     pub fn new(session: &Session) -> HirScope<'hir> {
-        let mut modules = Vec::with_capacity(session.module_ids().count());
+        let mut modules = Vec::with_capacity(session.module.ids().count());
 
-        for module_id in session.module_ids() {
-            let module = session.module(module_id);
+        for module_id in session.module.ids() {
+            let module = session.module.get(module_id);
             let ast = module.ast_expect();
 
             let mut symbol_count = 0;
@@ -379,8 +379,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         let mut global_count = 0;
         let mut import_count = 0;
 
-        for module_id in session.module_ids() {
-            let module = session.module(module_id);
+        for module_id in session.module.ids() {
+            let module = session.module.get(module_id);
             let ast = module.ast_expect();
 
             for item in ast.items {

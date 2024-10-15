@@ -12,27 +12,27 @@ use crate::session::ModuleID;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
-pub fn parse_tree<'src, 'syn>(
-    source: &'src str,
-    intern_lit: &'src mut InternPool<'_, InternLit>,
+pub fn parse_tree<'syn>(
+    source: &str,
+    intern_lit: &mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
-    let (tokens, mut lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
+    let (tokens, lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
-    let (tokens, events, parse_errors) = parser.finish();
+    let (tokens, events, mut parse_errors) = parser.finish();
 
     let tree = syntax_tree::build(tokens, events, source);
 
-    lex_errors.join_e(parse_errors);
-    (tree, lex_errors)
+    parse_errors.join_e(lex_errors);
+    (tree, parse_errors)
 }
 
-pub fn parse_tree_complete<'src, 'syn>(
-    source: &'src str,
-    intern_lit: &'src mut InternPool<'_, InternLit>,
+pub fn parse_tree_complete<'syn>(
+    source: &str,
+    intern_lit: &mut InternPool<'_, InternLit>,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> Result<SyntaxTree<'syn>, ErrorBuffer> {

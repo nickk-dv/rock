@@ -211,7 +211,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                     return;
                 }
             };
-            let module = session.module(module_id);
+            let module = session.module.get(module_id);
 
             if let Some(tree) = module.tree() {
                 let file = session.vfs.file(module.file_id());
@@ -259,7 +259,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             };
 
             //@should produce semantic tokens even for incomplete syntax trees
-            if let Some(tree) = session.module(module_id).tree() {
+            if let Some(tree) = session.module.get(module_id).tree() {
                 let semantic_tokens = semantic_tokens(session, module_id, tree);
                 eprintln!(
                     "[SEND: Response] SemanticTokens ({})",
@@ -348,7 +348,7 @@ use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsPa
 use std::path::PathBuf;
 
 fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
-    ast_build::parse(session)?;
+    ast_build::parse_all(session, true)?;
     let (_, warnings) = hir_lower::check(session)?;
     Ok(warnings)
 }
@@ -366,8 +366,8 @@ fn url_from_path(path: &PathBuf) -> lsp::Url {
 
 fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
     if let Some(file_id) = session.vfs.path_to_file_id(&path) {
-        for module_id in session.module_ids() {
-            if session.module(module_id).file_id() == file_id {
+        for module_id in session.module.ids() {
+            if session.module.get(module_id).file_id() == file_id {
                 return Some(module_id);
             }
         }
@@ -387,7 +387,7 @@ fn source_to_range_and_path<'s, 's_ref: 's>(
     session: &'s_ref Session<'s>,
     source: SourceRange,
 ) -> (Range, &'s PathBuf) {
-    let module = session.module(source.module_id());
+    let module = session.module.get(source.module_id());
     let file = session.vfs.file(module.file_id());
 
     let start_location =
@@ -504,8 +504,8 @@ fn run_diagnostics(
         Err(errw) => errw.collect(),
     };
 
-    for module_id in session.module_ids() {
-        let module = session.module(module_id);
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
         diagnostics_map.insert(file.path().clone(), Vec::new());
     }
@@ -562,7 +562,7 @@ fn semantic_tokens(
     // store even broken SyntaxTree in the module (without creating the Ast)
     tree: &SyntaxTree, //@dont pass if can get from module_id
 ) -> Vec<lsp::SemanticToken> {
-    let module = session.module(module_id);
+    let module = session.module.get(module_id);
     let file = session.vfs.file(module.file_id());
 
     let mut builder = SemanticTokenBuilder {

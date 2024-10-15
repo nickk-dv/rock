@@ -135,7 +135,7 @@ fn check() -> Result<(), Error> {
     return Ok(());
 
     fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
-        ast_build::parse(session)?;
+        ast_build::parse_all(session, false)?;
         let (_, warn) = hir_lower::check(session)?;
         Ok(warn)
     }
@@ -151,7 +151,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     return Ok(());
 
     fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ErrorWarningBuffer> {
-        ast_build::parse(session)?;
+        ast_build::parse_all(session, false)?;
         let (hir, warn) = hir_lower::check(session)?;
         error_print::print_warnings(Some(&session), warn);
 
@@ -183,7 +183,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
     return Ok(());
 
     fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ErrorWarningBuffer> {
-        ast_build::parse(session)?;
+        ast_build::parse_all(session, false)?;
         let (hir, warn) = hir_lower::check(session)?;
         error_print::print_warnings(Some(&session), warn);
 
@@ -217,6 +217,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
 }
 
 fn fmt() -> Result<(), Error> {
+    //@need a reduced session with only root package src
     let mut session = session::create_session()?;
 
     match fmt_impl(&mut session) {
@@ -226,14 +227,12 @@ fn fmt() -> Result<(), Error> {
     return Ok(());
 
     fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
-        //@only parse current package!
-        //@also no need to establish a full "correct" session
-        // but its done by default right now
-        ast_build::parse(session)?;
+        //@only parse syntax trees? how to handle bin op prec errors?
+        ast_build::parse_all(session, true)?;
 
         let root_package = session.graph.package(session::ROOT_PACKAGE_ID);
         for module_id in root_package.module_ids().iter().copied() {
-            let module = session.module(module_id);
+            let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
 
             let tree = module.tree_expect();

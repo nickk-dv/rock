@@ -21,6 +21,10 @@ pub struct Session<'s> {
     pub intern_lit: InternPool<'s, InternLit>,
     pub intern_name: InternPool<'s, InternName>,
     pub graph: PackageGraph,
+    pub module: Modules<'s>,
+}
+
+pub struct Modules<'s> {
     modules: Vec<Module<'s>>,
 }
 
@@ -53,18 +57,24 @@ pub struct Directory {
 pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
 pub const ROOT_PACKAGE_ID: PackageID = PackageID(1);
 
-impl<'s> Session<'s> {
+impl<'s> Modules<'s> {
+    fn new(cap: usize) -> Modules<'s> {
+        Modules {
+            modules: Vec::with_capacity(cap),
+        }
+    }
+
     #[inline]
-    pub fn module(&self, module_id: ModuleID) -> &Module<'s> {
+    pub fn ids(&self) -> impl Iterator<Item = ModuleID> {
+        (0..(self.modules.len() as u32)).map(ModuleID)
+    }
+    #[inline]
+    pub fn get(&self, module_id: ModuleID) -> &Module<'s> {
         &self.modules[module_id.index()]
     }
     #[inline]
-    pub fn module_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
+    pub fn get_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
         &mut self.modules[module_id.index()]
-    }
-
-    pub fn module_ids(&self) -> impl Iterator<Item = ModuleID> {
-        (0..(self.modules.len() as u32)).map(ModuleID)
     }
 
     #[must_use]
@@ -180,7 +190,7 @@ impl Directory {
     #[must_use]
     pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
-            if session.module(module_id).name_id == name_id {
+            if session.module.get(module_id).name_id == name_id {
                 return ModuleOrDirectory::Module(module_id);
             }
         }
@@ -201,7 +211,7 @@ pub fn create_session<'s>() -> Result<Session<'s>, Error> {
         intern_lit: InternPool::new(512),
         intern_name: InternPool::new(1024),
         graph: PackageGraph::new(8),
-        modules: Vec::with_capacity(64),
+        module: Modules::new(64),
     };
 
     //@when working on a `core` itself this does not work
@@ -320,7 +330,7 @@ fn process_module(
 
     #[rustfmt::skip]
     let module = Module { origin, name_id, file_id, tree: None, ast: None };
-    let module_id = session.add(module);
+    let module_id = session.module.add(module);
     Ok(module_id)
 }
 

@@ -13,7 +13,7 @@ pub fn resolve_imports(ctx: &mut HirCtx) {
 }
 
 fn resolve_import(ctx: &mut HirCtx, origin_id: ModuleID, import: &ast::ImportItem) {
-    let source_package_id = ctx.session.module(origin_id).origin();
+    let source_package_id = ctx.session.module.get(origin_id).origin();
     let mut source_package = ctx.session.graph.package(source_package_id);
 
     if let Some(package_name) = import.package {

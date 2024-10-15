@@ -94,7 +94,7 @@ impl<'src> ContextFmt<'src> {
         context: &'src DiagnosticContext,
         severity: Severity,
     ) -> ContextFmt<'src> {
-        let module = session.module(context.src().module_id());
+        let module = session.module.get(context.src().module_id());
         let file = session.vfs.file(module.file_id());
         let path = file
             .path()
