@@ -6,6 +6,7 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
+use rock_core::session::FileData;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
@@ -46,7 +47,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(
             lsp::TextDocumentSyncOptions {
                 open_close: Some(true),
-                change: Some(lsp::TextDocumentSyncKind::FULL), //@switch to incremental
+                change: Some(lsp::TextDocumentSyncKind::INCREMENTAL),
                 will_save: Some(false),
                 will_save_wait_until: Some(false),
                 save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
@@ -168,12 +169,9 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
                 Request::SemanticTokens(_) => eprintln!(" - Request::SemanticTokens"),
             },
             Message::Notification(not) => match not {
-                Notification::SourceFileChanged { .. } => {
-                    eprintln!(" - Notification::SourceFileChanged")
-                }
-                Notification::SourceFileClosed { .. } => {
-                    eprintln!(" - Notification::SourceFileClosed")
-                }
+                Notification::FileOpened { .. } => eprintln!(" - Notification::FileOpened"),
+                Notification::FileChanged { .. } => eprintln!(" - Notification::FileChanged"),
+                Notification::FileClosed { .. } => eprintln!(" - Notification::FileClosed"),
             },
             Message::CompileProject => eprintln!(" - CompileProject"),
         }
@@ -201,6 +199,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(session) => session,
                 None => {
                     eprintln!(" - session is None");
+                    send_response_error(conn, id, None);
                     return;
                 }
             };
@@ -208,31 +207,39 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
+                    send_response_error(conn, id, None);
                     return;
                 }
             };
+
+            //@hack always update the syntax tree before format
             let module = session.module.get(module_id);
+            let file = session.vfs.file(module.file_id());
+            let (tree, errors) =
+                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+            let _ = errors.collect();
 
-            if let Some(tree) = module.tree() {
-                let file = session.vfs.file(module.file_id());
-                let formatted = rock_core::format::format(tree, &file.source);
+            let module = session.module.get_mut(module_id);
+            module.set_tree(tree);
+            let tree = module.tree_expect();
 
-                //@hack overshoot by 1 line to ignore last line chars
-                let end_line = file.line_ranges.len() as u32 + 1;
-                let edit_start = lsp::Position::new(0, 0);
-                let edit_end = lsp::Position::new(end_line, 0);
-                let edit_range = lsp::Range::new(edit_start, edit_end);
-                //@forced clone due to open also requiring a moved in String
-                let text_edit = lsp::TextEdit::new(edit_range, formatted.clone());
-
-                //@full file update
-                session.vfs.open(path, formatted);
-
-                let json = serde_json::to_value(vec![text_edit]).expect("json value");
-                send_response(conn, id, json);
-            } else {
-                eprintln!(" - syntax tree is None");
+            if !tree.complete() {
+                eprintln!(" - tree is incomplete");
+                send_response_error(conn, id, None);
+                return;
             }
+            let file = session.vfs.file(module.file_id());
+            let formatted = rock_core::format::format(tree, &file.source);
+
+            //@hack overshoot by 1 line to ignore last line chars
+            let end_line = file.line_ranges.len() as u32 + 1;
+            let edit_start = lsp::Position::new(0, 0);
+            let edit_end = lsp::Position::new(end_line, 0);
+            let edit_range = lsp::Range::new(edit_start, edit_end);
+
+            let text_edit = lsp::TextEdit::new(edit_range, formatted);
+            let json = serde_json::to_value(vec![text_edit]).expect("json value");
+            send_response(conn, id, json);
         }
         Request::Hover(params) => {
             let path = uri_to_path(&params.text_document_position_params.text_document.uri);
@@ -242,7 +249,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
 
-            let session = match &context.session {
+            let session = match &mut context.session {
                 Some(session) => session,
                 None => {
                     eprintln!(" - session is None");
@@ -258,49 +265,115 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 }
             };
 
-            //@should produce semantic tokens even for incomplete syntax trees
-            if let Some(tree) = session.module.get(module_id).tree() {
-                let semantic_tokens = semantic_tokens(session, module_id, tree);
-                eprintln!(
-                    "[SEND: Response] SemanticTokens ({})",
-                    semantic_tokens.len()
-                );
+            //@hack always update the syntax tree before semantic tokens
+            let module = session.module.get(module_id);
+            let file = session.vfs.file(module.file_id());
+            let (tree, errors) =
+                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+            let _ = errors.collect();
 
-                let result = lsp::SemanticTokens {
-                    result_id: None,
-                    data: semantic_tokens,
-                };
-                send(conn, lsp_server::Response::new_ok(id, result));
-            } else {
-                eprintln!(" - syntax tree is None");
-            }
+            let module = session.module.get_mut(module_id);
+            module.set_tree(tree);
+            let tree = module.tree_expect();
+
+            let semantic_tokens = semantic_tokens(file, tree);
+            eprintln!(
+                "[SEND: Response] SemanticTokens ({})",
+                semantic_tokens.len()
+            );
+            let result = lsp::SemanticTokens {
+                result_id: None,
+                data: semantic_tokens,
+            };
+            send(conn, lsp_server::Response::new_ok(id, result));
         }
     }
 }
 
 fn handle_notification(context: &mut ServerContext, not: Notification) {
     match not {
-        Notification::SourceFileChanged { path, text } => {
-            eprintln!("[HANDLE] Notification::SourceFileChanged: {:?}", &path);
-            if let Some(session) = &mut context.session {
-                //@hack fully update entire tree on each edit
-                // should only be updated when needed before use
-                if let Some(module_id) = module_id_from_path(session, &path) {
-                    let (tree, errors) =
-                        syntax::parse_tree(&text, &mut session.intern_lit, module_id, true);
-                    let _ = errors.collect();
-                    let _ = session.vfs.open(path, text);
-                    let module = session.module.get_mut(module_id);
-                    module.set_tree(tree);
-                    eprintln!(" - updated file data & syntax tree");
-                } else {
-                    eprintln!(" - module not found by path!");
+        Notification::FileOpened { path, text } => {
+            //@handle file open, send when:
+            // 1) new file created
+            // 2) existing file renamed
+            // 3) file opened in the editor
+        }
+        Notification::FileClosed { path } => {
+            //@handle file closed, sent when:
+            // 1) existing file deleted
+            // 2) existing file renamed
+            // 3) file closed in the editor
+        }
+        Notification::FileChanged { path, changes } => {
+            eprintln!(
+                "[HANDLE] Notification::SourceFileChanged: {:?} changes: {}",
+                &path,
+                changes.len()
+            );
+            let session = match &mut context.session {
+                Some(session) => session,
+                None => {
+                    eprintln!(" - session is missing");
+                    return;
                 }
-            } else {
-                eprintln!(" - session is None");
+            };
+            let module = match module_id_from_path(session, &path) {
+                Some(module_id) => session.module.get(module_id),
+                None => {
+                    eprintln!(" - module not found");
+                    return;
+                }
+            };
+
+            let file = session.vfs.file_mut(module.file_id());
+
+            for change in changes {
+                let range = match change.range {
+                    Some(range) => range,
+                    None => {
+                        file.source = change.text;
+                        file.line_ranges = text::find_line_ranges(&file.source);
+                        continue;
+                    }
+                };
+
+                let start_line = if range.start.line as usize == file.line_ranges.len() {
+                    let last_line = file.line_ranges.last().copied();
+                    let last_end = last_line.unwrap_or(TextRange::zero()).end();
+                    TextRange::new(last_end, last_end)
+                } else {
+                    file.line_ranges[range.start.line as usize]
+                };
+                let start_line_text = &file.source[start_line.as_usize()];
+                let mut start_offset = start_line.start();
+                let mut chars = start_line_text.chars();
+                for _ in 0..range.start.character {
+                    if let Some(c) = chars.next() {
+                        start_offset += (c.len_utf8() as u32).into();
+                    }
+                }
+
+                let end_line = if range.end.line as usize == file.line_ranges.len() {
+                    let last_line = file.line_ranges.last().copied();
+                    let last_end = last_line.unwrap_or(TextRange::zero()).end();
+                    TextRange::new(last_end, last_end)
+                } else {
+                    file.line_ranges[range.end.line as usize]
+                };
+                let end_line_text = &file.source[end_line.as_usize()];
+                let mut end_offset = end_line.start();
+                let mut chars = end_line_text.chars();
+                for _ in 0..range.end.character {
+                    if let Some(c) = chars.next() {
+                        end_offset += (c.len_utf8() as u32).into();
+                    }
+                }
+
+                let replace = TextRange::new(start_offset, end_offset);
+                file.source.replace_range(replace.as_usize(), &change.text);
+                file.line_ranges = text::find_line_ranges(&file.source); //@make incremental
             }
         }
-        Notification::SourceFileClosed { path } => {}
     }
 }
 
@@ -570,16 +643,7 @@ struct SemanticTokenBuilder<'s_ref> {
     semantic_tokens: Vec<lsp::SemanticToken>,
 }
 
-fn semantic_tokens(
-    session: &Session,
-    module_id: ModuleID,
-    //@should in theory always exist if module exists
-    // store even broken SyntaxTree in the module (without creating the Ast)
-    tree: &SyntaxTree, //@dont pass if can get from module_id
-) -> Vec<lsp::SemanticToken> {
-    let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id());
-
+fn semantic_tokens(file: &FileData, tree: &SyntaxTree) -> Vec<lsp::SemanticToken> {
     let mut builder = SemanticTokenBuilder {
         curr_line: 0,
         prev_range: None,

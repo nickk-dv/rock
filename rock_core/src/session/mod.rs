@@ -12,6 +12,7 @@ use crate::support::ID;
 use crate::syntax::syntax_tree::SyntaxTree;
 use graph::PackageGraph;
 use std::path::PathBuf;
+pub use vfs::FileData;
 use vfs::{FileID, Vfs};
 
 pub struct Session<'s> {

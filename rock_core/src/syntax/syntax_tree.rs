@@ -8,6 +8,7 @@ pub struct SyntaxTree<'syn> {
     arena: Arena<'syn>,
     nodes: Vec<Node<'syn>>,
     tokens: TokenList,
+    complete: bool,
 }
 
 pub struct Node<'syn> {
@@ -32,9 +33,17 @@ impl<'syn> SyntaxTree<'syn> {
     pub fn tokens(&self) -> &TokenList {
         &self.tokens
     }
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
 }
 
-pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>, source: &str) -> SyntaxTree<'syn> {
+pub fn build<'syn>(
+    tokens: TokenList,
+    mut events: Vec<Event>,
+    source: &str,
+    complete: bool,
+) -> SyntaxTree<'syn> {
     let mut arena = Arena::new();
 
     let nodes_cap = events
@@ -139,6 +148,7 @@ pub fn build<'syn>(tokens: TokenList, mut events: Vec<Event>, source: &str) -> S
         arena,
         nodes,
         tokens,
+        complete,
     }
 }
 

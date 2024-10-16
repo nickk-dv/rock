@@ -29,9 +29,11 @@ pub enum Request {
     SemanticTokens(lsp::SemanticTokensParams),
 }
 
+#[rustfmt::skip]
 pub enum Notification {
-    SourceFileChanged { path: PathBuf, text: String },
-    SourceFileClosed { path: PathBuf },
+    FileOpened { path: PathBuf, text: String },
+    FileClosed { path: PathBuf },
+    FileChanged { path: PathBuf, changes: Vec<lsp::TextDocumentContentChangeEvent> },
 }
 
 impl MessageBuffer {
@@ -133,24 +135,23 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
     let notification = match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let params = cast_notification::<DidOpenTextDocument>(notification);
-            //@use separate notification for opening (change will be incremental)
-            Notification::SourceFileChanged {
+            Notification::FileOpened {
                 path: super::uri_to_path(&params.text_document.uri),
                 text: params.text_document.text,
             }
         }
-        DidChangeTextDocument::METHOD => {
-            let params = cast_notification::<DidChangeTextDocument>(notification);
-            //@eprintln!("[RAW NOTIFICATION] DidChangeTextDocument\n{:?}", params);
-            Notification::SourceFileChanged {
-                path: super::uri_to_path(&params.text_document.uri),
-                text: params.content_changes.into_iter().last()?.text,
-            }
-        }
         DidCloseTextDocument::METHOD => {
             let params = cast_notification::<DidCloseTextDocument>(notification);
-            Notification::SourceFileClosed {
+            Notification::FileClosed {
                 path: super::uri_to_path(&params.text_document.uri),
+            }
+        }
+        DidChangeTextDocument::METHOD => {
+            let params = cast_notification::<DidChangeTextDocument>(notification);
+            eprintln!("[RAW NOTIFICATION] DidChangeTextDocument: {:?}", params);
+            Notification::FileChanged {
+                path: super::uri_to_path(&params.text_document.uri),
+                changes: params.content_changes,
             }
         }
         _ => return None,
