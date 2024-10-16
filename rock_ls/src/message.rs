@@ -141,7 +141,7 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
         }
         DidChangeTextDocument::METHOD => {
             let params = cast_notification::<DidChangeTextDocument>(notification);
-            eprintln!("[RAW NOTIFICATION] DidChangeTextDocument\n{:?}", params);
+            //@eprintln!("[RAW NOTIFICATION] DidChangeTextDocument\n{:?}", params);
             Notification::SourceFileChanged {
                 path: super::uri_to_path(&params.text_document.uri),
                 text: params.content_changes.into_iter().last()?.text,

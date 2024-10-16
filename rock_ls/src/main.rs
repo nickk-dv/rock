@@ -283,9 +283,19 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
         Notification::SourceFileChanged { path, text } => {
             eprintln!("[HANDLE] Notification::SourceFileChanged: {:?}", &path);
             if let Some(session) = &mut context.session {
-                //@fully update source + line_ranges for the file
-                session.vfs.open(path, text);
-                eprintln!(" - updated source & line_ranges");
+                //@hack fully update entire tree on each edit
+                // should only be updated when needed before use
+                if let Some(module_id) = module_id_from_path(session, &path) {
+                    let (tree, errors) =
+                        syntax::parse_tree(&text, &mut session.intern_lit, module_id, true);
+                    let _ = errors.collect();
+                    let _ = session.vfs.open(path, text);
+                    let module = session.module.get_mut(module_id);
+                    module.set_tree(tree);
+                    eprintln!(" - updated file data & syntax tree");
+                } else {
+                    eprintln!(" - module not found by path!");
+                }
             } else {
                 eprintln!(" - session is None");
             }
@@ -339,10 +349,10 @@ fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
 use rock_core::error::{
     Diagnostic, DiagnosticData, ErrorWarningBuffer, Severity, SourceRange, WarningBuffer,
 };
-use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax::ast_build;
 use rock_core::text::{self, TextRange};
+use rock_core::{hir_lower, syntax};
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
@@ -483,23 +493,30 @@ fn run_diagnostics(
     let mut messages = Vec::<lsp::Diagnostic>::new();
     let mut diagnostics_map = HashMap::new();
 
-    let mut session = match session::create_session() {
-        Ok(value) => value,
-        Err(error) => {
-            let params = lsp::ShowMessageParams {
-                typ: lsp::MessageType::ERROR,
-                message: error.diagnostic().msg().as_str().to_string(),
-            };
-            let notification = lsp_server::Notification {
-                method: notification::ShowMessage::METHOD.into(),
-                params: serde_json::to_value(params).unwrap(),
-            };
-            send(conn, notification);
-            return vec![];
-        }
+    //re-use existing session else try to create it
+    let session = if let Some(session) = &mut context.session {
+        session
+    } else {
+        let session = match session::create_session() {
+            Ok(value) => value,
+            Err(error) => {
+                let params = lsp::ShowMessageParams {
+                    typ: lsp::MessageType::ERROR,
+                    message: error.diagnostic().msg().as_str().to_string(),
+                };
+                let not = lsp_server::Notification::new(
+                    notification::ShowMessage::METHOD.to_string(),
+                    params,
+                );
+                send(conn, not);
+                return vec![];
+            }
+        };
+        context.session = Some(session);
+        context.session.as_mut().unwrap()
     };
 
-    let (errors, warnings) = match check_impl(&mut session) {
+    let (errors, warnings) = match check_impl(session) {
         Ok(warnings) => (vec![], warnings.collect()),
         Err(errw) => errw.collect(),
     };
@@ -536,8 +553,6 @@ fn run_diagnostics(
             }
         }
     }
-
-    context.session = Some(session);
 
     diagnostics_map
         .into_iter()
