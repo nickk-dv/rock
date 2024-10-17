@@ -834,13 +834,13 @@ impl<'hir> Type<'hir> {
     pub const BOOL: Type<'static> = Type::Basic(ast::BasicType::Bool);
     pub const USIZE: Type<'static> = Type::Basic(ast::BasicType::Usize);
 
-    pub fn is_error(self) -> bool {
+    pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)
     }
-    pub fn is_void(self) -> bool {
+    pub fn is_void(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Void))
     }
-    pub fn is_never(self) -> bool {
+    pub fn is_never(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Never))
     }
 }

@@ -143,37 +143,30 @@ pub enum Expectation<'hir> {
     HasType(hir::Type<'hir>, Option<SourceRange>),
 }
 
-//@verify how this works, `false` is good outcome?
-pub fn check_type_expectation(
+pub fn type_expectation_check(
     ctx: &mut HirCtx,
     origin_id: ModuleID,
     from_range: TextRange,
-    expect: Expectation,
     found_ty: hir::Type,
-) -> bool {
-    if let Expectation::HasType(expect_ty, expect_src) = expect {
-        if type_matches(ctx, expect_ty, found_ty) {
-            return false;
+    expect: Expectation,
+) {
+    match expect {
+        Expectation::None => {}
+        Expectation::HasType(expect_ty, expect_src) => {
+            if type_matches(ctx, expect_ty, found_ty) {
+                return;
+            }
+            let src = SourceRange::new(origin_id, from_range);
+            let expected_ty = type_format(ctx, expect_ty);
+            let found_ty = type_format(ctx, found_ty);
+            err::tycheck_type_mismatch(
+                &mut ctx.emit,
+                src,
+                expect_src,
+                expected_ty.as_str(),
+                found_ty.as_str(),
+            );
         }
-
-        let info = if let Some(source) = expect_src {
-            Info::new("expected due to this", source)
-        } else {
-            None
-        };
-
-        ctx.emit.error(Error::new(
-            format!(
-                "type mismatch: expected `{}`, found `{}`",
-                type_format(ctx, expect_ty).as_str(),
-                type_format(ctx, found_ty).as_str()
-            ),
-            SourceRange::new(origin_id, from_range),
-            info,
-        ));
-        true
-    } else {
-        false
     }
 }
 
@@ -236,18 +229,12 @@ impl<'hir> BlockResult<'hir> {
         }
     }
 
-    //@prev ignore behavior was always `ignore: true`
-    //@ignoring with manual expectation check in blocks, might change 03.07.24
     fn into_type_result(self) -> TypeResult<'hir> {
         let kind = hir::ExprKind::Block { block: self.block };
         TypeResult::new(self.ty, kind)
     }
 }
 
-//@Error exprs are still allocated, before they were replaced
-// with constant reference defined in hir_build.
-// `if` check performance versus memory usage tradeoff.
-// It might be still good to include errored expressions with correct range.
 #[must_use]
 pub fn typecheck_expr<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
@@ -289,9 +276,7 @@ pub fn typecheck_expr<'hir>(
         }
     };
 
-    //@if `errored` is usefull it can be done via emit error count api
-    //@removed `ignored` from `TypeResult`, verify ignore behaviors for block returns
-    check_type_expectation(ctx, ctx.proc.origin(), expr.range, expect, expr_res.ty);
+    type_expectation_check(ctx, ctx.proc.origin(), expr.range, expr_res.ty, expect);
     expr_res.into_expr_result(ctx, expr.range)
 }
 
@@ -342,7 +327,7 @@ fn typecheck_lit<'hir>(
     TypeResult::new(ty, kind)
 }
 
-pub fn coerce_int_type(expect: Expectation) -> BasicInt {
+fn coerce_int_type(expect: Expectation) -> BasicInt {
     const DEFAULT_INT_TYPE: BasicInt = BasicInt::S32;
 
     match expect {
@@ -354,7 +339,7 @@ pub fn coerce_int_type(expect: Expectation) -> BasicInt {
     }
 }
 
-pub fn coerce_float_type(expect: Expectation) -> BasicFloat {
+fn coerce_float_type(expect: Expectation) -> BasicFloat {
     const DEFAULT_FLOAT_TYPE: BasicFloat = BasicFloat::F64;
 
     match expect {
@@ -382,6 +367,15 @@ pub fn alloc_string_lit_type<'hir>(
     }
 }
 
+/// unify type across braches:  
+/// never -> anything  
+/// error -> anything except never
+fn type_unify_control_flow<'hir>(ty: &mut hir::Type<'hir>, res_ty: hir::Type<'hir>) {
+    if ty.is_never() || (ty.is_error() && !res_ty.is_never()) {
+        *ty = res_ty;
+    }
+}
+
 fn typecheck_if<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
@@ -401,13 +395,7 @@ fn typecheck_if<'hir>(
     let else_block = match if_.else_block {
         Some(block) => {
             let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
-
-            // never -> anything
-            // error -> anything except never
-            if if_type.is_never() || (if_type.is_error() && !block_res.ty.is_never()) {
-                if_type = block_res.ty;
-            }
-
+            type_unify_control_flow(&mut if_type, block_res.ty);
             Some(block_res.block)
         }
         None => None,
@@ -445,12 +433,7 @@ fn typecheck_branch<'hir>(
     let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
     let cond_res = typecheck_expr(ctx, expect_bool, branch.cond);
     let block_res = typecheck_block(ctx, *expect, branch.block, BlockEnter::None);
-
-    // never -> anything
-    // error -> anything except never
-    if if_type.is_never() || (if_type.is_error() && !block_res.ty.is_never()) {
-        *if_type = block_res.ty;
-    }
+    type_unify_control_flow(if_type, block_res.ty);
 
     if let Expectation::None = expect {
         if !block_res.ty.is_error() && !block_res.ty.is_never() {
@@ -488,12 +471,8 @@ fn typecheck_match<'hir>(
     for arm in match_.arms {
         let pat = typecheck_pat(ctx, pat_expect, &arm.pat);
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
+        type_unify_control_flow(&mut match_type, expr_res.ty);
 
-        // never -> anything
-        // error -> anything except never
-        if match_type.is_never() || (match_type.is_error() && !expr_res.ty.is_never()) {
-            match_type = expr_res.ty;
-        }
         if let Expectation::None = expect {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
                 let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
@@ -597,7 +576,7 @@ fn typecheck_pat<'hir>(
         ast::PatKind::Or { patterns } => typecheck_pat_or(ctx, expect, patterns),
     };
 
-    check_type_expectation(ctx, ctx.proc.origin(), pat.range, expect, pat_res.pat_ty);
+    type_expectation_check(ctx, ctx.proc.origin(), pat.range, pat_res.pat_ty, expect);
     pat_res.pat
 }
 
@@ -2113,17 +2092,6 @@ fn typecheck_block<'hir>(
                 (stmt_res, diverges)
             }
             ast::StmtKind::ExprTail(expr) => {
-                /*
-                //@30.05.24
-                proc example() -> s32 {
-                    // incorrect diverges warning since
-                    // block isnt entered until typecheck_expr is called
-                    -> { // after this
-                        // warning for this
-                        -> 10;
-                    };
-                }
-                 */
                 // type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
@@ -2158,7 +2126,7 @@ fn typecheck_block<'hir>(
         // as the expectation and block result ty are valid 29.05.24
         let diverges = ctx.proc.diverges().is_always();
         if !diverges {
-            check_type_expectation(ctx, ctx.proc.origin(), block.range, expect, hir::Type::VOID);
+            type_expectation_check(ctx, ctx.proc.origin(), block.range, hir::Type::VOID, expect);
         }
         //@hack but should be correct
         let block_ty = if diverges {
@@ -2251,12 +2219,12 @@ fn typecheck_return<'hir>(
         }
         None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-            check_type_expectation(
+            type_expectation_check(
                 ctx,
                 ctx.proc.origin(),
                 kw_range,
-                ctx.proc.return_expect(),
                 hir::Type::VOID,
+                ctx.proc.return_expect(),
             );
             None
         }

@@ -553,6 +553,18 @@ pub fn const_float_is_infinite(emit: &mut impl ErrorSink, src: SourceRange) {
 
 //==================== TYPECHECK ====================
 
+pub fn tycheck_type_mismatch(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    expect_src: Option<SourceRange>,
+    expected_ty_fmt: &str,
+    found_ty_fmt: &str,
+) {
+    let msg = format!("type mismatch: expected `{expected_ty_fmt}`, found `{found_ty_fmt}`");
+    let info = expect_src.map(|src| Info::new_val("expected due to this", src));
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, kind: &'static str) {
     let msg = format!("unused {kind}");
     emit.warning(Warning::new(msg, src, None));
@@ -589,10 +601,7 @@ pub fn tycheck_unexpected_proc_arg_count(
     let plural_end = if expected_count == 1 { "" } else { "s" };
     let msg =
         format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}");
-    let info = match proc_src {
-        Some(proc_src) => Info::new("procedure defined here", proc_src),
-        None => None,
-    };
+    let info = proc_src.map(|src| Info::new_val("procedure defined here", src));
     emit.error(Error::new(msg, src, info));
 }
 
