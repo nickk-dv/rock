@@ -458,6 +458,7 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn>, field_list: cst::FieldList<'syn>)
 }
 
 fn field<'syn>(fmt: &mut Formatter<'syn>, field: cst::Field<'syn>) {
+    vis(fmt, field.vis(fmt.tree));
     name(fmt, field.name(fmt.tree).unwrap());
     fmt.write(':');
     fmt.space();

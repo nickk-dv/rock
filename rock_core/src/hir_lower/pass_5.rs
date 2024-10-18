@@ -153,6 +153,12 @@ pub fn type_expectation_check(
     match expect {
         Expectation::None => {}
         Expectation::HasType(expect_ty, expect_src) => {
+            //@never coercion NOT CORRECT for binary expr, panic in codegen
+            // correct procs blocks of never type, where proc return_ty != never
+            // correct for if branches / match arms
+            if matches!(found_ty, hir::Type::Basic(BasicType::Never)) {
+                return;
+            }
             if type_matches(ctx, expect_ty, found_ty) {
                 return;
             }
@@ -435,8 +441,7 @@ fn typecheck_if<'hir>(
     };
     let if_ = ctx.arena.alloc(if_);
     let kind = hir::ExprKind::If { if_ };
-    //@cannot tell when to ignore typecheck or not
-    TypeResult::new(if_type, kind)
+    TypeResult::new_ignore(if_type, kind)
 }
 
 fn typecheck_branch<'hir>(
@@ -527,8 +532,7 @@ fn typecheck_match<'hir>(
     };
     let match_ = ctx.arena.alloc(match_);
     let kind = hir::ExprKind::Match { kind, match_ };
-    //@cannot tell when to ignore typecheck or not
-    TypeResult::new(match_type, kind)
+    TypeResult::new_ignore(match_type, kind)
 }
 
 fn match_const_pats_resolved(ctx: &HirCtx, arms: &[hir::MatchArm]) -> bool {
@@ -1908,7 +1912,7 @@ fn typecheck_unary<'hir>(
 ) -> TypeResult<'hir> {
     let rhs_expect = unary_rhs_expect(ctx, op, op_range, expect);
     let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
-    let un_op = unary_op_check(ctx, ctx.proc.origin(), rhs_res.ty, op, op_range);
+    let un_op = unary_op_check(ctx, op, op_range, rhs_res.ty);
 
     if let Some(un_op) = un_op {
         let unary_type = unary_output_type(op, rhs_res.ty);
@@ -1934,11 +1938,11 @@ fn typecheck_binary<'hir>(
     expect: Expectation<'hir>,
     op: ast::BinOp,
     op_range: TextRange,
-    bin: &ast::BinExpr<'_>,
+    bin: &ast::BinExpr,
 ) -> TypeResult<'hir> {
-    let lhs_expect = binary_lhs_expect(op, expect);
+    let lhs_expect = binary_lhs_expect(ctx, op, op_range, expect);
     let lhs_res = typecheck_expr(ctx, lhs_expect, bin.lhs);
-    let bin_op = binary_op_check(ctx, ctx.proc.origin(), lhs_res.ty, op, op_range);
+    let bin_op = binary_op_check(ctx, op, op_range, lhs_res.ty);
 
     let expect_src = SourceRange::new(ctx.proc.origin(), bin.lhs.range);
     let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
@@ -2465,11 +2469,9 @@ fn typecheck_assign<'hir>(
 
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
-        ast::AssignOp::Bin(op) => {
-            binary_op_check(ctx, ctx.proc.origin(), lhs_res.ty, op, assign.op_range)
-                .map(hir::AssignOp::Bin)
-                .unwrap_or(hir::AssignOp::Assign)
-        }
+        ast::AssignOp::Bin(op) => binary_op_check(ctx, op, assign.op_range, lhs_res.ty)
+            .map(hir::AssignOp::Bin)
+            .unwrap_or(hir::AssignOp::Assign),
     };
 
     let expect_src = SourceRange::new(ctx.proc.origin(), assign.lhs.range);
@@ -3130,10 +3132,9 @@ fn unary_output_type(op: ast::UnOp, rhs_ty: hir::Type) -> hir::Type {
 
 fn unary_op_check(
     ctx: &mut HirCtx,
-    origin_id: ModuleID,
-    rhs_ty: hir::Type,
     op: ast::UnOp,
     op_range: TextRange,
+    rhs_ty: hir::Type,
 ) -> Option<hir::UnOp> {
     if rhs_ty.is_error() {
         return None;
@@ -3165,7 +3166,7 @@ fn unary_op_check(
     };
 
     if un_op.is_none() {
-        let src = SourceRange::new(origin_id, op_range);
+        let src = SourceRange::new(ctx.proc.origin(), op_range);
         let rhs_ty = type_format(ctx, rhs_ty);
         err::tycheck_cannot_apply_un_op(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
     }
@@ -3174,7 +3175,12 @@ fn unary_op_check(
 
 //==================== BINARY EXPR ====================
 
-fn binary_lhs_expect(op: ast::BinOp, expect: Expectation) -> Expectation {
+fn binary_lhs_expect<'hir>(
+    ctx: &HirCtx,
+    op: ast::BinOp,
+    op_range: TextRange,
+    expect: Expectation<'hir>,
+) -> Expectation<'hir> {
     match op {
         ast::BinOp::Add
         | ast::BinOp::Sub
@@ -3192,7 +3198,10 @@ fn binary_lhs_expect(op: ast::BinOp, expect: Expectation) -> Expectation {
         | ast::BinOp::LessEq
         | ast::BinOp::Greater
         | ast::BinOp::GreaterEq => Expectation::None,
-        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::HasType(hir::Type::BOOL, None),
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
+            let expect_src = SourceRange::new(ctx.proc.origin(), op_range);
+            Expectation::HasType(hir::Type::BOOL, Some(expect_src))
+        }
     }
 }
 
@@ -3254,10 +3263,9 @@ fn binary_output_type(op: ast::BinOp, lhs_ty: hir::Type) -> hir::Type {
 
 fn binary_op_check(
     ctx: &mut HirCtx,
-    origin_id: ModuleID,
-    lhs_ty: hir::Type,
     op: ast::BinOp,
     op_range: TextRange,
+    lhs_ty: hir::Type,
 ) -> Option<hir::BinOp> {
     if lhs_ty.is_error() {
         return None;
@@ -3418,7 +3426,7 @@ fn binary_op_check(
     };
 
     if bin_op.is_none() {
-        let src = SourceRange::new(origin_id, op_range);
+        let src = SourceRange::new(ctx.proc.origin(), op_range);
         let lhs_ty = type_format(ctx, lhs_ty);
         err::tycheck_cannot_apply_bin_op(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
     }
