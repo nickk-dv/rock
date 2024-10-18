@@ -624,6 +624,14 @@ fn expr(p: &mut Parser) {
 
 fn sub_expr(p: &mut Parser, min_prec: u32) {
     let mut mc_curr = primary_expr(p);
+    mc_curr = tail_expr(p, mc_curr);
+
+    if p.at(T![as]) {
+        let m = p.start_before(mc_curr);
+        p.bump(T![as]);
+        ty(p);
+        mc_curr = m.complete(p, SyntaxKind::EXPR_CAST)
+    }
 
     loop {
         let prec: u32;
@@ -646,10 +654,9 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
     if p.at(T!['(']) {
         let m = p.start();
         p.bump(T!['(']);
-        expr(p);
+        sub_expr(p, 0);
         p.expect(T![')']);
-        let mc = m.complete(p, SyntaxKind::EXPR_PAREN);
-        return tail_expr(p, mc);
+        return m.complete(p, SyntaxKind::EXPR_PAREN);
     }
 
     if p.peek().as_un_op().is_some() {
@@ -733,12 +740,6 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
                 let m = p.start_before(mc);
                 args_list(p);
                 mc = m.complete(p, SyntaxKind::EXPR_CALL);
-            }
-            T![as] => {
-                let m = p.start_before(mc);
-                p.bump(T![as]);
-                ty(p);
-                return m.complete(p, SyntaxKind::EXPR_CAST);
             }
             T![..] => {
                 let m = p.start_before(mc);
@@ -914,7 +915,7 @@ fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
 fn expr_deref(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![*]);
-    expr(p);
+    primary_expr(p);
     m.complete(p, SyntaxKind::EXPR_DEREF)
 }
 
@@ -922,7 +923,7 @@ fn expr_address(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T![&]);
     p.eat(T![mut]);
-    expr(p);
+    primary_expr(p);
     m.complete(p, SyntaxKind::EXPR_ADDRESS)
 }
 

@@ -640,3 +640,23 @@ pub fn tycheck_unexpected_variant_bind_count(
     let info = Info::new("variant defined here", variant_src);
     emit.error(Error::new(msg, src, info));
 }
+
+pub fn tycheck_cannot_apply_un_op(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    rhs_ty_fmt: &str,
+) {
+    let msg = format!("cannot apply unary operator `{op}` on value of type `{rhs_ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_apply_bin_op(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    lhs_ty_fmt: &str,
+) {
+    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}

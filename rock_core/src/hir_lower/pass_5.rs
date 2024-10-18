@@ -173,6 +173,7 @@ pub fn type_expectation_check(
 pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     kind: hir::ExprKind<'hir>,
+    ignore: bool,
 }
 
 pub struct ExprResult<'hir> {
@@ -188,12 +189,24 @@ struct BlockResult<'hir> {
 
 impl<'hir> TypeResult<'hir> {
     fn new(ty: hir::Type<'hir>, kind: hir::ExprKind<'hir>) -> TypeResult<'hir> {
-        TypeResult { ty, kind }
+        TypeResult {
+            ty,
+            kind,
+            ignore: false,
+        }
+    }
+    fn new_ignore(ty: hir::Type<'hir>, kind: hir::ExprKind<'hir>) -> TypeResult<'hir> {
+        TypeResult {
+            ty,
+            kind,
+            ignore: true,
+        }
     }
     fn error() -> TypeResult<'hir> {
         TypeResult {
             ty: hir::Type::Error,
             kind: hir::ExprKind::Error,
+            ignore: true,
         }
     }
     fn into_expr_result(
@@ -266,7 +279,7 @@ pub fn typecheck_expr<'hir>(
             typecheck_array_repeat(ctx, expect, value, len)
         }
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
-        ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs),
+        ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
         ast::ExprKind::Range { range } => typecheck_range(ctx, range, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
@@ -276,7 +289,9 @@ pub fn typecheck_expr<'hir>(
         }
     };
 
-    type_expectation_check(ctx, ctx.proc.origin(), expr.range, expr_res.ty, expect);
+    if !expr_res.ignore {
+        type_expectation_check(ctx, ctx.proc.origin(), expr.range, expr_res.ty, expect);
+    }
     expr_res.into_expr_result(ctx, expr.range)
 }
 
@@ -1621,6 +1636,7 @@ fn typecheck_address<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     mutt: ast::Mut,
     rhs: &ast::Expr,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
     let adressability = get_expr_addressability(ctx, rhs_res.expr);
@@ -1630,21 +1646,21 @@ fn typecheck_address<'hir>(
         Addressability::Constant => {
             ctx.emit.error(Error::new(
                 "cannot get reference to a constant, you can use `global` instead",
-                SourceRange::new(ctx.proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 None,
             ));
         }
         Addressability::SliceField => {
             ctx.emit.error(Error::new(
                 "cannot get reference to a slice field, slice itself cannot be modified",
-                SourceRange::new(ctx.proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 None,
             ));
         }
         Addressability::Temporary => {
             ctx.emit.error(Error::new(
                 "cannot get reference to a temporary value",
-                SourceRange::new(ctx.proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 None,
             ));
         }
@@ -1652,7 +1668,7 @@ fn typecheck_address<'hir>(
             if mutt == ast::Mut::Mutable {
                 ctx.emit.error(Error::new(
                     "cannot get mutable reference to this temporary value, only immutable `&` is allowed",
-                    SourceRange::new(ctx.proc.origin(), rhs.range),
+                    SourceRange::new(ctx.proc.origin(), expr_range),
                     None,
                 ));
             }
@@ -1661,7 +1677,7 @@ fn typecheck_address<'hir>(
             if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
                 ctx.emit.error(Error::new(
                     "cannot get mutable reference to an immutable variable",
-                    SourceRange::new(ctx.proc.origin(), rhs.range),
+                    SourceRange::new(ctx.proc.origin(), expr_range),
                     Info::new("variable defined here", src),
                 ));
             }
@@ -1669,7 +1685,7 @@ fn typecheck_address<'hir>(
         Addressability::NotImplemented => {
             ctx.emit.error(Error::new(
                 "addressability not implemented for this expression",
-                SourceRange::new(ctx.proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 None,
             ));
         }
@@ -1890,7 +1906,7 @@ fn typecheck_unary<'hir>(
     op_range: TextRange,
     rhs: &ast::Expr,
 ) -> TypeResult<'hir> {
-    let rhs_expect = unary_rhs_expect(op, expect);
+    let rhs_expect = unary_rhs_expect(ctx, op, op_range, expect);
     let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
     let un_op = unary_op_check(ctx, ctx.proc.origin(), rhs_res.ty, op, op_range);
 
@@ -1900,7 +1916,7 @@ fn typecheck_unary<'hir>(
             op: un_op,
             rhs: rhs_res.expr,
         };
-        TypeResult::new(unary_type, kind)
+        TypeResult::new_ignore(unary_type, kind)
     } else {
         TypeResult::error()
     }
@@ -3090,10 +3106,18 @@ pub fn path_resolve_value<'hir, 'ast>(
 
 //==================== UNARY EXPR ====================
 
-fn unary_rhs_expect(op: ast::UnOp, expect: Expectation) -> Expectation {
+fn unary_rhs_expect<'hir>(
+    ctx: &HirCtx,
+    op: ast::UnOp,
+    op_range: TextRange,
+    expect: Expectation<'hir>,
+) -> Expectation<'hir> {
     match op {
         ast::UnOp::Neg | ast::UnOp::BitNot => expect,
-        ast::UnOp::LogicNot => Expectation::HasType(hir::Type::BOOL, None),
+        ast::UnOp::LogicNot => {
+            let expect_src = SourceRange::new(ctx.proc.origin(), op_range);
+            Expectation::HasType(hir::Type::BOOL, Some(expect_src))
+        }
     }
 }
 
@@ -3141,15 +3165,9 @@ fn unary_op_check(
     };
 
     if un_op.is_none() {
-        ctx.emit.error(Error::new(
-            format!(
-                "cannot apply unary operator `{}` on value of type `{}`",
-                op.as_str(),
-                type_format(ctx, rhs_ty).as_str()
-            ),
-            SourceRange::new(origin_id, op_range),
-            None,
-        ));
+        let src = SourceRange::new(origin_id, op_range);
+        let rhs_ty = type_format(ctx, rhs_ty);
+        err::tycheck_cannot_apply_un_op(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
     }
     un_op
 }
@@ -3400,15 +3418,9 @@ fn binary_op_check(
     };
 
     if bin_op.is_none() {
-        ctx.emit.error(Error::new(
-            format!(
-                "cannot apply binary operator `{}` on value of type `{}`",
-                op.as_str(),
-                type_format(ctx, lhs_ty).as_str()
-            ),
-            SourceRange::new(origin_id, op_range),
-            None,
-        ));
+        let src = SourceRange::new(origin_id, op_range);
+        let lhs_ty = type_format(ctx, lhs_ty);
+        err::tycheck_cannot_apply_bin_op(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
     }
     bin_op
 }
