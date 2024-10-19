@@ -9,11 +9,11 @@ use rock_core::intern::{InternLit, InternName, InternPool};
 
 pub fn codegen_module<'c, 's, 's_ref>(
     hir: hir::Hir<'c>,
-    triple: TargetTriple,
+    target: TargetTriple,
     intern_lit: &'s_ref InternPool<'s, InternLit>,
     intern_name: &'s_ref InternPool<'s, InternName>,
 ) -> (llvm::IRTarget, llvm::IRModule) {
-    let mut cg = Codegen::new(hir, triple, intern_lit, intern_name);
+    let mut cg = Codegen::new(hir, target, intern_lit, intern_name);
     codegen_string_lits(&mut cg);
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);

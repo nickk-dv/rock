@@ -17,15 +17,15 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
             data.layout.get_resolved()
         }
         hir::Type::Reference(_, _) => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::new_equal(ptr_size))
         }
         hir::Type::Procedure(_) => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::new_equal(ptr_size))
         }
         hir::Type::ArraySlice(_) => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::new(ptr_size * 2, ptr_size))
         }
         hir::Type::ArrayStatic(array) => {
@@ -50,7 +50,7 @@ pub fn basic_layout(ctx: &HirCtx, basic: BasicType) -> hir::Layout {
         BasicType::S32 => hir::Layout::new_equal(4),
         BasicType::S64 => hir::Layout::new_equal(8),
         BasicType::Ssize => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             hir::Layout::new_equal(ptr_size)
         }
         BasicType::U8 => hir::Layout::new_equal(1),
@@ -58,7 +58,7 @@ pub fn basic_layout(ctx: &HirCtx, basic: BasicType) -> hir::Layout {
         BasicType::U32 => hir::Layout::new_equal(4),
         BasicType::U64 => hir::Layout::new_equal(8),
         BasicType::Usize => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             hir::Layout::new_equal(ptr_size)
         }
         BasicType::F32 => hir::Layout::new_equal(4),
@@ -66,7 +66,7 @@ pub fn basic_layout(ctx: &HirCtx, basic: BasicType) -> hir::Layout {
         BasicType::Bool => hir::Layout::new_equal(1),
         BasicType::Char => hir::Layout::new_equal(4),
         BasicType::Rawptr => {
-            let ptr_size = ctx.target.arch().ptr_width().ptr_size();
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             hir::Layout::new_equal(ptr_size)
         }
         BasicType::Void => hir::Layout::new(0, 1),

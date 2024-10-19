@@ -1947,6 +1947,7 @@ fn typecheck_binary<'hir>(
     let expect_src = SourceRange::new(ctx.proc.origin(), bin.lhs.range);
     let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
     let rhs_res = typecheck_expr(ctx, rhs_expect, bin.rhs);
+    let _ = binary_op_check(ctx, op, op_range, rhs_res.ty);
 
     if let Some(bin_op) = bin_op {
         let binary_ty = binary_output_type(op, lhs_res.ty);
@@ -3130,6 +3131,7 @@ fn unary_output_type(op: ast::UnOp, rhs_ty: hir::Type) -> hir::Type {
     }
 }
 
+//@make error better (reference the expr)
 fn unary_op_check(
     ctx: &mut HirCtx,
     op: ast::UnOp,
@@ -3261,6 +3263,7 @@ fn binary_output_type(op: ast::BinOp, lhs_ty: hir::Type) -> hir::Type {
     }
 }
 
+//@make error better (reference the expr)
 fn binary_op_check(
     ctx: &mut HirCtx,
     op: ast::BinOp,

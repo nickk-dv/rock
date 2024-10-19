@@ -2,6 +2,7 @@ mod graph;
 mod vfs;
 
 use crate::ast::Ast;
+use crate::config::Config;
 use crate::error::Error;
 use crate::errors as err;
 use crate::fs_env;
@@ -23,6 +24,7 @@ pub struct Session<'s> {
     pub intern_name: InternPool<'s, InternName>,
     pub graph: PackageGraph,
     pub module: Modules<'s>,
+    pub config: Config,
 }
 
 pub struct Modules<'s> {
@@ -204,7 +206,7 @@ impl Directory {
     }
 }
 
-pub fn create_session<'s>() -> Result<Session<'s>, Error> {
+pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
     let mut session = Session {
         vfs: Vfs::new(64),
         curr_exe_dir: fs_env::current_exe_path()?,
@@ -213,6 +215,7 @@ pub fn create_session<'s>() -> Result<Session<'s>, Error> {
         intern_name: InternPool::new(1024),
         graph: PackageGraph::new(8),
         module: Modules::new(64),
+        config,
     };
 
     //@when working on a `core` itself this does not work

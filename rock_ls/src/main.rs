@@ -570,7 +570,10 @@ fn run_diagnostics(
     let session = if let Some(session) = &mut context.session {
         session
     } else {
-        let session = match session::create_session() {
+        use rock_core::config::{BuildKind, Config, TargetTriple};
+        let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+
+        let session = match session::create_session(config) {
             Ok(value) => value,
             Err(error) => {
                 let params = lsp::ShowMessageParams {

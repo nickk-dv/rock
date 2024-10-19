@@ -67,7 +67,7 @@ fn match_cov_int(
         }
     }
 
-    let ptr_width = ctx.target.arch().ptr_width();
+    let ptr_width = ctx.session.config.target_ptr_width;
     let not_covered = cov.not_covered(int_ty.min_128(ptr_width), int_ty.max_128(ptr_width));
 
     if !not_covered.is_empty() {
@@ -93,7 +93,7 @@ fn pat_cov_int(
     pat_range: TextRange,
     int_ty: hir::BasicInt,
 ) {
-    let ptr_width = ctx.target.arch().ptr_width();
+    let ptr_width = ctx.session.config.target_ptr_width;
 
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(int_ty.min_128(ptr_width), int_ty.max_128(ptr_width)),

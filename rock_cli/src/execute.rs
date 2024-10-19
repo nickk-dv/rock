@@ -1,6 +1,7 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::error_print;
+use rock_core::config::{BuildKind, Config, TargetTriple};
 use rock_core::error::{Error, ErrorWarningBuffer, WarningBuffer};
 use rock_core::format;
 use rock_core::fs_env;
@@ -126,7 +127,8 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
 }
 
 fn check() -> Result<(), Error> {
-    let mut session = session::create_session()?;
+    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+    let mut session = session::create_session(config)?;
 
     match check_impl(&mut session) {
         Ok(warn) => error_print::print_warnings(Some(&session), warn),
@@ -142,7 +144,8 @@ fn check() -> Result<(), Error> {
 }
 
 fn build(data: CommandBuild) -> Result<(), Error> {
-    let mut session = session::create_session()?;
+    let config = Config::new(TargetTriple::host(), data.build_kind);
+    let mut session = session::create_session(config)?;
 
     match build_impl(&mut session, data) {
         Ok(()) => (),
@@ -155,11 +158,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
         let (hir, warn) = hir_lower::check(session)?;
         error_print::print_warnings(Some(&session), warn);
 
-        let options = rock_llvm::build::BuildOptions {
-            kind: data.kind,
-            emit_llvm: data.emit_llvm,
-        };
-        match rock_llvm::build::build(hir, session, options) {
+        match rock_llvm::build::build(hir, session, data.options) {
             Ok(_) => {}
             Err(error) => error_print::print_errors(Some(&session), error.into()),
         }
@@ -167,14 +166,15 @@ fn build(data: CommandBuild) -> Result<(), Error> {
         let style = AnsiStyle::new();
         let g = style.out.green_bold;
         let r = style.out.reset;
-        println!("  {g}Finished{r} `{}`\n", data.kind.as_str());
+        println!("  {g}Finished{r} `{}`\n", data.build_kind.as_str());
 
         Ok(())
     }
 }
 
 fn run(data: CommandRun) -> Result<(), Error> {
-    let mut session = session::create_session()?;
+    let config = Config::new(TargetTriple::host(), data.build_kind);
+    let mut session = session::create_session(config)?;
 
     match run_impl(&mut session, data) {
         Ok(()) => (),
@@ -187,11 +187,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         let (hir, warn) = hir_lower::check(session)?;
         error_print::print_warnings(Some(&session), warn);
 
-        let options = rock_llvm::build::BuildOptions {
-            kind: data.kind,
-            emit_llvm: data.emit_llvm,
-        };
-        let bin_path = match rock_llvm::build::build(hir, session, options) {
+        let bin_path = match rock_llvm::build::build(hir, session, data.options) {
             Ok(path) => path,
             Err(error) => {
                 error_print::print_errors(Some(&session), error.into());
@@ -201,7 +197,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         let style = AnsiStyle::new();
         let g = style.out.green_bold;
         let r = style.out.reset;
-        println!("  {g}Finished{r} `{}`", data.kind.as_str());
+        println!("  {g}Finished{r} `{}`", data.build_kind.as_str());
 
         let run_path = bin_path
             .strip_prefix(&session.curr_work_dir)
@@ -217,8 +213,8 @@ fn run(data: CommandRun) -> Result<(), Error> {
 }
 
 fn fmt() -> Result<(), Error> {
-    //@need a reduced session with only root package src
-    let mut session = session::create_session()?;
+    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+    let mut session = session::create_session(config)?;
 
     match fmt_impl(&mut session) {
         Ok(()) => (),

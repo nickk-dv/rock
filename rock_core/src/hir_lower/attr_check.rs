@@ -4,7 +4,7 @@ use crate::config;
 use crate::error::{Error, ErrorSink, ErrorWarningBuffer, SourceRange, Warning, WarningSink};
 use crate::errors as err;
 use crate::hir::{self, EnumFlag, GlobalFlag, ProcFlag, StructFlag};
-use crate::session::{Module, ModuleID};
+use crate::session::ModuleID;
 use crate::support::{AsStr, BitSet};
 
 pub struct AttrFeedbackProc {
@@ -508,31 +508,30 @@ fn resolve_cfg_params(
                 }
                 None => Err(()),
             },
-            CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
-                Some(cfg_arch) => {
-                    let arch = ctx.target.arch();
-                    Ok(CfgState(arch == cfg_arch))
+            CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
+                Some(cfg_os) => {
+                    let os = ctx.session.config.target_os;
+                    Ok(CfgState(os == cfg_os))
                 }
                 None => Err(()),
             },
-            CfgParamKind::TargetOS => match config::TargetOS::from_str(value) {
-                Some(cfg_os) => {
-                    let os = ctx.target.os();
-                    Ok(CfgState(os == cfg_os))
+            CfgParamKind::TargetArch => match config::TargetArch::from_str(value) {
+                Some(cfg_arch) => {
+                    let arch = ctx.session.config.target_arch;
+                    Ok(CfgState(arch == cfg_arch))
                 }
                 None => Err(()),
             },
             CfgParamKind::TargetPtrWidth => match config::TargetPtrWidth::from_str(value) {
                 Some(cfg_ptr_width) => {
-                    let ptr_width = ctx.target.arch().ptr_width();
+                    let ptr_width = ctx.session.config.target_ptr_width;
                     Ok(CfgState(ptr_width == cfg_ptr_width))
                 }
                 None => Err(()),
             },
             CfgParamKind::BuildKind => match config::BuildKind::from_str(value) {
                 Some(cfg_build_kind) => {
-                    //@current build_kind not available trough any context
-                    let build_kind: config::BuildKind = todo!("build kind is not available");
+                    let build_kind = ctx.session.config.build_kind;
                     Ok(CfgState(build_kind == cfg_build_kind))
                 }
                 None => Err(()),
@@ -654,8 +653,8 @@ crate::enum_as_str! {
     #[derive(Copy, Clone)]
     enum CfgParamKind {
         Target "target",
-        TargetArch "target_arch",
         TargetOS "target_os",
+        TargetArch "target_arch",
         TargetPtrWidth "target_ptr_width",
         BuildKind  "build_kind",
     }

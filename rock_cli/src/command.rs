@@ -3,6 +3,7 @@ use rock_core::error::ErrorBuffer;
 use rock_core::errors as err;
 use rock_core::package::manifest::PackageKind;
 use rock_core::support::AsStr;
+use rock_llvm::build::BuildOptions;
 use std::collections::{HashMap, HashSet};
 
 pub enum Command {
@@ -22,13 +23,13 @@ pub struct CommandNew {
 }
 
 pub struct CommandBuild {
-    pub kind: BuildKind,
-    pub emit_llvm: bool,
+    pub build_kind: BuildKind,
+    pub options: BuildOptions,
 }
 
 pub struct CommandRun {
-    pub kind: BuildKind,
-    pub emit_llvm: bool,
+    pub build_kind: BuildKind,
+    pub options: BuildOptions,
     pub args: Vec<String>,
 }
 
@@ -83,23 +84,28 @@ fn command_check(p: &mut CommandParser) -> Command {
 
 fn command_build(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let kind = parse_option_enum(p, BuildKind::Debug);
+    let build_kind = parse_option_enum(p, BuildKind::Debug);
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     parse_trail_args_none(p);
 
-    let data = CommandBuild { kind, emit_llvm };
+    let options = BuildOptions { emit_llvm };
+    let data = CommandBuild {
+        build_kind,
+        options,
+    };
     Command::Build(data)
 }
 
 fn command_run(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let kind = parse_option_enum(p, BuildKind::Debug);
+    let build_kind = parse_option_enum(p, BuildKind::Debug);
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     let args = parse_trail_args(p);
 
+    let options = BuildOptions { emit_llvm };
     let data = CommandRun {
-        kind,
-        emit_llvm,
+        build_kind,
+        options,
         args,
     };
     Command::Run(data)

@@ -572,7 +572,7 @@ pub fn int_range_check<'hir>(
     val: i128,
     int_ty: hir::BasicInt,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let ptr_width = ctx.target.arch().ptr_width();
+    let ptr_width = ctx.session.config.target_ptr_width;
     let min = int_ty.min_128(ptr_width);
     let max = int_ty.max_128(ptr_width);
 
