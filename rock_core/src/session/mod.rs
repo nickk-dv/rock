@@ -24,6 +24,7 @@ pub struct Session<'s> {
     pub intern_name: InternPool<'s, InternName>,
     pub graph: PackageGraph,
     pub module: Modules<'s>,
+    pub stats: BuildStats,
     pub config: Config,
 }
 
@@ -55,6 +56,20 @@ pub struct Directory {
     name_id: ID<InternName>,
     modules: Vec<ModuleID>,
     sub_dirs: Vec<Directory>,
+}
+
+#[derive(Default)]
+pub struct BuildStats {
+    pub package_count: u32,
+    pub module_count: u32,
+    pub line_count: u32,
+    pub token_count: u32,
+    pub session_ms: f64,
+    pub parse_ms: f64,
+    pub check_ms: f64,
+    pub llvm_ir_ms: f64,
+    pub object_ms: f64,
+    pub link_ms: f64,
 }
 
 pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
@@ -206,6 +221,18 @@ impl Directory {
     }
 }
 
+impl BuildStats {
+    pub fn total_secs(&self) -> f64 {
+        let total_ms = self.session_ms
+            + self.parse_ms
+            + self.check_ms
+            + self.llvm_ir_ms
+            + self.object_ms
+            + self.link_ms;
+        total_ms / 1000.0
+    }
+}
+
 pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
     let mut session = Session {
         vfs: Vfs::new(64),
@@ -215,6 +242,7 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
         intern_name: InternPool::new(1024),
         graph: PackageGraph::new(8),
         module: Modules::new(64),
+        stats: BuildStats::default(),
         config,
     };
 
@@ -227,6 +255,9 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
 
     let root_dir = session.curr_work_dir.clone();
     process_package(&mut session, &root_dir, None, false)?;
+
+    session.stats.package_count = session.graph.package_count() as u32;
+    session.stats.module_count = session.module.modules.len() as u32;
     Ok(session)
 }
 

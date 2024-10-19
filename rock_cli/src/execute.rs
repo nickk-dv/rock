@@ -2,17 +2,18 @@ use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
-use rock_core::error::{Error, ErrorWarningBuffer, WarningBuffer};
+use rock_core::error::{Error, ErrorWarningBuffer};
 use rock_core::format;
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
-use rock_core::session::{self, Session};
-use rock_core::support::AsStr;
+use rock_core::session::{self, BuildStats, Session};
+use rock_core::support::{AsStr, Timer};
 use rock_core::syntax::ast_build;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 pub fn command(command: Command) -> Result<(), Error> {
     match command {
@@ -127,89 +128,139 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
 }
 
 fn check() -> Result<(), Error> {
+    let timer = Timer::start();
     let config = Config::new(TargetTriple::host(), BuildKind::Debug);
     let mut session = session::create_session(config)?;
+    session.stats.session_ms = timer.measure_ms();
 
-    match check_impl(&mut session) {
-        Ok(warn) => error_print::print_warnings(Some(&session), warn),
-        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
-    };
+    if let Err(errw) = check_impl(&mut session) {
+        error_print::print_errors_warnings(Some(&session), errw);
+    }
     return Ok(());
 
-    fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
+    fn check_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
+        let timer = Timer::start();
         ast_build::parse_all(session, false)?;
+        session.stats.parse_ms = timer.measure_ms();
+
+        let timer = Timer::start();
         let (_, warn) = hir_lower::check(session)?;
-        Ok(warn)
+        session.stats.check_ms = timer.measure_ms();
+
+        error_print::print_warnings(Some(&session), warn);
+
+        let style = AnsiStyle::new();
+        print_build_finished(session, &style, &session.stats);
+        Ok(())
     }
 }
 
 fn build(data: CommandBuild) -> Result<(), Error> {
+    let timer = Timer::start();
     let config = Config::new(TargetTriple::host(), data.build_kind);
     let mut session = session::create_session(config)?;
+    session.stats.session_ms = timer.measure_ms();
 
-    match build_impl(&mut session, data) {
-        Ok(()) => (),
-        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    if let Err(errw) = build_impl(&mut session, data) {
+        error_print::print_errors_warnings(Some(&session), errw);
     }
     return Ok(());
 
     fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ErrorWarningBuffer> {
+        let timer = Timer::start();
         ast_build::parse_all(session, false)?;
-        let (hir, warn) = hir_lower::check(session)?;
-        error_print::print_warnings(Some(&session), warn);
+        session.stats.parse_ms = timer.measure_ms();
 
-        match rock_llvm::build::build(hir, session, data.options) {
-            Ok(_) => {}
-            Err(error) => error_print::print_errors(Some(&session), error.into()),
-        }
+        let timer = Timer::start();
+        let (hir, warn) = hir_lower::check(session)?;
+        session.stats.check_ms = timer.measure_ms();
+
+        error_print::print_warnings(Some(&session), warn);
+        let _ = rock_llvm::build::build(hir, session, data.options)?;
 
         let style = AnsiStyle::new();
-        let g = style.out.green_bold;
-        let r = style.out.reset;
-        println!("  {g}Finished{r} `{}`\n", data.build_kind.as_str());
-
+        if data.stats {
+            print_build_stats(&style, &session.stats);
+        }
+        print_build_finished(session, &style, &session.stats);
         Ok(())
     }
 }
 
 fn run(data: CommandRun) -> Result<(), Error> {
+    let timer = Timer::start();
     let config = Config::new(TargetTriple::host(), data.build_kind);
     let mut session = session::create_session(config)?;
+    session.stats.session_ms = timer.measure_ms();
 
-    match run_impl(&mut session, data) {
-        Ok(()) => (),
-        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    if let Err(errw) = run_impl(&mut session, data) {
+        error_print::print_errors_warnings(Some(&session), errw);
     }
     return Ok(());
 
     fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ErrorWarningBuffer> {
+        let timer = Timer::start();
         ast_build::parse_all(session, false)?;
+        session.stats.parse_ms = timer.measure_ms();
+
+        let timer = Timer::start();
         let (hir, warn) = hir_lower::check(session)?;
+        session.stats.check_ms = timer.measure_ms();
+
         error_print::print_warnings(Some(&session), warn);
+        let bin_path = rock_llvm::build::build(hir, session, data.options)?;
 
-        let bin_path = match rock_llvm::build::build(hir, session, data.options) {
-            Ok(path) => path,
-            Err(error) => {
-                error_print::print_errors(Some(&session), error.into());
-                return Ok(());
-            }
-        };
         let style = AnsiStyle::new();
-        let g = style.out.green_bold;
-        let r = style.out.reset;
-        println!("  {g}Finished{r} `{}`", data.build_kind.as_str());
-
-        let run_path = bin_path
-            .strip_prefix(&session.curr_work_dir)
-            .unwrap_or_else(|_| &bin_path);
-        println!("   {g}Running{r} {}\n", run_path.to_string_lossy());
-
-        match rock_llvm::build::run(bin_path, data.args) {
-            Ok(()) => {}
-            Err(error) => error_print::print_errors(Some(&session), error.into()),
-        };
+        if data.stats {
+            print_build_stats(&style, &session.stats);
+        }
+        print_build_finished(session, &style, &session.stats);
+        print_build_running(session, &style, &bin_path);
+        rock_llvm::build::run(bin_path, data.args)?;
         Ok(())
     }
+}
+
+fn print_build_stats(style: &AnsiStyle, stats: &BuildStats) {
+    let g = style.out.green_bold;
+    let r = style.out.reset;
+
+    println!(" {g}packages:{r} {}", stats.package_count);
+    println!("  {g}modules:{r} {}", stats.module_count);
+    println!("    {g}lines:{r} {}", stats.line_count);
+    println!("   {g}tokens:{r} {}\n", stats.token_count);
+
+    println!("  {g}session:{r} {:.2} ms", stats.session_ms);
+    println!("    {g}parse:{r} {:.2} ms", stats.parse_ms);
+    println!("    {g}check:{r} {:.2} ms", stats.check_ms);
+    println!("  {g}llvm-ir:{r} {:.2} ms", stats.llvm_ir_ms);
+    println!("   {g}object:{r} {:.2} ms", stats.object_ms);
+    println!("     {g}link:{r} {:.2} ms\n", stats.link_ms);
+}
+
+fn print_build_finished(session: &Session, style: &AnsiStyle, stats: &BuildStats) {
+    let build_kind = session.config.build_kind;
+    let description = match build_kind {
+        BuildKind::Debug => "unoptimized",
+        BuildKind::Release => "optimized",
+    };
+    let g = style.out.green_bold;
+    let r = style.out.reset;
+    println!(
+        "  {g}Finished{r} `{}` ({}) in {:.2} sec",
+        build_kind.as_str(),
+        description,
+        stats.total_secs(),
+    );
+}
+
+fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &PathBuf) {
+    let run_path = bin_path
+        .strip_prefix(&session.curr_work_dir)
+        .unwrap_or_else(|_| bin_path);
+    let g = style.out.green_bold;
+    let r = style.out.reset;
+    println!("   {g}Running{r} {}\n", run_path.to_string_lossy());
 }
 
 fn fmt() -> Result<(), Error> {
@@ -245,9 +296,9 @@ fn help() {
     let c = style.out.cyan_bold;
     let r = style.out.reset;
 
-    #[rustfmt::skip]
-    println!(r#"{g}
-Usage:
+    println!(
+        "
+{g}Usage:
   {c}rock <command> [options]
 
 {g}Commands:
@@ -268,13 +319,14 @@ Usage:
   {c}build, run
     {c}--debug      {r}Build in debug mode
     {c}--release    {r}Build in release mode
+    {c}--stats      {r}Print compilation stats
     {c}--emit-llvm  {r}Save llvm module to file
 
   {c}run
-    {c}-- [args]    {r}Pass command line arguments
-"#,
-    PackageKind::Lib.as_str_full(),
-    PackageKind::Bin.as_str_full());
+    {c}-- [args]    {r}Pass command line arguments\n",
+        PackageKind::Lib.as_str_full(),
+        PackageKind::Bin.as_str_full()
+    );
 }
 
 fn version() {

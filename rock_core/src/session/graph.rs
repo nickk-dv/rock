@@ -30,6 +30,10 @@ impl PackageGraph {
     pub fn package_mut(&mut self, package_id: PackageID) -> &mut Package {
         self.packages.get_mut(&package_id).unwrap()
     }
+    #[inline]
+    pub fn package_count(&self) -> usize {
+        self.packages.len()
+    }
 
     #[inline]
     pub fn find_package_dep(

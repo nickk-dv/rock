@@ -3,7 +3,7 @@ use rock_core::error::{
     Diagnostic, DiagnosticContext, DiagnosticData, Error, ErrorBuffer, ErrorWarningBuffer,
     Severity, Warning, WarningBuffer,
 };
-use rock_core::session::{Module, Session};
+use rock_core::session::Session;
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;

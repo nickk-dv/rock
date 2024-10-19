@@ -8,14 +8,19 @@ use rock_core::error::Error;
 use rock_core::fs_env;
 use rock_core::hir;
 use rock_core::session::{self, Session};
-use rock_core::support::AsStr;
+use rock_core::support::{AsStr, Timer};
 use std::path::PathBuf;
 
 pub struct BuildOptions {
     pub emit_llvm: bool,
 }
 
-pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<PathBuf, Error> {
+pub fn build(
+    hir: hir::Hir,
+    session: &mut Session,
+    options: BuildOptions,
+) -> Result<PathBuf, Error> {
+    let timer = Timer::start();
     let config = session.config;
     let (target, module) = emit_mod::codegen_module(
         hir,
@@ -23,9 +28,9 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
         &session.intern_lit,
         &session.intern_name,
     );
+    session.stats.llvm_ir_ms = timer.measure_ms();
 
-    let cwd = fs_env::dir_get_current_working()?;
-    let mut build_path = cwd.join("build");
+    let mut build_path = session.curr_work_dir.join("build");
     fs_env::dir_create(&build_path, false)?;
     build_path.push(config.build_kind.as_str());
     fs_env::dir_create(&build_path, false)?;
@@ -35,7 +40,7 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
         Some(name) => name.as_str(),
         None => manifest.package.name.as_str(),
     };
-    let binary_path = match session.config.target_os {
+    let bin_path = match session.config.target_os {
         TargetOS::Windows => build_path.join(format!("{bin_name}.exe")),
         TargetOS::Linux => build_path.join(&bin_name),
     };
@@ -52,7 +57,9 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
     let _ = verify_result.map_err(|e| eprintln!("llvm verify module failed:\n{}", e));
 
     let object_path = build_path.join(format!("{bin_name}.o"));
+    let timer = Timer::start();
     let object_result = module.emit_to_file(&target, object_path.to_str().unwrap());
+    session.stats.object_ms = timer.measure_ms();
     object_result.map_err(|e| Error::message(format!("llvm emit object failed:\n{}", e)))?;
 
     let arg_obj = object_path.to_string_lossy().to_string();
@@ -60,11 +67,11 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
 
     match config.target_os {
         TargetOS::Windows => {
-            args.push(format!("/out:{}", binary_path.to_string_lossy()));
+            args.push(format!("/out:{}", bin_path.to_string_lossy()));
         }
         TargetOS::Linux => {
             args.push("-o".into());
-            args.push(binary_path.to_string_lossy().into());
+            args.push(bin_path.to_string_lossy().into());
         }
     }
 
@@ -100,21 +107,23 @@ pub fn build(hir: hir::Hir, session: &Session, options: BuildOptions) -> Result<
     };
 
     //@use different command api, capture outputs + error
+    let timer = Timer::start();
     let status = std::process::Command::new(linker_path)
         .args(args)
         .status()
         .map_err(|io_error| Error::message(format!("failed to link program:\n{}", io_error)))?;
-    Ok(binary_path)
+    session.stats.link_ms = timer.measure_ms();
+    Ok(bin_path)
 }
 
-pub fn run(binary_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
-    let _ = std::process::Command::new(&binary_path)
+pub fn run(bin_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
+    let _ = std::process::Command::new(&bin_path)
         .args(args)
         .status()
         .map_err(|io_error| {
             Error::message(format!(
                 "failed to run executable `{}`\nreason: {}",
-                binary_path.to_string_lossy(),
+                bin_path.to_string_lossy(),
                 io_error
             ))
         })?;

@@ -5,7 +5,7 @@ use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::intern::{InternLit, InternName, InternPool};
 use crate::session::{ModuleID, Session};
-use crate::support::{Arena, TempBuffer, Timer, ID};
+use crate::support::{Arena, TempBuffer, ID};
 use crate::text::TextRange;
 
 struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
@@ -96,7 +96,6 @@ impl<'ast> AstBuildState<'ast> {
 }
 
 pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBuffer> {
-    let t_total = Timer::new();
     let mut state = AstBuildState::new();
 
     for module_id in session.module.ids() {
@@ -110,7 +109,11 @@ pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), E
             with_trivia,
         );
         match tree_result {
-            Ok(tree) => session.module.get_mut(module_id).set_tree(tree),
+            Ok(tree) => {
+                session.stats.line_count += file.line_ranges.len() as u32;
+                session.stats.token_count += tree.tokens().token_count() as u32;
+                session.module.get_mut(module_id).set_tree(tree);
+            }
             Err(errors) => state.errors.join_e(errors),
         }
     }
@@ -136,7 +139,6 @@ pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), E
         session.module.get_mut(module_id).set_ast(ast);
     }
 
-    t_total.stop("ast parse (tree) total");
     state.errors.result(())
 }
 
