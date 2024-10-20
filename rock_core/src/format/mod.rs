@@ -620,39 +620,34 @@ fn ty<'syn>(fmt: &mut Formatter<'syn>, ty_cst: cst::Type<'syn>) {
             let (basic, _) = ty_cst.basic(fmt.tree).unwrap();
             fmt.write_str(basic.as_str());
         }
-        cst::Type::Custom(ty_cst) => {
-            path(fmt, ty_cst.path(fmt.tree).unwrap());
-        }
-        cst::Type::Reference(ty_cst) => {
-            fmt.write('&');
-            if ty_cst.t_mut(fmt.tree).is_some() {
-                fmt.write_str("mut");
-            }
-            fmt.space();
-            ty(fmt, ty_cst.ref_ty(fmt.tree).unwrap());
-        }
-        cst::Type::Procedure(ty_cst) => {
-            proc_ty(fmt, ty_cst);
-        }
-        cst::Type::ArraySlice(ty_cst) => {
-            fmt.write('[');
-            fmt.write('&');
-            if ty_cst.t_mut(fmt.tree).is_some() {
-                fmt.write_str("mut");
-            }
-            fmt.write(']');
-            ty(fmt, ty_cst.elem_ty(fmt.tree).unwrap());
-        }
-        cst::Type::ArrayStatic(ty_cst) => {
-            fmt.write('[');
-            expr(fmt, ty_cst.len(fmt.tree).unwrap());
-            fmt.write(']');
-            ty(fmt, ty_cst.elem_ty(fmt.tree).unwrap());
-        }
+        cst::Type::Custom(ty_cst) => path(fmt, ty_cst.path(fmt.tree).unwrap()),
+        cst::Type::Reference(ty_cst) => ty_ref(fmt, ty_cst),
+        cst::Type::Procedure(ty_cst) => ty_proc(fmt, ty_cst),
+        cst::Type::ArraySlice(slice) => ty_slice(fmt, slice),
+        cst::Type::ArrayStatic(array) => ty_array(fmt, array),
     }
 }
 
-fn proc_ty<'syn>(fmt: &mut Formatter<'syn>, proc_ty: cst::TypeProcedure<'syn>) {
+fn ty_ref<'syn>(fmt: &mut Formatter<'syn>, ty_cst: cst::TypeReference<'syn>) {
+    fmt.write('&');
+    let mut with_space = false;
+
+    if ty_cst.t_mut(fmt.tree).is_some() {
+        fmt.write_str("mut");
+        fmt.space();
+        with_space = true;
+    }
+
+    let ref_ty = ty_cst.ref_ty(fmt.tree).unwrap();
+    if !with_space {
+        if matches!(ref_ty, cst::Type::Reference(_)) {
+            fmt.space();
+        }
+    }
+    ty(fmt, ref_ty);
+}
+
+fn ty_proc<'syn>(fmt: &mut Formatter<'syn>, proc_ty: cst::TypeProcedure<'syn>) {
     fmt.write_str("proc");
     fmt.write('(');
 
@@ -681,6 +676,23 @@ fn proc_ty<'syn>(fmt: &mut Formatter<'syn>, proc_ty: cst::TypeProcedure<'syn>) {
     fmt.write_str("->");
     fmt.space();
     ty(fmt, proc_ty.return_ty(fmt.tree).unwrap());
+}
+
+fn ty_slice<'syn>(fmt: &mut Formatter<'syn>, slice: cst::TypeArraySlice<'syn>) {
+    fmt.write('[');
+    fmt.write('&');
+    if slice.t_mut(fmt.tree).is_some() {
+        fmt.write_str("mut");
+    }
+    fmt.write(']');
+    ty(fmt, slice.elem_ty(fmt.tree).unwrap());
+}
+
+fn ty_array<'syn>(fmt: &mut Formatter<'syn>, array: cst::TypeArrayStatic<'syn>) {
+    fmt.write('[');
+    expr(fmt, array.len(fmt.tree).unwrap());
+    fmt.write(']');
+    ty(fmt, array.elem_ty(fmt.tree).unwrap());
 }
 
 //==================== STMT ====================
@@ -1060,11 +1072,21 @@ fn expr_deref<'syn>(fmt: &mut Formatter<'syn>, deref: cst::ExprDeref<'syn>) {
 
 fn expr_address<'syn>(fmt: &mut Formatter<'syn>, address: cst::ExprAddress<'syn>) {
     fmt.write('&');
+    let mut with_space = false;
+
     if address.t_mut(fmt.tree).is_some() {
         fmt.write_str("mut");
         fmt.space();
+        with_space = true;
     }
-    expr(fmt, address.expr(fmt.tree).unwrap());
+
+    let expr_cst = address.expr(fmt.tree).unwrap();
+    if !with_space {
+        if matches!(expr_cst, cst::Expr::Address(_)) {
+            fmt.space();
+        }
+    }
+    expr(fmt, expr_cst);
 }
 
 fn expr_unary<'syn>(fmt: &mut Formatter<'syn>, unary: cst::ExprUnary<'syn>) {
