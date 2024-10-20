@@ -624,7 +624,6 @@ fn expr(p: &mut Parser) {
 
 fn sub_expr(p: &mut Parser, min_prec: u32) {
     let mut mc_curr = primary_expr(p);
-    mc_curr = tail_expr(p, mc_curr);
 
     if p.at(T![as]) {
         let m = p.start_before(mc_curr);
@@ -656,7 +655,8 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         p.bump(T!['(']);
         sub_expr(p, 0);
         p.expect(T![')']);
-        return m.complete(p, SyntaxKind::EXPR_PAREN);
+        let mc = m.complete(p, SyntaxKind::EXPR_PAREN);
+        return tail_expr(p, mc);
     }
 
     if p.peek().as_un_op().is_some() {
@@ -749,13 +749,13 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             T!["..<"] => {
                 let m = p.start_before(mc);
                 p.bump(T!["..<"]);
-                expr(p);
+                primary_expr(p);
                 mc = m.complete(p, SyntaxKind::RANGE_EXCLUSIVE);
             }
             T!["..="] => {
                 let m = p.start_before(mc);
                 p.bump(T!["..="]);
-                expr(p);
+                primary_expr(p);
                 mc = m.complete(p, SyntaxKind::RANGE_INCLUSIVE);
             }
             _ => return mc,

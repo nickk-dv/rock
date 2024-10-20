@@ -1,7 +1,7 @@
 use super::constant;
 use super::context::{HirCtx, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
-use crate::ast::{self, BasicType};
+use crate::ast::{self, BasicType, Local};
 use crate::error::{
     Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr, Warning, WarningSink,
 };
@@ -1647,18 +1647,11 @@ fn typecheck_address<'hir>(
 
     match adressability {
         Addressability::Unknown => {} //@ & to error should be also Error? 16.05.24
-        Addressability::Constant => {
+        Addressability::Constant(src) => {
             ctx.emit.error(Error::new(
                 "cannot get reference to a constant, you can use `global` instead",
                 SourceRange::new(ctx.proc.origin(), expr_range),
-                None,
-            ));
-        }
-        Addressability::SliceField => {
-            ctx.emit.error(Error::new(
-                "cannot get reference to a slice field, slice itself cannot be modified",
-                SourceRange::new(ctx.proc.origin(), expr_range),
-                None,
+                Info::new("constant defined here", src),
             ));
         }
         Addressability::Temporary => {
@@ -1686,6 +1679,15 @@ fn typecheck_address<'hir>(
                 ));
             }
         }
+        Addressability::AddressableReference(rhs_mutt, src) => {
+            if mutt == ast::Mut::Mutable && rhs_mutt == ast::Mut::Immutable {
+                ctx.emit.error(Error::new(
+                    "cannot get mutable reference to a value behind an immutable reference",
+                    SourceRange::new(ctx.proc.origin(), expr_range),
+                    Info::new("variable defined here", src),
+                ));
+            }
+        }
         Addressability::NotImplemented => {
             ctx.emit.error(Error::new(
                 "addressability not implemented for this expression",
@@ -1703,60 +1705,68 @@ fn typecheck_address<'hir>(
 
 enum Addressability {
     Unknown,
-    Constant,
-    SliceField,
     Temporary,
     TemporaryImmutable,
+    Constant(SourceRange),
     Addressable(ast::Mut, SourceRange),
-    NotImplemented, //@temporary non crashing error 05.05.24
+    AddressableReference(ast::Mut, SourceRange),
+    NotImplemented,
 }
 
+//@only valid to produce AddressableReference when accessing via [idx] for example
 fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> Addressability {
     match expr.kind {
         hir::ExprKind::Error => Addressability::Unknown,
-        hir::ExprKind::Const { .. } => Addressability::Temporary, //@TemporaryImmutable for struct / array? and alloca them
+        //@fix codegen to allow optional stack alloc
+        hir::ExprKind::Const { value } => match value {
+            hir::ConstValue::Variant { .. } => Addressability::TemporaryImmutable,
+            hir::ConstValue::Struct { .. } => Addressability::TemporaryImmutable,
+            hir::ConstValue::Array { .. } => Addressability::TemporaryImmutable,
+            hir::ConstValue::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
+            _ => Addressability::Temporary,
+        },
         hir::ExprKind::If { .. } => Addressability::Temporary,
         hir::ExprKind::Block { .. } => Addressability::Temporary,
         hir::ExprKind::Match { .. } => Addressability::Temporary,
-        hir::ExprKind::StructField { target, .. } => get_expr_addressability(ctx, target),
-        hir::ExprKind::SliceField { .. } => Addressability::SliceField,
+        hir::ExprKind::StructField { target, .. } => get_expr_addressability(ctx, target), //@verify correctness
+        hir::ExprKind::SliceField { target, .. } => get_expr_addressability(ctx, target), //@verify correctness, allowing direct slice mutation
         hir::ExprKind::Index { target, .. } => get_expr_addressability(ctx, target),
-        hir::ExprKind::Slice { target, .. } => get_expr_addressability(ctx, target),
+        hir::ExprKind::Slice { target, access } => Addressability::NotImplemented,
         hir::ExprKind::Cast { .. } => Addressability::Temporary,
         hir::ExprKind::ParamVar { param_id } => {
             let param = ctx.proc.get_param(param_id);
-            Addressability::Addressable(
-                param.mutt,
-                SourceRange::new(ctx.proc.origin(), param.name.range),
-            )
+            let src = SourceRange::new(ctx.proc.origin(), param.name.range);
+            match param.ty {
+                hir::Type::Error => Addressability::Unknown,
+                hir::Type::Reference(_, mutt) => Addressability::AddressableReference(mutt, src),
+                _ => Addressability::Addressable(param.mutt, src),
+            }
         }
         hir::ExprKind::LocalVar { local_id } => {
             let local = ctx.proc.get_local(local_id);
-            Addressability::Addressable(
-                local.mutt,
-                SourceRange::new(ctx.proc.origin(), local.name.range),
-            )
+            let src = SourceRange::new(ctx.proc.origin(), local.name.range);
+            match local.ty {
+                hir::Type::Error => Addressability::Unknown,
+                hir::Type::Reference(_, mutt) => Addressability::AddressableReference(mutt, src),
+                _ => Addressability::Addressable(local.mutt, src),
+            }
         }
-        hir::ExprKind::LocalBind { local_bind_id } => {
-            //@semantics not finished
-            // can be reference binding which may behave differently
-            Addressability::NotImplemented
+        hir::ExprKind::LocalBind { local_bind_id } => Addressability::NotImplemented,
+        hir::ExprKind::ConstVar { const_id } => {
+            let const_data = ctx.registry.const_data(const_id);
+            Addressability::Constant(const_data.src())
         }
-        hir::ExprKind::ConstVar { .. } => Addressability::Constant,
         hir::ExprKind::GlobalVar { global_id } => {
-            let data = ctx.registry.global_data(global_id);
-            Addressability::Addressable(
-                data.mutt,
-                SourceRange::new(data.origin_id, data.name.range),
-            )
+            let global_data = ctx.registry.global_data(global_id);
+            Addressability::Addressable(global_data.mutt, global_data.src())
         }
-        hir::ExprKind::Variant { .. } => Addressability::NotImplemented, //@todo
+        hir::ExprKind::Variant { .. } => Addressability::TemporaryImmutable, //@fix codegen to allow optional stack alloc
         hir::ExprKind::CallDirect { .. } => Addressability::Temporary,
         hir::ExprKind::CallIndirect { .. } => Addressability::Temporary,
         hir::ExprKind::StructInit { .. } => Addressability::TemporaryImmutable,
         hir::ExprKind::ArrayInit { .. } => Addressability::TemporaryImmutable,
         hir::ExprKind::ArrayRepeat { .. } => Addressability::TemporaryImmutable,
-        hir::ExprKind::Deref { rhs, .. } => get_expr_addressability(ctx, rhs),
+        hir::ExprKind::Deref { rhs, .. } => get_expr_addressability(ctx, rhs), //@verify correctness, and deref codegen semantics
         hir::ExprKind::Address { .. } => Addressability::Temporary,
         hir::ExprKind::Unary { .. } => Addressability::Temporary,
         hir::ExprKind::Binary { .. } => Addressability::Temporary,
@@ -2419,7 +2429,6 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
     }
 }
 
-//@not checking bin assignment operators (need a good way to do it same in binary expr typecheck)
 fn typecheck_assign<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     assign: &ast::Assign,
@@ -2429,18 +2438,11 @@ fn typecheck_assign<'hir>(
     let adressability = get_expr_addressability(ctx, lhs_res.expr);
     match adressability {
         Addressability::Unknown => {}
-        Addressability::Constant => {
+        Addressability::Constant(src) => {
             ctx.emit.error(Error::new(
                 "cannot assign to a constant",
                 SourceRange::new(ctx.proc.origin(), assign.lhs.range),
-                None,
-            ));
-        }
-        Addressability::SliceField => {
-            ctx.emit.error(Error::new(
-                "cannot assign to a slice field, slice itself cannot be modified",
-                SourceRange::new(ctx.proc.origin(), assign.lhs.range),
-                None,
+                Info::new("constant defined here", src),
             ));
         }
         Addressability::Temporary | Addressability::TemporaryImmutable => {
@@ -2454,6 +2456,15 @@ fn typecheck_assign<'hir>(
             if mutt == ast::Mut::Immutable {
                 ctx.emit.error(Error::new(
                     "cannot assign to an immutable variable",
+                    SourceRange::new(ctx.proc.origin(), assign.lhs.range),
+                    Info::new("variable defined here", src),
+                ));
+            }
+        }
+        Addressability::AddressableReference(mutt, src) => {
+            if mutt == ast::Mut::Immutable {
+                ctx.emit.error(Error::new(
+                    "cannot assign to a value behind an immutable reference",
                     SourceRange::new(ctx.proc.origin(), assign.lhs.range),
                     Info::new("variable defined here", src),
                 ));
