@@ -137,7 +137,7 @@ pub enum Type<'hir> {
     Basic(ast::BasicType),
     Enum(EnumID<'hir>),
     Struct(StructID<'hir>),
-    Reference(&'hir Type<'hir>, ast::Mut),
+    Reference(ast::Mut, &'hir Type<'hir>),
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
@@ -243,8 +243,8 @@ pub enum ExprKind<'hir> {
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { kind: Option<MatchKind<'hir>>, match_: &'hir Match<'hir> },
-    StructField  { target: &'hir Expr<'hir>, struct_id: StructID<'hir>, field_id: FieldID<'hir>, deref: bool },
-    SliceField   { target: &'hir Expr<'hir>, field: SliceField, deref: bool },
+    StructField  { target: &'hir Expr<'hir>, access: StructFieldAccess<'hir> },
+    SliceField   { target: &'hir Expr<'hir>, access: SliceFieldAccess },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
@@ -259,7 +259,7 @@ pub enum ExprKind<'hir> {
     StructInit   { struct_id: StructID<'hir>, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
-    Deref        { rhs: &'hir Expr<'hir>, ptr_ty: &'hir Type<'hir> },
+    Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },
     Address      { rhs: &'hir Expr<'hir> },
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
     Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
@@ -350,6 +350,19 @@ pub enum Pat<'hir> {
 }
 
 #[derive(Copy, Clone)]
+pub struct StructFieldAccess<'hir> {
+    pub deref: Option<ast::Mut>,
+    pub struct_id: StructID<'hir>,
+    pub field_id: FieldID<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub struct SliceFieldAccess {
+    pub deref: Option<ast::Mut>,
+    pub field: SliceField,
+}
+
+#[derive(Copy, Clone)]
 pub enum SliceField {
     Ptr,
     Len,
@@ -357,7 +370,7 @@ pub enum SliceField {
 
 #[derive(Copy, Clone)]
 pub struct IndexAccess<'hir> {
-    pub deref: bool,
+    pub deref: Option<ast::Mut>,
     pub elem_ty: Type<'hir>,
     pub kind: IndexKind,
     pub index: &'hir Expr<'hir>,
@@ -371,7 +384,7 @@ pub enum IndexKind {
 
 #[derive(Copy, Clone)]
 pub struct SliceAccess<'hir> {
-    pub deref: bool,
+    pub deref: Option<ast::Mut>,
     pub kind: SliceKind<'hir>,
     pub range: SliceRange<'hir>,
 }

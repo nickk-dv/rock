@@ -101,21 +101,12 @@ fn codegen_expr<'c>(
             codegen_match(cg, proc_cg, expect, kind.unwrap(), match_);
             None
         }
-        hir::ExprKind::StructField {
-            target,
-            struct_id,
-            field_id,
-            deref,
-        } => Some(codegen_struct_field(
-            cg, proc_cg, expect, target, struct_id, field_id, deref,
-        )),
-        hir::ExprKind::SliceField {
-            target,
-            field,
-            deref,
-        } => Some(codegen_slice_field(
-            cg, proc_cg, expect, target, field, deref,
-        )),
+        hir::ExprKind::StructField { target, access } => {
+            Some(codegen_struct_field(cg, proc_cg, expect, target, &access))
+        }
+        hir::ExprKind::SliceField { target, access } => {
+            Some(codegen_slice_field(cg, proc_cg, expect, target, &access))
+        }
         hir::ExprKind::Index { target, access } => {
             Some(codegen_index(cg, proc_cg, expect, target, access))
         }
@@ -152,8 +143,8 @@ fn codegen_expr<'c>(
         hir::ExprKind::ArrayRepeat { array_repeat } => {
             codegen_array_repeat(cg, proc_cg, expect, array_repeat)
         }
-        hir::ExprKind::Deref { rhs, ptr_ty } => {
-            Some(codegen_deref(cg, proc_cg, expect, rhs, *ptr_ty))
+        hir::ExprKind::Deref { rhs, ref_ty, .. } => {
+            Some(codegen_deref(cg, proc_cg, expect, rhs, *ref_ty))
         }
         hir::ExprKind::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         hir::ExprKind::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
@@ -396,12 +387,10 @@ fn codegen_struct_field<'c>(
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     target: &hir::Expr<'c>,
-    struct_id: hir::StructID,
-    field_id: hir::FieldID,
-    deref: bool,
+    access: &hir::StructFieldAccess,
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, proc_cg, target);
-    let target_ptr = if deref {
+    let target_ptr = if access.deref.is_some() {
         cg.build
             .load(cg.ptr_type(), target_ptr, "deref_ptr")
             .into_ptr()
@@ -410,15 +399,15 @@ fn codegen_struct_field<'c>(
     };
 
     let field_ptr = cg.build.gep_struct(
-        cg.struct_type(struct_id),
+        cg.struct_type(access.struct_id),
         target_ptr,
-        field_id.raw(),
+        access.field_id.raw(),
         "field_ptr",
     );
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
-            let field = cg.hir.struct_data(struct_id).field(field_id);
+            let field = cg.hir.struct_data(access.struct_id).field(access.field_id);
             let field_ty = cg.ty(field.ty);
             cg.build.load(field_ty, field_ptr, "field_val")
         }
@@ -431,11 +420,10 @@ fn codegen_slice_field<'c>(
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     target: &hir::Expr<'c>,
-    field: hir::SliceField,
-    deref: bool,
+    access: &hir::SliceFieldAccess,
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, proc_cg, target);
-    let target_ptr = if deref {
+    let target_ptr = if access.deref.is_some() {
         cg.build
             .load(cg.ptr_type(), target_ptr, "deref_ptr")
             .into_ptr()
@@ -443,7 +431,7 @@ fn codegen_slice_field<'c>(
         target_ptr
     };
 
-    let (idx, field_ty, ptr_name, value_name) = match field {
+    let (idx, field_ty, ptr_name, value_name) = match access.field {
         hir::SliceField::Ptr => (0, cg.ptr_type(), "slice_ptr_ptr", "slice_ptr"),
         hir::SliceField::Len => (1, cg.ptr_sized_int(), "slice_len_ptr", "slice_len"),
     };
@@ -467,7 +455,7 @@ fn codegen_index<'c>(
     access: &hir::IndexAccess<'c>,
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, proc_cg, target);
-    let target_ptr = if access.deref {
+    let target_ptr = if access.deref.is_some() {
         cg.build
             .load(cg.ptr_type(), target_ptr, "deref_ptr")
             .into_ptr()
@@ -804,13 +792,13 @@ fn codegen_deref<'c>(
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     rhs: &hir::Expr<'c>,
-    ptr_ty: hir::Type,
+    ref_ty: hir::Type,
 ) -> llvm::Value {
     let ptr_val = codegen_expr_value(cg, proc_cg, rhs).into_ptr();
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
-            let ptr_ty = cg.ty(ptr_ty);
+            let ptr_ty = cg.ty(ref_ty);
             cg.build.load(ptr_ty, ptr_val, "deref_val")
         }
         Expect::Pointer => ptr_val.as_val(),

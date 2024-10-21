@@ -1,7 +1,7 @@
 use super::constant;
 use super::context::{HirCtx, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
-use crate::ast::{self, BasicType, Local};
+use crate::ast::{self, BasicType};
 use crate::error::{
     Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr, Warning, WarningSink,
 };
@@ -42,7 +42,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (hir::Type::Enum(id), hir::Type::Enum(id2)) => id == id2,
         (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
-        (hir::Type::Reference(ref_ty, mutt), hir::Type::Reference(ref_ty2, mutt2)) => {
+        (hir::Type::Reference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             if mutt2 == ast::Mut::Mutable {
                 type_matches(ctx, *ref_ty, *ref_ty2)
             } else {
@@ -90,7 +90,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             let name = ctx.name_str(ctx.registry.struct_data(id).name.id);
             name.to_string().into()
         }
-        hir::Type::Reference(ref_ty, mutt) => {
+        hir::Type::Reference(mutt, ref_ty) => {
             let mut_str = match mutt {
                 ast::Mut::Mutable => "mut ",
                 ast::Mut::Immutable => "",
@@ -378,7 +378,7 @@ pub fn alloc_string_lit_type<'hir>(
 ) -> hir::Type<'hir> {
     if string_lit.c_string {
         let byte = ctx.arena.alloc(hir::Type::Basic(BasicType::U8));
-        hir::Type::Reference(byte, ast::Mut::Immutable)
+        hir::Type::Reference(ast::Mut::Immutable, byte)
     } else {
         let slice = ctx.arena.alloc(hir::ArraySlice {
             mutt: ast::Mut::Immutable,
@@ -761,7 +761,7 @@ fn typecheck_field<'hir>(
 }
 
 struct FieldResult<'hir> {
-    deref: bool,
+    deref: Option<ast::Mut>,
     kind: FieldKind<'hir>,
     field_ty: hir::Type<'hir>,
 }
@@ -774,7 +774,11 @@ enum FieldKind<'hir> {
 }
 
 impl<'hir> FieldResult<'hir> {
-    fn new(deref: bool, kind: FieldKind<'hir>, field_ty: hir::Type<'hir>) -> FieldResult<'hir> {
+    fn new(
+        deref: Option<ast::Mut>,
+        kind: FieldKind<'hir>,
+        field_ty: hir::Type<'hir>,
+    ) -> FieldResult<'hir> {
         FieldResult {
             deref,
             kind,
@@ -790,8 +794,8 @@ fn check_field_from_type<'hir>(
     ty: hir::Type<'hir>,
 ) -> Option<FieldResult<'hir>> {
     let (ty, deref) = match ty {
-        hir::Type::Reference(ref_ty, _) => (*ref_ty, true),
-        _ => (ty, false),
+        hir::Type::Reference(mutt, ref_ty) => (*ref_ty, Some(mutt)),
+        _ => (ty, None),
     };
 
     match ty {
@@ -810,7 +814,7 @@ fn check_field_from_type<'hir>(
             Some(field) => {
                 let kind = FieldKind::ArraySlice { field };
                 let field_ty = match field {
-                    hir::SliceField::Ptr => hir::Type::Reference(&slice.elem_ty, slice.mutt),
+                    hir::SliceField::Ptr => hir::Type::Reference(slice.mutt, &slice.elem_ty),
                     hir::SliceField::Len => hir::Type::USIZE,
                 };
                 Some(FieldResult::new(deref, kind, field_ty))
@@ -957,14 +961,18 @@ fn emit_field_expr<'hir>(
     let kind = match result.kind {
         FieldKind::Struct(struct_id, field_id) => hir::ExprKind::StructField {
             target,
-            struct_id,
-            field_id,
-            deref: result.deref,
+            access: hir::StructFieldAccess {
+                deref: result.deref,
+                struct_id,
+                field_id,
+            },
         },
         FieldKind::ArraySlice { field } => hir::ExprKind::SliceField {
             target,
-            field,
-            deref: result.deref,
+            access: hir::SliceFieldAccess {
+                deref: result.deref,
+                field,
+            },
         },
         FieldKind::ArrayStatic { len } => hir::ExprKind::Const { value: len },
     };
@@ -973,7 +981,7 @@ fn emit_field_expr<'hir>(
 }
 
 struct CollectionType<'hir> {
-    deref: bool,
+    deref: Option<ast::Mut>,
     elem_ty: hir::Type<'hir>,
     kind: SliceOrArray<'hir>,
 }
@@ -985,7 +993,10 @@ enum SliceOrArray<'hir> {
 
 impl<'hir> CollectionType<'hir> {
     fn from(ty: hir::Type<'hir>) -> Result<Option<CollectionType<'hir>>, ()> {
-        fn type_collection(ty: hir::Type, deref: bool) -> Result<Option<CollectionType>, ()> {
+        fn type_collection(
+            ty: hir::Type,
+            deref: Option<ast::Mut>,
+        ) -> Result<Option<CollectionType>, ()> {
             match ty {
                 hir::Type::Error => Ok(None),
                 hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
@@ -1003,8 +1014,8 @@ impl<'hir> CollectionType<'hir> {
         }
 
         match ty {
-            hir::Type::Reference(ref_ty, _) => type_collection(*ref_ty, true),
-            _ => type_collection(ty, false),
+            hir::Type::Reference(mutt, ref_ty) => type_collection(*ref_ty, Some(mutt)),
+            _ => type_collection(ty, None),
         }
     }
 }
@@ -1613,9 +1624,16 @@ fn typecheck_array_repeat<'hir>(
 fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
 
-    let ptr_ty = match rhs_res.ty {
-        hir::Type::Error => hir::Type::Error,
-        hir::Type::Reference(ref_ty, _) => *ref_ty,
+    match rhs_res.ty {
+        hir::Type::Error => TypeResult::error(),
+        hir::Type::Reference(mutt, ref_ty) => {
+            let kind = hir::ExprKind::Deref {
+                rhs: rhs_res.expr,
+                mutt,
+                ref_ty,
+            };
+            TypeResult::new(*ref_ty, kind)
+        }
         _ => {
             ctx.emit.error(Error::new(
                 format!(
@@ -1625,15 +1643,9 @@ fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> Typ
                 SourceRange::new(ctx.proc.origin(), rhs.range),
                 None,
             ));
-            hir::Type::Error
+            TypeResult::error()
         }
-    };
-
-    let kind = hir::ExprKind::Deref {
-        rhs: rhs_res.expr,
-        ptr_ty: ctx.arena.alloc(ptr_ty),
-    };
-    TypeResult::new(ptr_ty, kind)
+    }
 }
 
 fn typecheck_address<'hir>(
@@ -1698,7 +1710,7 @@ fn typecheck_address<'hir>(
     }
 
     let ref_ty = ctx.arena.alloc(rhs_res.ty);
-    let ref_ty = hir::Type::Reference(ref_ty, mutt);
+    let ref_ty = hir::Type::Reference(mutt, ref_ty);
     let kind = hir::ExprKind::Address { rhs: rhs_res.expr };
     TypeResult::new(ref_ty, kind)
 }
@@ -1738,7 +1750,7 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
             let src = SourceRange::new(ctx.proc.origin(), param.name.range);
             match param.ty {
                 hir::Type::Error => Addressability::Unknown,
-                hir::Type::Reference(_, mutt) => Addressability::AddressableReference(mutt, src),
+                hir::Type::Reference(mutt, _) => Addressability::AddressableReference(mutt, src),
                 _ => Addressability::Addressable(param.mutt, src),
             }
         }
@@ -1747,7 +1759,7 @@ fn get_expr_addressability<'hir>(ctx: &HirCtx, expr: &'hir hir::Expr<'hir>) -> A
             let src = SourceRange::new(ctx.proc.origin(), local.name.range);
             match local.ty {
                 hir::Type::Error => Addressability::Unknown,
-                hir::Type::Reference(_, mutt) => Addressability::AddressableReference(mutt, src),
+                hir::Type::Reference(mutt, _) => Addressability::AddressableReference(mutt, src),
                 _ => Addressability::Addressable(local.mutt, src),
             }
         }

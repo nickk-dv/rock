@@ -664,7 +664,7 @@ fn add_type_usage_const_dependencies<'hir>(
                 add_type_usage_const_dependencies(ctx, tree, parent_id, field.ty)?
             }
         }
-        hir::Type::Reference(ref_ty, _) => {
+        hir::Type::Reference(_, ref_ty) => {
             add_type_usage_const_dependencies(ctx, tree, parent_id, *ref_ty)?
         }
         hir::Type::Procedure(proc_ty) => {

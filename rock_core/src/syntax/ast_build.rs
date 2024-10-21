@@ -542,7 +542,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.t_mut(ctx.tree));
             let ref_ty = ty(ctx, ty_cst.ref_ty(ctx.tree).unwrap());
-            ast::TypeKind::Reference(ctx.arena.alloc(ref_ty), mutt)
+            ast::TypeKind::Reference(mutt, ctx.arena.alloc(ref_ty))
         }
         cst::Type::Procedure(proc_ty) => {
             let offset = ctx.s.types.start();

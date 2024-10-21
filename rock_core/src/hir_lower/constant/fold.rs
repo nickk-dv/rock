@@ -15,17 +15,10 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::If { .. } => unreachable!(),
         hir::ExprKind::Block { .. } => unreachable!(),
         hir::ExprKind::Match { .. } => unreachable!(),
-        hir::ExprKind::StructField {
-            target,
-            field_id,
-            deref,
-            ..
-        } => fold_struct_field(ctx, src, target, field_id, deref),
-        hir::ExprKind::SliceField {
-            target,
-            field,
-            deref,
-        } => fold_slice_field(ctx, src, target, field, deref),
+        hir::ExprKind::StructField { target, access } => {
+            fold_struct_field(ctx, src, target, &access)
+        }
+        hir::ExprKind::SliceField { target, access } => fold_slice_field(ctx, src, target, &access),
         hir::ExprKind::Index { target, access } => fold_index(ctx, src, target, access),
         hir::ExprKind::Slice { .. } => unreachable!(),
         hir::ExprKind::Cast { target, into, kind } => fold_cast(ctx, src, target, *into, kind),
@@ -78,10 +71,9 @@ fn fold_struct_field<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
-    field_id: hir::FieldID,
-    deref: bool,
+    access: &hir::StructFieldAccess,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    if deref {
+    if access.deref.is_some() {
         unreachable!()
     }
     let target_src = SourceRange::new(src.module_id(), target.range);
@@ -89,7 +81,7 @@ fn fold_struct_field<'hir>(
 
     match target {
         hir::ConstValue::Struct { struct_ } => {
-            let value_id = struct_.value_ids[field_id.raw_index()];
+            let value_id = struct_.value_ids[access.field_id.raw_index()];
             Ok(ctx.const_intern.get(value_id))
         }
         _ => unreachable!(),
@@ -100,17 +92,16 @@ fn fold_slice_field<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     target: &hir::Expr<'hir>,
-    field: hir::SliceField,
-    deref: bool,
+    access: &hir::SliceFieldAccess,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    if deref {
+    if access.deref.is_some() {
         unreachable!();
     }
     let target_src = SourceRange::new(src.module_id(), target.range);
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
-        hir::ConstValue::String { string_lit } => match field {
+        hir::ConstValue::String { string_lit } => match access.field {
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
                 if !string_lit.c_string {
@@ -138,7 +129,7 @@ fn fold_index<'hir>(
     target: &hir::Expr<'hir>,
     access: &hir::IndexAccess<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    if access.deref {
+    if access.deref.is_some() {
         unreachable!();
     }
     let target_src = SourceRange::new(src.module_id(), target.range);

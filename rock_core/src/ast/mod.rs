@@ -141,7 +141,7 @@ pub struct Type<'ast> {
 pub enum TypeKind<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
-    Reference(&'ast Type<'ast>, Mut),
+    Reference(Mut, &'ast Type<'ast>),
     Procedure(&'ast ProcType<'ast>),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),

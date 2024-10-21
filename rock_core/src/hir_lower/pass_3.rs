@@ -34,9 +34,9 @@ pub fn type_resolve<'hir>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, origin_id, path),
-        ast::TypeKind::Reference(ref_ty, mutt) => {
+        ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, origin_id, *ref_ty);
-            hir::Type::Reference(ctx.arena.alloc(ref_ty), mutt)
+            hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
         }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
@@ -97,9 +97,9 @@ pub fn type_resolve_delayed<'hir, 'ast>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, origin_id, path),
-        ast::TypeKind::Reference(ref_ty, mutt) => {
+        ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve_delayed(ctx, origin_id, *ref_ty);
-            hir::Type::Reference(ctx.arena.alloc(ref_ty), mutt)
+            hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
         }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
