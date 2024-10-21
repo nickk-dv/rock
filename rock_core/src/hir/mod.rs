@@ -426,6 +426,7 @@ pub enum CastKind {
 
 pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
 pub struct LocalBind<'hir> {
+    pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
 }
