@@ -88,7 +88,7 @@ fn codegen_expr<'c>(
 ) -> Option<llvm::Value> {
     match expr.kind {
         hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => Some(codegen_const(cg, value)),
+        hir::ExprKind::Const { value } => Some(codegen_const_in_proc(cg, proc_cg, expect, value)),
         hir::ExprKind::If { if_ } => {
             codegen_if(cg, proc_cg, expect, if_);
             None
@@ -127,7 +127,9 @@ fn codegen_expr<'c>(
             enum_id,
             variant_id,
             input,
-        } => Some(codegen_variant(cg, proc_cg, enum_id, variant_id, input)),
+        } => Some(codegen_variant(
+            cg, proc_cg, expect, enum_id, variant_id, input,
+        )),
         hir::ExprKind::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, proc_cg, proc_id, input)
         }
@@ -253,6 +255,23 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
         cg.void_val_type().as_ty()
     };
     llvm::const_array(elem_ty, &values)
+}
+
+fn codegen_const_in_proc(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen,
+    expect: Expect,
+    value: hir::ConstValue,
+) -> llvm::Value {
+    let value = codegen_const(cg, value);
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => value,
+        Expect::Pointer => {
+            let temp_ptr = cg.entry_alloca(proc_cg, llvm::typeof_value(value), "temp_const");
+            cg.build.store(value, temp_ptr);
+            temp_ptr.as_val()
+        }
+    }
 }
 
 //@simplify
@@ -436,13 +455,12 @@ fn codegen_slice_field<'c>(
         hir::SliceField::Len => (1, cg.ptr_sized_int(), "slice_len_ptr", "slice_len"),
     };
 
+    let slice_ty = cg.slice_type();
+    let field_ptr = cg.build.gep_struct(slice_ty, target_ptr, idx, ptr_name);
+
     match expect {
-        Expect::Value(_) | Expect::Store(_) => {
-            let slice_ty = cg.slice_type();
-            let field_ptr = cg.build.gep_struct(slice_ty, target_ptr, idx, ptr_name);
-            cg.build.load(field_ty, field_ptr, value_name)
-        }
-        Expect::Pointer => unreachable!(),
+        Expect::Value(_) | Expect::Store(_) => cg.build.load(field_ty, field_ptr, value_name),
+        Expect::Pointer => field_ptr.as_val(),
     }
 }
 
@@ -608,6 +626,7 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
 fn codegen_variant<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
     input: &&[&hir::Expr<'c>],
@@ -639,9 +658,19 @@ fn codegen_variant<'c>(
             }
         }
 
-        cg.build.load(enum_ty, enum_ptr, "enum_value")
+        match expect {
+            Expect::Value(_) | Expect::Store(_) => cg.build.load(enum_ty, enum_ptr, "enum_value"),
+            Expect::Pointer => enum_ptr.as_val(),
+        }
     } else {
-        tag_value
+        match expect {
+            Expect::Value(_) | Expect::Store(_) => tag_value,
+            Expect::Pointer => {
+                let enum_ptr = cg.entry_alloca(proc_cg, llvm::typeof_value(tag_value), "enum_init");
+                cg.build.store(tag_value, enum_ptr);
+                enum_ptr.as_val()
+            }
+        }
     }
 }
 
