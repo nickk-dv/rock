@@ -158,6 +158,16 @@ fn lex_whitespace(lex: &mut Lexer) {
             lex.bump(c);
             lex.bump('/');
 
+            let trivia = if lex.eat('/') {
+                if lex.eat('/') {
+                    Trivia::ModComment
+                } else {
+                    Trivia::DocComment
+                }
+            } else {
+                Trivia::LineComment
+            };
+
             while let Some(c) = lex.peek() {
                 if c == '\r' || c == '\n' {
                     break;
@@ -167,7 +177,7 @@ fn lex_whitespace(lex: &mut Lexer) {
 
             if lex.with_trivia {
                 let range = lex.make_range(start);
-                lex.tokens.add_trivia(Trivia::LineComment, range);
+                lex.tokens.add_trivia(trivia, range);
             }
         } else {
             break;

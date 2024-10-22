@@ -212,6 +212,9 @@ fn attached_trivia(
                 }
             }
             Trivia::LineComment => inner_count += 1,
+            //@temp, update attachment rules
+            Trivia::DocComment => inner_count += 1,
+            Trivia::ModComment => inner_count += 1,
         };
     }
 
@@ -298,6 +301,8 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
                     let trivia = match trivia {
                         Trivia::Whitespace => "WHITESPACE",
                         Trivia::LineComment => "LINE_COMMENT",
+                        Trivia::DocComment => "DOC_COMMENT",
+                        Trivia::ModComment => "MOD_COMMENT",
                     };
                     print_depth(buffer, depth + 1);
                     buffer.push_str(&format!(

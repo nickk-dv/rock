@@ -832,7 +832,7 @@ fn semantic_visit_node(
 
                 match trivia {
                     Trivia::Whitespace => {}
-                    Trivia::LineComment => {
+                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         semantic_add_token(builder, SemanticToken::Comment, range)
                     }
                 };

@@ -92,6 +92,9 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment => return false,
+                    //@temp: doc, mod arent allowed as inner
+                    Trivia::DocComment => return false,
+                    Trivia::ModComment => return false,
                 }
             }
         }
@@ -132,7 +135,8 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
                 let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    Trivia::LineComment => {
+                    //@temp: handling all comments the same
+                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         fmt.tab_depth();
                         fmt.write_range(range);
                         fmt.new_line();
@@ -178,7 +182,8 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                             new_line = true;
                         }
                     }
-                    Trivia::LineComment => {
+                    //@temp: handling all comments the same
+                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         if new_line {
                             new_line = false;
                             if !first {

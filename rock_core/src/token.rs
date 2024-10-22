@@ -23,6 +23,8 @@ pub struct TokenSet {
 pub enum Trivia {
     Whitespace,
     LineComment,
+    DocComment,
+    ModComment,
 }
 
 #[repr(u32)]
