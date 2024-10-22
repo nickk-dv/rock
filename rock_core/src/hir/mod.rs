@@ -378,7 +378,7 @@ pub struct IndexAccess<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum IndexKind {
-    Slice,
+    Slice(ast::Mut),
     Array(ArrayStaticLen),
 }
 

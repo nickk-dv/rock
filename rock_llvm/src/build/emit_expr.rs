@@ -460,7 +460,7 @@ fn codegen_slice_field<'c>(
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => cg.build.load(field_ty, field_ptr, value_name),
-        Expect::Pointer => field_ptr.as_val(),
+        Expect::Pointer => unreachable!(),
     }
 }
 
@@ -484,7 +484,7 @@ fn codegen_index<'c>(
     let index_val = codegen_expr_value(cg, proc_cg, access.index);
 
     let bound = match access.kind {
-        hir::IndexKind::Slice => {
+        hir::IndexKind::Slice(_) => {
             let slice_len_ptr =
                 cg.build
                     .gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
@@ -507,7 +507,7 @@ fn codegen_index<'c>(
     cg.build.position_at_end(exit_bb);
 
     let elem_ptr = match access.kind {
-        hir::IndexKind::Slice => {
+        hir::IndexKind::Slice(_) => {
             let slice_ptr = cg
                 .build
                 .load(cg.ptr_type(), target_ptr, "slice_ptr")

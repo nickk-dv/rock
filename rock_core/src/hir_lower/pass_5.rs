@@ -987,7 +987,7 @@ struct CollectionType<'hir> {
 }
 
 enum SliceOrArray<'hir> {
-    Slice,
+    Slice(&'hir hir::ArraySlice<'hir>),
     Array(&'hir hir::ArrayStatic<'hir>),
 }
 
@@ -1002,7 +1002,7 @@ impl<'hir> CollectionType<'hir> {
                 hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
                     deref,
                     elem_ty: slice.elem_ty,
-                    kind: SliceOrArray::Slice,
+                    kind: SliceOrArray::Slice(slice),
                 })),
                 hir::Type::ArrayStatic(array) => Ok(Some(CollectionType {
                     deref,
@@ -1032,7 +1032,7 @@ fn typecheck_index<'hir>(
     match CollectionType::from(target_res.ty) {
         Ok(Some(collection)) => {
             let kind = match collection.kind {
-                SliceOrArray::Slice => hir::IndexKind::Slice,
+                SliceOrArray::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
                 SliceOrArray::Array(array) => hir::IndexKind::Array(array.len),
             };
             let access = hir::IndexAccess {
@@ -1656,46 +1656,38 @@ fn typecheck_address<'hir>(
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
     let addr_res = check_expr_addressability(ctx, rhs_res.expr);
+    let src = SourceRange::new(ctx.proc.origin(), expr_range);
 
     match addr_res.addr_base {
         AddrBase::Unknown => {}
-        AddrBase::Temporary => {
-            ctx.emit.error(Error::new(
-                "cannot get reference to a temporary value",
-                SourceRange::new(ctx.proc.origin(), expr_range),
-                None,
-            ));
+        AddrBase::SliceField => {
+            err::tycheck_cannot_ref_slice_field(&mut ctx.emit, src);
         }
-        AddrBase::TemporaryImmutable => {
+        AddrBase::Temporary => {
+            err::tycheck_cannot_ref_temporary(&mut ctx.emit, src);
+        }
+        AddrBase::TemporaryImmut => {
             if mutt == ast::Mut::Mutable {
-                ctx.emit.error(Error::new(
-                    "cannot get `&mut` to this temporary value, only immutable `&` is allowed",
-                    SourceRange::new(ctx.proc.origin(), expr_range),
-                    None,
-                ));
+                err::tycheck_cannot_ref_temporary_immut(&mut ctx.emit, src);
             }
         }
-        AddrBase::Constant(src) => {
-            ctx.emit.error(Error::new(
-                "cannot get reference to a constant, you can use `global` instead",
-                SourceRange::new(ctx.proc.origin(), expr_range),
-                Info::new("constant defined here", src),
-            ));
+        AddrBase::Constant(const_src) => {
+            err::tycheck_cannot_ref_constant(&mut ctx.emit, src, const_src)
         }
         AddrBase::Variable(var_mutt, var_src) => {
             if mutt == ast::Mut::Mutable {
-                if let AddrConstraint::Immutable(deref_src) = addr_res.constraint {
-                    ctx.emit.error(Error::new(
-                        "cannot get `&mut` to a value behind an immutable `&`",
-                        SourceRange::new(ctx.proc.origin(), expr_range),
-                        Info::new("immutable dereference used here", deref_src),
-                    ));
-                } else if var_mutt == ast::Mut::Immutable {
-                    ctx.emit.error(Error::new(
-                        "cannot get `&mut` to an immutable variable",
-                        SourceRange::new(ctx.proc.origin(), expr_range),
-                        Info::new("variable defined here", var_src),
-                    ));
+                match addr_res.constraint {
+                    AddrConstraint::None => {
+                        if var_mutt == ast::Mut::Immutable {
+                            err::tycheck_cannot_ref_var_immut(&mut ctx.emit, src, var_src);
+                        }
+                    }
+                    AddrConstraint::ImmutRef(deref_src) => {
+                        err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
+                    }
+                    AddrConstraint::ImmutSlice(slice_src) => {
+                        err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src, slice_src);
+                    }
                 }
             }
         }
@@ -1714,15 +1706,17 @@ struct AddrResult {
 
 enum AddrBase {
     Unknown,
+    SliceField,
     Temporary,
-    TemporaryImmutable,
+    TemporaryImmut,
     Constant(SourceRange),
     Variable(ast::Mut, SourceRange),
 }
 
 enum AddrConstraint {
     None,
-    Immutable(SourceRange),
+    ImmutRef(SourceRange),
+    ImmutSlice(SourceRange),
 }
 
 impl AddrConstraint {
@@ -1739,10 +1733,10 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
         let addr_base = match expr.kind {
             hir::ExprKind::Error => AddrBase::Unknown,
             hir::ExprKind::Const { value } => match value {
-                hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmutable,
-                hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmutable,
-                hir::ConstValue::Array { .. } => AddrBase::TemporaryImmutable,
-                hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmutable,
+                hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::Array { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
                 _ => AddrBase::Temporary,
             },
             hir::ExprKind::If { .. } => AddrBase::Temporary,
@@ -1751,23 +1745,21 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::StructField { target, access } => {
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
                     let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
-                    constraint = AddrConstraint::Immutable(deref_src)
+                    constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
                 continue;
             }
-            hir::ExprKind::SliceField { target, access } => {
-                if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
-                    constraint = AddrConstraint::Immutable(deref_src)
-                }
-                expr = target;
-                continue;
-            }
+            hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Index { target, access } => {
-                if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
-                    constraint = AddrConstraint::Immutable(deref_src)
+                if constraint.is_none() {
+                    if access.deref == Some(ast::Mut::Immutable) {
+                        let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                        constraint = AddrConstraint::ImmutRef(deref_src);
+                    } else if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
+                        let slice_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                        constraint = AddrConstraint::ImmutSlice(slice_src);
+                    }
                 }
                 expr = target;
                 continue;
@@ -1775,7 +1767,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Slice { target, access } => {
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
                     let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
-                    constraint = AddrConstraint::Immutable(deref_src)
+                    constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
                 continue;
@@ -1804,16 +1796,16 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 let global_data = ctx.registry.global_data(global_id);
                 AddrBase::Variable(global_data.mutt, global_data.src())
             }
-            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmutable,
+            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
             hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,
-            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmutable,
-            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmutable,
-            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmutable,
+            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::Deref { rhs, mutt, .. } => {
                 if constraint.is_none() && Some(mutt) == Some(ast::Mut::Immutable) {
                     let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
-                    constraint = AddrConstraint::Immutable(deref_src)
+                    constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = rhs;
                 continue;
@@ -2496,35 +2488,28 @@ fn typecheck_assign<'hir>(
 
     match addr_res.addr_base {
         AddrBase::Unknown => {}
-        AddrBase::Temporary | AddrBase::TemporaryImmutable => {
-            ctx.emit.error(Error::new(
-                "cannot assign to a temporary value",
-                lhs_src,
-                None,
-            ));
+        AddrBase::SliceField => {
+            err::tycheck_cannot_assign_slice_field(&mut ctx.emit, lhs_src);
         }
-        AddrBase::Constant(src) => {
-            ctx.emit.error(Error::new(
-                "cannot assign to a constant",
-                lhs_src,
-                Info::new("constant defined here", src),
-            ));
+        AddrBase::Temporary | AddrBase::TemporaryImmut => {
+            err::tycheck_cannot_assign_temporary(&mut ctx.emit, lhs_src)
         }
-        AddrBase::Variable(var_mutt, var_src) => {
-            if let AddrConstraint::Immutable(deref_src) = addr_res.constraint {
-                ctx.emit.error(Error::new(
-                    "cannot assign to a value behind an immutable `&`",
-                    lhs_src,
-                    Info::new("immutable dereference used here", deref_src),
-                ));
-            } else if var_mutt == ast::Mut::Immutable {
-                ctx.emit.error(Error::new(
-                    "cannot assign to an immutable variable",
-                    lhs_src,
-                    Info::new("variable defined here", var_src),
-                ));
+        AddrBase::Constant(const_src) => {
+            err::tycheck_cannot_assign_constant(&mut ctx.emit, lhs_src, const_src);
+        }
+        AddrBase::Variable(var_mutt, var_src) => match addr_res.constraint {
+            AddrConstraint::None => {
+                if var_mutt == ast::Mut::Immutable {
+                    err::tycheck_cannot_assign_var_immut(&mut ctx.emit, lhs_src, var_src);
+                }
             }
-        }
+            AddrConstraint::ImmutRef(deref_src) => {
+                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, lhs_src, deref_src);
+            }
+            AddrConstraint::ImmutSlice(slice_src) => {
+                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, lhs_src, slice_src);
+            }
+        },
     }
 
     let assign_op = match assign.op {

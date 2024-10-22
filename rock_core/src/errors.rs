@@ -641,6 +641,111 @@ pub fn tycheck_unexpected_variant_bind_count(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_cannot_ref_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot get reference to a slice field";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_assign_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot assign to a slice field";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_ref_temporary(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot get reference to a temporary value";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_ref_temporary_immut(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot get `&mut` to this temporary value, only `&` is allowed";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_assign_temporary(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot assign to a temporary value";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_ref_constant(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    const_src: SourceRange,
+) {
+    let msg = "cannot get reference to a constant, you can use `global` instead";
+    let info = Info::new("constant defined here", const_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_assign_constant(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    const_src: SourceRange,
+) {
+    let msg = "cannot assign to a constant, you can use `global` instead";
+    let info = Info::new("constant defined here", const_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_ref_var_immut(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    var_src: SourceRange,
+) {
+    let msg = "cannot get `&mut` to an immutable variable";
+    let info = Info::new("variable defined here", var_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_assign_var_immut(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    var_src: SourceRange,
+) {
+    let msg = "cannot assign to an immutable variable";
+    let info = Info::new("variable defined here", var_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_ref_val_behind_ref(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    deref_src: SourceRange,
+) {
+    let msg = "cannot get `&mut` to a value behind an immutable reference";
+    let info = Info::new("immutable reference accessed here", deref_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_assign_val_behind_ref(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    deref_src: SourceRange,
+) {
+    let msg = "cannot assign to a value behind an immutable reference";
+    let info = Info::new("immutable reference accessed here", deref_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_ref_val_behind_slice(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    slice_src: SourceRange,
+) {
+    let msg = "cannot get `&mut` to a value behind an immutable slice";
+    let info = Info::new("immutable slice accessed here", slice_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_assign_val_behind_slice(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    slice_src: SourceRange,
+) {
+    let msg = "cannot assign to a value behind an immutable slice";
+    let info = Info::new("immutable slice accessed here", slice_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_cannot_apply_un_op(
     emit: &mut impl ErrorSink,
     src: SourceRange,
