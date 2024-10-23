@@ -6,6 +6,7 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
+use rock_core::format::FormatterCache;
 use rock_core::session::FileData;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
@@ -135,11 +136,15 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
 
 struct ServerContext<'s> {
     session: Option<Session<'s>>,
+    fmt_cache: FormatterCache,
 }
 
 impl<'s> ServerContext<'s> {
     fn new() -> ServerContext<'s> {
-        ServerContext { session: None }
+        ServerContext {
+            session: None,
+            fmt_cache: FormatterCache::new(),
+        }
     }
 }
 
@@ -221,15 +226,15 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 
             let module = session.module.get_mut(module_id);
             module.set_tree(tree);
-            let tree = module.tree_expect();
 
+            let tree = module.tree_expect();
             if !tree.complete() {
                 eprintln!(" - tree is incomplete");
                 send_response_error(conn, id, None);
                 return;
             }
             let file = session.vfs.file(module.file_id());
-            let formatted = rock_core::format::format(tree, &file.source);
+            let formatted = rock_core::format::format(tree, &file.source, &mut context.fmt_cache);
 
             //@hack overshoot by 1 line to ignore last line chars
             let end_line = file.line_ranges.len() as u32 + 1;

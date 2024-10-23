@@ -276,6 +276,7 @@ fn fmt() -> Result<(), Error> {
     fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
         //@only parse syntax trees? how to handle bin op prec errors?
         ast_build::parse_all(session, true)?;
+        let mut cache = format::FormatterCache::new();
 
         let root_package = session.graph.package(session::ROOT_PACKAGE_ID);
         for module_id in root_package.module_ids().iter().copied() {
@@ -283,7 +284,7 @@ fn fmt() -> Result<(), Error> {
             let file = session.vfs.file(module.file_id());
 
             let tree = module.tree_expect();
-            let formatted = format::format(tree, &file.source);
+            let formatted = format::format(tree, &file.source, &mut cache);
             fs_env::file_create_or_rewrite(file.path(), &formatted)?;
         }
         Ok(())
