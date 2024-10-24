@@ -7,14 +7,14 @@ use crate::text::TextRange;
 use crate::token::Trivia;
 
 //@choose .next().is_none vs content_empty() for empty format lists (related to trivia)
-//@interleaved_node_list() support same-line line comments
-//@aligned padded line comments (eg: after struct fields)
 //@unify repeated wrapped lists formatting (generic fn)
+//@dont attach line comments, only if after doc comment?
 
 const TAB_STR: &'static str = "    ";
 const TAB_LEN: usize = TAB_STR.len();
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
+const COMMENT_ALIGN_MARGIN: u32 = 16;
 
 #[must_use]
 pub fn format<'syn>(
@@ -22,7 +22,6 @@ pub fn format<'syn>(
     source: &'syn str,
     cache: &mut FormatterCache,
 ) -> String {
-    cache.reset();
     let mut fmt = Formatter {
         tree,
         source,
@@ -31,6 +30,8 @@ pub fn format<'syn>(
         line_offset: 0,
         tab_depth: 0,
     };
+
+    fmt.cache.reset();
     source_file(&mut fmt, tree.source_file());
 
     let mut buffer_len: usize = 0;
@@ -200,20 +201,12 @@ impl FormatterCache {
         self.comments.clear();
     }
     #[inline]
-    fn event_mut(&mut self, event_idx: u32) -> &mut FormatEvent {
-        &mut self.events[event_idx as usize]
-    }
-    #[inline]
     fn range(&self, range_idx: u32) -> TextRange {
         self.ranges[range_idx as usize]
     }
     #[inline]
     fn string(&self, string_idx: u32) -> &'static str {
         self.strings[string_idx as usize]
-    }
-    #[inline]
-    fn comment_pos(&self, comment_idx: u32) -> CommentPosition {
-        self.comments[comment_idx as usize]
     }
 }
 
@@ -227,8 +220,8 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
                 let trivia = fmt.tree.tokens().trivia(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
+                    //@temp: doc, mod arent allowed as inner?
                     Trivia::LineComment => return false,
-                    //@temp: doc, mod arent allowed as inner
                     Trivia::DocComment => return false,
                     Trivia::ModComment => return false,
                 }
@@ -271,7 +264,6 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
                 let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    //@temp: handling all comments the same
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         fmt.tab_depth();
                         let _ = fmt.write_comment(range);
@@ -289,7 +281,8 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
     node_list: &Node<'syn>,
     format_fn: fn(&mut Formatter<'syn, '_>, I),
 ) {
-    let mut first = true;
+    let mut first = true; // prevent first \n insertion
+    let mut new_line = false; // prevent last \n insertion
     let comments_offset = fmt.cache.comments.len();
 
     let mut not_iter = node_list.content.iter().copied().peekable();
@@ -297,11 +290,17 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
         match not {
             NodeOrToken::Token(_) => {}
             NodeOrToken::Node(node_id) => {
+                if new_line {
+                    new_line = false;
+                    fmt.new_line();
+                }
                 first = false;
+
                 fmt.tab_depth();
                 let node = fmt.tree.node(node_id);
                 format_fn(fmt, I::cast(node).unwrap());
 
+                // search for line comment on the same line
                 while let Some(not_next) = not_iter.peek().copied() {
                     match not_next {
                         NodeOrToken::Token(_) => {
@@ -327,6 +326,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                                         break;
                                     }
                                 }
+                                //@only allow line comments to be "same line"?
                                 Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                                     let line_num = fmt.line_num;
                                     let line_offset = fmt.line_offset;
@@ -366,11 +366,16 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                             }
                         }
                         if new_lines == 2 {
-                            fmt.new_line();
+                            new_line = true;
                         }
                     }
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
+                        if new_line {
+                            new_line = false;
+                            fmt.new_line();
+                        }
                         first = false;
+
                         fmt.tab_depth();
                         let _ = fmt.write_comment(range);
                         fmt.new_line();
@@ -380,10 +385,55 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
         }
     }
 
+    if comments_offset == fmt.cache.comments.len() {
+        return;
+    }
     let comment_range = comments_offset..fmt.cache.comments.len();
     let trail_comments = &fmt.cache.comments[comment_range.clone()];
 
-    for comment_pos in trail_comments {}
+    let mut group_start = 0;
+    while group_start < trail_comments.len() {
+        let first = trail_comments[group_start];
+        let mut line_num = first.line_num;
+        let mut min_offset = first.line_offset;
+        let mut max_offset = first.line_offset;
+
+        let mut group_end = group_start + 1;
+        while group_end < trail_comments.len() {
+            let comment = &trail_comments[group_end];
+
+            if comment.line_num == line_num + 1 {
+                line_num = comment.line_num;
+            } else {
+                break;
+            }
+
+            let new_min = min_offset.min(comment.line_offset);
+            let new_max = max_offset.max(comment.line_offset);
+            let spacing = new_max - new_min;
+            if spacing <= COMMENT_ALIGN_MARGIN {
+                min_offset = new_min;
+                max_offset = new_max;
+            } else {
+                break;
+            }
+
+            group_end += 1;
+        }
+
+        let group = &trail_comments[group_start..group_end];
+        for comment in group {
+            let extra_spacing = 1 + max_offset - comment.line_offset;
+            let event_mut = &mut fmt.cache.events[comment.event_idx as usize];
+
+            match event_mut {
+                FormatEvent::Comment { spacing, .. } => *spacing = extra_spacing as u16,
+                _ => unreachable!(),
+            }
+        }
+
+        group_start = group_end;
+    }
 
     fmt.cache.comments.truncate(comments_offset);
 }
