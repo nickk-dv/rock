@@ -27,8 +27,9 @@ pub fn format<'syn>(
         tree,
         source,
         cache,
-        tab_depth: 0,
+        line_num: 0,
         line_offset: 0,
+        tab_depth: 0,
     };
     source_file(&mut fmt, tree.source_file());
 
@@ -37,10 +38,13 @@ pub fn format<'syn>(
         buffer_len += match event {
             FormatEvent::Space => 1,
             FormatEvent::Newline => 1,
-            FormatEvent::Tab(count) => TAB_LEN * count as usize,
             FormatEvent::Char(c) => c.len_utf8(),
-            FormatEvent::Range(range_idx) => fmt.cache.range(range_idx).len() as usize,
-            FormatEvent::String(string_idx) => fmt.cache.string(string_idx).len(),
+            FormatEvent::Tab { count } => TAB_LEN * count as usize,
+            FormatEvent::Range { range_idx } => fmt.cache.range(range_idx).len() as usize,
+            FormatEvent::String { string_idx } => fmt.cache.string(string_idx).len(),
+            FormatEvent::Comment { spacing, range_idx } => {
+                spacing as usize + fmt.cache.range(range_idx).len() as usize
+            }
         };
     }
 
@@ -49,24 +53,34 @@ pub fn format<'syn>(
         match event {
             FormatEvent::Space => buffer.push(' '),
             FormatEvent::Newline => buffer.push('\n'),
-            FormatEvent::Tab(count) => {
+            FormatEvent::Char(c) => buffer.push(c),
+            FormatEvent::Tab { count } => {
                 for _ in 0..count {
                     buffer.push_str(TAB_STR);
                 }
             }
-            FormatEvent::Char(c) => buffer.push(c),
-            FormatEvent::Range(range_idx) => {
+            FormatEvent::Range { range_idx } => {
                 let range = fmt.cache.range(range_idx);
                 let string = &fmt.source[range.as_usize()];
                 buffer.push_str(string);
             }
-            FormatEvent::String(string_idx) => {
+            FormatEvent::String { string_idx } => {
                 buffer.push_str(fmt.cache.string(string_idx));
+            }
+            FormatEvent::Comment { spacing, range_idx } => {
+                for _ in 0..spacing {
+                    buffer.push(' ');
+                }
+                let range = fmt.cache.range(range_idx);
+                let comment = &fmt.source[range.as_usize()];
+                buffer.push_str(comment.trim_end());
             }
         }
     }
 
-    assert_eq!(buffer_len, buffer.len());
+    // buffer len prediction was correct
+    // `>=` instead of `==` since comments can be trimmed
+    assert!(buffer_len >= buffer.len());
     buffer
 }
 
@@ -74,24 +88,34 @@ struct Formatter<'syn, 'cache> {
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
     cache: &'cache mut FormatterCache,
-    tab_depth: u32,
+    line_num: u32,
     line_offset: u32,
+    tab_depth: u32,
 }
 
 pub struct FormatterCache {
     events: Vec<FormatEvent>,
     ranges: Vec<TextRange>,
     strings: Vec<&'static str>,
+    comments: Vec<CommentPosition>,
+}
+
+#[derive(Copy, Clone)]
+pub struct CommentPosition {
+    line_num: u32,
+    line_offset: u32,
+    event_idx: u32,
 }
 
 #[derive(Copy, Clone)]
 enum FormatEvent {
     Space,
     Newline,
-    Tab(u32),
     Char(char),
-    Range(u32),
-    String(u32),
+    Tab { count: u32 },
+    Range { range_idx: u32 },
+    String { string_idx: u32 },
+    Comment { spacing: u16, range_idx: u32 },
 }
 
 impl<'syn, 'cache> Formatter<'syn, 'cache> {
@@ -100,6 +124,7 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         self.cache.events.push(FormatEvent::Space);
     }
     fn new_line(&mut self) {
+        self.line_num += 1;
         self.line_offset = 0;
         self.cache.events.push(FormatEvent::Newline);
     }
@@ -108,17 +133,30 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         self.line_offset += 1;
         self.cache.events.push(FormatEvent::Char(c));
     }
+    //@only used for
     fn write_range(&mut self, range: TextRange) {
         self.line_offset += range.len();
         let range_idx = self.cache.ranges.len() as u32;
         self.cache.ranges.push(range);
-        self.cache.events.push(FormatEvent::Range(range_idx));
+        self.cache.events.push(FormatEvent::Range { range_idx });
     }
     fn write_str(&mut self, string: &'static str) {
         self.line_offset += string.len() as u32;
         let string_idx = self.cache.strings.len() as u32;
         self.cache.strings.push(string);
-        self.cache.events.push(FormatEvent::String(string_idx));
+        self.cache.events.push(FormatEvent::String { string_idx });
+    }
+    #[must_use]
+    fn write_comment(&mut self, range: TextRange) -> u32 {
+        self.line_offset += range.len();
+        let range_idx = self.cache.ranges.len() as u32;
+        self.cache.ranges.push(range);
+        let event_idx = self.cache.events.len() as u32;
+        self.cache.events.push(FormatEvent::Comment {
+            spacing: 0,
+            range_idx,
+        });
+        event_idx
     }
 
     fn tab_inc(&mut self) {
@@ -130,11 +168,13 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
     }
     fn tab_single(&mut self) {
         self.line_offset += 4;
-        self.cache.events.push(FormatEvent::Tab(1));
+        self.cache.events.push(FormatEvent::Tab { count: 1 });
     }
     fn tab_depth(&mut self) {
         self.line_offset += 4 * self.tab_depth;
-        self.cache.events.push(FormatEvent::Tab(self.tab_depth));
+        self.cache.events.push(FormatEvent::Tab {
+            count: self.tab_depth,
+        });
     }
 
     fn wrap(&self, node: &Node) -> bool {
@@ -149,7 +189,19 @@ impl FormatterCache {
             events: Vec::with_capacity(1024),
             ranges: Vec::with_capacity(512),
             strings: Vec::with_capacity(512),
+            comments: Vec::with_capacity(128),
         }
+    }
+    #[inline]
+    fn reset(&mut self) {
+        self.events.clear();
+        self.ranges.clear();
+        self.strings.clear();
+        self.comments.clear();
+    }
+    #[inline]
+    fn event_mut(&mut self, event_idx: u32) -> &mut FormatEvent {
+        &mut self.events[event_idx as usize]
     }
     #[inline]
     fn range(&self, range_idx: u32) -> TextRange {
@@ -160,9 +212,8 @@ impl FormatterCache {
         self.strings[string_idx as usize]
     }
     #[inline]
-    fn reset(&mut self) {
-        self.events.clear();
-        self.strings.clear();
+    fn comment_pos(&self, comment_idx: u32) -> CommentPosition {
+        self.comments[comment_idx as usize]
     }
 }
 
@@ -223,7 +274,7 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
                     //@temp: handling all comments the same
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         fmt.tab_depth();
-                        fmt.write_range(range);
+                        let _ = fmt.write_comment(range);
                         fmt.new_line();
                     }
                 }
@@ -239,56 +290,102 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
     format_fn: fn(&mut Formatter<'syn, '_>, I),
 ) {
     let mut first = true;
-    let mut new_line = false;
+    let comments_offset = fmt.cache.comments.len();
 
-    for not in node_list.content {
-        match *not {
+    let mut not_iter = node_list.content.iter().copied().peekable();
+    while let Some(not) = not_iter.next() {
+        match not {
+            NodeOrToken::Token(_) => {}
             NodeOrToken::Node(node_id) => {
-                if new_line {
-                    new_line = false;
-                    if !first {
-                        fmt.new_line();
+                first = false;
+                fmt.tab_depth();
+                let node = fmt.tree.node(node_id);
+                format_fn(fmt, I::cast(node).unwrap());
+
+                while let Some(not_next) = not_iter.peek().copied() {
+                    match not_next {
+                        NodeOrToken::Token(_) => {
+                            not_iter.next();
+                        }
+                        NodeOrToken::Node(_) => break,
+                        NodeOrToken::Trivia(trivia_id) => {
+                            let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                            match trivia {
+                                Trivia::Whitespace => {
+                                    let whitespace = &fmt.source[range.as_usize()];
+                                    let mut new_lines: u32 = 0;
+
+                                    for c in whitespace.chars() {
+                                        if c == '\n' {
+                                            new_lines += 1;
+                                            break;
+                                        }
+                                    }
+                                    if new_lines == 0 {
+                                        not_iter.next();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
+                                    let line_num = fmt.line_num;
+                                    let line_offset = fmt.line_offset;
+                                    let event_idx = fmt.write_comment(range);
+
+                                    fmt.cache.comments.push(CommentPosition {
+                                        line_num,
+                                        line_offset,
+                                        event_idx,
+                                    });
+                                    not_iter.next();
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
-                first = false;
 
-                let node = fmt.tree.node(node_id);
-                fmt.tab_depth();
-                format_fn(fmt, I::cast(node).unwrap());
                 fmt.new_line();
             }
-            NodeOrToken::Token(_) => {}
             NodeOrToken::Trivia(trivia_id) => {
                 let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {
-                        let whitespace = &fmt.source[range.as_usize()];
-                        if whitespace.chars().filter(|&c| c == '\n').count() >= 2 {
-                            new_line = true;
+                        if first {
+                            continue;
                         }
-                    }
-                    //@temp: handling all comments the same
-                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
-                        if new_line {
-                            new_line = false;
-                            if !first {
-                                fmt.new_line();
+                        let whitespace = &fmt.source[range.as_usize()];
+                        let mut new_lines: u32 = 0;
+
+                        for c in whitespace.chars() {
+                            if c == '\n' {
+                                new_lines += 1;
+                                if new_lines == 2 {
+                                    break;
+                                }
                             }
                         }
+                        if new_lines == 2 {
+                            fmt.new_line();
+                        }
+                    }
+                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
                         first = false;
-
                         fmt.tab_depth();
-                        //@restore trim_end() behavior
-                        //let comment = &fmt.source[range.as_usize()];
-                        //let comment = comment.trim_end();
-                        //fmt.write_str(comment);
-                        fmt.write_range(range);
+                        let _ = fmt.write_comment(range);
                         fmt.new_line();
                     }
                 }
             }
         }
     }
+
+    let comment_range = comments_offset..fmt.cache.comments.len();
+    let trail_comments = &fmt.cache.comments[comment_range.clone()];
+
+    for comment_pos in trail_comments {}
+
+    fmt.cache.comments.truncate(comments_offset);
 }
 
 //==================== SOURCE FILE ====================
