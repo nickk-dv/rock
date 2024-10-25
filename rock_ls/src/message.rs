@@ -2,6 +2,7 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use lsp_types::request::{self, Request as RequestTrait};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -27,6 +28,7 @@ pub enum Request {
     Format(lsp::DocumentFormattingParams),
     Hover(lsp::HoverParams),
     SemanticTokens(lsp::SemanticTokensParams),
+    ShowSyntaxTree(ShowSyntaxTreeParams),
 }
 
 #[rustfmt::skip]
@@ -34,6 +36,24 @@ pub enum Notification {
     FileOpened { path: PathBuf, text: String },
     FileClosed { path: PathBuf },
     FileChanged { path: PathBuf, changes: Vec<lsp::TextDocumentContentChangeEvent> },
+}
+
+pub enum ShowSyntaxTreeRequest {}
+
+#[derive(Deserialize, Serialize)]
+pub struct ShowSyntaxTreeParams {
+    pub text_document: lsp::TextDocumentIdentifier,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ShowSyntaxTreeResult {
+    pub tree_display: String,
+}
+
+impl RequestTrait for ShowSyntaxTreeRequest {
+    type Params = ShowSyntaxTreeParams;
+    type Result = ShowSyntaxTreeResult;
+    const METHOD: &str = "custom/show_syntax_tree";
 }
 
 impl MessageBuffer {
@@ -120,6 +140,10 @@ fn extract_request(request: lsp_server::Request) -> Option<Message> {
         SemanticTokensFullRequest::METHOD => {
             let params = cast_request::<SemanticTokensFullRequest>(request);
             Request::SemanticTokens(params)
+        }
+        ShowSyntaxTreeRequest::METHOD => {
+            let params = cast_request::<ShowSyntaxTreeRequest>(request);
+            Request::ShowSyntaxTree(params)
         }
         _ => {
             eprintln!("[UNKNOWN REQUEST RECEIVED]: {}", request.method);

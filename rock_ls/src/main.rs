@@ -172,6 +172,7 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
                 Request::Format(_) => eprintln!(" - Request::Format"),
                 Request::Hover(_) => eprintln!(" - Request::Hover"),
                 Request::SemanticTokens(_) => eprintln!(" - Request::SemanticTokens"),
+                Request::ShowSyntaxTree(_) => eprintln!(" - Request::ShowSyntaxTree"),
             },
             Message::Notification(not) => match not {
                 Notification::FileOpened { .. } => eprintln!(" - Notification::FileOpened"),
@@ -290,6 +291,46 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 result_id: None,
                 data: semantic_tokens,
             };
+            send(conn, lsp_server::Response::new_ok(id, result));
+        }
+        Request::ShowSyntaxTree(params) => {
+            let path = uri_to_path(&params.text_document.uri);
+            eprintln!("[Handle] Request::ShowSyntaxTree\n - document: {:?}", &path);
+
+            let session = match &mut context.session {
+                Some(session) => session,
+                None => {
+                    eprintln!(" - session is None");
+                    return;
+                }
+            };
+
+            let module_id = match module_id_from_path(session, &path) {
+                Some(module_id) => module_id,
+                None => {
+                    eprintln!(" - module not found by path");
+                    return;
+                }
+            };
+
+            //@hack always update the syntax tree
+            let module = session.module.get(module_id);
+            let file = session.vfs.file(module.file_id());
+            let (tree, errors) =
+                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+            let _ = errors.collect();
+
+            let module = session.module.get_mut(module_id);
+            module.set_tree(tree);
+            let tree = module.tree_expect();
+
+            let result = message::ShowSyntaxTreeResult {
+                tree_display: syntax::syntax_tree::tree_display(tree, &file.source),
+            };
+            eprintln!(
+                "[SEND: Response] ShowSyntaxTree len: {}",
+                result.tree_display.len()
+            );
             send(conn, lsp_server::Response::new_ok(id, result));
         }
     }
