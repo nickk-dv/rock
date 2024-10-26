@@ -1,6 +1,6 @@
 pub use arena::Arena;
 pub use bitset::BitSet;
-pub use temp_buffer::TempBuffer;
+pub use temp_buffer::{BufferOffset, TempBuffer};
 pub use timer::Timer;
 pub use typed_id::{IndexID, ID};
 

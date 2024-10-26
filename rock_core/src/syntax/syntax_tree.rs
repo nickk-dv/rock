@@ -1,6 +1,9 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
-use crate::support::{Arena, IndexID, TempBuffer, ID};
+use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
+use crate::errors as err;
+use crate::session::ModuleID;
+use crate::support::{Arena, BufferOffset, IndexID, TempBuffer, ID};
 use crate::token::{Token, TokenList, Trivia};
 
 pub struct SyntaxTree<'syn> {
@@ -38,137 +41,174 @@ impl<'syn> SyntaxTree<'syn> {
     }
 }
 
-pub fn build<'syn>(
+struct SyntaxTreeBuild<'syn, 'src> {
+    source: &'src str,
     tokens: TokenList,
-    mut events: Vec<Event>,
-    source: &str,
-    complete: bool,
-) -> SyntaxTree<'syn> {
-    let mut arena = Arena::new();
+    events: Vec<Event>,
+    module_id: ModuleID,
+    errors: ErrorBuffer,
 
-    let nodes_cap = events
+    arena: Arena<'syn>,
+    nodes: Vec<Node<'syn>>,
+    content: TempBuffer<NodeOrToken<'syn>>,
+    node_stack: Vec<(BufferOffset<NodeOrToken<'syn>>, ID<Node<'syn>>)>,
+    parent_stack: Vec<SyntaxKind>,
+    curr_token: ID<Token>,
+    curr_trivia: ID<Trivia>,
+}
+
+pub fn build<'syn>(
+    source: &str,
+    tokens: TokenList,
+    events: Vec<Event>,
+    module_id: ModuleID,
+    complete: bool,
+) -> (SyntaxTree<'syn>, ErrorBuffer) {
+    let node_count = events
         .iter()
         .filter(|&e| matches!(e, Event::StartNode { .. }))
         .count();
-    let mut nodes = Vec::with_capacity(nodes_cap);
 
-    let mut node_stack = Vec::with_capacity(16);
-    let mut parent_stack = Vec::with_capacity(16);
-    let mut content = TempBuffer::new(128);
+    let mut build = SyntaxTreeBuild {
+        source,
+        tokens,
+        events,
+        module_id,
+        errors: ErrorBuffer::default(),
+        arena: Arena::new(),
+        nodes: Vec::with_capacity(node_count),
+        content: TempBuffer::new(128),
+        node_stack: Vec::with_capacity(32),
+        parent_stack: Vec::with_capacity(32),
+        curr_token: ID::new_raw(0),
+        curr_trivia: ID::new_raw(0),
+    };
 
-    let mut token_id = ID::<Token>::new_raw(0);
-    let mut trivia_id = ID::<Trivia>::new_raw(0);
-    let trivia_count = tokens.trivia_count();
+    build_impl(&mut build);
 
-    for event_idx in 0..events.len() {
-        match events[event_idx] {
+    let tree = SyntaxTree {
+        arena: build.arena,
+        nodes: build.nodes,
+        tokens: build.tokens,
+        complete: complete && build.errors.error_count() == 0,
+    };
+    (tree, build.errors)
+}
+
+fn build_impl(b: &mut SyntaxTreeBuild) {
+    assert!(b.events.len() >= 2); // root node exists
+
+    // SOURCE_FILE StartNode:
+    {
+        let node = Node {
+            kind: SyntaxKind::SOURCE_FILE,
+            content: &[],
+        };
+        let node_id = ID::new(&b.nodes);
+        let offset = b.content.start();
+
+        b.nodes.push(node);
+        b.node_stack.push((offset, node_id));
+
+        let source_trivia = attached_source_trivia(b);
+        eat_n_inner_trivias(b, source_trivia.n_inner);
+    }
+
+    for event_idx in 1..b.events.len() - 1 {
+        match b.events[event_idx] {
             Event::StartNode {
                 kind,
                 forward_parent,
             } => {
-                parent_stack.push(kind);
                 let mut parent_next = forward_parent;
+                b.parent_stack.push(kind);
 
                 while let Some(parent_idx) = parent_next {
-                    let start_event = events[parent_idx as usize];
-                    match start_event {
+                    match b.events[parent_idx as usize] {
                         Event::StartNode {
                             kind,
                             forward_parent,
                         } => {
-                            parent_stack.push(kind);
                             parent_next = forward_parent;
-                            events[parent_idx as usize] = Event::Ignore;
+                            b.parent_stack.push(kind);
+                            b.events[parent_idx as usize] = Event::Ignore;
                         }
                         _ => unreachable!(),
                     }
                 }
 
-                let top_kind = *parent_stack.last().unwrap();
-                let mut attach: Option<AttachedTrivia> =
-                    attached_trivia(top_kind, source, &tokens, token_id, trivia_id, trivia_count);
+                let top_kind = *b.parent_stack.last().unwrap();
+                let node_trivia = attached_node_trivia(b, top_kind);
+                let mut added_inner = false;
+                eat_n_outher_trivias(b, node_trivia.n_outher);
 
-                if let Some(n_attach) = attach.as_ref() {
-                    eat_n_trivias(n_attach.prepend, &mut trivia_id, &mut content);
-                }
-
-                while let Some(kind) = parent_stack.pop() {
-                    let node_id = ID::new(&nodes);
-                    content.add(NodeOrToken::Node(node_id));
-
-                    let offset = content.start();
-                    node_stack.push((offset, node_id));
-
-                    if let Some(n_attach) = attach.as_ref() {
-                        eat_n_trivias(n_attach.inner, &mut trivia_id, &mut content);
-                        attach = None;
-                    }
-
+                while let Some(kind) = b.parent_stack.pop() {
                     let node = Node { kind, content: &[] };
-                    nodes.push(node);
+                    let node_id = ID::new(&b.nodes);
+                    b.content.add(NodeOrToken::Node(node_id));
+                    let offset = b.content.start();
+
+                    b.nodes.push(node);
+                    b.node_stack.push((offset, node_id));
+
+                    if !added_inner {
+                        added_inner = true;
+                        eat_n_inner_trivias(b, node_trivia.n_inner);
+                    }
                 }
             }
             Event::EndNode => {
-                let (offset, node_id) = node_stack.pop().unwrap();
-                if nodes.id_get(node_id).kind == SyntaxKind::SOURCE_FILE {
-                    attach_trailing_trivia(&mut trivia_id, trivia_count, &mut content);
-                }
-                nodes.id_get_mut(node_id).content = content.take(offset, &mut arena);
+                let (offset, node_id) = b.node_stack.pop().unwrap();
+                let node_content = b.content.take(offset, &mut b.arena);
+                b.nodes.id_get_mut(node_id).content = node_content;
             }
             Event::Token => {
-                attach_prepending_trivia(
-                    &tokens,
-                    token_id,
-                    &mut trivia_id,
-                    trivia_count,
-                    &mut content,
-                );
+                let token_trivia = attached_token_trivia(b);
+                eat_n_outher_trivias(b, token_trivia.n_outher);
 
-                content.add(NodeOrToken::Token(token_id));
-                token_id = token_id.inc();
+                b.content.add(NodeOrToken::Token(b.curr_token));
+                b.curr_token = b.curr_token.inc();
             }
             Event::Ignore => {}
         }
     }
 
-    // source file node exists
-    assert_ne!(nodes.len(), 0);
-    // pre-allocated capacity was correct
-    assert_eq!(nodes.capacity(), nodes_cap);
-    // each node had start && end event
-    assert!(node_stack.is_empty());
-    // only source file content remains
-    assert_eq!(content.len(), 1);
-    // all tokens consumed (except 2 eof tokens)
-    assert_eq!(token_id.raw_index(), tokens.token_count() - 2);
-    // all trivia consumed
-    assert_eq!(trivia_id.raw_index(), tokens.trivia_count());
+    // SOURCE_FILE EndNode:
+    {
+        let n_remaining = b.tokens.trivia_count() - b.curr_trivia.raw_index();
+        eat_n_outher_trivias(b, OutherTrivia(n_remaining));
 
-    SyntaxTree {
-        arena,
-        nodes,
-        tokens,
-        complete,
-    }
-}
-
-struct AttachedTrivia {
-    prepend: usize,
-    inner: usize,
-}
-
-fn attached_trivia(
-    kind: SyntaxKind,
-    source: &str,
-    tokens: &TokenList,
-    token_id: ID<Token>,
-    trivia_id: ID<Trivia>,
-    trivia_count: usize,
-) -> Option<AttachedTrivia> {
-    if kind == SyntaxKind::SOURCE_FILE {
-        return None;
+        let (offset, node_id) = b.node_stack.pop().unwrap();
+        let node_content = b.content.take(offset, &mut b.arena);
+        b.nodes.id_get_mut(node_id).content = node_content;
     }
 
+    assert!(b.content.is_empty()); // all content has been taken
+    assert!(b.node_stack.is_empty()); // each node had start & end event
+    assert_eq!(b.curr_token.raw_index() + 2, b.tokens.token_count()); // all tokens have been consumed (except 2 eof tokens)
+    assert_eq!(b.curr_trivia.raw_index(), b.tokens.trivia_count()); // all trivias have been consumed
+}
+
+struct NodeTrivia {
+    n_inner: InnerTrivia,
+    n_outher: OutherTrivia,
+}
+
+struct SourceTrivia {
+    n_inner: InnerTrivia,
+}
+
+struct TokenTrivia {
+    n_outher: OutherTrivia,
+}
+
+#[derive(Copy, Clone)]
+struct InnerTrivia(usize);
+
+#[derive(Copy, Clone)]
+struct OutherTrivia(usize);
+
+fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia {
     let can_attach_inner = match kind {
         SyntaxKind::PROC_ITEM
         | SyntaxKind::ENUM_ITEM
@@ -181,20 +221,19 @@ fn attached_trivia(
 
     let mut total_count: usize = 0;
     let mut inner_count: usize = 0;
+    let mut collect_inner = false;
+    let token_range = b.tokens.token_range(b.curr_token);
+    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
 
-    let token_range = tokens.token_range(token_id);
-    let remaining_range = trivia_id.raw_index()..trivia_count;
-    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
+    for trivia_id in remaining_ids {
+        let (trivia, range) = b.tokens.trivia_and_range(trivia_id);
 
-    for trivia_id in remaining_trivias {
-        let (trivia, trivia_range) = tokens.trivia_and_range(trivia_id);
-        let starts_before = trivia_range.start() < token_range.start();
-
-        if starts_before {
-            total_count += 1;
-        } else {
+        let before_token = range.start() < token_range.start();
+        if !before_token {
             break;
         }
+        total_count += 1;
 
         if !can_attach_inner {
             continue;
@@ -202,77 +241,132 @@ fn attached_trivia(
 
         match trivia {
             Trivia::Whitespace => {
-                let trivia_text = &source[trivia_range.as_usize()];
-                let new_lines = trivia_text.chars().filter(|&c| c == '\n').count();
+                let whitespace = &b.source[range.as_usize()];
+                let new_lines = whitespace.chars().filter(|&c| c == '\n').count();
 
                 if new_lines >= 2 {
+                    collect_inner = false;
                     inner_count = 0;
-                } else {
+                } else if collect_inner {
                     inner_count += 1;
                 }
             }
-            Trivia::LineComment => inner_count += 1,
-            //@temp, update attachment rules
-            Trivia::DocComment => inner_count += 1,
-            Trivia::ModComment => inner_count += 1,
+            Trivia::LineComment => {
+                if collect_inner {
+                    inner_count += 1;
+                }
+            }
+            Trivia::DocComment => {
+                collect_inner = true;
+                inner_count += 1
+            }
+            Trivia::ModComment => {
+                collect_inner = false;
+                inner_count = 0;
+            }
         };
     }
 
-    Some(AttachedTrivia {
-        prepend: total_count - inner_count,
-        inner: inner_count,
-    })
-}
-
-fn eat_n_trivias(
-    n_trivias: usize,
-    trivia_id: &mut ID<Trivia>,
-    content: &mut TempBuffer<NodeOrToken>,
-) {
-    let remaining_range = trivia_id.raw_index()..(trivia_id.raw_index() + n_trivias);
-    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
-
-    for id in remaining_trivias {
-        *trivia_id = id.inc();
-        content.add(NodeOrToken::Trivia(id));
+    NodeTrivia {
+        n_inner: InnerTrivia(inner_count),
+        n_outher: OutherTrivia(total_count - inner_count),
     }
 }
 
-fn attach_prepending_trivia(
-    tokens: &TokenList,
-    token_id: ID<Token>,
-    trivia_id: &mut ID<Trivia>,
-    trivia_count: usize,
-    content: &mut TempBuffer<NodeOrToken>,
-) {
-    let token_range = tokens.token_range(token_id);
-    let remaining_range = trivia_id.raw_index()..trivia_count;
-    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
+fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
+    let mut total_count: usize = 0;
+    let mut mod_trivia_found = false;
+    let token_range = b.tokens.token_range(b.curr_token);
+    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
 
-    for id in remaining_trivias {
-        let trivia_range = tokens.trivia_range(id);
-        let starts_before = trivia_range.start() < token_range.start();
+    for trivia_id in remaining_ids {
+        let (trivia, range) = b.tokens.trivia_and_range(trivia_id);
 
-        if starts_before {
-            *trivia_id = id.inc();
-            content.add(NodeOrToken::Trivia(id));
-        } else {
+        let before_token = range.start() < token_range.start();
+        if !before_token {
             break;
         }
+
+        match trivia {
+            Trivia::Whitespace => {
+                let whitespace = &b.source[range.as_usize()];
+                let new_lines = whitespace.chars().filter(|&c| c == '\n').count();
+
+                if new_lines > 2 && mod_trivia_found {
+                    break;
+                } else {
+                    total_count += 1;
+                }
+            }
+            Trivia::LineComment => break,
+            Trivia::DocComment => break,
+            Trivia::ModComment => {
+                mod_trivia_found = true;
+                total_count += 1;
+            }
+        }
+    }
+
+    SourceTrivia {
+        n_inner: InnerTrivia(total_count),
     }
 }
 
-fn attach_trailing_trivia(
-    trivia_id: &mut ID<Trivia>,
-    trivia_count: usize,
-    content: &mut TempBuffer<NodeOrToken>,
-) {
-    let remaining_range = trivia_id.raw_index()..trivia_count;
-    let remaining_trivias = remaining_range.map(|idx| ID::new_raw(idx));
+fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
+    let mut total_count: usize = 0;
+    let token_range = b.tokens.token_range(b.curr_token);
+    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
 
-    for id in remaining_trivias {
-        *trivia_id = id.inc();
-        content.add(NodeOrToken::Trivia(id));
+    for trivia_id in remaining_ids {
+        let range = b.tokens.trivia_range(trivia_id);
+
+        let before_token = range.start() < token_range.start();
+        if !before_token {
+            break;
+        }
+        total_count += 1;
+    }
+
+    TokenTrivia {
+        n_outher: OutherTrivia(total_count),
+    }
+}
+
+/// `InnerTrivia` is always considered valid
+fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
+    let trivia_ids = b.curr_trivia.raw_index()..(b.curr_trivia.raw_index() + n_inner.0);
+    let trivia_ids = trivia_ids.map(|idx| ID::new_raw(idx));
+
+    for id in trivia_ids {
+        b.curr_trivia = b.curr_trivia.inc();
+        b.content.add(NodeOrToken::Trivia(id));
+    }
+}
+
+/// `OutherTrivia` will error on `Doc` or `Mod` comments
+fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
+    let trivia_ids = b.curr_trivia.raw_index()..(b.curr_trivia.raw_index() + n_outher.0);
+    let trivia_ids = trivia_ids.map(|idx| ID::new_raw(idx));
+
+    for id in trivia_ids {
+        b.curr_trivia = b.curr_trivia.inc();
+        b.content.add(NodeOrToken::Trivia(id));
+
+        let (trivia, range) = b.tokens.trivia_and_range(id);
+        match trivia {
+            Trivia::Whitespace => {}
+            Trivia::LineComment => {}
+            Trivia::DocComment => {
+                let src = SourceRange::new(b.module_id, range);
+                err::syntax_invalid_doc_comment(&mut b.errors, src);
+            }
+            Trivia::ModComment => {
+                let src = SourceRange::new(b.module_id, range);
+                err::syntax_invalid_mod_comment(&mut b.errors, src);
+            }
+        };
     }
 }
 

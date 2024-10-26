@@ -324,14 +324,12 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             module.set_tree(tree);
             let tree = module.tree_expect();
 
-            let result = message::ShowSyntaxTreeResult {
-                tree_display: syntax::syntax_tree::tree_display(tree, &file.source),
-            };
+            let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
             eprintln!(
                 "[SEND: Response] ShowSyntaxTree len: {}",
-                result.tree_display.len()
+                tree_display.len()
             );
-            send(conn, lsp_server::Response::new_ok(id, result));
+            send(conn, lsp_server::Response::new_ok(id, tree_display));
         }
     }
 }

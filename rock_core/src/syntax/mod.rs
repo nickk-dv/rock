@@ -25,9 +25,10 @@ pub fn parse_tree<'syn>(
     let (tokens, events, mut parse_errors) = parser.finish();
 
     let complete = (lex_errors.error_count() + parse_errors.error_count()) == 0;
-    let tree = syntax_tree::build(tokens, events, source, complete);
+    let (tree, tree_errors) = syntax_tree::build(source, tokens, events, module_id, complete);
 
     parse_errors.join_e(lex_errors);
+    parse_errors.join_e(tree_errors);
     (tree, parse_errors)
 }
 
@@ -43,15 +44,20 @@ pub fn parse_tree_complete<'syn>(
     grammar::source_file(&mut parser);
     let (tokens, events, parse_errors) = parser.finish();
 
-    let parse_errors = parse_errors.collect();
-    if let Some(first) = parse_errors.into_iter().next() {
+    if let Some(first) = parse_errors.collect().into_iter().next() {
         lex_errors.error(first);
     }
 
     if lex_errors.error_count() == 0 {
         let _ = lex_errors.collect();
-        let tree = syntax_tree::build(tokens, events, source, true);
-        Ok(tree)
+        let (tree, tree_errors) = syntax_tree::build(source, tokens, events, module_id, true);
+
+        if tree_errors.error_count() == 0 {
+            let _ = tree_errors.collect();
+            Ok(tree)
+        } else {
+            Err(tree_errors)
+        }
     } else {
         Err(lex_errors)
     }

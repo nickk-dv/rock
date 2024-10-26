@@ -244,6 +244,20 @@ pub fn parse_bin_op_prec_conflit(
     ));
 }
 
+//==================== SYNTAX ====================
+
+pub fn syntax_invalid_doc_comment(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg =
+        "invalid documentation comment placement\ndocumentation comments are only allowed before items";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn syntax_invalid_mod_comment(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg =
+        "invalid module comment placement\nmodule comments are only allowed at the start of the source file";
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== SCOPE ====================
 
 pub fn scope_name_already_defined(

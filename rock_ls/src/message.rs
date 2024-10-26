@@ -41,18 +41,14 @@ pub enum Notification {
 pub enum ShowSyntaxTreeRequest {}
 
 #[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ShowSyntaxTreeParams {
     pub text_document: lsp::TextDocumentIdentifier,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct ShowSyntaxTreeResult {
-    pub tree_display: String,
-}
-
 impl RequestTrait for ShowSyntaxTreeRequest {
     type Params = ShowSyntaxTreeParams;
-    type Result = ShowSyntaxTreeResult;
+    type Result = String;
     const METHOD: &str = "custom/show_syntax_tree";
 }
 
@@ -118,6 +114,8 @@ fn extract_request(request: lsp_server::Request) -> Option<Message> {
     use request::{
         Completion, Formatting, GotoDefinition, HoverRequest, SemanticTokensFullRequest,
     };
+
+    eprintln!("raw request: {:?}", request);
 
     let id = request.id.clone();
     let request = match request.method.as_str() {
