@@ -25,7 +25,7 @@ pub fn parse_tree<'syn>(
     let (tokens, events, mut parse_errors) = parser.finish();
 
     let complete = (lex_errors.error_count() + parse_errors.error_count()) == 0;
-    let (tree, tree_errors) = syntax_tree::build(source, tokens, events, module_id, complete);
+    let (tree, tree_errors) = syntax_tree::tree_build(source, tokens, events, module_id, complete);
 
     parse_errors.join_e(lex_errors);
     parse_errors.join_e(tree_errors);
@@ -50,7 +50,7 @@ pub fn parse_tree_complete<'syn>(
 
     if lex_errors.error_count() == 0 {
         let _ = lex_errors.collect();
-        let (tree, tree_errors) = syntax_tree::build(source, tokens, events, module_id, true);
+        let (tree, tree_errors) = syntax_tree::tree_build(source, tokens, events, module_id, true);
 
         if tree_errors.error_count() == 0 {
             let _ = tree_errors.collect();

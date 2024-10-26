@@ -41,6 +41,54 @@ impl<'syn> SyntaxTree<'syn> {
     }
 }
 
+pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
+    use std::fmt::Write;
+
+    let mut buffer = String::with_capacity(source.len() * 8);
+    print_node(&mut buffer, tree, source, tree.root(), 0);
+    return buffer;
+
+    fn print_node(buffer: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
+        for _ in 0..depth {
+            buffer.push_str("  ");
+        }
+        let _ = writeln!(buffer, "{:?}", node.kind);
+
+        for not in node.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    let node = tree.node(id);
+                    print_node(buffer, tree, source, node, depth + 1);
+                }
+                NodeOrToken::Token(id) => {
+                    let range = tree.tokens.token_range(id);
+                    let text = &source[range.as_usize()];
+
+                    for _ in 0..=depth {
+                        buffer.push_str("  ");
+                    }
+                    let _ = writeln!(buffer, "@{range:?} {text:?}");
+                }
+                NodeOrToken::Trivia(id) => {
+                    let (trivia, range) = tree.tokens().trivia_and_range(id);
+                    let text = &source[range.as_usize()];
+                    let kind = match trivia {
+                        Trivia::Whitespace => "WHITESPACE",
+                        Trivia::LineComment => "LINE_COMMENT",
+                        Trivia::DocComment => "DOC_COMMENT",
+                        Trivia::ModComment => "MOD_COMMENT",
+                    };
+
+                    for _ in 0..=depth {
+                        buffer.push_str("  ");
+                    }
+                    let _ = writeln!(buffer, "{kind}@{range:?} {text:?}");
+                }
+            }
+        }
+    }
+}
+
 struct SyntaxTreeBuild<'syn, 'src> {
     source: &'src str,
     tokens: TokenList,
@@ -57,7 +105,26 @@ struct SyntaxTreeBuild<'syn, 'src> {
     curr_trivia: ID<Trivia>,
 }
 
-pub fn build<'syn>(
+struct NodeTrivia {
+    n_inner: InnerTrivia,
+    n_outher: OutherTrivia,
+}
+
+struct SourceTrivia {
+    n_inner: InnerTrivia,
+}
+
+struct TokenTrivia {
+    n_outher: OutherTrivia,
+}
+
+#[derive(Copy, Clone)]
+struct InnerTrivia(usize);
+
+#[derive(Copy, Clone)]
+struct OutherTrivia(usize);
+
+pub fn tree_build<'syn>(
     source: &str,
     tokens: TokenList,
     events: Vec<Event>,
@@ -84,7 +151,7 @@ pub fn build<'syn>(
         curr_trivia: ID::new_raw(0),
     };
 
-    build_impl(&mut build);
+    tree_build_impl(&mut build);
 
     let tree = SyntaxTree {
         arena: build.arena,
@@ -95,7 +162,7 @@ pub fn build<'syn>(
     (tree, build.errors)
 }
 
-fn build_impl(b: &mut SyntaxTreeBuild) {
+fn tree_build_impl(b: &mut SyntaxTreeBuild) {
     assert!(b.events.len() >= 2); // root node exists
 
     // SOURCE_FILE StartNode:
@@ -188,25 +255,6 @@ fn build_impl(b: &mut SyntaxTreeBuild) {
     assert_eq!(b.curr_token.raw_index() + 2, b.tokens.token_count()); // all tokens have been consumed (except 2 eof tokens)
     assert_eq!(b.curr_trivia.raw_index(), b.tokens.trivia_count()); // all trivias have been consumed
 }
-
-struct NodeTrivia {
-    n_inner: InnerTrivia,
-    n_outher: OutherTrivia,
-}
-
-struct SourceTrivia {
-    n_inner: InnerTrivia,
-}
-
-struct TokenTrivia {
-    n_outher: OutherTrivia,
-}
-
-#[derive(Copy, Clone)]
-struct InnerTrivia(usize);
-
-#[derive(Copy, Clone)]
-struct OutherTrivia(usize);
 
 fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia {
     let can_attach_inner = match kind {
@@ -367,52 +415,5 @@ fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
                 err::syntax_invalid_mod_comment(&mut b.errors, src);
             }
         };
-    }
-}
-
-pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
-    let mut buffer = String::with_capacity(source.len() * 8);
-    print_node(&mut buffer, tree, source, tree.root(), 0);
-    return buffer;
-
-    fn print_node(buffer: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
-        print_depth(buffer, depth);
-        buffer.push_str(&format!("{:?}\n", node.kind));
-
-        for node_or_token in node.content {
-            match *node_or_token {
-                NodeOrToken::Node(id) => {
-                    let node = tree.node(id);
-                    print_node(buffer, tree, source, node, depth + 1);
-                }
-                NodeOrToken::Token(id) => {
-                    let range = tree.tokens.token_range(id);
-                    print_depth(buffer, depth + 1);
-                    buffer.push_str(&format!("@{:?} {:?}\n", range, &source[range.as_usize()]));
-                }
-                NodeOrToken::Trivia(id) => {
-                    let (trivia, range) = tree.tokens().trivia_and_range(id);
-                    let trivia = match trivia {
-                        Trivia::Whitespace => "WHITESPACE",
-                        Trivia::LineComment => "LINE_COMMENT",
-                        Trivia::DocComment => "DOC_COMMENT",
-                        Trivia::ModComment => "MOD_COMMENT",
-                    };
-                    print_depth(buffer, depth + 1);
-                    buffer.push_str(&format!(
-                        "{}@{:?} {:?}\n",
-                        trivia,
-                        range,
-                        &source[range.as_usize()]
-                    ));
-                }
-            }
-        }
-    }
-
-    fn print_depth(buffer: &mut String, depth: u32) {
-        for _ in 0..depth {
-            buffer.push_str("  ");
-        }
     }
 }

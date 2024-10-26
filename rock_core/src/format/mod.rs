@@ -8,7 +8,6 @@ use crate::token::Trivia;
 
 //@choose .next().is_none vs content_empty() for empty format lists (related to trivia)
 //@unify repeated wrapped lists formatting (generic fn)
-//@dont attach line comments, only if after doc comment?
 
 const TAB_STR: &'static str = "    ";
 const TAB_LEN: usize = TAB_STR.len();
@@ -134,7 +133,6 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         self.line_offset += 1;
         self.cache.events.push(FormatEvent::Char(c));
     }
-    //@only used for
     fn write_range(&mut self, range: TextRange) {
         self.line_offset += range.len();
         let range_idx = self.cache.ranges.len() as u32;
@@ -220,10 +218,7 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
                 let trivia = fmt.tree.tokens().trivia(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    //@temp: doc, mod arent allowed as inner?
-                    Trivia::LineComment => return false,
-                    Trivia::DocComment => return false,
-                    Trivia::ModComment => return false,
+                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => return false,
                 }
             }
         }
@@ -326,8 +321,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                                         break;
                                     }
                                 }
-                                //@only allow line comments to be "same line"?
-                                Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
+                                Trivia::LineComment => {
                                     let line_num = fmt.line_num;
                                     let line_offset = fmt.line_offset;
                                     let event_idx = fmt.write_comment(range);
@@ -340,6 +334,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                                     not_iter.next();
                                     break;
                                 }
+                                Trivia::DocComment | Trivia::ModComment => break,
                             }
                         }
                     }
