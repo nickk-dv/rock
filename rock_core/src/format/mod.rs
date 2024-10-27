@@ -970,7 +970,6 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
 }
 
 fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
-    fmt.tab_depth();
     match stmt {
         cst::Stmt::Break(_) => stmt_break(fmt),
         cst::Stmt::Continue(_) => stmt_continue(fmt),
@@ -981,21 +980,26 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
         cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
         cst::Stmt::ExprSemi(stmt) => stmt_expr_semi(fmt, stmt),
         cst::Stmt::ExprTail(stmt) => stmt_expr_tail(fmt, stmt),
+        cst::Stmt::AttrStmt(stmt) => stmt_attr_stmt(fmt, stmt),
     }
 }
 
 fn stmt_break<'syn>(fmt: &mut Formatter<'syn, '_>) {
+    fmt.tab_depth();
     fmt.write_str("break");
     fmt.write(';');
 }
 
 fn stmt_continue<'syn>(fmt: &mut Formatter<'syn, '_>) {
+    fmt.tab_depth();
     fmt.write_str("continue");
     fmt.write(';');
 }
 
 fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>) {
+    fmt.tab_depth();
     fmt.write_str("return");
+
     if let Some(expr_cst) = stmt.expr(fmt.tree) {
         fmt.space();
         expr(fmt, expr_cst);
@@ -1004,8 +1008,10 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>)
 }
 
 fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) {
+    fmt.tab_depth();
     fmt.write_str("defer");
     fmt.space();
+
     if let Some(block_cst) = defer.block(fmt.tree) {
         block(fmt, block_cst, false);
     } else {
@@ -1014,6 +1020,7 @@ fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) 
 }
 
 fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
+    fmt.tab_depth();
     fmt.write_str("for");
 
     if let Some(header) = stmt.while_header(fmt.tree) {
@@ -1037,6 +1044,7 @@ fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
 }
 
 fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
+    fmt.tab_depth();
     fmt.write_str("let");
     fmt.space();
     bind(fmt, stmt.bind(fmt.tree).unwrap());
@@ -1055,6 +1063,7 @@ fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
 }
 
 fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>, semi: bool) {
+    fmt.tab_depth();
     expr(fmt, stmt.lhs(fmt.tree).unwrap());
     fmt.space();
 
@@ -1075,8 +1084,10 @@ fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>,
 }
 
 fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'syn>) {
+    fmt.tab_depth();
     let expr_cst = stmt.expr(fmt.tree).unwrap();
     expr(fmt, expr_cst);
+
     match expr_cst {
         cst::Expr::If(_) => {}
         cst::Expr::Block(_) => {}
@@ -1086,10 +1097,16 @@ fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'
 }
 
 fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprTail<'syn>) {
+    fmt.tab_depth();
     fmt.write_str("->");
     fmt.space();
     expr(fmt, stmt.expr(fmt.tree).unwrap());
     fmt.write(';');
+}
+
+fn stmt_attr_stmt<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::StmtAttrStmt<'syn>) {
+    attr_list(fmt, attr.attr_list(fmt.tree).unwrap());
+    stmt(fmt, attr.stmt(fmt.tree).unwrap());
 }
 
 //==================== EXPR ====================

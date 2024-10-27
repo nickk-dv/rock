@@ -1,3 +1,4 @@
+use super::attr_check;
 use super::constant;
 use super::context::{HirCtx, SymbolKind};
 use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
@@ -2071,7 +2072,18 @@ fn typecheck_block<'hir>(
     let mut block_ty: Option<hir::Type> = None;
     let mut tail_range: Option<TextRange> = None;
 
-    for stmt in block.stmts {
+    for stmt in block.stmts.iter().copied() {
+        let stmt = match stmt.kind {
+            ast::StmtKind::AttrStmt(attr) => {
+                let feedback = attr_check::check_attrs_stmt(ctx, ctx.proc.origin(), attr.attrs);
+                if feedback.cfg_state.disabled() {
+                    continue;
+                }
+                attr.stmt
+            }
+            _ => stmt,
+        };
+
         let (hir_stmt, diverges) = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(ctx, stmt.range) {
@@ -2187,6 +2199,7 @@ fn typecheck_block<'hir>(
                 }
                 (stmt_res, diverges)
             }
+            ast::StmtKind::AttrStmt(_) => unreachable!(),
         };
 
         match diverges {

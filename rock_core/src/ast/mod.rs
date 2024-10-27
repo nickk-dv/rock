@@ -193,6 +193,7 @@ pub enum StmtKind<'ast> {
     Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
     ExprTail(&'ast Expr<'ast>),
+    AttrStmt(&'ast AttrStmt<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -226,6 +227,12 @@ pub struct Assign<'ast> {
     pub op_range: TextRange,
     pub lhs: &'ast Expr<'ast>,
     pub rhs: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct AttrStmt<'ast> {
+    pub attrs: &'ast [Attr<'ast>],
+    pub stmt: Stmt<'ast>,
 }
 
 //==================== EXPR ====================

@@ -612,6 +612,14 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
             let expr = expr(ctx, tail.expr(ctx.tree).unwrap());
             ast::StmtKind::ExprTail(expr)
         }
+        cst::Stmt::AttrStmt(attr) => {
+            let attrs = attr_list(ctx, Some(attr.attr_list(ctx.tree).unwrap()));
+            let stmt = stmt(ctx, attr.stmt(ctx.tree).unwrap());
+
+            let attr = ast::AttrStmt { attrs, stmt };
+            let attr = ctx.arena.alloc(attr);
+            ast::StmtKind::AttrStmt(attr)
+        }
     };
 
     ast::Stmt { kind, range }

@@ -49,6 +49,7 @@ pub enum SyntaxKind {
     STMT_ASSIGN,
     STMT_EXPR_SEMI,
     STMT_EXPR_TAIL,
+    STMT_ATTR_STMT,
 
     EXPR_PAREN,
     EXPR_IF,

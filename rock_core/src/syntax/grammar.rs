@@ -522,6 +522,7 @@ fn stmt(p: &mut Parser) {
         T![for] => stmt_loop(p),
         T![let] => stmt_local(p),
         T![->] => stmt_expr_tail(p),
+        T![#] => stmt_attr_stmt(p),
         _ => stmt_assign_or_expr_semi(p),
     }
 }
@@ -615,6 +616,13 @@ fn stmt_expr_tail(p: &mut Parser) {
     expr(p);
     p.expect(T![;]);
     m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
+}
+
+fn stmt_attr_stmt(p: &mut Parser) {
+    let mc = attr_list(p);
+    let m = p.start_before(mc);
+    stmt(p);
+    m.complete(p, SyntaxKind::STMT_ATTR_STMT);
 }
 
 fn stmt_assign_or_expr_semi(p: &mut Parser) {

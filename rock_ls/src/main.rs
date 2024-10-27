@@ -764,6 +764,7 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_ASSIGN => None,
                     SyntaxKind::STMT_EXPR_SEMI => None,
                     SyntaxKind::STMT_EXPR_TAIL => None,
+                    SyntaxKind::STMT_ATTR_STMT => None,
 
                     SyntaxKind::EXPR_PAREN => None,
                     SyntaxKind::EXPR_IF => None,

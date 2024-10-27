@@ -431,6 +431,7 @@ ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
 ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
 ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
+ast_node_impl!(StmtAttrStmt, SyntaxKind::STMT_ATTR_STMT);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
@@ -556,6 +557,7 @@ pub enum Stmt<'syn> {
     Assign(StmtAssign<'syn>),
     ExprSemi(StmtExprSemi<'syn>),
     ExprTail(StmtExprTail<'syn>),
+    AttrStmt(StmtAttrStmt<'syn>),
 }
 
 impl<'syn> AstNode<'syn> for Stmt<'syn> {
@@ -570,6 +572,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             SyntaxKind::STMT_ASSIGN => Some(Stmt::Assign(StmtAssign(node))),
             SyntaxKind::STMT_EXPR_SEMI => Some(Stmt::ExprSemi(StmtExprSemi(node))),
             SyntaxKind::STMT_EXPR_TAIL => Some(Stmt::ExprTail(StmtExprTail(node))),
+            SyntaxKind::STMT_ATTR_STMT => Some(Stmt::AttrStmt(StmtAttrStmt(node))),
             _ => None,
         }
     }
@@ -584,6 +587,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             Stmt::Assign(stmt) => stmt.find_range(tree),
             Stmt::ExprSemi(stmt) => stmt.find_range(tree),
             Stmt::ExprTail(stmt) => stmt.find_range(tree),
+            Stmt::AttrStmt(stmt) => stmt.find_range(tree),
         }
     }
 }
@@ -1002,6 +1006,11 @@ impl<'syn> StmtExprSemi<'syn> {
 
 impl<'syn> StmtExprTail<'syn> {
     node_find!(expr, Expr);
+}
+
+impl<'syn> StmtAttrStmt<'syn> {
+    node_find!(attr_list, AttrList);
+    node_find!(stmt, Stmt);
 }
 
 //==================== EXPR ====================
