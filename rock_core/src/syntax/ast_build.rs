@@ -308,6 +308,7 @@ fn enum_item<'ast>(
 }
 
 fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
+    let attrs = attr_list(ctx, variant.attr_list(ctx.tree));
     let name = name(ctx, variant.name(ctx.tree).unwrap());
 
     let kind = if let Some(value) = variant.value(ctx.tree) {
@@ -325,7 +326,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         ast::VariantKind::Default
     };
 
-    let variant = ast::Variant { name, kind };
+    let variant = ast::Variant { attrs, name, kind };
     ctx.s.variants.add(variant);
 }
 
@@ -354,11 +355,17 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
+    let attrs = attr_list(ctx, field.attr_list(ctx.tree));
     let vis = vis(field.vis(ctx.tree));
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
-    let field = ast::Field { vis, name, ty };
+    let field = ast::Field {
+        attrs,
+        vis,
+        name,
+        ty,
+    };
     ctx.s.fields.add(field);
 }
 

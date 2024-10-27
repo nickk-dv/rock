@@ -1,3 +1,4 @@
+use super::attr_check;
 use super::constant;
 use super::context::HirCtx;
 use super::pass_5::Expectation;
@@ -191,6 +192,11 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     let enum_name = data.name;
 
     for variant in item.variants.iter() {
+        let feedback = attr_check::check_attrs_enum_variant(ctx, origin_id, variant.attrs);
+        if feedback.cfg_state.disabled() {
+            continue;
+        }
+
         if let Some(existing) = unique.iter().find(|&it| it.name.id == variant.name.id) {
             ctx.emit.error(Error::new(
                 format!(
@@ -306,6 +312,11 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'
     let mut unique = Vec::<hir::Field>::new();
 
     for field in item.fields.iter() {
+        let feedback = attr_check::check_attrs_struct_field(ctx, origin_id, field.attrs);
+        if feedback.cfg_state.disabled() {
+            continue;
+        }
+
         if let Some(existing) = unique.iter().find(|&it| it.name.id == field.name.id) {
             ctx.emit.error(Error::new(
                 format!(

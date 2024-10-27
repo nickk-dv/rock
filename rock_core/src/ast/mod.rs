@@ -62,6 +62,7 @@ pub struct EnumItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Variant<'ast> {
+    pub attrs: &'ast [Attr<'ast>],
     pub name: Name,
     pub kind: VariantKind<'ast>,
 }
@@ -83,6 +84,7 @@ pub struct StructItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Field<'ast> {
+    pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -470,6 +472,11 @@ crate::size_lock!(48, StructItem);
 crate::size_lock!(64, ConstItem);
 crate::size_lock!(64, GlobalItem);
 crate::size_lock!(80, ImportItem);
+
+crate::size_lock!(40, Param);
+crate::size_lock!(56, Variant);
+crate::size_lock!(56, Field);
+crate::size_lock!(28, ImportSymbol);
 
 crate::size_lock!(24, Type);
 crate::size_lock!(24, Block);

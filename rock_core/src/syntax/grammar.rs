@@ -20,11 +20,7 @@ fn item(p: &mut Parser) {
     let mut mc = None;
 
     if p.at(T![#]) {
-        let m = p.start();
-        while p.at(T![#]) {
-            attr(p);
-        }
-        mc = Some(m.complete(p, SyntaxKind::ATTR_LIST));
+        mc = Some(attr_list(p));
     }
 
     //@not used in import, ignored without errors
@@ -54,6 +50,14 @@ fn item(p: &mut Parser) {
             m.complete(p, SyntaxKind::ERROR);
         }
     }
+}
+
+fn attr_list(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    while p.at(T![#]) {
+        attr(p);
+    }
+    m.complete(p, SyntaxKind::ATTR_LIST)
 }
 
 fn attr(p: &mut Parser) -> MarkerClosed {
@@ -187,7 +191,7 @@ fn variant_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
+        if p.at_set(FIRST_VARIANT) {
             variant(p);
             if !p.at(T!['}']) {
                 p.expect(T![,]);
@@ -201,8 +205,16 @@ fn variant_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::VARIANT_LIST);
 }
 
+const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
+
 fn variant(p: &mut Parser) {
-    let m = p.start();
+    let m = if p.at(T![#]) {
+        let mc = attr_list(p);
+        p.start_before(mc)
+    } else {
+        p.start()
+    };
+
     name(p);
     if p.eat(T![=]) {
         expr(p);
@@ -244,11 +256,13 @@ fn struct_item(p: &mut Parser, m: Marker) {
     m.complete(p, SyntaxKind::STRUCT_ITEM);
 }
 
+const FIRST_FIELD: TokenSet = TokenSet::new(&[T![#], T![pub], T![ident]]);
+
 fn field_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        if p.at(T![ident]) || p.at(T![pub]) {
+        if p.at_set(FIRST_FIELD) {
             field(p);
             if !p.at(T!['}']) {
                 p.expect(T![,]);
@@ -263,7 +277,13 @@ fn field_list(p: &mut Parser) {
 }
 
 fn field(p: &mut Parser) {
-    let m = p.start();
+    let m = if p.at(T![#]) {
+        let mc = attr_list(p);
+        p.start_before(mc)
+    } else {
+        p.start()
+    };
+
     if p.at(T![pub]) {
         visibility(p);
     }

@@ -10,7 +10,7 @@ use crate::token::Trivia;
 //@unify repeated wrapped lists formatting (generic fn)
 
 const TAB_STR: &'static str = "    ";
-const TAB_LEN: usize = TAB_STR.len();
+const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
 const COMMENT_ALIGN_MARGIN: u32 = 16;
@@ -39,7 +39,7 @@ pub fn format<'syn>(
             FormatEvent::Space => 1,
             FormatEvent::Newline => 1,
             FormatEvent::Char(c) => c.len_utf8(),
-            FormatEvent::Tab { count } => TAB_LEN * count as usize,
+            FormatEvent::Tab { count } => (TAB_LEN * count) as usize,
             FormatEvent::Range { range_idx } => fmt.cache.range(range_idx).len() as usize,
             FormatEvent::String { string_idx } => fmt.cache.string(string_idx).len(),
             FormatEvent::Comment { spacing, range_idx } => {
@@ -166,11 +166,14 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         self.tab_depth -= 1;
     }
     fn tab_single(&mut self) {
-        self.line_offset += 4;
+        self.line_offset += TAB_LEN;
         self.cache.events.push(FormatEvent::Tab { count: 1 });
     }
     fn tab_depth(&mut self) {
-        self.line_offset += 4 * self.tab_depth;
+        if self.tab_depth == 0 {
+            return;
+        }
+        self.line_offset += TAB_LEN * self.tab_depth;
         self.cache.events.push(FormatEvent::Tab {
             count: self.tab_depth,
         });
@@ -291,7 +294,6 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                 }
                 first = false;
 
-                fmt.tab_depth();
                 let node = fmt.tree.node(node_id);
                 format_fn(fmt, I::cast(node).unwrap());
 
@@ -441,6 +443,7 @@ fn source_file<'syn>(fmt: &mut Formatter<'syn, '_>, source_file: cst::SourceFile
 
 fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
     for attr_cst in attr_list.attrs(fmt.tree) {
+        fmt.tab_depth();
         attr(fmt, attr_cst);
         fmt.new_line();
     }
@@ -638,6 +641,11 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
 }
 
 fn variant<'syn>(fmt: &mut Formatter<'syn, '_>, variant: cst::Variant<'syn>) {
+    if let Some(attr_list_cst) = variant.attr_list(fmt.tree) {
+        attr_list(fmt, attr_list_cst);
+    }
+    fmt.tab_depth();
+
     name(fmt, variant.name(fmt.tree).unwrap());
     if let Some(field_list) = variant.field_list(fmt.tree) {
         variant_field_list(fmt, field_list);
@@ -695,6 +703,11 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
 }
 
 fn field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::Field<'syn>) {
+    if let Some(attr_list_cst) = field.attr_list(fmt.tree) {
+        attr_list(fmt, attr_list_cst);
+    }
+    fmt.tab_depth();
+
     vis(fmt, field.vis(fmt.tree));
     name(fmt, field.name(fmt.tree).unwrap());
     fmt.write(':');
@@ -957,6 +970,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
 }
 
 fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
+    fmt.tab_depth();
     match stmt {
         cst::Stmt::Break(_) => stmt_break(fmt),
         cst::Stmt::Continue(_) => stmt_continue(fmt),
@@ -1166,6 +1180,7 @@ fn expr_match<'syn>(fmt: &mut Formatter<'syn, '_>, match_: cst::ExprMatch<'syn>)
 }
 
 fn match_arm<'syn>(fmt: &mut Formatter<'syn, '_>, match_arm: cst::MatchArm<'syn>) {
+    fmt.tab_depth();
     pat(fmt, match_arm.pat(fmt.tree).unwrap());
     fmt.space();
     fmt.write_str("->");

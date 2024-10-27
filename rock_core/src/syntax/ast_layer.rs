@@ -842,6 +842,7 @@ impl<'syn> VariantList<'syn> {
 }
 
 impl<'syn> Variant<'syn> {
+    node_find!(attr_list, AttrList);
     node_find!(name, Name);
     node_find!(value, Expr);
     node_find!(field_list, VariantFieldList);
@@ -863,6 +864,7 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
+    node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(ty, Type);
