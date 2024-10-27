@@ -744,6 +744,8 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Property), //depends
                     SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Property),
 
+                    SyntaxKind::GENERIC_PARAMS => Some(SemanticToken::Type),
+
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_REFERENCE => None,

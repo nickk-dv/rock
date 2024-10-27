@@ -536,6 +536,9 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
     name(fmt, item.name(fmt.tree).unwrap());
     param_list(fmt, item.param_list(fmt.tree).unwrap());
 
+    if let Some(generic) = item.generic_params(fmt.tree) {
+        generic_params(fmt, generic);
+    }
     fmt.space();
     fmt.write_str("->");
     fmt.space();
@@ -619,6 +622,10 @@ fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {
     fmt.write_str("enum");
     fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
+
+    if let Some(generic) = item.generic_params(fmt.tree) {
+        generic_params(fmt, generic);
+    }
     fmt.space();
     variant_list(fmt, item.variant_list(fmt.tree).unwrap());
 }
@@ -681,6 +688,10 @@ fn struct_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::StructItem<'syn>)
     fmt.write_str("struct");
     fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
+
+    if let Some(generic) = item.generic_params(fmt.tree) {
+        generic_params(fmt, generic);
+    }
     fmt.space();
     field_list(fmt, item.field_list(fmt.tree).unwrap());
 }
@@ -860,6 +871,22 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     } else {
         fmt.write('_');
     }
+}
+
+//==================== GENERIC ====================
+
+fn generic_params(fmt: &mut Formatter, generic_params: cst::GenericParams) {
+    fmt.write('(');
+    let mut first = true;
+    for name_cst in generic_params.names(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        name(fmt, name_cst);
+    }
+    fmt.write(')');
 }
 
 //==================== TYPE ====================

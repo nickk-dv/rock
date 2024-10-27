@@ -137,6 +137,9 @@ fn proc_item(p: &mut Parser, m: Marker) {
     } else {
         p.error_recover("expected parameter list", RECOVER_PARAM_LIST);
     }
+    if p.at(T!['(']) {
+        generic_params(p);
+    }
     p.expect(T![->]);
     ty(p);
     if p.at(T!['{']) {
@@ -179,6 +182,9 @@ fn param(p: &mut Parser) {
 fn enum_item(p: &mut Parser, m: Marker) {
     p.bump(T![enum]);
     name(p);
+    if p.at(T!['(']) {
+        generic_params(p);
+    }
     if p.at(T!['{']) {
         variant_list(p);
     } else {
@@ -248,6 +254,9 @@ fn variant_field_list(p: &mut Parser) {
 fn struct_item(p: &mut Parser, m: Marker) {
     p.bump(T![struct]);
     name(p);
+    if p.at(T!['(']) {
+        generic_params(p);
+    }
     if p.at(T!['{']) {
         field_list(p);
     } else {
@@ -386,6 +395,26 @@ fn import_symbol_rename(p: &mut Parser) {
         name(p);
     }
     m.complete(p, SyntaxKind::IMPORT_SYMBOL_RENAME);
+}
+
+//==================== GENERIC ====================
+
+fn generic_params(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            name(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected generic parameter name", TokenSet::empty());
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::GENERIC_PARAMS);
 }
 
 //==================== TYPE ====================

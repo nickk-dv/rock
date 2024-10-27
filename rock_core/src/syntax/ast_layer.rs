@@ -405,11 +405,7 @@ ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
-ast_node_impl!(Name, SyntaxKind::NAME);
-ast_node_impl!(Path, SyntaxKind::PATH);
-ast_node_impl!(Bind, SyntaxKind::BIND);
-ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
-ast_node_impl!(ArgsList, SyntaxKind::ARGS_LIST);
+ast_node_impl!(GenericParams, SyntaxKind::GENERIC_PARAMS);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
@@ -477,6 +473,12 @@ ast_node_impl!(RangeToInclusive, SyntaxKind::RANGE_TO_INCLUSIVE);
 ast_node_impl!(RangeFrom, SyntaxKind::RANGE_FROM);
 ast_node_impl!(RangeExclusive, SyntaxKind::RANGE_EXCLUSIVE);
 ast_node_impl!(RangeInclusive, SyntaxKind::RANGE_INCLUSIVE);
+
+ast_node_impl!(Name, SyntaxKind::NAME);
+ast_node_impl!(Path, SyntaxKind::PATH);
+ast_node_impl!(Bind, SyntaxKind::BIND);
+ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
+ast_node_impl!(ArgsList, SyntaxKind::ARGS_LIST);
 
 #[derive(Copy, Clone)]
 pub enum Item<'syn> {
@@ -818,6 +820,7 @@ impl<'syn> ProcItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
+    node_find!(generic_params, GenericParams);
     node_find!(param_list, ParamList);
     node_find!(return_ty, Type);
     node_find!(block, Block);
@@ -838,6 +841,7 @@ impl<'syn> EnumItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
+    node_find!(generic_params, GenericParams);
     node_find!(variant_list, VariantList);
 }
 
@@ -860,6 +864,7 @@ impl<'syn> StructItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
+    node_find!(generic_params, GenericParams);
     node_find!(field_list, FieldList);
 }
 
@@ -916,6 +921,12 @@ impl<'syn> ImportSymbol<'syn> {
 impl<'syn> ImportSymbolRename<'syn> {
     node_find!(alias, Name);
     token_find!(t_discard, T![_]);
+}
+
+//==================== GENERIC ====================
+
+impl<'syn> GenericParams<'syn> {
+    node_iter!(names, Name);
 }
 
 //==================== TYPE ====================

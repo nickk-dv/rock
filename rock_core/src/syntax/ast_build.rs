@@ -250,6 +250,7 @@ fn proc_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
+    let generic = generic_params(ctx, item.generic_params(ctx.tree));
 
     let offset = ctx.s.params.start();
     let param_list = item.param_list(ctx.tree).unwrap();
@@ -266,6 +267,7 @@ fn proc_item<'ast>(
         attrs,
         vis,
         name,
+        generic,
         params,
         is_variadic,
         return_ty,
@@ -283,6 +285,28 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
     ctx.s.params.add(param);
 }
 
+fn generic_params<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    generic_params: Option<cst::GenericParams>,
+) -> Option<&'ast ast::GenericParams<'ast>> {
+    if let Some(generic_params) = generic_params {
+        let range = generic_params.find_range(ctx.tree);
+
+        let offset = ctx.s.names.start();
+        for name_cst in generic_params.names(ctx.tree) {
+            let name = name(ctx, name_cst);
+            ctx.s.names.add(name);
+        }
+        let names = ctx.s.names.take(offset, &mut ctx.arena);
+
+        let params = ast::GenericParams { names, range };
+        let params = ctx.arena.alloc(params);
+        Some(params)
+    } else {
+        None
+    }
+}
+
 fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::EnumItem,
@@ -290,6 +314,7 @@ fn enum_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
+    let generic = generic_params(ctx, item.generic_params(ctx.tree));
 
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();
@@ -302,6 +327,7 @@ fn enum_item<'ast>(
         attrs,
         vis,
         name,
+        generic,
         variants,
     };
     ctx.arena.alloc(enum_item)
@@ -337,6 +363,7 @@ fn struct_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
+    let generic = generic_params(ctx, item.generic_params(ctx.tree));
 
     let offset = ctx.s.fields.start();
     let field_list = item.field_list(ctx.tree).unwrap();
@@ -349,6 +376,7 @@ fn struct_item<'ast>(
         attrs,
         vis,
         name,
+        generic,
         fields,
     };
     ctx.arena.alloc(struct_item)

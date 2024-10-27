@@ -39,6 +39,7 @@ pub struct ProcItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
+    pub generic: Option<&'ast GenericParams<'ast>>,
     pub params: &'ast [Param<'ast>],
     pub is_variadic: bool,
     pub return_ty: Type<'ast>,
@@ -57,6 +58,7 @@ pub struct EnumItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
+    pub generic: Option<&'ast GenericParams<'ast>>,
     pub variants: &'ast [Variant<'ast>],
 }
 
@@ -79,6 +81,7 @@ pub struct StructItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
+    pub generic: Option<&'ast GenericParams<'ast>>,
     pub fields: &'ast [Field<'ast>],
 }
 
@@ -129,6 +132,14 @@ pub enum SymbolRename {
     None,
     Alias(Name),
     Discard(TextRange),
+}
+
+//==================== GENERIC ====================
+
+#[derive(Copy, Clone)]
+pub struct GenericParams<'ast> {
+    pub names: &'ast [Name],
+    pub range: TextRange,
 }
 
 //==================== TYPE ====================
@@ -473,9 +484,9 @@ crate::size_lock!(16, Item);
 crate::size_lock!(48, Attr);
 crate::size_lock!(28, AttrParam);
 
-crate::size_lock!(96, ProcItem);
-crate::size_lock!(48, EnumItem);
-crate::size_lock!(48, StructItem);
+crate::size_lock!(104, ProcItem);
+crate::size_lock!(56, EnumItem);
+crate::size_lock!(56, StructItem);
 crate::size_lock!(64, ConstItem);
 crate::size_lock!(64, GlobalItem);
 crate::size_lock!(80, ImportItem);

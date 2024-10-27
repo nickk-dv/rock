@@ -29,6 +29,8 @@ pub enum SyntaxKind {
     IMPORT_SYMBOL,
     IMPORT_SYMBOL_RENAME,
 
+    GENERIC_PARAMS,
+
     TYPE_BASIC,
     TYPE_CUSTOM,
     TYPE_REFERENCE,
