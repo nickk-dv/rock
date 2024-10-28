@@ -142,6 +142,12 @@ pub struct GenericParams<'ast> {
     pub range: TextRange,
 }
 
+#[derive(Copy, Clone)]
+pub struct GenericTypes<'ast> {
+    pub types: &'ast [Type<'ast>],
+    pub range: TextRange,
+}
+
 //==================== TYPE ====================
 
 #[derive(Copy, Clone)]
@@ -154,10 +160,17 @@ pub struct Type<'ast> {
 pub enum TypeKind<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
+    Generic(&'ast GenericType<'ast>),
     Reference(Mut, &'ast Type<'ast>),
     Procedure(&'ast ProcType<'ast>),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),
+}
+
+#[derive(Copy, Clone)]
+pub struct GenericType<'ast> {
+    pub path: &'ast Path<'ast>,
+    pub generic: GenericTypes<'ast>,
 }
 
 #[derive(Copy, Clone)]

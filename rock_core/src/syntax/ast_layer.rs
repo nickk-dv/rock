@@ -406,9 +406,11 @@ ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
 ast_node_impl!(GenericParams, SyntaxKind::GENERIC_PARAMS);
+ast_node_impl!(GenericTypes, SyntaxKind::GENERIC_TYPES);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
+ast_node_impl!(TypeGeneric, SyntaxKind::TYPE_GENERIC);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
 ast_node_impl!(TypeProcedure, SyntaxKind::TYPE_PROCEDURE);
 ast_node_impl!(ParamTypeList, SyntaxKind::PARAM_TYPE_LIST);
@@ -518,6 +520,7 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
 pub enum Type<'syn> {
     Basic(TypeBasic<'syn>),
     Custom(TypeCustom<'syn>),
+    Generic(TypeGeneric<'syn>),
     Reference(TypeReference<'syn>),
     Procedure(TypeProcedure<'syn>),
     ArraySlice(TypeArraySlice<'syn>),
@@ -529,6 +532,7 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
+            SyntaxKind::TYPE_GENERIC => Some(Type::Generic(TypeGeneric(node))),
             SyntaxKind::TYPE_REFERENCE => Some(Type::Reference(TypeReference(node))),
             SyntaxKind::TYPE_PROCEDURE => Some(Type::Procedure(TypeProcedure(node))),
             SyntaxKind::TYPE_ARRAY_SLICE => Some(Type::ArraySlice(TypeArraySlice(node))),
@@ -540,6 +544,7 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match self {
             Type::Basic(ty) => ty.find_range(tree),
             Type::Custom(ty) => ty.find_range(tree),
+            Type::Generic(ty) => ty.find_range(tree),
             Type::Reference(ty) => ty.find_range(tree),
             Type::Procedure(ty) => ty.find_range(tree),
             Type::ArraySlice(ty) => ty.find_range(tree),
@@ -929,6 +934,10 @@ impl<'syn> GenericParams<'syn> {
     node_iter!(names, Name);
 }
 
+impl<'syn> GenericTypes<'syn> {
+    node_iter!(types, Type);
+}
+
 //==================== TYPE ====================
 
 impl<'syn> TypeBasic<'syn> {
@@ -937,6 +946,11 @@ impl<'syn> TypeBasic<'syn> {
 
 impl<'syn> TypeCustom<'syn> {
     node_find!(path, Path);
+}
+
+impl<'syn> TypeGeneric<'syn> {
+    node_find!(path, Path);
+    node_find!(generic, GenericTypes);
 }
 
 impl<'syn> TypeReference<'syn> {

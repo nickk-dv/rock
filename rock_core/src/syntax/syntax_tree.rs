@@ -341,7 +341,7 @@ fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
                 let whitespace = &b.source[range.as_usize()];
                 let new_lines = whitespace.chars().filter(|&c| c == '\n').count();
 
-                if new_lines > 2 && mod_trivia_found {
+                if new_lines >= 2 && mod_trivia_found {
                     break;
                 } else {
                     total_count += 1;

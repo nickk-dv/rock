@@ -745,9 +745,11 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Property),
 
                     SyntaxKind::GENERIC_PARAMS => Some(SemanticToken::Type),
+                    SyntaxKind::GENERIC_TYPES => None,
 
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
+                    SyntaxKind::TYPE_GENERIC => None,
                     SyntaxKind::TYPE_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
                     SyntaxKind::PARAM_TYPE_LIST => None,

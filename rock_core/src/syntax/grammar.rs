@@ -237,13 +237,13 @@ fn variant_field_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at_set(FIRST_TYPE_SET) {
+        if p.at_set(FIRST_TYPE) {
             ty(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected type", RECOVER_VARIANT_FIELD_LIST);
+            p.error_recover("expected field type", RECOVER_VARIANT_FIELD_LIST);
             break;
         }
     }
@@ -417,9 +417,27 @@ fn generic_params(p: &mut Parser) {
     m.complete(p, SyntaxKind::GENERIC_PARAMS);
 }
 
+fn generic_types(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at_set(FIRST_TYPE) {
+            ty(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected generic type", TokenSet::empty());
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::GENERIC_TYPES);
+}
+
 //==================== TYPE ====================
 
-const FIRST_TYPE_SET: TokenSet = TokenSet::new(&[
+const FIRST_TYPE: TokenSet = TokenSet::new(&[
     T![s8],
     T![s16],
     T![s32],
@@ -455,7 +473,12 @@ fn ty(p: &mut Parser) {
         T![ident] => {
             let m = p.start();
             path(p);
-            m.complete(p, SyntaxKind::TYPE_CUSTOM);
+            if p.at(T!['(']) {
+                generic_types(p);
+                m.complete(p, SyntaxKind::TYPE_GENERIC);
+            } else {
+                m.complete(p, SyntaxKind::TYPE_CUSTOM);
+            }
         }
         T![&] => {
             let m = p.start();
@@ -489,7 +512,7 @@ fn param_type_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at_set(FIRST_TYPE_SET) {
+        if p.at_set(FIRST_TYPE) {
             ty(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);

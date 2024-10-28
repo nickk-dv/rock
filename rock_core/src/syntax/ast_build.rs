@@ -285,28 +285,6 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
     ctx.s.params.add(param);
 }
 
-fn generic_params<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    generic_params: Option<cst::GenericParams>,
-) -> Option<&'ast ast::GenericParams<'ast>> {
-    if let Some(generic_params) = generic_params {
-        let range = generic_params.find_range(ctx.tree);
-
-        let offset = ctx.s.names.start();
-        for name_cst in generic_params.names(ctx.tree) {
-            let name = name(ctx, name_cst);
-            ctx.s.names.add(name);
-        }
-        let names = ctx.s.names.take(offset, &mut ctx.arena);
-
-        let params = ast::GenericParams { names, range };
-        let params = ctx.arena.alloc(params);
-        Some(params)
-    } else {
-        None
-    }
-}
-
 fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::EnumItem,
@@ -562,6 +540,44 @@ fn args_list<'ast>(
     ctx.arena.alloc(args_list)
 }
 
+fn generic_params<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    generic_params: Option<cst::GenericParams>,
+) -> Option<&'ast ast::GenericParams<'ast>> {
+    if let Some(generic_params) = generic_params {
+        let range = generic_params.find_range(ctx.tree);
+
+        let offset = ctx.s.names.start();
+        for name_cst in generic_params.names(ctx.tree) {
+            let name = name(ctx, name_cst);
+            ctx.s.names.add(name);
+        }
+        let names = ctx.s.names.take(offset, &mut ctx.arena);
+
+        let params = ast::GenericParams { names, range };
+        let params = ctx.arena.alloc(params);
+        Some(params)
+    } else {
+        None
+    }
+}
+
+fn generic_types<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    generic_types: cst::GenericTypes,
+) -> ast::GenericTypes<'ast> {
+    let range = generic_types.find_range(ctx.tree);
+
+    let offset = ctx.s.types.start();
+    for ty_cst in generic_types.types(ctx.tree) {
+        let ty = ty(ctx, ty_cst);
+        ctx.s.types.add(ty);
+    }
+    let types = ctx.s.types.take(offset, &mut ctx.arena);
+
+    ast::GenericTypes { types, range }
+}
+
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
     let range = ty_cst.find_range(ctx.tree);
 
@@ -573,6 +589,14 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
         cst::Type::Custom(ty_cst) => {
             let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
             ast::TypeKind::Custom(path)
+        }
+        cst::Type::Generic(ty_cst) => {
+            let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
+            let generic = generic_types(ctx, ty_cst.generic(ctx.tree).unwrap());
+
+            let generic = ast::GenericType { path, generic };
+            let generic = ctx.arena.alloc(generic);
+            ast::TypeKind::Generic(generic)
         }
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.t_mut(ctx.tree));

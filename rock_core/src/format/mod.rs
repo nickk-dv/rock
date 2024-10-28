@@ -889,6 +889,20 @@ fn generic_params(fmt: &mut Formatter, generic_params: cst::GenericParams) {
     fmt.write(')');
 }
 
+fn generic_types<'syn>(fmt: &mut Formatter<'syn, '_>, generic_types: cst::GenericTypes<'syn>) {
+    fmt.write('(');
+    let mut first = true;
+    for ty_cst in generic_types.types(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        ty(fmt, ty_cst);
+    }
+    fmt.write(')');
+}
+
 //==================== TYPE ====================
 
 fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
@@ -898,6 +912,10 @@ fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
             fmt.write_str(basic.as_str());
         }
         cst::Type::Custom(ty_cst) => path(fmt, ty_cst.path(fmt.tree).unwrap()),
+        cst::Type::Generic(ty_cst) => {
+            path(fmt, ty_cst.path(fmt.tree).unwrap());
+            generic_types(fmt, ty_cst.generic(fmt.tree).unwrap());
+        }
         cst::Type::Reference(ty_cst) => ty_ref(fmt, ty_cst),
         cst::Type::Procedure(ty_cst) => ty_proc(fmt, ty_cst),
         cst::Type::ArraySlice(slice) => ty_slice(fmt, slice),

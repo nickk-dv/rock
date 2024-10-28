@@ -35,6 +35,15 @@ pub fn type_resolve<'hir>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, origin_id, path),
+        ast::TypeKind::Generic(generic) => {
+            let src = SourceRange::new(origin_id, ast_ty.range);
+            ctx.emit.error(Error::new(
+                "internal: generic parameterized types are not implemented",
+                src,
+                None,
+            ));
+            hir::Type::Error
+        }
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, origin_id, *ref_ty);
             hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
@@ -98,6 +107,15 @@ pub fn type_resolve_delayed<'hir, 'ast>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, origin_id, path),
+        ast::TypeKind::Generic(generic) => {
+            let src = SourceRange::new(origin_id, ast_ty.range);
+            ctx.emit.error(Error::new(
+                "internal: generic parameterized types are not implemented",
+                src,
+                None,
+            ));
+            hir::Type::Error
+        }
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve_delayed(ctx, origin_id, *ref_ty);
             hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
