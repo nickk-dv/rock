@@ -115,6 +115,14 @@ pub fn check_attrs_proc<'ast>(
         );
     }
 
+    if item.block.is_some() && attr_set.contains(ProcFlag::Builtin) {
+        ctx.emit.error(Error::new(
+            "`builtin` procedures cannot have a body",
+            SourceRange::new(origin_id, item.name.range),
+            None,
+        ));
+    }
+
     AttrFeedbackProc {
         cfg_state,
         attr_set,

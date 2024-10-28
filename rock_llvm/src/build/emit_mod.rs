@@ -154,7 +154,9 @@ fn codegen_function_values(cg: &mut Codegen) {
             param_types.push(cg.ty(param.ty));
         }
 
-        let is_external = data.attr_set.contains(hir::ProcFlag::External);
+        //builtin takes precedence over external flag
+        let is_external = data.attr_set.contains(hir::ProcFlag::External)
+            && !data.attr_set.contains(hir::ProcFlag::Builtin);
         let is_variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
         let is_main = data.attr_set.contains(hir::ProcFlag::Main);
 
@@ -189,7 +191,12 @@ fn codegen_function_bodies(cg: &Codegen) {
     for (idx, data) in cg.hir.procs.iter().enumerate() {
         let block = match data.block {
             Some(block) => block,
-            None => continue,
+            None => {
+                if data.attr_set.contains(hir::ProcFlag::Builtin) {
+                    unimplemented!("internal: builtin procedure codegen not implemented");
+                }
+                continue;
+            }
         };
 
         let fn_val = cg.procs[idx].0;

@@ -622,7 +622,7 @@ impl ItemFlag for ProcFlag {
             ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
             ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
             ProcFlag::Main => false,
-            ProcFlag::Builtin => matches!(other, ProcFlag::Inline),
+            ProcFlag::Builtin => matches!(other, ProcFlag::External | ProcFlag::Inline),
             ProcFlag::Inline => !matches!(other, ProcFlag::Main),
         }
     }
