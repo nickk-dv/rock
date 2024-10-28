@@ -270,7 +270,11 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
-        ast::ExprKind::Slice { .. } => unimplemented!("typecheck expr slice"),
+        ast::ExprKind::Slice {
+            target,
+            mutt,
+            range,
+        } => typecheck_slice(ctx, target, mutt, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
@@ -1062,6 +1066,22 @@ fn typecheck_index<'hir>(
             TypeResult::error()
         }
     }
+}
+
+fn typecheck_slice<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    target: &ast::Expr,
+    mutt: ast::Mut,
+    range: &ast::Expr,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
+    let src = SourceRange::new(ctx.proc.origin(), expr_range);
+    ctx.emit.error(Error::new(
+        "internal: slice expression not implemented",
+        src,
+        None,
+    ));
+    TypeResult::error()
 }
 
 fn typecheck_call<'hir>(

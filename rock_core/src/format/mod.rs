@@ -975,7 +975,6 @@ fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn
 
 fn ty_slice<'syn>(fmt: &mut Formatter<'syn, '_>, slice: cst::TypeArraySlice<'syn>) {
     fmt.write('[');
-    fmt.write('&');
     if slice.t_mut(fmt.tree).is_some() {
         fmt.write_str("mut");
     }
@@ -1267,7 +1266,7 @@ fn expr_index<'syn>(fmt: &mut Formatter<'syn, '_>, index: cst::ExprIndex<'syn>) 
 fn expr_slice<'syn>(fmt: &mut Formatter<'syn, '_>, slice: cst::ExprSlice<'syn>) {
     expr(fmt, slice.target(fmt.tree).unwrap());
     fmt.write('[');
-    fmt.write('&');
+    fmt.write(':');
     if slice.t_mut(fmt.tree).is_some() {
         fmt.write_str("mut");
         fmt.space();

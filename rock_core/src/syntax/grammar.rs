@@ -532,7 +532,7 @@ fn type_slice_or_array(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['[']);
 
-    if p.eat(T![&]) {
+    if p.at(T![']']) || p.at(T![mut]) {
         p.eat(T![mut]);
         p.expect(T![']']);
         ty(p);
@@ -805,7 +805,7 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
                 let m = p.start_before(mc);
                 p.bump(T!['[']);
 
-                if p.eat(T![&]) {
+                if p.eat(T![:]) {
                     p.eat(T![mut]);
                     expr(p);
                     p.expect(T![']']);
