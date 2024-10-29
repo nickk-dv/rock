@@ -599,7 +599,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
 impl hir::ArrayStaticLen {
     pub fn get_resolved(self, ctx: &HirCtx) -> Result<u64, ()> {
         match self {
-            hir::ArrayStaticLen::Immediate(len) => len.ok_or(()),
+            hir::ArrayStaticLen::Immediate(len) => Ok(len),
             hir::ArrayStaticLen::ConstEval(eval_id) => {
                 let (eval, _) = *ctx.registry.const_eval(eval_id);
                 let value_id = eval.get_resolved()?;

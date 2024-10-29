@@ -144,6 +144,12 @@ pub enum Expectation<'hir> {
     HasType(hir::Type<'hir>, Option<SourceRange>),
 }
 
+impl<'hir> Expectation<'hir> {
+    fn is_none(&self) -> bool {
+        matches!(self, Expectation::None)
+    }
+}
+
 pub fn type_expectation_check(
     ctx: &mut HirCtx,
     origin_id: ModuleID,
@@ -921,13 +927,10 @@ fn check_field_from_array<'hir>(
     match field_name {
         "len" => {
             let len = match array.len {
-                hir::ArrayStaticLen::Immediate(len) => match len {
-                    Some(value) => hir::ConstValue::Int {
-                        val: value,
-                        neg: false,
-                        int_ty: hir::BasicInt::Usize,
-                    },
-                    None => return None, //@field result doesnt communicate usize type if this is None
+                hir::ArrayStaticLen::Immediate(len) => hir::ConstValue::Int {
+                    val: len,
+                    neg: false,
+                    int_ty: hir::BasicInt::Usize,
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
@@ -1530,71 +1533,71 @@ fn typecheck_struct_init<'hir>(
 
 fn typecheck_array_init<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    mut expect: Expectation<'hir>,
-    input: &[&ast::Expr<'_>],
-    array_range: TextRange,
+    expect: Expectation<'hir>,
+    input: &[&ast::Expr],
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let mut expect_array_ty = None;
-
-    expect = match expect {
+    let mut expect = match expect {
         Expectation::None => Expectation::None,
         Expectation::HasType(expect_ty, expect_src) => match expect_ty {
-            hir::Type::ArrayStatic(array) => {
-                expect_array_ty = Some(array);
-                Expectation::HasType(array.elem_ty, expect_src)
-            }
+            hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, expect_src),
             _ => Expectation::None,
         },
     };
 
-    //@fix elem_ty inference same as `if`, `match`
-    let mut elem_ty = hir::Type::Error;
+    let mut elem_ty = None;
+    let mut did_error = false;
+    let error_count = ctx.emit.error_count();
 
-    let input = {
-        let mut input_res = Vec::with_capacity(input.len());
-        for &expr in input.iter() {
-            let expr_res = typecheck_expr(ctx, expect, expr);
-            input_res.push(expr_res.expr);
+    let mut input_res = Vec::with_capacity(input.len());
+    for expr in input.iter().copied() {
+        let expr_res = typecheck_expr(ctx, expect, expr);
+        input_res.push(expr_res.expr);
+        did_error = ctx.emit.did_error(error_count);
 
-            //@temp old version
-            if elem_ty.is_error() {
-                elem_ty = expr_res.ty;
-            }
-            //@restore expect update
-            /*
-            if expect.ty.is_error() {
-                expect = TypeExpectation::new(
-                    expr_res.ty,
-                    Some(SourceRange::new(ctx.proc.origin(), expr.range)),
-                )
-            }
-            */
+        // stop expecting when errored
+        if did_error {
+            expect = Expectation::None;
         }
-        ctx.arena.alloc_slice(&input_res)
-    };
+        // elem_ty is first non-error type
+        if elem_ty.is_none() && !expr_res.ty.is_error() {
+            elem_ty = Some(expr_res.ty);
 
-    let elem_ty = if input.is_empty() {
-        if let Some(array_ty) = expect_array_ty {
-            array_ty.elem_ty
-        } else {
-            ctx.emit.error(Error::new(
-                "cannot infer type of empty array",
-                SourceRange::new(ctx.proc.origin(), array_range),
-                None,
-            ));
-            hir::Type::Error
+            // update expect with first non-error type
+            if expect.is_none() && !did_error {
+                let expect_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                expect = Expectation::HasType(expr_res.ty, Some(expect_src));
+            }
         }
+    }
+    let input = ctx.arena.alloc_slice(&input_res);
+
+    if elem_ty.is_none() {
+        match expect {
+            Expectation::None => {}
+            Expectation::HasType(expect_ty, _) => {
+                elem_ty = Some(expect_ty);
+            }
+        }
+    }
+
+    //@should return error? or result with type and Expr::Error?
+    if did_error {
+        TypeResult::error()
+    } else if let Some(elem_ty) = elem_ty {
+        let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
+        let array_ty = hir::ArrayStatic { len, elem_ty };
+        let array_ty = ctx.arena.alloc(array_ty);
+
+        let array_init = hir::ArrayInit { elem_ty, input };
+        let array_init = ctx.arena.alloc(array_init);
+        let kind = hir::ExprKind::ArrayInit { array_init };
+        TypeResult::new(hir::Type::ArrayStatic(array_ty), kind)
     } else {
-        elem_ty
-    };
-
-    let array_type: &hir::ArrayStatic = ctx.arena.alloc(hir::ArrayStatic {
-        len: hir::ArrayStaticLen::Immediate(Some(input.len() as u64)),
-        elem_ty,
-    });
-    let array_init = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
-    let kind = hir::ExprKind::ArrayInit { array_init };
-    TypeResult::new(hir::Type::ArrayStatic(array_type), kind)
+        let src = SourceRange::new(ctx.proc.origin(), expr_range);
+        err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
+        TypeResult::error()
+    }
 }
 
 fn typecheck_array_repeat<'hir>(
@@ -1627,7 +1630,7 @@ fn typecheck_array_repeat<'hir>(
 
     if let Some(len) = len {
         let array_type = ctx.arena.alloc(hir::ArrayStatic {
-            len: hir::ArrayStaticLen::Immediate(Some(len)), //@move to always specified size? else error 09.06.24
+            len: hir::ArrayStaticLen::Immediate(len),
             elem_ty: expr_res.ty,
         });
         let array_repeat = ctx.arena.alloc(hir::ArrayRepeat {

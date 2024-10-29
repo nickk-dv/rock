@@ -164,7 +164,7 @@ pub struct ArrayStatic<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum ArrayStaticLen {
-    Immediate(Option<u64>),
+    Immediate(u64),
     ConstEval(ConstEvalID),
 }
 

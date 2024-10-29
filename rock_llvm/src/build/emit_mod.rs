@@ -52,7 +52,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
             let layout = enum_data.layout.get_resolved().expect("resolved");
             //@bad api, forced to create hir::ArrayStatic
             let array_ty = hir::ArrayStatic {
-                len: hir::ArrayStaticLen::Immediate(Some(layout.size())),
+                len: hir::ArrayStaticLen::Immediate(layout.size()),
                 elem_ty: hir::Type::Basic(ast::BasicType::U8),
             };
             let array_ty = cg.array_type(&array_ty);

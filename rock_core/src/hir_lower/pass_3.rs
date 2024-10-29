@@ -46,7 +46,12 @@ pub fn type_resolve<'hir>(
         }
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, origin_id, *ref_ty);
-            hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+
+            if ref_ty.is_error() {
+                hir::Type::Error
+            } else {
+                hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+            }
         }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
@@ -69,31 +74,36 @@ pub fn type_resolve<'hir>(
         ast::TypeKind::ArraySlice(slice) => {
             let elem_ty = type_resolve(ctx, origin_id, slice.elem_ty);
 
-            let slice = hir::ArraySlice {
-                mutt: slice.mutt,
-                elem_ty,
-            };
-            hir::Type::ArraySlice(ctx.arena.alloc(slice))
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else {
+                let slice = hir::ArraySlice {
+                    mutt: slice.mutt,
+                    elem_ty,
+                };
+                hir::Type::ArraySlice(ctx.arena.alloc(slice))
+            }
         }
         ast::TypeKind::ArrayStatic(array) => {
             let expect = Expectation::HasType(hir::Type::USIZE, None);
             let len_res = constant::resolve_const_expr(ctx, origin_id, expect, array.len);
             let elem_ty = type_resolve(ctx, origin_id, array.elem_ty);
 
-            let len = if let Ok(value) = len_res {
-                match value {
-                    hir::ConstValue::Int { val, .. } => Some(val),
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else if let Ok(value) = len_res {
+                let len = match value {
+                    hir::ConstValue::Int { val, .. } => val,
                     _ => unreachable!(),
-                }
+                };
+                let array = hir::ArrayStatic {
+                    len: hir::ArrayStaticLen::Immediate(len),
+                    elem_ty,
+                };
+                hir::Type::ArrayStatic(ctx.arena.alloc(array))
             } else {
-                None
-            };
-
-            let array = hir::ArrayStatic {
-                len: hir::ArrayStaticLen::Immediate(len),
-                elem_ty,
-            };
-            hir::Type::ArrayStatic(ctx.arena.alloc(array))
+                hir::Type::Error
+            }
         }
     }
 }
@@ -118,7 +128,12 @@ pub fn type_resolve_delayed<'hir, 'ast>(
         }
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve_delayed(ctx, origin_id, *ref_ty);
-            hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+
+            if ref_ty.is_error() {
+                hir::Type::Error
+            } else {
+                hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+            }
         }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
@@ -141,21 +156,29 @@ pub fn type_resolve_delayed<'hir, 'ast>(
         ast::TypeKind::ArraySlice(slice) => {
             let elem_ty = type_resolve_delayed(ctx, origin_id, slice.elem_ty);
 
-            let slice = hir::ArraySlice {
-                mutt: slice.mutt,
-                elem_ty,
-            };
-            hir::Type::ArraySlice(ctx.arena.alloc(slice))
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else {
+                let slice = hir::ArraySlice {
+                    mutt: slice.mutt,
+                    elem_ty,
+                };
+                hir::Type::ArraySlice(ctx.arena.alloc(slice))
+            }
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let len = ctx.registry.add_const_eval(array.len, origin_id);
             let elem_ty = type_resolve_delayed(ctx, origin_id, array.elem_ty);
 
-            let array = hir::ArrayStatic {
-                len: hir::ArrayStaticLen::ConstEval(len),
-                elem_ty,
-            };
-            hir::Type::ArrayStatic(ctx.arena.alloc(array))
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else {
+                let len = ctx.registry.add_const_eval(array.len, origin_id);
+                let array = hir::ArrayStatic {
+                    len: hir::ArrayStaticLen::ConstEval(len),
+                    elem_ty,
+                };
+                hir::Type::ArrayStatic(ctx.arena.alloc(array))
+            }
         }
     }
 }
