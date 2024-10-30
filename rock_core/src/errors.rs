@@ -579,6 +579,8 @@ pub fn tycheck_type_mismatch(
     emit.error(Error::new(msg, src, info));
 }
 
+//==================== TYPECHECK UNUSED ====================
+
 pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, kind: &'static str) {
     let msg = format!("unused {kind}");
     emit.warning(Warning::new(msg, src, None));
@@ -591,8 +593,9 @@ pub fn tycheck_enum_variant_not_found(
     src: SourceRange,
     enum_src: SourceRange,
     name: &str,
+    enum_name: &str,
 ) {
-    let msg = format!("enum variant `{name}` is not found");
+    let msg = format!("variant `{name}` not found in `{enum_name}`");
     let info = Info::new("enum defined here", enum_src);
     emit.error(Error::new(msg, src, info));
 }
@@ -602,8 +605,9 @@ pub fn tycheck_struct_field_not_found(
     src: SourceRange,
     struct_src: SourceRange,
     name: &str,
+    struct_name: &str,
 ) {
-    let msg = format!("struct field `{name}` is not found");
+    let msg = format!("field `{name}` not found in `{struct_name}`");
     let info = Info::new("struct defined here", struct_src);
     emit.error(Error::new(msg, src, info));
 }
@@ -645,10 +649,22 @@ pub fn tycheck_unexpected_proc_arg_count(
     expected_count: usize,
 ) {
     let at_least = if is_variadic { " at least" } else { "" };
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    let msg =
-        format!("expected{at_least} {expected_count} argument{plural_end}, found {input_count}");
+    let plural = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected{at_least} {expected_count} argument{plural}, found {input_count}");
     let info = proc_src.map(|src| Info::new_val("procedure defined here", src));
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_unexpected_variant_arg_count(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+    input_count: usize,
+    expected_count: usize,
+) {
+    let plural = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected {expected_count} argument{plural}, found {input_count}");
+    let info = Info::new("variant defined here", variant_src);
     emit.error(Error::new(msg, src, info));
 }
 
@@ -662,19 +678,6 @@ pub fn tycheck_unexpected_variant_arg_list(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_unexpected_variant_arg_count(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    variant_src: SourceRange,
-    input_count: usize,
-    expected_count: usize,
-) {
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    let msg = format!("expected {expected_count} argument{plural_end}, found {input_count}");
-    let info = Info::new("variant defined here", variant_src);
-    emit.error(Error::new(msg, src, info));
-}
-
 pub fn tycheck_unexpected_variant_bind_count(
     emit: &mut impl ErrorSink,
     src: SourceRange,
@@ -682,11 +685,23 @@ pub fn tycheck_unexpected_variant_bind_count(
     input_count: usize,
     expected_count: usize,
 ) {
-    let plural_end = if expected_count == 1 { "" } else { "s" };
-    let msg = format!("expected {expected_count} binding{plural_end}, found {input_count}");
+    let plural = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected {expected_count} binding{plural}, found {input_count}");
     let info = Info::new("variant defined here", variant_src);
     emit.error(Error::new(msg, src, info));
 }
+
+pub fn tycheck_unexpected_variant_bind_list(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+) {
+    let msg = "variant has no fields, remove the binding list";
+    let info = Info::new("variant defined here", variant_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+//==================== TYPECHECK ADDRESS ====================
 
 pub fn tycheck_cannot_ref_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot get reference to a slice field";
@@ -792,6 +807,8 @@ pub fn tycheck_cannot_assign_val_behind_slice(
     let info = Info::new("immutable slice accessed here", slice_src);
     emit.error(Error::new(msg, src, info));
 }
+
+//==================== TYPECHECK OTHER ====================
 
 pub fn tycheck_cannot_apply_un_op(
     emit: &mut impl ErrorSink,

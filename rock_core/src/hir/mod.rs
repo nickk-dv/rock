@@ -840,16 +840,20 @@ impl Layout {
 }
 
 impl<'hir> Type<'hir> {
-    pub const VOID: Type<'static> = Type::Basic(ast::BasicType::Void);
-    pub const BOOL: Type<'static> = Type::Basic(ast::BasicType::Bool);
     pub const USIZE: Type<'static> = Type::Basic(ast::BasicType::Usize);
+    pub const BOOL: Type<'static> = Type::Basic(ast::BasicType::Bool);
+    pub const VOID: Type<'static> = Type::Basic(ast::BasicType::Void);
+    pub const NEVER: Type<'static> = Type::Basic(ast::BasicType::Never);
 
+    #[inline]
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)
     }
+    #[inline]
     pub fn is_void(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Void))
     }
+    #[inline]
     pub fn is_never(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Never))
     }

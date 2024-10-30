@@ -1,8 +1,8 @@
 use super::fold;
 use super::layout;
 use crate::ast;
-use crate::error::ErrorWarningBuffer;
-use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr};
+use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr};
+use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
@@ -815,10 +815,8 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                 }
             }
             None => {
-                pass_5::error_cannot_infer_struct_type(
-                    &mut ctx.emit,
-                    SourceRange::new(origin_id, expr.range),
-                );
+                let src = SourceRange::new(origin_id, expr.range);
+                err::tycheck_cannot_infer_struct_type(&mut ctx.emit, src);
                 Err(parent_id)
             }
         },
