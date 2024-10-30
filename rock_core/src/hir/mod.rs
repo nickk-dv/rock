@@ -242,7 +242,7 @@ pub enum ExprKind<'hir> {
     Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
-    Match        { kind: Option<MatchKind<'hir>>, match_: &'hir Match<'hir> },
+    Match        { kind: MatchKind<'hir>, match_: &'hir Match<'hir> },
     StructField  { target: &'hir Expr<'hir>, access: StructFieldAccess<'hir> },
     SliceField   { target: &'hir Expr<'hir>, access: SliceFieldAccess },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
@@ -267,8 +267,8 @@ pub enum ExprKind<'hir> {
 
 pub type ConstEvalID = ID<()>; // avoiding 'ast lifetime propagation
 pub type ConstEval<'hir, 'ast> = Eval<ast::ConstExpr<'ast>, ConstValueID<'hir>>;
-
 pub type ConstValueID<'hir> = ID<ConstValue<'hir>>;
+
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
 pub enum ConstValue<'hir> {
@@ -318,13 +318,17 @@ pub struct Branch<'hir> {
     pub block: Block<'hir>,
 }
 
+#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum MatchKind<'hir> {
-    Int(BasicInt),
+    Int { int_ty: BasicInt },
     Bool,
     Char,
     String,
-    Enum(EnumID<'hir>),
+    Enum {
+        enum_id: EnumID<'hir>,
+        ref_mut: Option<ast::Mut> 
+    },
 }
 
 #[derive(Copy, Clone)]

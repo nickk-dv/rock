@@ -98,7 +98,7 @@ fn codegen_expr<'c>(
             None
         }
         hir::ExprKind::Match { kind, match_ } => {
-            codegen_match(cg, proc_cg, expect, kind.unwrap(), match_);
+            codegen_match(cg, proc_cg, expect, kind, match_);
             None
         }
         hir::ExprKind::StructField { target, access } => {
@@ -333,11 +333,11 @@ fn codegen_match<'c>(
     match_: &hir::Match<'c>,
 ) {
     match kind {
-        hir::MatchKind::Int(_) => {}
+        hir::MatchKind::Int { .. } => {}
         hir::MatchKind::Bool => {}
         hir::MatchKind::Char => {}
         hir::MatchKind::String => unimplemented!("match on string"),
-        hir::MatchKind::Enum(_) => unimplemented!("match on enum"),
+        hir::MatchKind::Enum { .. } => unimplemented!("match on enum"),
     }
 
     let on_value = codegen_expr_value(cg, proc_cg, match_.on_expr);

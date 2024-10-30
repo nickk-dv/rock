@@ -481,9 +481,6 @@ fn typecheck_branch<'hir>(
     }
 }
 
-//@different enum variants 01.06.24
-// could have same value and result in
-// error in llvm ir generation, not checked currently
 fn typecheck_match<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     mut expect: Expectation<'hir>,
@@ -494,9 +491,27 @@ fn typecheck_match<'hir>(
     let error_count = ctx.emit.error_count();
 
     let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
-    let pat_expect_src = SourceRange::new(ctx.proc.origin(), match_.on_expr.range);
-    let pat_expect = Expectation::HasType(on_res.ty, Some(pat_expect_src));
-    check_match_compatibility(ctx, ctx.proc.origin(), on_res.ty, match_.on_expr.range);
+    let kind_res = super::match_check::match_kind(on_res.ty);
+
+    if let Err(true) = kind_res {
+        let src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+        let ty_fmt = type_format(ctx, on_res.ty);
+        let msg = format!("cannot match on value of type `{}`", ty_fmt.as_str());
+        ctx.emit.error(Error::new(msg, src, None));
+    }
+
+    let pat_expect = match kind_res {
+        Ok(hir::MatchKind::Enum { enum_id, .. }) => {
+            let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+            let enum_ty = hir::Type::Enum(enum_id);
+            Expectation::HasType(enum_ty, Some(expect_src))
+        }
+        Ok(_) => {
+            let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+            Expectation::HasType(on_res.ty, Some(expect_src))
+        }
+        Err(_) => Expectation::None,
+    };
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
@@ -504,37 +519,38 @@ fn typecheck_match<'hir>(
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
         type_unify_control_flow(&mut match_type, expr_res.ty);
 
-        if let Expectation::None = expect {
+        if expect.is_none() {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
                 let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
             }
         }
 
-        let tail_stmt = hir::Stmt::ExprTail(expr_res.expr);
-        let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
-        let block = hir::Block { stmts };
-
-        let arm = hir::MatchArm { pat, block };
-        arms.push(arm);
+        let block = match expr_res.expr.kind {
+            hir::ExprKind::Block { block } => block,
+            _ => {
+                let tail_stmt = hir::Stmt::ExprTail(expr_res.expr);
+                let stmts = ctx.arena.alloc_slice(&[tail_stmt]);
+                hir::Block { stmts }
+            }
+        };
+        arms.push(hir::MatchArm { pat, block });
     }
 
-    // no errors for entire match
-    // all constant values resolved
-    let kind = if !ctx.emit.did_error(error_count) && match_const_pats_resolved(ctx, &arms) {
-        let mut match_range = TextRange::empty_at(match_range.start());
-        match_range.extend_by(5.into());
-        let kind = super::match_check::match_cov(
-            ctx,
-            on_res.ty,
-            arms.as_mut_slice(),
-            match_.arms,
-            match_range,
-        );
-        Some(kind)
-    } else {
-        None
+    let kind = match kind_res {
+        Ok(kind) => kind,
+        Err(_) => return TypeResult::error(),
     };
+    if ctx.emit.did_error(error_count) {
+        return TypeResult::error();
+    }
+    if !match_const_pats_resolved(ctx, &arms) {
+        return TypeResult::error();
+    }
+
+    let mut match_kw = TextRange::empty_at(match_range.start());
+    match_kw.extend_by(5.into());
+    super::match_check::match_cov(ctx, kind, arms.as_mut_slice(), match_.arms, match_kw);
 
     let arms = ctx.arena.alloc_slice(&arms);
     let match_ = hir::Match {
@@ -2045,44 +2061,6 @@ fn typecheck_binary<'hir>(
     }
 }
 
-fn check_match_compatibility<'hir>(
-    ctx: &mut HirCtx,
-    origin_id: ModuleID,
-    ty: hir::Type,
-    range: TextRange,
-) {
-    let compatible = match ty {
-        hir::Type::Error => true,
-        hir::Type::Basic(basic) => matches!(
-            BasicTypeKind::new(basic),
-            BasicTypeKind::IntS | BasicTypeKind::IntU | BasicTypeKind::Bool | BasicTypeKind::Char
-        ),
-        hir::Type::Enum(_) => true,
-        hir::Type::ArraySlice(slice) => {
-            // allow []u8 assuming string literal (&u8 cstring literals not allowed)
-            // @add str basic type for semantic clarity?
-            // @same for cstr (which is &u8 currently)
-            if slice.elem_ty.is_error() {
-                true
-            } else {
-                matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8))
-            }
-        }
-        _ => false,
-    };
-
-    if !compatible {
-        ctx.emit.error(Error::new(
-            format!(
-                "cannot match on value of type `{}`",
-                type_format(ctx, ty).as_str()
-            ),
-            SourceRange::new(origin_id, range),
-            None,
-        ));
-    }
-}
-
 fn typecheck_block<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
@@ -2631,7 +2609,6 @@ fn check_unused_expr_semi(
 
 //==================== INFERENCE ====================
 
-//@check if reference expectations need to be accounted for
 fn infer_enum_type<'hir>(
     emit: &mut ErrorWarningBuffer,
     expect: Expectation<'hir>,
@@ -2642,6 +2619,10 @@ fn infer_enum_type<'hir>(
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
             hir::Type::Enum(enum_id) => Some(enum_id),
+            hir::Type::Reference(_, ref_ty) => match *ref_ty {
+                hir::Type::Enum(enum_id) => Some(enum_id),
+                _ => None,
+            },
             _ => None,
         },
     };
@@ -2651,7 +2632,6 @@ fn infer_enum_type<'hir>(
     enum_id
 }
 
-//@check if reference expectations need to be accounted for
 fn infer_struct_type<'hir>(
     emit: &mut ErrorWarningBuffer,
     expect: Expectation<'hir>,
