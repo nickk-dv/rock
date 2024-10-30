@@ -584,6 +584,32 @@ pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, kind: 
     emit.warning(Warning::new(msg, src, None));
 }
 
+//==================== TYPECHECK FIND ====================
+
+pub fn tycheck_enum_variant_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    enum_src: SourceRange,
+    name: &str,
+) {
+    let msg = format!("enum variant `{name}` is not found");
+    let info = Info::new("enum defined here", enum_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_struct_field_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    struct_src: SourceRange,
+    name: &str,
+) {
+    let msg = format!("struct field `{name}` is not found");
+    let info = Info::new("struct defined here", struct_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+//==================== TYPECHECK INFER ====================
+
 pub fn tycheck_cannot_infer_enum_type(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot infer enum type";
     emit.error(Error::new(msg, src, None));
@@ -598,6 +624,8 @@ pub fn tycheck_cannot_infer_empty_array(emit: &mut impl ErrorSink, src: SourceRa
     let msg = "cannot infer type of empty array";
     emit.error(Error::new(msg, src, None));
 }
+
+//==================== TYPECHECK CALL & INPUT ====================
 
 pub fn tycheck_cannot_call_value_of_type(
     emit: &mut impl ErrorSink,

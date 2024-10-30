@@ -101,8 +101,12 @@ impl<'hir> ProcScope<'hir> {
     }
 
     pub fn finish_locals(&self) -> &[hir::Local<'hir>] {
-        self.locals.as_slice()
+        &self.locals
     }
+    pub fn finish_local_binds(&self) -> &[hir::LocalBind<'hir>] {
+        &self.local_binds
+    }
+
     pub fn origin(&self) -> ModuleID {
         self.origin_id
     }

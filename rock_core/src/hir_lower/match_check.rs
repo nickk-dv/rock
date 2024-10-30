@@ -91,10 +91,10 @@ fn match_cov_int(
         let pat_ast = &arms_ast[arm_idx].pat;
 
         match arm.pat {
-            hir::Pat::Or(patterns) => {
-                for (pat_idx, pat) in patterns.iter().enumerate() {
+            hir::Pat::Or(pats) => {
+                for (pat_idx, pat) in pats.iter().enumerate() {
                     let range = match pat_ast.kind {
-                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        ast::PatKind::Or { pats } => pats[pat_idx].range,
                         _ => unreachable!(),
                     };
                     pat_cov_int(ctx, cov, *pat, range, int_ty)
@@ -173,10 +173,10 @@ fn match_cov_bool(
         let pat_ast = &arms_ast[arm_idx].pat;
 
         match arm.pat {
-            hir::Pat::Or(patterns) => {
-                for (pat_idx, pat) in patterns.iter().enumerate() {
+            hir::Pat::Or(pats) => {
+                for (pat_idx, pat) in pats.iter().enumerate() {
                     let range = match pat_ast.kind {
-                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        ast::PatKind::Or { pats } => pats[pat_idx].range,
                         _ => unreachable!(),
                     };
                     pat_cov_bool(ctx, cov, *pat, range)
@@ -244,10 +244,10 @@ fn match_cov_char(
         let pat_ast = &arms_ast[arm_idx].pat;
 
         match arm.pat {
-            hir::Pat::Or(patterns) => {
-                for (pat_idx, pat) in patterns.iter().enumerate() {
+            hir::Pat::Or(pats) => {
+                for (pat_idx, pat) in pats.iter().enumerate() {
                     let range = match pat_ast.kind {
-                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        ast::PatKind::Or { pats } => pats[pat_idx].range,
                         _ => unreachable!(),
                     };
                     pat_cov_char(ctx, cov, *pat, range)
@@ -309,10 +309,10 @@ fn match_cov_string(
         let pat_ast = &arms_ast[arm_idx].pat;
 
         match arm.pat {
-            hir::Pat::Or(patterns) => {
-                for (pat_idx, pat) in patterns.iter().enumerate() {
+            hir::Pat::Or(pats) => {
+                for (pat_idx, pat) in pats.iter().enumerate() {
                     let range = match pat_ast.kind {
-                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        ast::PatKind::Or { pats } => pats[pat_idx].range,
                         _ => unreachable!(),
                     };
                     pat_cov_string(ctx, cov, *pat, range)
@@ -378,10 +378,10 @@ fn match_cov_enum<'hir>(
         let pat_ast = &arms_ast[arm_idx].pat;
 
         match arm.pat {
-            hir::Pat::Or(patterns) => {
-                for (pat_idx, pat) in patterns.iter().enumerate() {
+            hir::Pat::Or(pats) => {
+                for (pat_idx, pat) in pats.iter().enumerate() {
                     let range = match pat_ast.kind {
-                        ast::PatKind::Or { patterns } => patterns[pat_idx].range,
+                        ast::PatKind::Or { pats } => pats[pat_idx].range,
                         _ => unreachable!(),
                     };
                     pat_cov_enum(ctx, cov, *pat, range, enum_id)

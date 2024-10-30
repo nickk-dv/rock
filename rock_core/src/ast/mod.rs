@@ -354,7 +354,7 @@ pub enum PatKind<'ast> {
     Lit       { lit: Lit },
     Item      { path: &'ast Path<'ast>, bind_list: Option<&'ast BindingList<'ast>> },
     Variant   { name: Name, bind_list: Option<&'ast BindingList<'ast>> },
-    Or        { patterns: &'ast [Pat<'ast>] },
+    Or        { pats: &'ast [Pat<'ast>] },
 }
 
 #[derive(Copy, Clone)]

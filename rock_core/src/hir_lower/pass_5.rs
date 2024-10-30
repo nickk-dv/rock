@@ -29,10 +29,12 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 
         let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
         let locals = ctx.arena.alloc_slice(ctx.proc.finish_locals());
+        let local_binds = ctx.arena.alloc_slice(ctx.proc.finish_local_binds());
 
         let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
         data.locals = locals;
+        data.local_binds = local_binds;
     }
 }
 
@@ -500,22 +502,22 @@ fn typecheck_match<'hir>(
         ctx.emit.error(Error::new(msg, src, None));
     }
 
-    let pat_expect = match kind_res {
-        Ok(hir::MatchKind::Enum { enum_id, .. }) => {
+    let (pat_expect, ref_mut) = match kind_res {
+        Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
             let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
             let enum_ty = hir::Type::Enum(enum_id);
-            Expectation::HasType(enum_ty, Some(expect_src))
+            (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
         }
         Ok(_) => {
             let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
-            Expectation::HasType(on_res.ty, Some(expect_src))
+            (Expectation::HasType(on_res.ty, Some(expect_src)), None)
         }
-        Err(_) => Expectation::None,
+        Err(_) => (Expectation::None, None),
     };
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        let pat = typecheck_pat(ctx, pat_expect, &arm.pat);
+        let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut);
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
         type_unify_control_flow(&mut match_type, expr_res.ty);
 
@@ -603,12 +605,19 @@ impl<'hir> PatResult<'hir> {
     fn new(pat: hir::Pat<'hir>, pat_ty: hir::Type<'hir>) -> PatResult<'hir> {
         PatResult { pat, pat_ty }
     }
+    fn error() -> PatResult<'hir> {
+        PatResult {
+            pat: hir::Pat::Error,
+            pat_ty: hir::Type::Error,
+        }
+    }
 }
 
 fn typecheck_pat<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     pat: &ast::Pat,
+    ref_mut: Option<ast::Mut>,
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
@@ -617,9 +626,9 @@ fn typecheck_pat<'hir>(
             typecheck_pat_item(ctx, path, bind_list, pat.range)
         }
         ast::PatKind::Variant { name, bind_list } => {
-            typecheck_pat_variant(ctx, expect, name, bind_list, pat.range)
+            typecheck_pat_variant(ctx, expect, name, bind_list, pat.range, ref_mut)
         }
-        ast::PatKind::Or { patterns } => typecheck_pat_or(ctx, expect, patterns),
+        ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
 
     type_expectation_check(ctx, ctx.proc.origin(), pat.range, pat_res.pat_ty, expect);
@@ -716,60 +725,49 @@ fn typecheck_pat_variant<'hir>(
     name: ast::Name,
     binds: Option<&ast::BindingList>,
     pat_range: TextRange,
+    ref_mut: Option<ast::Mut>,
 ) -> PatResult<'hir> {
-    let enum_id = infer_enum_type(
-        &mut ctx.emit,
-        expect,
-        SourceRange::new(ctx.proc.origin(), name.range),
-    );
-    let enum_id = match enum_id {
-        Some(enum_id) => enum_id,
-        None => return PatResult::new(hir::Pat::Wild, hir::Type::Error),
+    let name_src = SourceRange::new(ctx.proc.origin(), name.range);
+    let enum_id = match check_infer_enum_type(ctx, expect, name_src) {
+        Some(found) => found,
+        None => return PatResult::error(),
+    };
+    let (variant_id, variant) = match check_find_enum_variant(ctx, enum_id, name) {
+        Some(found) => found,
+        None => return PatResult::error(),
     };
 
-    let data = ctx.registry.enum_data(enum_id);
-    if let Some((variant_id, variant)) = data.find_variant(name.id) {
-        //@duplicate codeblock, same as ast::PatKind::Item
-        let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
-        let expected_count = variant.fields.len();
+    let input_count = binds.map(|list| list.binds.len()).unwrap_or(0);
+    let expected_count = variant.fields.len();
 
-        if input_count != expected_count {
-            //@error src can be improved to not include variant itself if possible (if needed)
-            err::tycheck_unexpected_variant_bind_count(
-                &mut ctx.emit,
-                SourceRange::new(ctx.proc.origin(), pat_range),
-                SourceRange::new(data.origin_id, variant.name.range),
-                input_count,
-                expected_count,
-            );
-        }
-
-        PatResult::new(
-            hir::Pat::Variant(enum_id, variant_id),
-            hir::Type::Enum(enum_id),
-        )
-    } else {
-        //@duplicate error, same as path resolve
-        ctx.emit.error(Error::new(
-            format!("enum variant `{}` is not found", ctx.name_str(name.id)),
-            SourceRange::new(ctx.proc.origin(), name.range),
-            Info::new(
-                "enum defined here",
-                SourceRange::new(data.origin_id, data.name.range),
-            ),
-        ));
-        PatResult::new(hir::Pat::Wild, hir::Type::Error)
+    if input_count != expected_count {
+        let data = ctx.registry.enum_data(enum_id);
+        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let variant_src = SourceRange::new(data.origin_id, variant.name.range);
+        //@error src can be improved to not include variant itself if possible (if needed)
+        err::tycheck_unexpected_variant_bind_count(
+            &mut ctx.emit,
+            src,
+            variant_src,
+            input_count,
+            expected_count,
+        );
     }
+
+    let pat = hir::Pat::Variant(enum_id, variant_id);
+    let pat_ty = hir::Type::Enum(enum_id);
+    PatResult::new(pat, pat_ty)
 }
 
 fn typecheck_pat_or<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     patterns: &[ast::Pat],
+    ref_mut: Option<ast::Mut>,
 ) -> PatResult<'hir> {
     let mut patterns_res = Vec::with_capacity(patterns.len());
     for pat in patterns {
-        let pat = typecheck_pat(ctx, expect, pat);
+        let pat = typecheck_pat(ctx, expect, pat, ref_mut);
         patterns_res.push(pat);
     }
     let patterns = ctx.arena.alloc_slice(&patterns_res);
@@ -1383,31 +1381,14 @@ fn typecheck_variant<'hir>(
     args_list: Option<&ast::ArgumentList>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let enum_id = infer_enum_type(
-        &mut ctx.emit,
-        expect,
-        SourceRange::new(ctx.proc.origin(), expr_range),
-    );
-    let enum_id = match enum_id {
-        Some(enum_id) => enum_id,
+    let error_src = SourceRange::new(ctx.proc.origin(), expr_range);
+    let enum_id = match check_infer_enum_type(ctx, expect, error_src) {
+        Some(found) => found,
         None => return error_res_default_check_arg_list_opt(ctx, args_list),
     };
-
-    let data = ctx.registry.enum_data(enum_id);
-    let variant_id = match data.find_variant(name.id) {
-        Some((variant_id, _)) => variant_id,
-        None => {
-            //@duplicate error, same as path resolve 1.07.24
-            ctx.emit.error(Error::new(
-                format!("enum variant `{}` is not found", ctx.name_str(name.id)),
-                SourceRange::new(ctx.proc.origin(), name.range),
-                Info::new(
-                    "enum defined here",
-                    SourceRange::new(data.origin_id, data.name.range),
-                ),
-            ));
-            return error_res_default_check_arg_list_opt(ctx, args_list);
-        }
+    let (variant_id, _) = match check_find_enum_variant(ctx, enum_id, name) {
+        Some(found) => found,
+        None => return error_res_default_check_arg_list_opt(ctx, args_list),
     };
 
     check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range)
@@ -1424,13 +1405,10 @@ fn typecheck_struct_init<'hir>(
     struct_init: &ast::StructInit,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
+    let expr_src = SourceRange::new(ctx.proc.origin(), expr_range);
     let struct_id = match struct_init.path {
         Some(path) => path_resolve_struct(ctx, ctx.proc.origin(), path),
-        None => infer_struct_type(
-            &mut ctx.emit,
-            expect,
-            SourceRange::new(ctx.proc.origin(), expr_range),
-        ),
+        None => check_infer_struct_type(ctx, expect, expr_src),
     };
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
@@ -1534,7 +1512,7 @@ fn typecheck_struct_init<'hir>(
 
         ctx.emit.error(Error::new(
             message,
-            SourceRange::new(ctx.proc.origin(), expr_range),
+            expr_src,
             Info::new(
                 "struct defined here",
                 SourceRange::new(data.origin_id, data.name.range),
@@ -2607,10 +2585,46 @@ fn check_unused_expr_semi(
     }
 }
 
-//==================== INFERENCE ====================
+//==================== FIND ====================
 
-fn infer_enum_type<'hir>(
-    emit: &mut ErrorWarningBuffer,
+fn check_find_enum_variant<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    enum_id: hir::EnumID<'hir>,
+    name: ast::Name,
+) -> Option<(ID<hir::Variant<'hir>>, &'hir hir::Variant<'hir>)> {
+    let data = ctx.registry.enum_data(enum_id);
+    for (idx, variant) in data.variants.iter().enumerate() {
+        if variant.name.id == name.id {
+            return Some((hir::VariantID::new_raw(idx), variant));
+        }
+    }
+    let src = SourceRange::new(ctx.proc.origin(), name.range);
+    let name = ctx.name_str(name.id);
+    err::tycheck_enum_variant_not_found(&mut ctx.emit, src, data.src(), name);
+    None
+}
+
+fn check_find_struct_field<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    struct_id: hir::StructID<'hir>,
+    name: ast::Name,
+) -> Option<(ID<hir::Field<'hir>>, &'hir hir::Field<'hir>)> {
+    let data = ctx.registry.struct_data(struct_id);
+    for (idx, field) in data.fields.iter().enumerate() {
+        if field.name.id == name.id {
+            return Some((hir::FieldID::new_raw(idx), field));
+        }
+    }
+    let src = SourceRange::new(ctx.proc.origin(), name.range);
+    let name = ctx.name_str(name.id);
+    err::tycheck_struct_field_not_found(&mut ctx.emit, src, data.src(), name);
+    None
+}
+
+//==================== INFER ====================
+
+fn check_infer_enum_type<'hir>(
+    ctx: &mut HirCtx,
     expect: Expectation<'hir>,
     error_src: SourceRange,
 ) -> Option<hir::EnumID<'hir>> {
@@ -2627,13 +2641,13 @@ fn infer_enum_type<'hir>(
         },
     };
     if enum_id.is_none() {
-        err::tycheck_cannot_infer_enum_type(emit, error_src);
+        err::tycheck_cannot_infer_enum_type(&mut ctx.emit, error_src);
     }
     enum_id
 }
 
-fn infer_struct_type<'hir>(
-    emit: &mut ErrorWarningBuffer,
+fn check_infer_struct_type<'hir>(
+    ctx: &mut HirCtx,
     expect: Expectation<'hir>,
     error_src: SourceRange,
 ) -> Option<hir::StructID<'hir>> {
@@ -2646,7 +2660,7 @@ fn infer_struct_type<'hir>(
         },
     };
     if struct_id.is_none() {
-        err::tycheck_cannot_infer_struct_type(emit, error_src);
+        err::tycheck_cannot_infer_struct_type(&mut ctx.emit, error_src);
     }
     struct_id
 }
@@ -3103,33 +3117,24 @@ pub fn path_resolve_value<'hir, 'ast>(
                 }
                 ValueID::Proc(id)
             }
-            SymbolKind::Enum(id) => {
-                if let Some(variant_name) = path.names.get(name_idx + 1) {
-                    let enum_data = ctx.registry.enum_data(id);
-                    if let Some((variant_id, ..)) = enum_data.find_variant(variant_name.id) {
-                        if let Some(remaining) = path.names.get(name_idx + 2..) {
-                            if let (Some(first), Some(last)) = (remaining.first(), remaining.last())
-                            {
-                                let range = TextRange::new(first.range.start(), last.range.end());
-                                ctx.emit.error(Error::new(
-                                    "unexpected path segment",
-                                    SourceRange::new(origin_id, range),
-                                    None,
-                                ));
-                            }
+            SymbolKind::Enum(enum_id) => {
+                if let Some(name) = path.names.get(name_idx + 1).copied() {
+                    let (variant_id, _) = match check_find_enum_variant(ctx, enum_id, name) {
+                        Some(found) => found,
+                        None => return (ValueID::None, &[]),
+                    };
+
+                    if let Some(remaining) = path.names.get(name_idx + 2..) {
+                        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
+                            let range = TextRange::new(first.range.start(), last.range.end());
+                            ctx.emit.error(Error::new(
+                                "unexpected path segment",
+                                SourceRange::new(origin_id, range),
+                                None,
+                            ));
                         }
-                        return (ValueID::Enum(id, variant_id), &[]);
-                    } else {
-                        ctx.emit.error(Error::new(
-                            format!(
-                                "enum variant `{}` is not found",
-                                ctx.name_str(variant_name.id)
-                            ),
-                            SourceRange::new(origin_id, variant_name.range),
-                            Info::new("enum defined here", kind.src(&ctx.registry)),
-                        ));
-                        return (ValueID::None, &[]);
                     }
+                    return (ValueID::Enum(enum_id, variant_id), &[]);
                 } else {
                     let name = path.names[name_idx];
                     ctx.emit.error(Error::new(

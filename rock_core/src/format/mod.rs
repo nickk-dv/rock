@@ -1449,7 +1449,7 @@ fn pat_variant(fmt: &mut Formatter, pat: cst::PatVariant) {
 
 fn pat_or(fmt: &mut Formatter, pat_or: cst::PatOr) {
     let mut first = true;
-    for pat_cst in pat_or.patterns(fmt.tree) {
+    for pat_cst in pat_or.pats(fmt.tree) {
         if !first {
             fmt.space();
             fmt.write('|');

@@ -1170,7 +1170,7 @@ impl<'syn> PatVariant<'syn> {
 }
 
 impl<'syn> PatOr<'syn> {
-    node_iter!(patterns, Pat);
+    node_iter!(pats, Pat);
 }
 
 //==================== LIT ====================

@@ -36,6 +36,7 @@ pub struct ProcData<'hir> {
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
     pub locals: &'hir [Local<'hir>],
+    pub local_binds: &'hir [LocalBind<'hir>],
 }
 
 pub type ParamID<'hir> = ID<Param<'hir>>;
@@ -349,7 +350,7 @@ pub enum Pat<'hir> {
     Wild,
     Lit(ConstValue<'hir>),
     Const(ConstID<'hir>),
-    Variant(EnumID<'hir>, VariantID<'hir>), //@binds
+    Variant(EnumID<'hir>, VariantID<'hir>),
     Or(&'hir [Pat<'hir>]),
 }
 
@@ -429,7 +430,9 @@ pub enum CastKind {
 }
 
 pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
+#[derive(Copy, Clone)]
 pub struct LocalBind<'hir> {
+    pub by_copy: bool,
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
@@ -786,17 +789,6 @@ impl<'hir> EnumData<'hir> {
     }
     pub fn variant(&self, id: VariantID<'hir>) -> &'hir Variant<'hir> {
         self.variants.id_get(id)
-    }
-    pub fn find_variant(
-        &self,
-        id: ID<InternName>,
-    ) -> Option<(VariantID<'hir>, &'hir Variant<'hir>)> {
-        for (idx, variant) in self.variants.iter().enumerate() {
-            if variant.name.id == id {
-                return Some((VariantID::new_raw(idx), variant));
-            }
-        }
-        None
     }
 }
 

@@ -35,7 +35,7 @@ struct AstBuildState<'ast> {
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
     branches: TempBuffer<ast::Branch<'ast>>,
     match_arms: TempBuffer<ast::MatchArm<'ast>>,
-    patterns: TempBuffer<ast::Pat<'ast>>,
+    pats: TempBuffer<ast::Pat<'ast>>,
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
     names: TempBuffer<ast::Name>,
     binds: TempBuffer<ast::Binding>,
@@ -87,7 +87,7 @@ impl<'ast> AstBuildState<'ast> {
             exprs: TempBuffer::new(32),
             branches: TempBuffer::new(32),
             match_arms: TempBuffer::new(32),
-            patterns: TempBuffer::new(32),
+            pats: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
             names: TempBuffer::new(32),
             binds: TempBuffer::new(32),
@@ -1025,13 +1025,13 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
             ast::PatKind::Variant { name, bind_list }
         }
         cst::Pat::Or(pat_or) => {
-            let offset = ctx.s.patterns.start();
-            for pat_cst in pat_or.patterns(ctx.tree) {
+            let offset = ctx.s.pats.start();
+            for pat_cst in pat_or.pats(ctx.tree) {
                 let pat = pat(ctx, pat_cst);
-                ctx.s.patterns.add(pat);
+                ctx.s.pats.add(pat);
             }
-            let patterns = ctx.s.patterns.take(offset, &mut ctx.arena);
-            ast::PatKind::Or { patterns }
+            let pats = ctx.s.pats.take(offset, &mut ctx.arena);
+            ast::PatKind::Or { pats }
         }
     };
 
