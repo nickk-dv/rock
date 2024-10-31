@@ -508,9 +508,13 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
+        //@hack adding a scope to capture local_binds from patterns
+        // make sure this doesnt break anything with blocks | non-block arm expressions
+        ctx.proc.push_block(BlockEnter::None);
         let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut);
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
         type_unify_control_flow(&mut match_type, expr_res.ty);
+        ctx.proc.pop_block();
 
         if expect.is_none() {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
@@ -597,10 +601,10 @@ fn typecheck_pat<'hir>(
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { lit } => typecheck_pat_lit(ctx, expect, lit),
         ast::PatKind::Item { path, bind_list } => {
-            typecheck_pat_item(ctx, path, bind_list, pat.range)
+            typecheck_pat_item(ctx, path, bind_list, ref_mut, pat.range)
         }
         ast::PatKind::Variant { name, bind_list } => {
-            typecheck_pat_variant(ctx, expect, name, bind_list, pat.range, ref_mut)
+            typecheck_pat_variant(ctx, expect, name, bind_list, ref_mut, pat.range)
         }
         ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
@@ -626,6 +630,7 @@ fn typecheck_pat_item<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     path: &ast::Path,
     bind_list: Option<&ast::BindingList>,
+    ref_mut: Option<ast::Mut>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
@@ -633,7 +638,9 @@ fn typecheck_pat_item<'hir>(
     match value_id {
         ValueID::None => PatResult::error(),
         ValueID::Enum(enum_id, variant_id) => {
+            let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
+            add_variant_local_binds(ctx, bind_list, variant, ref_mut);
 
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id),
@@ -682,8 +689,8 @@ fn typecheck_pat_variant<'hir>(
     expect: Expectation<'hir>,
     name: ast::Name,
     bind_list: Option<&ast::BindingList>,
-    pat_range: TextRange,
     ref_mut: Option<ast::Mut>,
+    pat_range: TextRange,
 ) -> PatResult<'hir> {
     let name_src = SourceRange::new(ctx.proc.origin(), name.range);
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
@@ -696,6 +703,7 @@ fn typecheck_pat_variant<'hir>(
     };
 
     check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
+    add_variant_local_binds(ctx, bind_list, variant, ref_mut);
 
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id),
@@ -1762,7 +1770,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::Deref { rhs, mutt, .. } => {
-                if constraint.is_none() && Some(mutt) == Some(ast::Mut::Immutable) {
+                if constraint.is_none() && mutt == ast::Mut::Immutable {
                     let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
@@ -2890,6 +2898,62 @@ fn check_variant_bind_count(
         let src = SourceRange::new(ctx.proc.origin(), range);
         let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
         err::tycheck_unexpected_variant_bind_list(&mut ctx.emit, src, variant_src);
+    }
+}
+
+fn add_variant_local_binds<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    bind_list: Option<&ast::BindingList>,
+    variant: &hir::Variant<'hir>,
+    ref_mut: Option<ast::Mut>,
+) {
+    let bind_list = match bind_list {
+        Some(bind_list) => bind_list,
+        None => return,
+    };
+
+    //@look into making api for getting Optional fields from usize idx
+    // to reduce possible errors and manual checks, same for each hir collection with ID
+    let expected_count = variant.fields.len();
+
+    for (idx, bind) in bind_list.binds.iter().enumerate() {
+        let (mutt, name) = match *bind {
+            ast::Binding::Named(mutt, name) => (mutt, name),
+            ast::Binding::Discard(_) => continue,
+        };
+        if idx < expected_count {
+            let field_id = hir::VariantFieldID::new_raw(idx);
+            let field = variant.field(field_id);
+
+            let ty = match ref_mut {
+                Some(ref_mut) => hir::Type::Reference(ref_mut, &field.ty),
+                None => field.ty,
+            };
+            let mut_str = match mutt {
+                ast::Mut::Mutable => "mutable",
+                ast::Mut::Immutable => "immutable",
+            };
+            eprintln!(
+                "adding local bind: {mut_str} {} with type: {}",
+                ctx.name_str(name.id),
+                type_format(ctx, ty).as_str()
+            );
+            let local_bind = hir::LocalBind {
+                by_copy: ref_mut.is_none(),
+                mutt,
+                name,
+                ty,
+            };
+            ctx.proc.push_local_bind(local_bind);
+        } else {
+            let local_bind = hir::LocalBind {
+                by_copy: true,
+                mutt,
+                name,
+                ty: hir::Type::Error,
+            };
+            ctx.proc.push_local_bind(local_bind);
+        }
     }
 }
 

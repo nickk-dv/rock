@@ -60,6 +60,7 @@ pub struct EnumData<'hir> {
 }
 
 pub type VariantID<'hir> = ID<Variant<'hir>>;
+pub type VariantFieldID<'hir> = ID<VariantField<'hir>>;
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
     pub name: ast::Name,
@@ -789,6 +790,12 @@ impl<'hir> EnumData<'hir> {
     }
     pub fn variant(&self, id: VariantID<'hir>) -> &'hir Variant<'hir> {
         self.variants.id_get(id)
+    }
+}
+
+impl<'hir> Variant<'hir> {
+    pub fn field(&self, id: VariantFieldID<'hir>) -> &'hir VariantField<'hir> {
+        self.fields.id_get(id)
     }
 }
 
