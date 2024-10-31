@@ -705,7 +705,7 @@ fn expr(p: &mut Parser) {
 fn sub_expr(p: &mut Parser, min_prec: u32) {
     let mut mc_curr = primary_expr(p);
 
-    if p.at(T![as]) {
+    while p.at(T![as]) {
         let m = p.start_before(mc_curr);
         p.bump(T![as]);
         ty(p);

@@ -1094,21 +1094,10 @@ fn typecheck_cast<'hir>(
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let into = super::pass_3::type_resolve(ctx, ctx.proc.origin(), *into);
 
-    // early return prevents false positives on cast warning & cast error
-    if matches!(target_res.ty, hir::Type::Error) || matches!(into, hir::Type::Error) {
-        //@this could be skipped by returning reference to same error expression
-        // to save memory in error cases and reduce noise in the code itself.
-
-        let kind = hir::ExprKind::Cast {
-            target: target_res.expr,
-            into: ctx.arena.alloc(into),
-            kind: hir::CastKind::NoOp,
-        };
-        return TypeResult::new(into, kind);
+    if target_res.ty.is_error() || into.is_error() {
+        return TypeResult::error();
     }
 
-    // invariant: both types are not Error
-    // ensured by early return above
     if type_matches(ctx, target_res.ty, into) {
         ctx.emit.warning(Warning::new(
             format!(
@@ -1173,7 +1162,10 @@ fn typecheck_cast<'hir>(
                     _ => hir::CastKind::Error,
                 },
                 BasicTypeKind::Bool => hir::CastKind::Error,
-                BasicTypeKind::Char => hir::CastKind::Error,
+                BasicTypeKind::Char => match into {
+                    BasicType::U32 => hir::CastKind::NoOp, // char is already u32
+                    _ => hir::CastKind::Error,
+                },
                 BasicTypeKind::Rawptr => hir::CastKind::Error,
                 BasicTypeKind::Void => hir::CastKind::Error,
                 BasicTypeKind::Never => hir::CastKind::Error,
