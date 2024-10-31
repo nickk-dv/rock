@@ -310,7 +310,7 @@ pub fn typecheck_expr<'hir>(
         ast::ExprKind::ArrayRepeat { value, len } => {
             typecheck_array_repeat(ctx, expect, value, len)
         }
-        ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs),
+        ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
         ast::ExprKind::Range { range } => typecheck_range(ctx, range, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
@@ -1588,7 +1588,11 @@ fn typecheck_array_repeat<'hir>(
     }
 }
 
-fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> TypeResult<'hir> {
+fn typecheck_deref<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    rhs: &ast::Expr,
+    expr_range: TextRange,
+) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
 
     match rhs_res.ty {
@@ -1607,7 +1611,7 @@ fn typecheck_deref<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, rhs: &ast::Expr) -> Typ
                     "cannot dereference value of type `{}`",
                     type_format(ctx, rhs_res.ty).as_str()
                 ),
-                SourceRange::new(ctx.proc.origin(), rhs.range),
+                SourceRange::new(ctx.proc.origin(), expr_range),
                 None,
             ));
             TypeResult::error()
@@ -1692,9 +1696,17 @@ impl AddrConstraint {
     }
 }
 
+//@test this a lot, likely might be wrong, especially `last_deref` hack
 fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     let mut expr = expr;
     let mut constraint = AddrConstraint::None;
+
+    //@feels like a hack:
+    // deref on immut will add immut_ref constraint
+    // for variable base if last_deref will be used if exists
+    // in immut case doesnt matter, in mut case will override the mutt of variable itself
+    // allowing &mut varibles to be deref assigned, and taking &mut to * of &mut
+    let mut last_deref: Option<ast::Mut> = None;
 
     loop {
         let addr_base = match expr.kind {
@@ -1715,6 +1727,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
+                last_deref = None;
                 continue;
             }
             hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
@@ -1729,6 +1742,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                     }
                 }
                 expr = target;
+                last_deref = None;
                 continue;
             }
             hir::ExprKind::Slice { target, access } => {
@@ -1737,23 +1751,27 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
+                last_deref = None;
                 continue;
             }
             hir::ExprKind::Cast { .. } => AddrBase::Temporary,
             hir::ExprKind::ParamVar { param_id } => {
                 let param = ctx.proc.get_param(param_id);
                 let var_src = SourceRange::new(ctx.proc.origin(), param.name.range);
-                AddrBase::Variable(param.mutt, var_src)
+                let base_mutt = last_deref.unwrap_or(param.mutt);
+                AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::LocalVar { local_id } => {
                 let local = ctx.proc.get_local(local_id);
                 let var_src = SourceRange::new(ctx.proc.origin(), local.name.range);
-                AddrBase::Variable(local.mutt, var_src)
+                let base_mutt = last_deref.unwrap_or(local.mutt);
+                AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::LocalBind { local_bind_id } => {
                 let local_bind = ctx.proc.get_local_bind(local_bind_id);
                 let var_src = SourceRange::new(ctx.proc.origin(), local_bind.name.range);
-                AddrBase::Variable(local_bind.mutt, var_src)
+                let base_mutt = last_deref.unwrap_or(local_bind.mutt);
+                AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::ConstVar { const_id } => {
                 let const_data = ctx.registry.const_data(const_id);
@@ -1761,7 +1779,8 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             hir::ExprKind::GlobalVar { global_id } => {
                 let global_data = ctx.registry.global_data(global_id);
-                AddrBase::Variable(global_data.mutt, global_data.src())
+                let base_mutt = last_deref.unwrap_or(global_data.mutt);
+                AddrBase::Variable(base_mutt, global_data.src())
             }
             hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
@@ -1775,6 +1794,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = rhs;
+                last_deref = Some(mutt);
                 continue;
             }
             hir::ExprKind::Address { .. } => AddrBase::Temporary,
