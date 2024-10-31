@@ -188,7 +188,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 
 //@reuse param & local ptr value vectors
 fn codegen_function_bodies(cg: &Codegen) {
-    for (idx, data) in cg.hir.procs.iter().enumerate() {
+    for (proc_idx, data) in cg.hir.procs.iter().enumerate() {
         let block = match data.block {
             Some(block) => block,
             None => {
@@ -199,8 +199,8 @@ fn codegen_function_bodies(cg: &Codegen) {
             }
         };
 
-        let fn_val = cg.procs[idx].0;
-        let proc_id = hir::ProcID::new_raw(idx);
+        let fn_val = cg.procs[proc_idx].0;
+        let proc_id = hir::ProcID::new_raw(proc_idx);
         //@re-use, reduce allocations
         let mut proc_cg = ProcCodegen::new(proc_id, fn_val);
 
@@ -216,11 +216,16 @@ fn codegen_function_bodies(cg: &Codegen) {
             proc_cg.param_ptrs.push(param_ptr);
         }
 
-        for &local in data.locals {
+        for local in data.locals {
             let local_ty = cg.ty(local.ty);
-
             let local_ptr = cg.build.alloca(local_ty, "local");
             proc_cg.local_ptrs.push(local_ptr);
+        }
+
+        for local_bind in data.local_binds {
+            let local_ty = cg.ty(local_bind.ty);
+            let local_ptr = cg.build.alloca(local_ty, "local_bind");
+            proc_cg.local_bind_ptrs.push(local_ptr);
         }
 
         let value_id = proc_cg.add_tail_value();

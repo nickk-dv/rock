@@ -640,10 +640,10 @@ fn typecheck_pat_item<'hir>(
         ValueID::Enum(enum_id, variant_id) => {
             let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-            add_variant_local_binds(ctx, bind_list, variant, ref_mut);
+            let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut);
 
             PatResult::new(
-                hir::Pat::Variant(enum_id, variant_id),
+                hir::Pat::Variant(enum_id, variant_id, bind_ids),
                 hir::Type::Enum(enum_id),
             )
         }
@@ -703,10 +703,10 @@ fn typecheck_pat_variant<'hir>(
     };
 
     check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-    add_variant_local_binds(ctx, bind_list, variant, ref_mut);
+    let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut);
 
     PatResult::new(
-        hir::Pat::Variant(enum_id, variant_id),
+        hir::Pat::Variant(enum_id, variant_id, bind_ids),
         hir::Type::Enum(enum_id),
     )
 }
@@ -2926,22 +2926,24 @@ fn add_variant_local_binds<'hir>(
     bind_list: Option<&ast::BindingList>,
     variant: &hir::Variant<'hir>,
     ref_mut: Option<ast::Mut>,
-) {
+) -> &'hir [hir::LocalBindID<'hir>] {
     let bind_list = match bind_list {
         Some(bind_list) => bind_list,
-        None => return,
+        None => return &[],
     };
 
     //@look into making api for getting Optional fields from usize idx
     // to reduce possible errors and manual checks, same for each hir collection with ID
     let expected_count = variant.fields.len();
+    let mut bind_ids = Vec::with_capacity(expected_count);
 
     for (idx, bind) in bind_list.binds.iter().enumerate() {
         let (mutt, name) = match *bind {
             ast::Binding::Named(mutt, name) => (mutt, name),
             ast::Binding::Discard(_) => continue,
         };
-        if idx < expected_count {
+
+        let (field_id, ty) = if idx < expected_count {
             let field_id = hir::VariantFieldID::new_raw(idx);
             let field = variant.field(field_id);
 
@@ -2949,32 +2951,22 @@ fn add_variant_local_binds<'hir>(
                 Some(ref_mut) => hir::Type::Reference(ref_mut, &field.ty),
                 None => field.ty,
             };
-            let mut_str = match mutt {
-                ast::Mut::Mutable => "mutable",
-                ast::Mut::Immutable => "immutable",
-            };
-            eprintln!(
-                "adding local bind: {mut_str} {} with type: {}",
-                ctx.name_str(name.id),
-                type_format(ctx, ty).as_str()
-            );
-            let local_bind = hir::LocalBind {
-                by_copy: ref_mut.is_none(),
-                mutt,
-                name,
-                ty,
-            };
-            ctx.proc.push_local_bind(local_bind);
+            (Some(field_id), ty)
         } else {
-            let local_bind = hir::LocalBind {
-                by_copy: true,
-                mutt,
-                name,
-                ty: hir::Type::Error,
-            };
-            ctx.proc.push_local_bind(local_bind);
-        }
+            (None, hir::Type::Error)
+        };
+
+        let local_bind = hir::LocalBind {
+            mutt,
+            name,
+            ty,
+            field_id,
+        };
+        let bind_id = ctx.proc.push_local_bind(local_bind);
+        bind_ids.push(bind_id);
     }
+
+    ctx.arena.alloc_slice(&bind_ids)
 }
 
 //==================== PATH RESOLVE ====================

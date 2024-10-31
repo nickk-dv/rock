@@ -28,6 +28,7 @@ pub struct ProcCodegen<'c> {
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub local_ptrs: Vec<llvm::ValuePtr>,
+    pub local_bind_ptrs: Vec<llvm::ValuePtr>,
     tail_values: Vec<Option<TailValue>>,
     block_stack: Vec<BlockInfo>,
     defer_blocks: Vec<hir::Block<'c>>,
@@ -253,10 +254,11 @@ impl<'c> ProcCodegen<'c> {
         ProcCodegen {
             proc_id,
             fn_val,
-            param_ptrs: Vec::with_capacity(8),
-            local_ptrs: Vec::with_capacity(32),
+            param_ptrs: Vec::with_capacity(16),
+            local_ptrs: Vec::with_capacity(64),
+            local_bind_ptrs: Vec::with_capacity(64),
             tail_values: Vec::with_capacity(32),
-            block_stack: Vec::with_capacity(8),
+            block_stack: Vec::with_capacity(16),
             defer_blocks: Vec::new(),
             next_loop_info: None,
         }

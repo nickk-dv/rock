@@ -345,13 +345,14 @@ pub struct MatchArm<'hir> {
     pub block: Block<'hir>,
 }
 
+//@lower pat size
 #[derive(Copy, Clone)]
 pub enum Pat<'hir> {
     Error,
     Wild,
     Lit(ConstValue<'hir>),
     Const(ConstID<'hir>),
-    Variant(EnumID<'hir>, VariantID<'hir>),
+    Variant(EnumID<'hir>, VariantID<'hir>, &'hir [LocalBindID<'hir>]),
     Or(&'hir [Pat<'hir>]),
 }
 
@@ -433,10 +434,10 @@ pub enum CastKind {
 pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
 #[derive(Copy, Clone)]
 pub struct LocalBind<'hir> {
-    pub by_copy: bool,
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
+    pub field_id: Option<VariantFieldID<'hir>>,
 }
 
 #[derive(Copy, Clone)]
@@ -773,6 +774,9 @@ impl<'hir> ProcData<'hir> {
     }
     pub fn local(&self, id: LocalID<'hir>) -> &'hir Local<'hir> {
         self.locals.id_get(id)
+    }
+    pub fn local_bind(&self, id: LocalBindID<'hir>) -> &'hir LocalBind<'hir> {
+        self.local_binds.id_get(id)
     }
     pub fn find_param(&self, id: ID<InternName>) -> Option<(ParamID<'hir>, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {

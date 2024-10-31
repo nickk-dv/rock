@@ -77,9 +77,9 @@ pub fn build(
 
     match config.target_os {
         TargetOS::Windows => {
-            args.push("/entry:main".into());
+            //args.push("/entry:main".into());
+            args.push("/defaultlib:libcmt.lib".into());
             args.push("kernel32.lib".into());
-            //args.push("/defaultlib:libcmt.lib".into());
         }
         TargetOS::Linux => args.push("-lc".into()),
     }

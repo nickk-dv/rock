@@ -419,7 +419,7 @@ fn pat_cov_enum<'hir>(
 
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(variant_count),
-        hir::Pat::Variant(_, variant_id) => cov.cover(variant_id, variant_count),
+        hir::Pat::Variant(_, variant_id, _) => cov.cover(variant_id, variant_count),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
