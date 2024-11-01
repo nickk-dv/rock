@@ -1,9 +1,9 @@
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-pub struct Info(DiagnosticContext);
 pub struct Error(Diagnostic);
 pub struct Warning(Diagnostic);
+pub struct Info(DiagnosticContext);
 
 pub struct Diagnostic {
     msg: StringOrStr,
