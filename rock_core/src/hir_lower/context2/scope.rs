@@ -1,6 +1,9 @@
-use super::pass_5::Expectation;
 use crate::ast;
+use crate::error::{ErrorWarningBuffer, SourceRange};
+use crate::errors as err;
 use crate::hir;
+use crate::hir_lower::context::Registry;
+use crate::hir_lower::pass_5::Expectation;
 use crate::intern::InternName;
 use crate::session::{ModuleID, Session};
 use crate::support::{IndexID, ID};
@@ -27,8 +30,8 @@ struct ModuleScope<'hir> {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Symbol<'hir> {
-    Defined { kind: SymbolID<'hir> },
-    Imported { kind: SymbolID<'hir>, import: TextRange },
+    Defined { symbol_id: SymbolID<'hir> },
+    Imported { symbol_id: SymbolID<'hir>, import: TextRange },
     Module { module_id: ModuleID, import: TextRange },
 }
 
@@ -39,6 +42,12 @@ pub enum SymbolID<'hir> {
     Struct(hir::StructID<'hir>),
     Const(hir::ConstID<'hir>),
     Global(hir::GlobalID<'hir>),
+}
+
+#[derive(Copy, Clone)]
+pub enum SymbolOrModule<'hir> {
+    Symbol(SymbolID<'hir>),
+    Module(ModuleID),
 }
 
 //==================== LOCAL SCOPE ====================
@@ -53,6 +62,7 @@ pub struct LocalScope<'hir> {
     binds_in_scope: Vec<hir::LocalBindID<'hir>>,
 }
 
+#[derive(Copy, Clone)]
 pub enum VariableID<'hir> {
     Param(hir::ParamID<'hir>),
     Local(hir::LocalID<'hir>),
@@ -83,16 +93,85 @@ pub enum Diverges {
 //==================== SCOPES IMPL ====================
 
 impl<'hir> Scope<'hir> {
-    pub fn new(session: &Session) -> Scope<'hir> {
+    pub(super) fn new(session: &Session) -> Scope<'hir> {
         Scope {
             origin_id: ModuleID::dummy(),
-            local: LocalScope::new(),
             global: GlobalScope::new(session),
+            local: LocalScope::new(),
         }
     }
 
+    #[inline]
+    pub fn origin(&self) -> ModuleID {
+        self.origin_id
+    }
+    #[inline]
     pub fn set_origin(&mut self, origin_id: ModuleID) {
         self.origin_id = origin_id;
+    }
+
+    pub fn check_already_defined(
+        &self,
+        name: ast::Name,
+        session: &Session,
+        registry: &Registry,
+        emit: &mut ErrorWarningBuffer,
+    ) -> Result<(), ()> {
+        self.check_already_defined_global(name, session, registry, emit)?;
+        self.check_already_defined_local(name, session, emit)
+    }
+
+    pub fn check_already_defined_global(
+        &self,
+        name: ast::Name,
+        session: &Session,
+        registry: &Registry,
+        emit: &mut ErrorWarningBuffer,
+    ) -> Result<(), ()> {
+        let origin = self.global.module(self.origin_id);
+        let existing = match origin.symbols.get(&name.id).copied() {
+            Some(symbol) => symbol,
+            None => return Ok(()),
+        };
+        let name_src = SourceRange::new(self.origin_id, name.range);
+        let existing = self.symbol_src(existing, registry);
+        let name = session.intern_name.get(name.id);
+        err::scope_name_already_defined(emit, name_src, existing, name);
+        Ok(())
+    }
+
+    fn check_already_defined_local(
+        &self,
+        name: ast::Name,
+        session: &Session,
+        emit: &mut ErrorWarningBuffer,
+    ) -> Result<(), ()> {
+        let existing = match self.local.find_variable(name.id) {
+            Some(variable) => variable,
+            None => return Ok(()),
+        };
+        let name_src = SourceRange::new(self.origin_id, name.range);
+        let existing = self.variable_src(existing);
+        let name = session.intern_name.get(name.id);
+        err::scope_name_already_defined(emit, name_src, existing, name);
+        Ok(())
+    }
+
+    fn symbol_src(&self, symbol: Symbol<'hir>, registry: &Registry<'hir, '_>) -> SourceRange {
+        match symbol {
+            Symbol::Defined { symbol_id } => symbol_id.src(registry),
+            Symbol::Imported { import, .. } => SourceRange::new(self.origin_id, import),
+            Symbol::Module { import, .. } => SourceRange::new(self.origin_id, import),
+        }
+    }
+
+    fn variable_src(&self, variable: VariableID<'hir>) -> SourceRange {
+        let range = match variable {
+            VariableID::Param(id) => self.local.param(id).name.range,
+            VariableID::Local(id) => self.local.local(id).name.range,
+            VariableID::Bind(id) => self.local.bind(id).name.range,
+        };
+        SourceRange::new(self.origin_id, range)
     }
 }
 
@@ -132,6 +211,66 @@ impl<'hir> GlobalScope<'hir> {
         assert!(existing.is_none());
     }
 
+    pub fn find_symbol(
+        &self,
+        origin_id: ModuleID,
+        target_id: ModuleID,
+        name: ast::Name,
+        session: &Session,
+        registry: &Registry,
+        emit: &mut ErrorWarningBuffer,
+    ) -> Result<SymbolOrModule<'hir>, ()> {
+        let target = self.module(target_id);
+
+        match target.symbols.get(&name.id).copied() {
+            Some(Symbol::Defined { symbol_id }) => {
+                if origin_id == target_id {
+                    return Ok(SymbolOrModule::Symbol(symbol_id));
+                }
+
+                let vis = symbol_id.vis(registry);
+                return match vis {
+                    ast::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
+                    ast::Vis::Private => {
+                        let name_src = SourceRange::new(origin_id, name.range);
+                        let defined_src = symbol_id.src(registry);
+                        let name = session.intern_name.get(name.id);
+                        err::scope_symbol_is_private(
+                            emit,
+                            name_src,
+                            defined_src,
+                            name,
+                            symbol_id.desc(),
+                        );
+                        Err(())
+                    }
+                };
+            }
+            Some(Symbol::Imported { symbol_id, .. }) => {
+                if origin_id == target_id {
+                    return Ok(SymbolOrModule::Symbol(symbol_id));
+                }
+            }
+            Some(Symbol::Module { module_id, .. }) => {
+                if origin_id == target_id {
+                    return Ok(SymbolOrModule::Module(module_id));
+                }
+            }
+            None => {}
+        }
+
+        let name_src = SourceRange::new(origin_id, name.range);
+        let name = session.intern_name.get(name.id);
+        let from_module = if origin_id != target_id {
+            let target_name = session.intern_name.get(target.name_id);
+            Some(target_name)
+        } else {
+            None
+        };
+        err::scope_symbol_not_found(emit, name_src, name, from_module);
+        Err(())
+    }
+
     #[inline]
     fn module(&self, module_id: ModuleID) -> &ModuleScope<'hir> {
         &self.modules[module_id.index()]
@@ -139,6 +278,38 @@ impl<'hir> GlobalScope<'hir> {
     #[inline]
     fn module_mut(&mut self, module_id: ModuleID) -> &mut ModuleScope<'hir> {
         &mut self.modules[module_id.index()]
+    }
+}
+
+impl<'hir> SymbolID<'hir> {
+    pub fn desc(self) -> &'static str {
+        match self {
+            SymbolID::Proc(_) => "procedure",
+            SymbolID::Enum(_) => "enum",
+            SymbolID::Struct(_) => "struct",
+            SymbolID::Const(_) => "const",
+            SymbolID::Global(_) => "global",
+        }
+    }
+
+    fn src(self, registry: &Registry<'hir, '_>) -> SourceRange {
+        match self {
+            SymbolID::Proc(id) => registry.proc_data(id).src(),
+            SymbolID::Enum(id) => registry.enum_data(id).src(),
+            SymbolID::Struct(id) => registry.struct_data(id).src(),
+            SymbolID::Const(id) => registry.const_data(id).src(),
+            SymbolID::Global(id) => registry.global_data(id).src(),
+        }
+    }
+
+    fn vis(self, registry: &Registry<'hir, '_>) -> ast::Vis {
+        match self {
+            SymbolID::Proc(id) => registry.proc_data(id).vis,
+            SymbolID::Enum(id) => registry.enum_data(id).vis,
+            SymbolID::Struct(id) => registry.struct_data(id).vis,
+            SymbolID::Const(id) => registry.const_data(id).vis,
+            SymbolID::Global(id) => registry.global_data(id).vis,
+        }
     }
 }
 

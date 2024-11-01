@@ -314,8 +314,8 @@ impl ScopeError {
                     &mut ctx.emit,
                     name_src,
                     defined_src,
-                    symbol_kind,
                     name,
+                    symbol_kind,
                 )
             }
             ScopeError::SymbolNotFound {

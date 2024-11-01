@@ -325,7 +325,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
             ctx.s.types.add(ty);
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);
-        ast::VariantKind::HasValues(types)
+        ast::VariantKind::HasFields(types)
     } else {
         ast::VariantKind::Default
     };

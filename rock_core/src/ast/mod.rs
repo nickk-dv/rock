@@ -73,7 +73,7 @@ pub struct Variant<'ast> {
 pub enum VariantKind<'ast> {
     Default,
     Constant(ConstExpr<'ast>),
-    HasValues(&'ast [Type<'ast>]),
+    HasFields(&'ast [Type<'ast>]),
 }
 
 #[derive(Copy, Clone)]

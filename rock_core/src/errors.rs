@@ -275,8 +275,8 @@ pub fn scope_symbol_is_private(
     emit: &mut impl ErrorSink,
     name_src: SourceRange,
     defined_src: SourceRange,
-    symbol_kind: &'static str,
     name: &str,
+    symbol_kind: &'static str,
 ) {
     let msg = format!("{symbol_kind} `{name}` is private");
     let info = Info::new("defined here", defined_src);

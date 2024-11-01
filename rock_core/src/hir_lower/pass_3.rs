@@ -272,7 +272,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
                     }
                 }
                 //@could be empty field list, error and dont set the `any_has_fields`
-                ast::VariantKind::HasValues(types) => {
+                ast::VariantKind::HasFields(types) => {
                     let eval_id = ctx.registry.add_variant_eval();
                     if !any_has_fields && types.len() > 0 {
                         any_has_fields = true;
