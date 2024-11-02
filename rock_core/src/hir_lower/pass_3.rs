@@ -25,159 +25,6 @@ pub fn process_items(ctx: &mut HirCtx) {
     }
 }
 
-//@deduplicate with type_resolve_delayed 16.05.24
-#[must_use]
-pub fn type_resolve<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, ast_ty: ast::Type) -> hir::Type<'hir> {
-    match ast_ty.kind {
-        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
-        ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, path),
-        ast::TypeKind::Generic(generic) => {
-            let src = ctx.src(ast_ty.range);
-            ctx.emit.error(Error::new(
-                "internal: generic parameterized types are not implemented",
-                src,
-                None,
-            ));
-            hir::Type::Error
-        }
-        ast::TypeKind::Reference(mutt, ref_ty) => {
-            let ref_ty = type_resolve(ctx, *ref_ty);
-
-            if ref_ty.is_error() {
-                hir::Type::Error
-            } else {
-                hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
-            }
-        }
-        ast::TypeKind::Procedure(proc_ty) => {
-            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
-            for param_ty in proc_ty.param_types {
-                let ty = type_resolve(ctx, *param_ty);
-                param_types.push(ty);
-            }
-            let param_types = ctx.arena.alloc_slice(&param_types);
-
-            let is_variadic = proc_ty.is_variadic;
-            let return_ty = type_resolve(ctx, proc_ty.return_ty);
-
-            let proc_ty = hir::ProcType {
-                param_types,
-                is_variadic,
-                return_ty,
-            };
-            hir::Type::Procedure(ctx.arena.alloc(proc_ty))
-        }
-        ast::TypeKind::ArraySlice(slice) => {
-            let elem_ty = type_resolve(ctx, slice.elem_ty);
-
-            if elem_ty.is_error() {
-                hir::Type::Error
-            } else {
-                let slice = hir::ArraySlice {
-                    mutt: slice.mutt,
-                    elem_ty,
-                };
-                hir::Type::ArraySlice(ctx.arena.alloc(slice))
-            }
-        }
-        ast::TypeKind::ArrayStatic(array) => {
-            let expect = Expectation::HasType(hir::Type::USIZE, None);
-            let len_res = constant::resolve_const_expr(ctx, origin_id, expect, array.len);
-            let elem_ty = type_resolve(ctx, array.elem_ty);
-
-            if elem_ty.is_error() {
-                hir::Type::Error
-            } else if let Ok(value) = len_res {
-                let len = match value {
-                    hir::ConstValue::Int { val, .. } => val,
-                    _ => unreachable!(),
-                };
-                let array = hir::ArrayStatic {
-                    len: hir::ArrayStaticLen::Immediate(len),
-                    elem_ty,
-                };
-                hir::Type::ArrayStatic(ctx.arena.alloc(array))
-            } else {
-                hir::Type::Error
-            }
-        }
-    }
-}
-
-#[must_use]
-pub fn type_resolve_delayed<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    ast_ty: ast::Type<'ast>,
-) -> hir::Type<'hir> {
-    match ast_ty.kind {
-        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
-        ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, path),
-        ast::TypeKind::Generic(generic) => {
-            let src = ctx.src(ast_ty.range);
-            ctx.emit.error(Error::new(
-                "internal: generic parameterized types are not implemented",
-                src,
-                None,
-            ));
-            hir::Type::Error
-        }
-        ast::TypeKind::Reference(mutt, ref_ty) => {
-            let ref_ty = type_resolve_delayed(ctx, *ref_ty);
-
-            if ref_ty.is_error() {
-                hir::Type::Error
-            } else {
-                hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
-            }
-        }
-        ast::TypeKind::Procedure(proc_ty) => {
-            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
-            for param_ty in proc_ty.param_types {
-                let ty = type_resolve_delayed(ctx, *param_ty);
-                param_types.push(ty);
-            }
-            let param_types = ctx.arena.alloc_slice(&param_types);
-
-            let is_variadic = proc_ty.is_variadic;
-            let return_ty = type_resolve_delayed(ctx, proc_ty.return_ty);
-
-            let proc_ty = hir::ProcType {
-                param_types,
-                is_variadic,
-                return_ty,
-            };
-            hir::Type::Procedure(ctx.arena.alloc(proc_ty))
-        }
-        ast::TypeKind::ArraySlice(slice) => {
-            let elem_ty = type_resolve_delayed(ctx, slice.elem_ty);
-
-            if elem_ty.is_error() {
-                hir::Type::Error
-            } else {
-                let slice = hir::ArraySlice {
-                    mutt: slice.mutt,
-                    elem_ty,
-                };
-                hir::Type::ArraySlice(ctx.arena.alloc(slice))
-            }
-        }
-        ast::TypeKind::ArrayStatic(array) => {
-            let elem_ty = type_resolve_delayed(ctx, array.elem_ty);
-
-            if elem_ty.is_error() {
-                hir::Type::Error
-            } else {
-                let len = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
-                let array = hir::ArrayStatic {
-                    len: hir::ArrayStaticLen::ConstEval(len),
-                    elem_ty,
-                };
-                hir::Type::ArrayStatic(ctx.arena.alloc(array))
-            }
-        }
-    }
-}
-
 pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'hir>) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     let item = ctx.registry.proc_item(id);
@@ -197,15 +44,16 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
         let param = hir::Param {
             mutt: param.mutt,
             name: param.name,
-            ty: type_resolve_delayed(ctx, param.ty),
+            ty: type_resolve(ctx, param.ty, true),
             ty_range: param.ty.range,
         };
         unique.push(param);
     }
 
-    let return_ty = type_resolve_delayed(ctx, item.return_ty);
+    let params = ctx.arena.alloc_slice(&unique);
+    let return_ty = type_resolve(ctx, item.return_ty, true);
     let data = ctx.registry.proc_data_mut(id);
-    data.params = ctx.arena.alloc_slice(&unique);
+    data.params = params;
     data.return_ty = return_ty;
 }
 
@@ -266,7 +114,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
                 let mut fields = Vec::with_capacity(types.len());
                 for ty in types {
                     let ty_range = ty.range;
-                    let ty = type_resolve_delayed(ctx, *ty);
+                    let ty = type_resolve(ctx, *ty, true);
                     fields.push(hir::VariantField { ty, ty_range });
                 }
                 let fields = ctx.arena.alloc_slice(&fields);
@@ -356,7 +204,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'
         let field = hir::Field {
             vis: field.vis,
             name: field.name,
-            ty: type_resolve_delayed(ctx, field.ty),
+            ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,
         };
         unique.push(field);
@@ -370,7 +218,7 @@ fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID<'hi
     ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
     let item = ctx.registry.const_item(id);
 
-    let ty = type_resolve_delayed(ctx, item.ty);
+    let ty = type_resolve(ctx, item.ty, true);
     ctx.registry.const_data_mut(id).ty = ty;
 }
 
@@ -378,6 +226,82 @@ fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID<'
     ctx.scope.set_origin(ctx.registry.global_data(id).origin_id);
     let item = ctx.registry.global_item(id);
 
-    let ty = type_resolve_delayed(ctx, item.ty);
+    let ty = type_resolve(ctx, item.ty, true);
     ctx.registry.global_data_mut(id).ty = ty;
+}
+
+#[must_use]
+pub fn type_resolve<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    ast_ty: ast::Type<'ast>,
+    delayed: bool,
+) -> hir::Type<'hir> {
+    match ast_ty.kind {
+        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
+        ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, path),
+        ast::TypeKind::Generic(generic) => {
+            let src = ctx.src(ast_ty.range);
+            err::internal_generic_types_not_implemented(&mut ctx.emit, src);
+            hir::Type::Error
+        }
+        ast::TypeKind::Reference(mutt, ref_ty) => {
+            let ref_ty = type_resolve(ctx, *ref_ty, delayed);
+
+            if ref_ty.is_error() {
+                hir::Type::Error
+            } else {
+                hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+            }
+        }
+        ast::TypeKind::Procedure(proc_ty) => {
+            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
+            for param_ty in proc_ty.param_types {
+                let ty = type_resolve(ctx, *param_ty, delayed);
+                param_types.push(ty);
+            }
+            let param_types = ctx.arena.alloc_slice(&param_types);
+            let is_variadic = proc_ty.is_variadic;
+            let return_ty = type_resolve(ctx, proc_ty.return_ty, delayed);
+
+            let proc_ty = hir::ProcType {
+                param_types,
+                is_variadic,
+                return_ty,
+            };
+            hir::Type::Procedure(ctx.arena.alloc(proc_ty))
+        }
+        ast::TypeKind::ArraySlice(slice) => {
+            let elem_ty = type_resolve(ctx, slice.elem_ty, delayed);
+
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else {
+                let mutt = slice.mutt;
+                let slice = hir::ArraySlice { mutt, elem_ty };
+                hir::Type::ArraySlice(ctx.arena.alloc(slice))
+            }
+        }
+        ast::TypeKind::ArrayStatic(array) => {
+            let elem_ty = type_resolve(ctx, array.elem_ty, delayed);
+
+            let len = if delayed {
+                let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
+                hir::ArrayStaticLen::ConstEval(eval_id)
+            } else {
+                let expect = Expectation::HasType(hir::Type::USIZE, None);
+                match constant::resolve_const_expr(ctx, expect, array.len) {
+                    Ok(hir::ConstValue::Int { val, .. }) => hir::ArrayStaticLen::Immediate(val),
+                    Ok(_) => unreachable!(),
+                    Err(_) => return hir::Type::Error,
+                }
+            };
+
+            if elem_ty.is_error() {
+                hir::Type::Error
+            } else {
+                let array = hir::ArrayStatic { len, elem_ty };
+                hir::Type::ArrayStatic(ctx.arena.alloc(array))
+            }
+        }
+    }
 }

@@ -270,6 +270,19 @@ impl<'hir> GlobalScope<'hir> {
         Err(())
     }
 
+    pub fn find_proc_main(
+        &self,
+        target_id: ModuleID,
+        main_id: ID<InternName>,
+    ) -> Option<hir::ProcID<'hir>> {
+        let target = self.module(target_id);
+
+        match target.symbols.get(&main_id).copied() {
+            Some(Symbol::Defined(SymbolID::Proc(proc_id))) => Some(proc_id),
+            _ => None,
+        }
+    }
+
     #[inline]
     fn module(&self, module_id: ModuleID) -> &ModuleScope<'hir> {
         &self.modules[module_id.index()]

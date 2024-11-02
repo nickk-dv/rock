@@ -1,69 +1,51 @@
 use super::attr_check;
-use super::context::{HirCtx, SymbolKind};
-use crate::ast;
-use crate::error::{Error, ErrorSink, SourceRange};
+use super::context::HirCtx;
+use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;
 use crate::session::{self, ModuleOrDirectory};
-use crate::text::TextRange;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {
     let root_package = ctx.session.graph.package(session::ROOT_PACKAGE_ID);
-    let root_manifest = root_package.manifest();
-    if root_manifest.package.kind != PackageKind::Bin {
+    if root_package.manifest().package.kind != PackageKind::Bin {
         return;
     }
 
-    let main_id = match ctx.intern_name().get_id("main") {
+    let main_id = match ctx.session.intern_name.get_id("main") {
         Some(main_id) => main_id,
         None => {
-            ctx.emit.error(Error::message(
-                "could not find `main` module, expected `src/main.rock` to exist",
-            ));
+            err::entry_main_mod_not_found(&mut ctx.emit);
             return;
         }
     };
 
     let module_or_directory = root_package.src().find(&ctx.session, main_id);
-
-    let origin_id = match module_or_directory {
+    let target_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
         _ => {
-            ctx.emit.error(Error::message(
-                "could not find `main` module, expected `src/main.rock` to exist",
-            ));
+            err::entry_main_mod_not_found(&mut ctx.emit);
             return;
         }
     };
 
-    let main_name = ast::Name {
-        id: main_id,
-        range: TextRange::zero(),
-    };
-    let defined = ctx
-        .scope
-        .symbol_from_scope(&ctx.registry, origin_id, origin_id, main_name);
-
-    if let Ok(SymbolKind::Proc(proc_id)) = defined {
+    if let Some(proc_id) = ctx.scope.global.find_proc_main(target_id, main_id) {
         check_main_procedure(ctx, proc_id);
     } else {
-        ctx.emit.error(Error::message(
-            "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`",
-        ));
+        err::entry_main_proc_not_found(&mut ctx.emit);
     }
 }
 
-pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hir>) {
+fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hir>) {
     let data = ctx.registry.proc_data_mut(proc_id);
-    let flag = hir::ProcFlag::Main;
-    let item_src = SourceRange::new(data.origin_id, data.name.range);
+    let main_src = data.src();
+    ctx.scope.set_origin(data.origin_id);
 
     attr_check::apply_item_flag(
         &mut ctx.emit,
         &mut data.attr_set,
-        flag,
+        hir::ProcFlag::Main,
         None,
-        item_src,
+        main_src,
         "procedures",
     );
 
@@ -71,22 +53,11 @@ pub fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::
     let data = ctx.registry.proc_data(proc_id);
 
     if !data.params.is_empty() {
-        ctx.emit.error(Error::new(
-            "`main` procedure cannot have any parameters",
-            item_src,
-            None,
-        ));
+        err::entry_main_with_parameters(&mut ctx.emit, main_src);
     }
 
-    //@allow `never`?
-    if !matches!(
-        data.return_ty,
-        hir::Type::Error | hir::Type::Basic(ast::BasicType::S32)
-    ) {
-        ctx.emit.error(Error::new(
-            "`main` procedure must return `s32`",
-            SourceRange::new(data.origin_id, item.return_ty.range),
-            None,
-        ));
+    if !data.return_ty.is_error() && !data.return_ty.is_never() {
+        let ret_src = ctx.src(item.return_ty.range);
+        err::entry_main_wrong_return_ty(&mut ctx.emit, ret_src);
     }
 }

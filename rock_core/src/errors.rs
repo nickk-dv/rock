@@ -896,3 +896,32 @@ pub fn tycheck_cannot_apply_bin_op(
     let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty_fmt}`");
     emit.error(Error::new(msg, src, None));
 }
+
+//==================== ENTRY POINT ====================
+
+pub fn entry_main_mod_not_found(emit: &mut impl ErrorSink) {
+    let msg = "could not find `main` module, expected `src/main.rock` to exist";
+    emit.error(Error::message(msg));
+}
+
+pub fn entry_main_proc_not_found(emit: &mut impl ErrorSink) {
+    let msg = "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`";
+    emit.error(Error::message(msg));
+}
+
+pub fn entry_main_with_parameters(emit: &mut impl ErrorSink, main_src: SourceRange) {
+    let msg = "`main` procedure cannot have any parameters`";
+    emit.error(Error::new(msg, main_src, None));
+}
+
+pub fn entry_main_wrong_return_ty(emit: &mut impl ErrorSink, ret_src: SourceRange) {
+    let msg = "`main` procedure must return `s32` or `never`";
+    emit.error(Error::new(msg, ret_src, None));
+}
+
+//==================== INTERNAL ====================
+
+pub fn internal_generic_types_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "internal: generic parameterized types are not implemented";
+    emit.error(Error::new(msg, src, None));
+}

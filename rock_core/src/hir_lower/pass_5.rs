@@ -84,11 +84,11 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
         hir::Type::Enum(id) => {
-            let name = ctx.name_str(ctx.registry.enum_data(id).name.id);
+            let name = ctx.name(ctx.registry.enum_data(id).name.id);
             name.to_string().into()
         }
         hir::Type::Struct(id) => {
-            let name = ctx.name_str(ctx.registry.struct_data(id).name.id);
+            let name = ctx.name(ctx.registry.struct_data(id).name.id);
             name.to_string().into()
         }
         hir::Type::Reference(mutt, ref_ty) => {
@@ -812,7 +812,7 @@ fn check_field_from_type<'hir>(
             ctx.emit.error(Error::new(
                 format!(
                     "no field `{}` exists on value of type `{}`",
-                    ctx.name_str(name.id),
+                    ctx.name(name.id),
                     type_format(ctx, ty).as_str(),
                 ),
                 SourceRange::new(origin_id, name.range),
@@ -834,7 +834,7 @@ fn check_field_from_struct<'hir>(
         Some((field_id, field)) => {
             if origin_id != data.origin_id && field.vis == ast::Vis::Private {
                 ctx.emit.error(Error::new(
-                    format!("field `{}` is private", ctx.name_str(name.id)),
+                    format!("field `{}` is private", ctx.name(name.id)),
                     SourceRange::new(origin_id, name.range),
                     Info::new(
                         "defined here",
@@ -846,7 +846,7 @@ fn check_field_from_struct<'hir>(
         }
         None => {
             ctx.emit.error(Error::new(
-                format!("field `{}` is not found", ctx.name_str(name.id)),
+                format!("field `{}` is not found", ctx.name(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new(
                     "struct defined here",
@@ -864,7 +864,7 @@ fn check_field_from_slice<'hir>(
     name: ast::Name,
     slice: &hir::ArraySlice,
 ) -> Option<hir::SliceField> {
-    let field_name = ctx.name_str(name.id);
+    let field_name = ctx.name(name.id);
     match field_name {
         "ptr" => Some(hir::SliceField::Ptr),
         "len" => Some(hir::SliceField::Len),
@@ -889,7 +889,7 @@ fn check_field_from_array<'hir>(
     name: ast::Name,
     array: &hir::ArrayStatic,
 ) -> Option<hir::ConstValue<'hir>> {
-    let field_name = ctx.name_str(name.id);
+    let field_name = ctx.name(name.id);
     match field_name {
         "len" => {
             let len = match array.len {
@@ -1394,7 +1394,7 @@ fn typecheck_struct_init<'hir>(
                     ctx.emit.error(Error::new(
                         format!(
                             "field `{}` was already initialized",
-                            ctx.name_str(input.name.id),
+                            ctx.name(input.name.id),
                         ),
                         SourceRange::new(ctx.proc.origin(), input.name.range),
                         Info::new("initialized here", SourceRange::new(origin_id, range)),
@@ -1403,7 +1403,7 @@ fn typecheck_struct_init<'hir>(
                     if ctx.proc.origin() != origin_id {
                         if field.vis == ast::Vis::Private {
                             ctx.emit.error(Error::new(
-                                format!("field `{}` is private", ctx.name_str(field.name.id),),
+                                format!("field `{}` is private", ctx.name(field.name.id),),
                                 SourceRange::new(ctx.proc.origin(), input.name.range),
                                 Info::new(
                                     "defined here",
@@ -1426,8 +1426,8 @@ fn typecheck_struct_init<'hir>(
                 ctx.emit.error(Error::new(
                     format!(
                         "field `{}` is not found in `{}`",
-                        ctx.name_str(input.name.id),
-                        ctx.name_str(data_name.id)
+                        ctx.name(input.name.id),
+                        ctx.name(data_name.id)
                     ),
                     SourceRange::new(ctx.proc.origin(), input.name.range),
                     Info::new(
@@ -1450,7 +1450,7 @@ fn typecheck_struct_init<'hir>(
             if let FieldStatus::None = status {
                 let field = data.field(hir::FieldID::new_raw(idx));
                 message.push('`');
-                message.push_str(ctx.name_str(field.name.id));
+                message.push_str(ctx.name(field.name.id));
                 if idx + 1 != field_count {
                     message.push_str("`, ");
                 } else {
@@ -2397,7 +2397,7 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
                     }
                 };
                 let name_src = SourceRange::new(ctx.proc.origin(), name.range);
-                let name = ctx.name_str(name.id);
+                let name = ctx.name(name.id);
                 err::scope_name_already_defined(&mut ctx.emit, name_src, existing, name);
                 true
             } else {
@@ -2569,8 +2569,8 @@ fn find_enum_variant<'hir>(
     }
     let src = SourceRange::new(ctx.proc.origin(), name.range);
     let enum_src = enum_data.src();
-    let name = ctx.name_str(name.id);
-    let enum_name = ctx.name_str(enum_data.name.id);
+    let name = ctx.name(name.id);
+    let enum_name = ctx.name(enum_data.name.id);
     err::tycheck_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
     None
 }
@@ -2588,8 +2588,8 @@ fn find_struct_field<'hir>(
     }
     let src = SourceRange::new(ctx.proc.origin(), name.range);
     let struct_src = struct_data.src();
-    let name = ctx.name_str(name.id);
-    let struct_name = ctx.name_str(struct_data.name.id);
+    let name = ctx.name(name.id);
+    let struct_name = ctx.name(struct_data.name.id);
     err::tycheck_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name);
     None
 }
@@ -3034,7 +3034,6 @@ fn path_resolve<'hir>(
 // mainly due to bad scope / symbol design
 pub fn path_resolve_type<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
     let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
@@ -3058,7 +3057,7 @@ pub fn path_resolve_type<'hir>(
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
             ctx.emit.error(Error::new(
-                format!("expected type, found local `{}`", ctx.name_str(name.id)),
+                format!("expected type, found local `{}`", ctx.name(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new("defined here", source),
             ));
@@ -3073,7 +3072,7 @@ pub fn path_resolve_type<'hir>(
                     format!(
                         "expected type, found {} `{}`",
                         kind.kind_name(),
-                        ctx.name_str(name.id)
+                        ctx.name(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", kind.src(&ctx.registry)),
@@ -3125,10 +3124,7 @@ pub fn path_resolve_struct<'hir>(
             //@calling this `local` for both params and locals, validate wording consistency
             // by maybe extracting all error formats to separate module @07.04.24
             ctx.emit.error(Error::new(
-                format!(
-                    "expected struct type, found local `{}`",
-                    ctx.name_str(name.id)
-                ),
+                format!("expected struct type, found local `{}`", ctx.name(name.id)),
                 SourceRange::new(origin_id, name.range),
                 Info::new("defined here", source),
             ));
@@ -3142,7 +3138,7 @@ pub fn path_resolve_struct<'hir>(
                     format!(
                         "expected struct type, found {} `{}`",
                         kind.kind_name(),
-                        ctx.name_str(name.id)
+                        ctx.name(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", kind.src(&ctx.registry)),
@@ -3228,7 +3224,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                         format!(
                             "expected value, found {} `{}`",
                             kind.kind_name(),
-                            ctx.name_str(name.id)
+                            ctx.name(name.id)
                         ),
                         SourceRange::new(origin_id, name.range),
                         Info::new("defined here", kind.src(&ctx.registry)),
@@ -3244,7 +3240,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                     format!(
                         "expected value, found {} `{}`",
                         kind.kind_name(),
-                        ctx.name_str(name.id)
+                        ctx.name(name.id)
                     ),
                     SourceRange::new(origin_id, name.range),
                     Info::new("defined here", kind.src(&ctx.registry)),

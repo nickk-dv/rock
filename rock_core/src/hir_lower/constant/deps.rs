@@ -997,7 +997,6 @@ fn resolve_and_update_const_eval<'hir>(
 #[must_use]
 pub fn resolve_const_expr<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr,
 ) -> Result<hir::ConstValue<'hir>, ()> {
