@@ -1,7 +1,6 @@
 mod attr_check;
 mod constant;
 mod context;
-mod context2;
 mod match_check;
 mod pass_1;
 mod pass_2;
@@ -25,5 +24,5 @@ pub fn check<'hir, 'ast, 's_ref>(
     constant::resolve_const_dependencies(&mut ctx);
     pass_5::typecheck_procedures(&mut ctx);
     pass_6::check_entry_point(&mut ctx);
-    ctx.hir_emit()
+    ctx.finish()
 }

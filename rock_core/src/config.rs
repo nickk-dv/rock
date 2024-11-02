@@ -21,19 +21,19 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum TargetOS {
+        Windows "windows",
+        Linux "linux",
+    }
+}
+
+crate::enum_as_str! {
     #[allow(non_camel_case_types)]
     #[derive(Copy, Clone, PartialEq)]
     pub enum TargetArch {
         x86_64 "x86_64",
         Arm_64 "aarch64",
-    }
-}
-
-crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
-    pub enum TargetOS {
-        Windows "windows",
-        Linux "linux",
     }
 }
 
@@ -67,6 +67,15 @@ impl Config {
 }
 
 impl TargetTriple {
+    pub fn os(self) -> TargetOS {
+        match self {
+            TargetTriple::x86_64_pc_windows_msvc => TargetOS::Windows,
+            TargetTriple::x86_64_unknown_linux_gnu => TargetOS::Linux,
+            TargetTriple::Arm_64_pc_windows_msvc => TargetOS::Windows,
+            TargetTriple::Arm_64_unknown_linux_gnu => TargetOS::Linux,
+        }
+    }
+
     pub fn arch(self) -> TargetArch {
         match self {
             TargetTriple::x86_64_pc_windows_msvc | TargetTriple::x86_64_unknown_linux_gnu => {
@@ -77,14 +86,7 @@ impl TargetTriple {
             }
         }
     }
-    pub fn os(self) -> TargetOS {
-        match self {
-            TargetTriple::x86_64_pc_windows_msvc => TargetOS::Windows,
-            TargetTriple::x86_64_unknown_linux_gnu => TargetOS::Linux,
-            TargetTriple::Arm_64_pc_windows_msvc => TargetOS::Windows,
-            TargetTriple::Arm_64_unknown_linux_gnu => TargetOS::Linux,
-        }
-    }
+
     pub fn host() -> TargetTriple {
         #[rustfmt::skip]
         #[cfg(all(target_arch = "x86_64", target_vendor = "pc", target_os = "windows", target_env = "msvc"))]

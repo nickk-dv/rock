@@ -315,8 +315,8 @@ fn check_const_dependency_cycle<'hir>(
                 let variant = data.variant(variant_id);
                 let msg = format!(
                     "{prefix}depends on `{}.{}` enum variant{postfix}",
-                    ctx.name_str(data.name.id),
-                    ctx.name_str(variant.name.id)
+                    ctx.name(data.name.id),
+                    ctx.name(variant.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, variant.name.range);
                 (msg, src)
@@ -325,7 +325,7 @@ fn check_const_dependency_cycle<'hir>(
                 let data = ctx.registry.enum_data(id);
                 let msg = format!(
                     "{prefix}depends on size of `{}`{postfix}",
-                    ctx.name_str(data.name.id)
+                    ctx.name(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
@@ -334,7 +334,7 @@ fn check_const_dependency_cycle<'hir>(
                 let data = ctx.registry.struct_data(id);
                 let msg = format!(
                     "{prefix}depends on size of `{}`{postfix}",
-                    ctx.name_str(data.name.id)
+                    ctx.name(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
@@ -343,7 +343,7 @@ fn check_const_dependency_cycle<'hir>(
                 let data = ctx.registry.const_data(id);
                 let msg = format!(
                     "{prefix}depends on `{}` const value{postfix}",
-                    ctx.name_str(data.name.id)
+                    ctx.name(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)
@@ -352,7 +352,7 @@ fn check_const_dependency_cycle<'hir>(
                 let data = ctx.registry.global_data(id);
                 let msg = format!(
                     "{prefix}depends on `{}` global value{postfix}",
-                    ctx.name_str(data.name.id)
+                    ctx.name(data.name.id)
                 );
                 let src = SourceRange::new(data.origin_id, data.name.range);
                 (msg, src)

@@ -1,8 +1,8 @@
+use super::registry::Registry;
 use crate::ast;
 use crate::error::{ErrorWarningBuffer, SourceRange};
 use crate::errors as err;
 use crate::hir;
-use crate::hir_lower::context::Registry;
 use crate::hir_lower::pass_5::Expectation;
 use crate::intern::InternName;
 use crate::session::{ModuleID, Session};
@@ -27,12 +27,11 @@ struct ModuleScope<'hir> {
     symbols: HashMap<ID<InternName>, Symbol<'hir>>,
 }
 
-#[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum Symbol<'hir> {
-    Defined { symbol_id: SymbolID<'hir> },
-    Imported { symbol_id: SymbolID<'hir>, import: TextRange },
-    Module { module_id: ModuleID, import: TextRange },
+    Defined(SymbolID<'hir>),
+    Imported(SymbolID<'hir>, TextRange),
+    ImportedModule(ModuleID, TextRange),
 }
 
 #[derive(Copy, Clone)]
@@ -159,9 +158,9 @@ impl<'hir> Scope<'hir> {
 
     fn symbol_src(&self, symbol: Symbol<'hir>, registry: &Registry<'hir, '_>) -> SourceRange {
         match symbol {
-            Symbol::Defined { symbol_id } => symbol_id.src(registry),
-            Symbol::Imported { import, .. } => SourceRange::new(self.origin_id, import),
-            Symbol::Module { import, .. } => SourceRange::new(self.origin_id, import),
+            Symbol::Defined(symbol_id) => symbol_id.src(registry),
+            Symbol::Imported(_, import) => SourceRange::new(self.origin_id, import),
+            Symbol::ImportedModule(_, import) => SourceRange::new(self.origin_id, import),
         }
     }
 
@@ -223,7 +222,7 @@ impl<'hir> GlobalScope<'hir> {
         let target = self.module(target_id);
 
         match target.symbols.get(&name.id).copied() {
-            Some(Symbol::Defined { symbol_id }) => {
+            Some(Symbol::Defined(symbol_id)) => {
                 if origin_id == target_id {
                     return Ok(SymbolOrModule::Symbol(symbol_id));
                 }
@@ -246,12 +245,12 @@ impl<'hir> GlobalScope<'hir> {
                     }
                 };
             }
-            Some(Symbol::Imported { symbol_id, .. }) => {
+            Some(Symbol::Imported(symbol_id, _)) => {
                 if origin_id == target_id {
                     return Ok(SymbolOrModule::Symbol(symbol_id));
                 }
             }
-            Some(Symbol::Module { module_id, .. }) => {
+            Some(Symbol::ImportedModule(module_id, _)) => {
                 if origin_id == target_id {
                     return Ok(SymbolOrModule::Module(module_id));
                 }

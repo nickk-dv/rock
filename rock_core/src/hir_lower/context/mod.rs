@@ -65,3 +65,21 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
         Ok((hir, warnings))
     }
 }
+
+//@move?
+impl hir::ArrayStaticLen {
+    pub fn get_resolved(self, ctx: &HirCtx) -> Result<u64, ()> {
+        match self {
+            hir::ArrayStaticLen::Immediate(len) => Ok(len),
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                let (eval, _) = *ctx.registry.const_eval(eval_id);
+                let value_id = eval.get_resolved()?;
+
+                match ctx.const_intern.get(value_id) {
+                    hir::ConstValue::Int { val, .. } => Ok(val),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}

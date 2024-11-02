@@ -105,7 +105,7 @@ fn fold_slice_field<'hir>(
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
                 if !string_lit.c_string {
-                    let string = ctx.intern_lit().get(string_lit.id);
+                    let string = ctx.session.intern_lit.get(string_lit.id);
                     let len = string.len();
 
                     Ok(hir::ConstValue::Int {

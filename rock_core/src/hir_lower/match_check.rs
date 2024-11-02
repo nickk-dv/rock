@@ -1,6 +1,6 @@
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
-use crate::error::{Error, ErrorSink, SourceRange};
+use crate::error::{Error, ErrorSink};
 use crate::hir;
 use crate::intern::InternLit;
 use crate::support::ID;
@@ -109,7 +109,7 @@ fn match_cov_int(
 
     if !not_covered.is_empty() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = SourceRange::new(ctx.proc.origin(), match_kw);
+        let src = ctx.src(match_kw);
 
         for value in not_covered {
             match value.display() {
@@ -157,7 +157,7 @@ fn pat_cov_int(
             PatCovError::CoverFull => "pattern already covered",
             PatCovError::CoverPartial => "pattern partially covered",
         };
-        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let src = ctx.src(pat_range);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
@@ -189,7 +189,7 @@ fn match_cov_bool(
     let not_covered = cov.not_covered();
     if !not_covered.is_empty() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = SourceRange::new(ctx.proc.origin(), match_kw);
+        let src = ctx.src(match_kw);
 
         for &value in not_covered {
             if value {
@@ -228,7 +228,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
             PatCovError::CoverFull => "pattern already covered",
             PatCovError::CoverPartial => "pattern partially covered",
         };
-        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let src = ctx.src(pat_range);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
@@ -259,7 +259,7 @@ fn match_cov_char(
 
     if cov.not_covered() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = SourceRange::new(ctx.proc.origin(), match_kw);
+        let src = ctx.src(match_kw);
 
         //@for all pat errors check if trailing \n is needed
         msg.push_str("- `_`\n");
@@ -293,7 +293,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
             PatCovError::CoverFull => "pattern already covered",
             PatCovError::CoverPartial => "pattern partially covered",
         };
-        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let src = ctx.src(pat_range);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
@@ -324,7 +324,7 @@ fn match_cov_string(
 
     if cov.not_covered() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = SourceRange::new(ctx.proc.origin(), match_kw);
+        let src = ctx.src(match_kw);
 
         //@for all pat errors check if trailing \n is needed
         msg.push_str("- `_`\n");
@@ -358,7 +358,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
             PatCovError::CoverFull => "pattern already covered",
             PatCovError::CoverPartial => "pattern partially covered",
         };
-        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let src = ctx.src(pat_range);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
@@ -396,11 +396,11 @@ fn match_cov_enum<'hir>(
 
     if !not_covered.is_empty() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = SourceRange::new(ctx.proc.origin(), match_kw);
+        let src = ctx.src(match_kw);
 
         for variant_id in not_covered {
             let variant = data.variant(*variant_id);
-            let name = ctx.name_str(variant.name.id);
+            let name = ctx.name(variant.name.id);
             msg.push_str(&format!("- `.{name}`\n"));
         }
         ctx.emit.error(Error::new(msg, src, None));
@@ -441,7 +441,7 @@ fn pat_cov_enum<'hir>(
             PatCovError::CoverFull => "pattern already covered",
             PatCovError::CoverPartial => "pattern partially covered",
         };
-        let src = SourceRange::new(ctx.proc.origin(), pat_range);
+        let src = ctx.src(pat_range);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }

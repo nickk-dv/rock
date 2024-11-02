@@ -258,7 +258,7 @@ pub fn syntax_invalid_mod_comment(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-//==================== SCOPE ====================
+//==================== CHECK SCOPE ====================
 
 pub fn scope_name_already_defined(
     emit: &mut impl ErrorSink,
@@ -296,7 +296,7 @@ pub fn scope_symbol_not_found(
     emit.error(Error::new(msg, name_src, None));
 }
 
-//==================== ATTRIBUTE ====================
+//==================== CHECK ATTRIBUTE ====================
 
 pub fn attr_unknown(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
     let msg = format!("attribute `{attr_name}` is unknown");
@@ -338,14 +338,14 @@ pub fn attr_param_value_required(
 
 pub fn attr_param_list_unexpected(
     emit: &mut impl ErrorSink,
-    params_src: SourceRange,
+    list_src: SourceRange,
     attr_name: &str,
 ) {
     let msg = format!("attribute `{attr_name}` expects no parameters");
-    emit.error(Error::new(msg, params_src, None));
+    emit.error(Error::new(msg, list_src, None));
 }
 
-pub fn attr_expect_single_param(
+pub fn attr_param_list_expect_single(
     emit: &mut impl ErrorSink,
     param_src: SourceRange,
     attr_name: &str,
@@ -365,6 +365,11 @@ pub fn attr_param_list_required(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn attr_duplicate(emit: &mut impl WarningSink, attr_src: SourceRange, attr_name: &str) {
+    let msg = format!("duplicate attribute `{attr_name}`");
+    emit.warning(Warning::new(msg, attr_src, None));
+}
+
 pub fn attr_cannot_apply(
     emit: &mut impl ErrorSink,
     attr_src: SourceRange,
@@ -373,6 +378,37 @@ pub fn attr_cannot_apply(
 ) {
     let msg = format!("attribute `{attr_name}` cannot be applied to {item_kinds}",);
     emit.error(Error::new(msg, attr_src, None));
+}
+
+pub fn attr_flag_cannot_apply(
+    emit: &mut impl ErrorSink,
+    item_src: SourceRange,
+    new_flag: &str,
+    old_flag: &str,
+    item_kinds: &'static str,
+) {
+    let msg = format!("`{new_flag}` {item_kinds} cannot be `{old_flag}`",);
+    emit.error(Error::new(msg, item_src, None));
+}
+
+pub fn attr_proc_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg = "`variadic` procedures must be `external`";
+    emit.error(Error::new(msg, proc_src, None));
+}
+
+pub fn attr_proc_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg = "`variadic` procedures must have at least one parameter";
+    emit.error(Error::new(msg, proc_src, None));
+}
+
+pub fn attr_proc_builtin_with_block(
+    emit: &mut impl ErrorSink,
+    proc_src: SourceRange,
+    block_src: SourceRange,
+) {
+    let msg = "`builtin` procedures cannot have a body";
+    let info = Info::new("remove this block", block_src);
+    emit.error(Error::new(msg, proc_src, info));
 }
 
 pub fn attr_struct_repr_int(
@@ -386,7 +422,7 @@ pub fn attr_struct_repr_int(
     emit.error(Error::new(msg, attr_src, None));
 }
 
-//==================== IMPORT ====================
+//==================== CHECK IMPORT ====================
 
 pub fn import_package_dependency_not_found(
     emit: &mut impl ErrorSink,
@@ -408,22 +444,18 @@ pub fn import_expected_dir_not_found(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn import_expected_dir_found_mod(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    module_name: &str,
-) {
-    let msg = format!("expected directory, found module `{module_name}`");
+pub fn import_expected_dir_found_mod(emit: &mut impl ErrorSink, src: SourceRange, mod_name: &str) {
+    let msg = format!("expected directory, found module `{mod_name}`");
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn import_expected_mod_not_found(
     emit: &mut impl ErrorSink,
     src: SourceRange,
-    module_name: &str,
+    mod_name: &str,
     pkg_name: &str,
 ) {
-    let msg = format!("expected module `{module_name}` is not found in `{pkg_name}` package");
+    let msg = format!("expected module `{mod_name}` is not found in `{pkg_name}` package");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -432,8 +464,8 @@ pub fn import_expected_mod_found_dir(emit: &mut impl ErrorSink, src: SourceRange
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn import_module_into_itself(emit: &mut impl ErrorSink, src: SourceRange, module_name: &str) {
-    let msg = format!("importing module `{module_name}` into itself is not allowed");
+pub fn import_module_into_itself(emit: &mut impl ErrorSink, src: SourceRange, mod_name: &str) {
+    let msg = format!("importing module `{mod_name}` into itself is not allowed");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -447,7 +479,42 @@ pub fn import_name_discard_redundant(emit: &mut impl WarningSink, src: SourceRan
     emit.warning(Warning::new(msg, src, None));
 }
 
-//==================== CONSTANT ====================
+//==================== CHECK ITEMS ====================
+
+pub fn item_param_already_defined(
+    emit: &mut impl ErrorSink,
+    param_src: SourceRange,
+    existing: SourceRange,
+    name: &str,
+) {
+    let msg = format!("parameter `{name}` is defined multiple times");
+    let info = Info::new("existing parameter", existing);
+    emit.error(Error::new(msg, param_src, info));
+}
+
+pub fn item_variant_already_defined(
+    emit: &mut impl ErrorSink,
+    variant_src: SourceRange,
+    existing: SourceRange,
+    name: &str,
+) {
+    let msg = format!("variant `{name}` is defined multiple times");
+    let info = Info::new("existing variant", existing);
+    emit.error(Error::new(msg, variant_src, info));
+}
+
+pub fn item_field_already_defined(
+    emit: &mut impl ErrorSink,
+    field_src: SourceRange,
+    existing: SourceRange,
+    name: &str,
+) {
+    let msg = format!("field `{name}` is defined multiple times");
+    let info = Info::new("existing field", existing);
+    emit.error(Error::new(msg, field_src, info));
+}
+
+//==================== CHECK CONSTANT ====================
 
 pub fn const_cannot_use_expr(emit: &mut impl ErrorSink, src: SourceRange, expr_kind: &'static str) {
     let msg = format!("cannot use `{expr_kind}` expression in constants");
