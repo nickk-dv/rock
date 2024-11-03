@@ -1,4 +1,5 @@
 mod attr_check;
+mod check_path;
 mod constant;
 mod context;
 mod match_check;
@@ -7,7 +8,6 @@ mod pass_2;
 mod pass_3;
 mod pass_5;
 mod pass_6;
-mod proc_scope;
 
 use crate::error::{ErrorWarningBuffer, WarningBuffer};
 use crate::hir;

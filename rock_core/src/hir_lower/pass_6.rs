@@ -1,5 +1,6 @@
 use super::attr_check;
 use super::context::HirCtx;
+use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;
@@ -56,7 +57,10 @@ fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::Proc
         err::entry_main_with_parameters(&mut ctx.emit, main_src);
     }
 
-    if !data.return_ty.is_error() && !data.return_ty.is_never() {
+    if !data.return_ty.is_error()
+        && !data.return_ty.is_never()
+        && !matches!(data.return_ty, hir::Type::Basic(ast::BasicType::S32))
+    {
         let ret_src = ctx.src(item.return_ty.range);
         err::entry_main_wrong_return_ty(&mut ctx.emit, ret_src);
     }

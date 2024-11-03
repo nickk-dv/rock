@@ -1,4 +1,5 @@
 use super::attr_check;
+use super::check_path;
 use super::constant;
 use super::context::HirCtx;
 use super::pass_5::Expectation;
@@ -246,7 +247,7 @@ pub fn type_resolve<'hir, 'ast>(
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
-        ast::TypeKind::Custom(path) => super::pass_5::path_resolve_type(ctx, path),
+        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
         ast::TypeKind::Generic(generic) => {
             let src = ctx.src(ast_ty.range);
             err::internal_generic_types_not_implemented(&mut ctx.emit, src);

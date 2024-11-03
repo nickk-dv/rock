@@ -1,4 +1,5 @@
 use super::registry::Registry;
+use super::HirCtx;
 use crate::ast;
 use crate::error::{ErrorWarningBuffer, SourceRange};
 use crate::errors as err;
@@ -73,6 +74,7 @@ struct BlockData {
     bind_count: u32,
     local_count: u32,
     status: BlockStatus,
+    diverges: Diverges,
 }
 
 #[derive(Copy, Clone)]
@@ -345,10 +347,16 @@ impl<'hir> LocalScope<'hir> {
     }
 
     pub fn start_block(&mut self, status: BlockStatus) {
+        let diverges = self
+            .blocks
+            .last()
+            .map(|b| b.diverges)
+            .unwrap_or(Diverges::Maybe);
         let data = BlockData {
             local_count: 0,
             bind_count: 0,
             status,
+            diverges,
         };
         self.blocks.push(data);
     }
@@ -447,6 +455,14 @@ impl<'hir> LocalScope<'hir> {
     fn current_block_mut(&mut self) -> &mut BlockData {
         self.blocks.last_mut().unwrap()
     }
+    #[inline]
+    pub fn diverges(&mut self) -> Diverges {
+        self.current_block_mut().diverges
+    }
+    #[inline]
+    pub fn diverges_set(&mut self, diverges: Diverges) {
+        self.current_block_mut().diverges = diverges;
+    }
 }
 
 impl<'hir> SymbolID<'hir> {
@@ -489,4 +505,42 @@ impl<'hir> VariableID<'hir> {
             VariableID::Bind(_) => "binding",
         }
     }
+}
+
+pub fn check_find_enum_variant<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    enum_id: hir::EnumID<'hir>,
+    name: ast::Name,
+) -> Option<ID<hir::Variant<'hir>>> {
+    let enum_data = ctx.registry.enum_data(enum_id);
+    for (idx, variant) in enum_data.variants.iter().enumerate() {
+        if variant.name.id == name.id {
+            return Some(hir::VariantID::new_raw(idx));
+        }
+    }
+    let src = ctx.src(name.range);
+    let enum_src = enum_data.src();
+    let name = ctx.name(name.id);
+    let enum_name = ctx.name(enum_data.name.id);
+    err::scope_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
+    None
+}
+
+pub fn check_find_struct_field<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    struct_id: hir::StructID<'hir>,
+    name: ast::Name,
+) -> Option<ID<hir::Field<'hir>>> {
+    let struct_data = ctx.registry.struct_data(struct_id);
+    for (idx, field) in struct_data.fields.iter().enumerate() {
+        if field.name.id == name.id {
+            return Some(hir::FieldID::new_raw(idx));
+        }
+    }
+    let src = ctx.src(name.range);
+    let struct_src = struct_data.src();
+    let name = ctx.name(name.id);
+    let struct_name = ctx.name(struct_data.name.id);
+    err::scope_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name);
+    None
 }

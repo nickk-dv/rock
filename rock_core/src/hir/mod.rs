@@ -801,6 +801,13 @@ impl<'hir> Variant<'hir> {
     pub fn field(&self, id: VariantFieldID<'hir>) -> &'hir VariantField<'hir> {
         self.fields.id_get(id)
     }
+    pub fn field_id(&self, idx: usize) -> Option<VariantFieldID<'hir>> {
+        if idx < self.fields.len() {
+            Some(VariantFieldID::new_raw(idx))
+        } else {
+            None
+        }
+    }
 }
 
 impl<'hir> StructData<'hir> {
@@ -809,14 +816,6 @@ impl<'hir> StructData<'hir> {
     }
     pub fn field(&self, id: FieldID<'hir>) -> &'hir Field<'hir> {
         self.fields.id_get(id)
-    }
-    pub fn find_field(&self, id: ID<InternName>) -> Option<(FieldID<'hir>, &'hir Field<'hir>)> {
-        for (idx, field) in self.fields.iter().enumerate() {
-            if field.name.id == id {
-                return Some((FieldID::new_raw(idx), field));
-            }
-        }
-        None
     }
 }
 

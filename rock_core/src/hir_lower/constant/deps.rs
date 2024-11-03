@@ -1,11 +1,12 @@
+use super::super::check_path::{self, ValueID};
+use super::super::context::HirCtx;
+use super::super::{pass_3, pass_5, pass_5::Expectation};
 use super::fold;
 use super::layout;
 use crate::ast;
 use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir;
-use crate::hir_lower::context::HirCtx;
-use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::session::ModuleID;
 use crate::support::{IndexID, ID};
 use crate::text::TextRange;
@@ -720,9 +721,9 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         }
         //@args_list not used
         ast::ExprKind::Item { path, args_list } => {
-            match pass_5::path_resolve_value(ctx, path) {
-                pass_5::ValueID::None => Err(parent_id),
-                pass_5::ValueID::Proc(proc_id) => {
+            match check_path::path_resolve_value(ctx, path) {
+                ValueID::None => Err(parent_id),
+                ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
                     for param in ctx.registry.proc_data(proc_id).params {
@@ -732,15 +733,15 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     add_type_usage_const_dependencies(ctx, tree, parent_id, data.return_ty)?;
                     Ok(())
                 }
-                pass_5::ValueID::Enum(enum_id, variant_id) => {
+                ValueID::Enum(enum_id, variant_id) => {
                     add_variant_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
                     Ok(())
                 }
-                pass_5::ValueID::Const(const_id, _) => {
+                ValueID::Const(const_id, _) => {
                     add_const_var_const_dependency(ctx, tree, parent_id, const_id)?;
                     Ok(())
                 }
-                pass_5::ValueID::Global(_, _) => {
+                ValueID::Global(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -749,7 +750,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::Param(_, _) => {
+                ValueID::Param(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -758,7 +759,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::Local(_, _) => {
+                ValueID::Local(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -767,7 +768,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::LocalBind(_, _) => {
+                ValueID::LocalBind(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -786,7 +787,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         ast::ExprKind::StructInit { struct_init } => match struct_init.path {
             //@cannot infer struct / enum variant type in constants
             Some(path) => {
-                if let Some(struct_id) = pass_5::path_resolve_struct(ctx, path) {
+                if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
                     let ty = hir::Type::Struct(struct_id);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, ty)?;
                     for init in struct_init.input {

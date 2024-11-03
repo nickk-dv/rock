@@ -296,6 +296,30 @@ pub fn scope_symbol_not_found(
     emit.error(Error::new(msg, name_src, None));
 }
 
+pub fn scope_enum_variant_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    enum_src: SourceRange,
+    name: &str,
+    enum_name: &str,
+) {
+    let msg = format!("variant `{name}` not found in `{enum_name}`");
+    let info = Info::new("enum defined here", enum_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn scope_struct_field_not_found(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    struct_src: SourceRange,
+    name: &str,
+    struct_name: &str,
+) {
+    let msg = format!("field `{name}` not found in `{struct_name}`");
+    let info = Info::new("struct defined here", struct_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 //==================== CHECK ATTRIBUTE ====================
 
 pub fn attr_unknown(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
@@ -670,6 +694,12 @@ pub fn tycheck_type_mismatch(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_unreachable_stmt(emit: &mut impl ErrorSink, src: SourceRange, after: SourceRange) {
+    let msg = "unreachable statement";
+    let info = Info::new("all statements after this are unreachable", after);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_break_outside_loop(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "break outside of loop";
     emit.error(Error::new(msg, src, None));
@@ -717,32 +747,6 @@ pub fn tycheck_defer_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer
 pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, expr_kind: &'static str) {
     let msg = format!("unused {expr_kind}");
     emit.warning(Warning::new(msg, src, None));
-}
-
-//==================== TYPECHECK FIND ====================
-
-pub fn tycheck_enum_variant_not_found(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    enum_src: SourceRange,
-    name: &str,
-    enum_name: &str,
-) {
-    let msg = format!("variant `{name}` not found in `{enum_name}`");
-    let info = Info::new("enum defined here", enum_src);
-    emit.error(Error::new(msg, src, info));
-}
-
-pub fn tycheck_struct_field_not_found(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    struct_src: SourceRange,
-    name: &str,
-    struct_name: &str,
-) {
-    let msg = format!("field `{name}` not found in `{struct_name}`");
-    let info = Info::new("struct defined here", struct_src);
-    emit.error(Error::new(msg, src, info));
 }
 
 //==================== TYPECHECK INFER ====================

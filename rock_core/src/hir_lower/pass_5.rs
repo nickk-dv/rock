@@ -1,8 +1,8 @@
 use super::attr_check;
+use super::check_path::{self, ValueID};
 use super::constant;
-use super::context::scope::{BlockStatus, SymbolID, SymbolOrModule, VariableID};
+use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
-use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus};
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr, Warning, WarningSink};
 use crate::errors as err;
@@ -27,7 +27,7 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 
         ctx.scope.set_origin(data.origin_id);
         ctx.scope.local.reset();
-        ctx.scope.local.set_proc_context(data.params, expect);
+        ctx.scope.local.set_proc_context(data.params, expect); //shadowing params still addeded here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
 
         let (locals, binds) = ctx.scope.local.finish_proc_context();
@@ -633,12 +633,15 @@ fn typecheck_pat_item<'hir, 'ast>(
     ref_mut: Option<ast::Mut>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
-    match path_resolve_value(ctx, path) {
-        ValueID::None => PatResult::error(),
+    match check_path::path_resolve_value(ctx, path) {
+        ValueID::None => {
+            add_variant_local_binds(ctx, bind_list, None, None);
+            PatResult::error()
+        }
         ValueID::Enum(enum_id, variant_id) => {
-            let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-            let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut);
+            let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
+            let bind_ids = add_variant_local_binds(ctx, bind_list, Some(variant), ref_mut);
 
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -664,6 +667,7 @@ fn typecheck_pat_item<'hir, 'ast>(
                 ));
             }
 
+            add_variant_local_binds(ctx, bind_list, None, None);
             let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
@@ -672,6 +676,7 @@ fn typecheck_pat_item<'hir, 'ast>(
         | ValueID::Param(_, _)
         | ValueID::Local(_, _)
         | ValueID::LocalBind(_, _) => {
+            add_variant_local_binds(ctx, bind_list, None, None);
             ctx.emit.error(Error::new(
                 "cannot use runtime values in patterns",
                 ctx.src(pat_range),
@@ -693,15 +698,22 @@ fn typecheck_pat_variant<'hir>(
     let name_src = ctx.src(name.range);
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
-        None => return PatResult::error(),
+        None => {
+            add_variant_local_binds(ctx, bind_list, None, None);
+            return PatResult::error();
+        }
     };
-    let (variant_id, variant) = match find_enum_variant(ctx, enum_id, name) {
+    let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
-        None => return PatResult::error(),
+        None => {
+            add_variant_local_binds(ctx, bind_list, None, None);
+            return PatResult::error();
+        }
     };
 
     check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-    let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut);
+    let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
+    let bind_ids = add_variant_local_binds(ctx, bind_list, Some(variant), ref_mut);
 
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -774,7 +786,7 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => None,
-        hir::Type::Struct(struct_id) => match check_field_from_struct(ctx, name, struct_id) {
+        hir::Type::Struct(struct_id) => match check_field_from_struct(ctx, struct_id, name) {
             Some((field_id, field)) => {
                 let kind = FieldKind::Struct(struct_id, field_id);
                 let field_ty = field.ty;
@@ -818,29 +830,22 @@ fn check_field_from_type<'hir>(
 
 fn check_field_from_struct<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    name: ast::Name,
     struct_id: hir::StructID<'hir>,
+    name: ast::Name,
 ) -> Option<(hir::FieldID<'hir>, &'hir hir::Field<'hir>)> {
-    let data = ctx.registry.struct_data(struct_id);
-    match data.find_field(name.id) {
-        Some((field_id, field)) => {
-            if ctx.scope.origin() != data.origin_id && field.vis == ast::Vis::Private {
-                ctx.emit.error(Error::new(
-                    format!("field `{}` is private", ctx.name(name.id)),
-                    ctx.src(name.range),
-                    Info::new("defined here", data.src()),
-                ));
-            }
-            Some((field_id, field))
-        }
-        None => {
+    if let Some(field_id) = scope::check_find_struct_field(ctx, struct_id, name) {
+        let data = ctx.registry.struct_data(struct_id);
+        let field = data.field(field_id);
+        if ctx.scope.origin() != data.origin_id && field.vis == ast::Vis::Private {
             ctx.emit.error(Error::new(
-                format!("field `{}` is not found", ctx.name(name.id)),
+                format!("field `{}` is private", ctx.name(name.id)),
                 ctx.src(name.range),
-                Info::new("struct defined here", data.src()),
+                Info::new("defined here", data.src()),
             ));
-            None
         }
+        Some((field_id, field))
+    } else {
+        None
     }
 }
 
@@ -1219,7 +1224,7 @@ fn typecheck_item<'hir, 'ast>(
     args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let (item_res, fields) = match path_resolve_value(ctx, path) {
+    let (item_res, fields) = match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
             default_check_arg_list_opt(ctx, args_list);
             return TypeResult::error();
@@ -1319,7 +1324,7 @@ fn typecheck_variant<'hir, 'ast>(
             return TypeResult::error();
         }
     };
-    let (variant_id, _) = match find_enum_variant(ctx, enum_id, name) {
+    let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
         None => {
             default_check_arg_list_opt(ctx, args_list);
@@ -1337,11 +1342,11 @@ fn typecheck_struct_init<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_id = match struct_init.path {
-        Some(path) => path_resolve_struct(ctx, path),
+        Some(path) => check_path::path_resolve_struct(ctx, path),
         None => infer_struct_type(ctx, expect, ctx.src(expr_range)),
     };
     let struct_id = match struct_id {
-        Some(struct_id) => struct_id,
+        Some(found) => found,
         None => {
             default_check_field_init(ctx, struct_init.input);
             return TypeResult::error();
@@ -1350,7 +1355,6 @@ fn typecheck_struct_init<'hir, 'ast>(
 
     let data = ctx.registry.struct_data(struct_id);
     let struct_origin_id = data.origin_id;
-    let data_name = data.name;
     let field_count = data.fields.len();
 
     enum FieldStatus {
@@ -1365,63 +1369,51 @@ fn typecheck_struct_init<'hir, 'ast>(
     let mut init_count: usize = 0;
 
     for input in struct_init.input {
-        //@forced reborrow
+        let field_id = match scope::check_find_struct_field(ctx, struct_id, input.name) {
+            Some(found) => found,
+            None => {
+                let _ = typecheck_expr(ctx, Expectation::None, input.expr);
+                continue;
+            }
+        };
+
         let data = ctx.registry.struct_data(struct_id);
+        let field = data.field(field_id);
 
-        //@REWORK TO USE find_field instead + remove find_field method
-        match data.find_field(input.name.id) {
-            Some((field_id, field)) => {
-                let expect_src = SourceRange::new(struct_origin_id, field.ty_range);
-                let expect = Expectation::HasType(field.ty, Some(expect_src));
-                let input_res = typecheck_expr(ctx, expect, input.expr);
+        let expect_src = SourceRange::new(struct_origin_id, field.ty_range);
+        let expect = Expectation::HasType(field.ty, Some(expect_src));
+        let input_res = typecheck_expr(ctx, expect, input.expr);
 
-                if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
+        if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
+            ctx.emit.error(Error::new(
+                format!(
+                    "field `{}` was already initialized",
+                    ctx.name(input.name.id),
+                ),
+                ctx.src(input.name.range),
+                Info::new("initialized here", ctx.src(range)),
+            ));
+        } else {
+            if ctx.scope.origin() != struct_origin_id {
+                if field.vis == ast::Vis::Private {
                     ctx.emit.error(Error::new(
-                        format!(
-                            "field `{}` was already initialized",
-                            ctx.name(input.name.id),
-                        ),
+                        format!("field `{}` is private", ctx.name(field.name.id),),
                         ctx.src(input.name.range),
-                        Info::new("initialized here", ctx.src(range)),
+                        Info::new(
+                            "defined here",
+                            SourceRange::new(struct_origin_id, field.name.range),
+                        ),
                     ));
-                } else {
-                    if ctx.scope.origin() != struct_origin_id {
-                        if field.vis == ast::Vis::Private {
-                            ctx.emit.error(Error::new(
-                                format!("field `{}` is private", ctx.name(field.name.id),),
-                                ctx.src(input.name.range),
-                                Info::new(
-                                    "defined here",
-                                    SourceRange::new(struct_origin_id, field.name.range),
-                                ),
-                            ));
-                        }
-                    }
-
-                    let field_init = hir::FieldInit {
-                        field_id,
-                        expr: input_res.expr,
-                    };
-                    field_inits.push(field_init);
-                    field_status[field_id.raw_index()] = FieldStatus::Init(input.name.range);
-                    init_count += 1;
                 }
             }
-            None => {
-                ctx.emit.error(Error::new(
-                    format!(
-                        "field `{}` is not found in `{}`",
-                        ctx.name(input.name.id),
-                        ctx.name(data_name.id)
-                    ),
-                    ctx.src(input.name.range),
-                    Info::new(
-                        "struct defined here",
-                        SourceRange::new(struct_origin_id, data_name.range),
-                    ),
-                ));
-                let _ = typecheck_expr(ctx, Expectation::None, input.expr);
-            }
+
+            let field_init = hir::FieldInit {
+                field_id,
+                expr: input_res.expr,
+            };
+            field_inits.push(field_init);
+            field_status[field_id.raw_index()] = FieldStatus::Init(input.name.range);
+            init_count += 1;
         }
     }
 
@@ -1973,14 +1965,12 @@ fn typecheck_binary<'hir, 'ast>(
     }
 }
 
-fn typecheck_block<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_block<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    block: ast::Block,
+    block: ast::Block<'ast>,
     status: BlockStatus,
 ) -> BlockResult<'hir> {
-    BlockResult::new(hir::Type::Error, hir::Block { stmts: &[] }, None)
-    /*
     ctx.scope.local.start_block(status);
 
     let mut block_stmts: Vec<hir::Stmt> = Vec::with_capacity(block.stmts.len());
@@ -1999,33 +1989,27 @@ fn typecheck_block<'hir>(
             _ => stmt,
         };
 
-        let (hir_stmt, diverges) = match stmt.kind {
+        let stmt_res = match stmt.kind {
             ast::StmtKind::Break => {
                 if let Some(stmt_res) = typecheck_break(ctx, stmt.range) {
-                    let diverges = ctx
-                        .proc
-                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
-                    (stmt_res, diverges)
+                    check_stmt_diverges(ctx, true, stmt.range);
+                    stmt_res
                 } else {
                     continue;
                 }
             }
             ast::StmtKind::Continue => {
                 if let Some(stmt_res) = typecheck_continue(ctx, stmt.range) {
-                    let diverges = ctx
-                        .proc
-                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
-                    (stmt_res, diverges)
+                    check_stmt_diverges(ctx, true, stmt.range);
+                    stmt_res
                 } else {
                     continue;
                 }
             }
             ast::StmtKind::Return(expr) => {
                 if let Some(stmt_res) = typecheck_return(ctx, expr, stmt.range) {
-                    let diverges = ctx
-                        .proc
-                        .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
-                    (stmt_res, diverges)
+                    check_stmt_diverges(ctx, true, stmt.range);
+                    stmt_res
                 } else {
                     continue;
                 }
@@ -2033,49 +2017,34 @@ fn typecheck_block<'hir>(
             //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
             ast::StmtKind::Defer(block) => {
                 if let Some(stmt_res) = typecheck_defer(ctx, *block, stmt.range) {
-                    let diverges = ctx
-                        .proc
-                        .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
-                    (stmt_res, diverges)
+                    check_stmt_diverges(ctx, false, stmt.range);
+                    stmt_res
                 } else {
                     continue;
                 }
             }
             ast::StmtKind::Loop(loop_) => {
                 //@can diverge (inf loop, return, panic)
-                let diverges = ctx
-                    .proc
-                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
-                let stmt_res = hir::Stmt::Loop(typecheck_loop(ctx, loop_));
-                (stmt_res, diverges)
+                check_stmt_diverges(ctx, false, stmt.range);
+                hir::Stmt::Loop(typecheck_loop(ctx, loop_))
             }
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx
-                    .proc
-                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
+                check_stmt_diverges(ctx, false, stmt.range);
                 let local_res = typecheck_local(ctx, local);
-                let stmt_res = match local_res {
+                match local_res {
                     LocalResult::Error => continue,
                     LocalResult::Local(local_id) => hir::Stmt::Local(local_id),
                     LocalResult::Discard(value) => hir::Stmt::Discard(value),
-                };
-                (stmt_res, diverges)
+                }
             }
             ast::StmtKind::Assign(assign) => {
                 //@can diverge any diverging expr inside
-                let diverges = ctx
-                    .proc
-                    .check_stmt_diverges(&mut ctx.emit, false, stmt.range);
-                let stmt_res = hir::Stmt::Assign(typecheck_assign(ctx, assign));
-                (stmt_res, diverges)
+                check_stmt_diverges(ctx, false, stmt.range);
+                hir::Stmt::Assign(typecheck_assign(ctx, assign))
             }
             ast::StmtKind::ExprSemi(expr) => {
                 //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
-                //@error or warn on expressions that arent used? 29.05.24
-                // `arent used` would mean that result isnt stored anywhere?
-                // but proc calls might have side effects and should always be allowed
-                // eg: `20 + some_var;` `10.0 != 21.2;` `something[0] + something[1];` `call() + 10;`
                 let expect = match expr.kind {
                     ast::ExprKind::If { .. }
                     | ast::ExprKind::Block { .. }
@@ -2086,39 +2055,33 @@ fn typecheck_block<'hir>(
                 let error_count = ctx.emit.error_count();
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 if !ctx.emit.did_error(error_count) {
-                    check_unused_expr_semi(ctx, ctx.proc.origin(), expr_res.expr, expr.range);
+                    check_unused_expr_semi(ctx, expr_res.expr, expr.range);
                 }
 
                 //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
-                let diverges =
-                    ctx.proc
-                        .check_stmt_diverges(&mut ctx.emit, will_diverge, stmt.range);
-
-                let stmt_res = hir::Stmt::ExprSemi(expr_res.expr);
-                (stmt_res, diverges)
+                check_stmt_diverges(ctx, will_diverge, stmt.range);
+                hir::Stmt::ExprSemi(expr_res.expr)
             }
             ast::StmtKind::ExprTail(expr) => {
                 // type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
                 // @seems to fix the problem (still a hack)
-                let diverges = ctx
-                    .proc
-                    .check_stmt_diverges(&mut ctx.emit, true, stmt.range);
+                check_stmt_diverges(ctx, true, stmt.range);
 
                 // only assigned once, any further `ExprTail` are unreachable
                 if block_ty.is_none() {
                     block_ty = Some(expr_res.ty);
                     tail_range = Some(expr.range);
                 }
-                (stmt_res, diverges)
+                stmt_res
             }
             ast::StmtKind::AttrStmt(_) => unreachable!(),
         };
 
-        match diverges {
-            Diverges::Maybe | Diverges::Always(_) => block_stmts.push(hir_stmt),
+        match ctx.scope.local.diverges() {
+            Diverges::Maybe | Diverges::Always(_) => block_stmts.push(stmt_res),
             Diverges::AlwaysWarned => {}
         }
     }
@@ -2132,9 +2095,15 @@ fn typecheck_block<'hir>(
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
-        let diverges = ctx.proc.diverges().is_always();
+        let diverges = match ctx.scope.local.diverges() {
+            Diverges::Maybe => false,
+            Diverges::Always(_) => true,
+            Diverges::AlwaysWarned => true,
+        };
+        //@change to last `}` range?
+        // verify that all block are actual blocks in that case
         if !diverges {
-            type_expectation_check(ctx, ctx.proc.origin(), block.range, hir::Type::VOID, expect);
+            type_expectation_check(ctx, block.range, hir::Type::VOID, expect);
         }
         //@hack but should be correct
         let block_ty = if diverges {
@@ -2147,7 +2116,23 @@ fn typecheck_block<'hir>(
 
     ctx.scope.local.exit_block();
     block_result
-    */
+}
+
+pub fn check_stmt_diverges(ctx: &mut HirCtx, will_diverge: bool, stmt_range: TextRange) {
+    match ctx.scope.local.diverges() {
+        Diverges::Maybe => {
+            if will_diverge {
+                ctx.scope.local.diverges_set(Diverges::Always(stmt_range));
+            }
+        }
+        Diverges::Always(range) => {
+            let src = ctx.src(stmt_range);
+            let after = ctx.src(range);
+            err::tycheck_unreachable_stmt(&mut ctx.emit, src, after);
+            ctx.scope.local.diverges_set(Diverges::AlwaysWarned);
+        }
+        Diverges::AlwaysWarned => {}
+    }
 }
 
 fn typecheck_break<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir::Stmt<'hir>> {
@@ -2217,9 +2202,9 @@ fn typecheck_return<'hir, 'ast>(
     valid.then_some(hir::Stmt::Return(expr))
 }
 
-fn typecheck_defer<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    block: ast::Block,
+fn typecheck_defer<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    block: ast::Block<'ast>,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
@@ -2397,12 +2382,7 @@ fn typecheck_assign<'hir, 'ast>(
 
 //==================== UNUSED ====================
 
-fn check_unused_expr_semi(
-    ctx: &mut HirCtx,
-    origin_id: ModuleID,
-    expr: &hir::Expr,
-    expr_range: TextRange,
-) {
+fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRange) {
     enum UnusedExpr {
         No,
         Yes(&'static str),
@@ -2452,49 +2432,9 @@ fn check_unused_expr_semi(
     };
 
     if let UnusedExpr::Yes(kind) = unused {
-        let src = SourceRange::new(origin_id, expr_range);
+        let src = ctx.src(expr_range);
         err::tycheck_unused_expr(&mut ctx.emit, src, kind);
     }
-}
-
-//==================== FIND ====================
-
-fn find_enum_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    enum_id: hir::EnumID<'hir>,
-    name: ast::Name,
-) -> Option<(ID<hir::Variant<'hir>>, &'hir hir::Variant<'hir>)> {
-    let enum_data = ctx.registry.enum_data(enum_id);
-    for (idx, variant) in enum_data.variants.iter().enumerate() {
-        if variant.name.id == name.id {
-            return Some((hir::VariantID::new_raw(idx), variant));
-        }
-    }
-    let src = ctx.src(name.range);
-    let enum_src = enum_data.src();
-    let name = ctx.name(name.id);
-    let enum_name = ctx.name(enum_data.name.id);
-    err::tycheck_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
-    None
-}
-
-fn find_struct_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    struct_id: hir::StructID<'hir>,
-    name: ast::Name,
-) -> Option<(ID<hir::Field<'hir>>, &'hir hir::Field<'hir>)> {
-    let struct_data = ctx.registry.struct_data(struct_id);
-    for (idx, field) in struct_data.fields.iter().enumerate() {
-        if field.name.id == name.id {
-            return Some((hir::FieldID::new_raw(idx), field));
-        }
-    }
-    let src = ctx.src(name.range);
-    let struct_src = struct_data.src();
-    let name = ctx.name(name.id);
-    let struct_name = ctx.name(struct_data.name.id);
-    err::tycheck_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name);
-    None
 }
 
 //==================== INFER ====================
@@ -2830,7 +2770,7 @@ fn check_variant_bind_count(
 fn add_variant_local_binds<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     bind_list: Option<&ast::BindingList>,
-    variant: &hir::Variant<'hir>,
+    variant: Option<&hir::Variant<'hir>>,
     ref_mut: Option<ast::Mut>,
 ) -> &'hir [hir::LocalBindID<'hir>] {
     let bind_list = match bind_list {
@@ -2838,9 +2778,11 @@ fn add_variant_local_binds<'hir>(
         None => return &[],
     };
 
-    //@look into making api for getting Optional fields from usize idx
-    // to reduce possible errors and manual checks, same for each hir collection with ID
-    let expected_count = variant.fields.len();
+    let expected_count = if let Some(variant) = variant {
+        variant.fields.len()
+    } else {
+        bind_list.binds.len()
+    };
     let mut bind_ids = Vec::with_capacity(expected_count);
 
     for (idx, bind) in bind_list.binds.iter().enumerate() {
@@ -2849,18 +2791,36 @@ fn add_variant_local_binds<'hir>(
             ast::Binding::Discard(_) => continue,
         };
 
-        let (field_id, ty) = if idx < expected_count {
-            let field_id = hir::VariantFieldID::new_raw(idx);
-            let field = variant.field(field_id);
+        let (ty, field_id) = if let Some(variant) = variant {
+            if let Some(field_id) = variant.field_id(idx) {
+                let field = variant.field(field_id);
 
-            let ty = match ref_mut {
-                Some(ref_mut) => hir::Type::Reference(ref_mut, &field.ty),
-                None => field.ty,
-            };
-            (Some(field_id), ty)
+                let ty = match ref_mut {
+                    Some(ref_mut) => {
+                        if field.ty.is_error() {
+                            hir::Type::Error
+                        } else {
+                            hir::Type::Reference(ref_mut, &field.ty)
+                        }
+                    }
+                    None => field.ty,
+                };
+
+                (ty, Some(field_id))
+            } else {
+                (hir::Type::Error, None)
+            }
         } else {
-            (None, hir::Type::Error)
+            (hir::Type::Error, None)
         };
+
+        if ctx
+            .scope
+            .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err()
+        {
+            continue;
+        }
 
         let local_bind = hir::LocalBind {
             mutt,
@@ -2873,273 +2833,6 @@ fn add_variant_local_binds<'hir>(
     }
 
     ctx.arena.alloc_slice(&bind_ids)
-}
-
-//==================== PATH RESOLVE ====================
-//@refactor redudant duplication + more type safe leftover fields
-
-/*
-module     -> <first?>
-proc       -> [no follow]
-enum       -> <follow?> by single enum variant name
-struct     -> [no follow]
-const      -> <follow?> by <chained> field access
-global     -> <follow?> by <chained> field access
-param_var  -> <follow?> by <chained> field access
-local_var  -> <follow?> by <chained> field access
-*/
-
-struct PathResolved<'hir, 'ast> {
-    kind: PathResolvedKind<'hir>,
-    at_name: ast::Name,
-    names: &'ast [ast::Name],
-}
-
-enum PathResolvedKind<'hir> {
-    Symbol(SymbolID<'hir>),
-    Variable(VariableID<'hir>),
-    Module(ModuleID),
-}
-
-fn path_resolve_2<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path<'ast>,
-) -> Result<PathResolved<'hir, 'ast>, ()> {
-    let name = path.names.get(0).copied().expect("non empty path");
-
-    if let Some(var_id) = ctx.scope.local.find_variable(name.id) {
-        return Ok(PathResolved {
-            kind: PathResolvedKind::Variable(var_id),
-            at_name: name,
-            names: path.names.split_at(1).1,
-        });
-    }
-
-    let symbol = ctx.scope.global.find_symbol(
-        ctx.scope.origin(),
-        ctx.scope.origin(),
-        name,
-        &ctx.session,
-        &ctx.registry,
-        &mut ctx.emit,
-    )?;
-
-    let target_id = match symbol {
-        SymbolOrModule::Symbol(symbol_id) => {
-            return Ok(PathResolved {
-                kind: PathResolvedKind::Symbol(symbol_id),
-                at_name: name,
-                names: path.names.split_at(1).1,
-            })
-        }
-        SymbolOrModule::Module(module_id) => module_id,
-    };
-
-    let name = if let Some(name) = path.names.get(1).copied() {
-        name
-    } else {
-        return Ok(PathResolved {
-            kind: PathResolvedKind::Module(target_id),
-            at_name: name,
-            names: path.names.split_at(1).1,
-        });
-    };
-
-    let symbol = ctx.scope.global.find_symbol(
-        ctx.scope.origin(),
-        target_id,
-        name,
-        &ctx.session,
-        &ctx.registry,
-        &mut ctx.emit,
-    )?;
-
-    match symbol {
-        SymbolOrModule::Symbol(symbol_id) => Ok(PathResolved {
-            kind: PathResolvedKind::Symbol(symbol_id),
-            at_name: name,
-            names: path.names.split_at(2).1,
-        }),
-        SymbolOrModule::Module(_) => unreachable!("module from other module"),
-    }
-}
-
-fn path_check_unexpected_segment(
-    ctx: &mut HirCtx,
-    names: &[ast::Name],
-    after_kind: &'static str,
-) -> Result<(), ()> {
-    if let Some(next) = names.first().copied() {
-        let start = next.range.start();
-        let end = names.last().unwrap().range.end();
-        let src = ctx.src(TextRange::new(start, end));
-        err::path_unexpected_segment(&mut ctx.emit, src, after_kind);
-        Err(())
-    } else {
-        Ok(())
-    }
-}
-
-pub fn path_resolve_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
-) -> hir::Type<'hir> {
-    let path = match path_resolve_2(ctx, path) {
-        Ok(path) => path,
-        Err(()) => return hir::Type::Error,
-    };
-
-    let ty = match path.kind {
-        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Enum(id) => hir::Type::Enum(id),
-            SymbolID::Struct(id) => hir::Type::Struct(id),
-            _ => {
-                let src = ctx.src(path.at_name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
-                let name = ctx.name(path.at_name.id);
-                #[rustfmt::skip] //@set line len to like 120, to stop wrapping
-                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", symbol_id.desc());
-                return hir::Type::Error;
-            }
-        },
-        PathResolvedKind::Variable(var_id) => {
-            let src = ctx.src(path.at_name.range);
-            let defined_src = ctx.scope.var_src(var_id);
-            let name = ctx.name(path.at_name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", var_id.desc());
-            return hir::Type::Error;
-        }
-        PathResolvedKind::Module(_) => {
-            let src = ctx.src(path.at_name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
-            let name = ctx.name(path.at_name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", "module");
-            return hir::Type::Error;
-        }
-    };
-
-    if path_check_unexpected_segment(ctx, path.names, "type").is_err() {
-        return hir::Type::Error;
-    }
-    ty
-}
-
-pub fn path_resolve_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
-) -> Option<hir::StructID<'hir>> {
-    let path = match path_resolve_2(ctx, path) {
-        Ok(path) => path,
-        Err(()) => return None,
-    };
-
-    let struct_id = match path.kind {
-        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Struct(struct_id) => struct_id,
-            _ => {
-                let src = ctx.src(path.at_name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
-                let name = ctx.name(path.at_name.id);
-                #[rustfmt::skip]
-                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", symbol_id.desc());
-                return None;
-            }
-        },
-        PathResolvedKind::Variable(var_id) => {
-            let src = ctx.src(path.at_name.range);
-            let defined_src = ctx.scope.var_src(var_id);
-            let name = ctx.name(path.at_name.id);
-            #[rustfmt::skip]
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", var_id.desc());
-            return None;
-        }
-        PathResolvedKind::Module(_) => {
-            let src = ctx.src(path.at_name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
-            let name = ctx.name(path.at_name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "module");
-            return None;
-        }
-    };
-
-    if path_check_unexpected_segment(ctx, path.names, "struct").is_err() {
-        return None;
-    }
-    Some(struct_id)
-}
-
-pub fn path_resolve_value<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    path: &ast::Path<'ast>,
-) -> ValueID<'hir, 'ast> {
-    let path = match path_resolve_2(ctx, path) {
-        Ok(path) => path,
-        Err(()) => return ValueID::None,
-    };
-
-    match path.kind {
-        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Proc(proc_id) => {
-                if path_check_unexpected_segment(ctx, path.names, "procedure").is_err() {
-                    ValueID::None
-                } else {
-                    ValueID::Proc(proc_id)
-                }
-            }
-            SymbolID::Enum(enum_id) => {
-                if let Some(next) = path.names.first().copied() {
-                    if let Some((variant_id, _)) = find_enum_variant(ctx, enum_id, next) {
-                        let names = path.names.split_at(1).1;
-                        if path_check_unexpected_segment(ctx, names, "enum variant").is_err() {
-                            ValueID::None
-                        } else {
-                            ValueID::Enum(enum_id, variant_id)
-                        }
-                    } else {
-                        ValueID::None
-                    }
-                } else {
-                    let src = ctx.src(path.at_name.range);
-                    let defined_src = symbol_id.src(&ctx.registry);
-                    let name = ctx.name(path.at_name.id);
-                    err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "enum");
-                    ValueID::None
-                }
-            }
-            SymbolID::Struct(_) => {
-                let src = ctx.src(path.at_name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
-                let name = ctx.name(path.at_name.id);
-                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "struct");
-                ValueID::None
-            }
-            SymbolID::Const(id) => ValueID::Const(id, path.names),
-            SymbolID::Global(id) => ValueID::Global(id, path.names),
-        },
-        PathResolvedKind::Variable(var_id) => match var_id {
-            VariableID::Param(id) => ValueID::Param(id, path.names),
-            VariableID::Local(id) => ValueID::Local(id, path.names),
-            VariableID::Bind(id) => ValueID::LocalBind(id, path.names),
-        },
-        PathResolvedKind::Module(_) => {
-            let src = ctx.src(path.at_name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
-            let name = ctx.name(path.at_name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "module");
-            ValueID::None
-        }
-    }
-}
-
-pub enum ValueID<'hir, 'ast> {
-    None,
-    Proc(hir::ProcID<'hir>),
-    Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
-    Const(hir::ConstID<'hir>, &'ast [ast::Name]),
-    Global(hir::GlobalID<'hir>, &'ast [ast::Name]),
-    Param(hir::ParamID<'hir>, &'ast [ast::Name]),
-    Local(hir::LocalID<'hir>, &'ast [ast::Name]),
-    LocalBind(hir::LocalBindID<'hir>, &'ast [ast::Name]),
 }
 
 //==================== UNARY EXPR ====================
