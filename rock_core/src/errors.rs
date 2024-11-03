@@ -538,6 +538,11 @@ pub fn item_field_already_defined(
     emit.error(Error::new(msg, field_src, info));
 }
 
+pub fn item_enum_unknown_tag_ty(emit: &mut impl ErrorSink, enum_src: SourceRange) {
+    let msg = "enum type must be specified\nadd #[repr(<int_ty>)] or #[repr(C)] attribute";
+    emit.error(Error::new(msg, enum_src, None));
+}
+
 //==================== CHECK PATH ====================
 
 pub fn path_not_expected(

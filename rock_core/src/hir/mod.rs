@@ -575,8 +575,9 @@ crate::enum_as_str! {
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum EnumFlag {
-        HasRepr "has repr",
-        HasFields "has fields"
+        ReprC "repr(C)",
+        ReprInt "repr(<int_ty>)",
+        WithFields "with fields",
     }
 }
 
@@ -643,8 +644,9 @@ impl ItemFlag for EnumFlag {
             unreachable!()
         }
         match self {
-            EnumFlag::HasRepr => true,
-            EnumFlag::HasFields => true,
+            EnumFlag::ReprC => false,
+            EnumFlag::ReprInt => matches!(other, EnumFlag::WithFields),
+            EnumFlag::WithFields => matches!(other, EnumFlag::ReprInt),
         }
     }
 }

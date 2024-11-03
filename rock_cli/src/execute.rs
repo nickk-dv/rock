@@ -278,7 +278,7 @@ fn fmt() -> Result<(), Error> {
         ast_build::parse_all(session, true)?;
         let mut cache = format::FormatterCache::new();
 
-        let root_package = session.graph.package(session::ROOT_PACKAGE_ID);
+        let root_package = session.graph.package(session.root_id);
         for module_id in root_package.module_ids().iter().copied() {
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());

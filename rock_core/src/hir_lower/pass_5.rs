@@ -840,7 +840,7 @@ fn check_field_from_struct<'hir>(
             ctx.emit.error(Error::new(
                 format!("field `{}` is private", ctx.name(name.id)),
                 ctx.src(name.range),
-                Info::new("defined here", data.src()),
+                Info::new("defined here", SourceRange::new(data.origin_id, field.name.range)),
             ));
         }
         Some((field_id, field))

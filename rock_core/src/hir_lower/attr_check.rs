@@ -125,7 +125,10 @@ pub fn check_attrs_enum<'ast>(ctx: &mut HirCtx, item: &ast::EnumItem) -> AttrFee
         match variant.kind {
             ast::VariantKind::Default => {}
             ast::VariantKind::Constant(_) => {}
-            ast::VariantKind::HasFields(_) => attr_set.set(hir::EnumFlag::HasFields),
+            ast::VariantKind::HasFields(_) => {
+                attr_set.set(hir::EnumFlag::WithFields);
+                break;
+            }
         }
     }
 
@@ -138,11 +141,16 @@ pub fn check_attrs_enum<'ast>(ctx: &mut HirCtx, item: &ast::EnumItem) -> AttrFee
 
         let flag = match resolved.data {
             AttrResolved::Repr(repr_kind) => {
-                tag_ty = match repr_kind {
-                    ReprKind::ReprC => Some(hir::BasicInt::S32),
-                    ReprKind::ReprInt(int_ty) => Some(int_ty),
-                };
-                hir::EnumFlag::HasRepr
+                if tag_ty.is_none() {
+                    tag_ty = match repr_kind {
+                        ReprKind::ReprC => Some(hir::BasicInt::S32),
+                        ReprKind::ReprInt(int_ty) => Some(int_ty),
+                    };
+                }
+                match repr_kind {
+                    ReprKind::ReprC => hir::EnumFlag::ReprC,
+                    ReprKind::ReprInt(_) => hir::EnumFlag::ReprInt,
+                }
             }
             AttrResolved::Cfg(state) => {
                 cfg_state.combine(state);
@@ -645,6 +653,8 @@ pub fn apply_item_flag<T: hir::ItemFlag>(
             continue;
         }
 
+        //@repr(C) and WithFields errors with wrong error message
+        // should use 2nd error style about flags in that case
         if let Some((kind, attr_src)) = attr_data {
             err::attr_cannot_apply(emit, attr_src, kind.as_str(), item_kinds);
         } else {

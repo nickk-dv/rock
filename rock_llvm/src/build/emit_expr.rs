@@ -774,7 +774,7 @@ fn codegen_variant<'c>(
     };
     let tag_value = codegen_const(cg, tag_value);
 
-    if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+    if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
         let enum_ty = cg.enum_type(enum_id);
         let enum_ptr = cg.entry_alloca(proc_cg, enum_ty, "enum_init");
         cg.build.store(tag_value, enum_ptr);

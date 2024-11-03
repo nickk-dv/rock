@@ -1051,6 +1051,7 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>)
     fmt.write(';');
 }
 
+//@defer tabbing is wrong both for nested + regular short blocks
 fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) {
     fmt.tab_depth();
     fmt.write_str("defer");

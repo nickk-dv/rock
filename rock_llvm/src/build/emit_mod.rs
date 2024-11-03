@@ -48,7 +48,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
         let enum_data = cg.hir.enum_data(enum_id);
 
-        let enum_ty = if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+        let enum_ty = if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
             let layout = enum_data.layout.get_resolved().expect("resolved");
             //@bad api, forced to create hir::ArrayStatic
             let array_ty = hir::ArrayStatic {
@@ -93,7 +93,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
         let enum_data = cg.hir.enum_data(enum_id);
 
-        if enum_data.attr_set.contains(hir::EnumFlag::HasFields) {
+        if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
             let mut variant_types = Vec::with_capacity(enum_data.variants.len());
             for variant in enum_data.variants {
                 if variant.fields.is_empty() {

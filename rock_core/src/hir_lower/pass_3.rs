@@ -4,7 +4,6 @@ use super::constant;
 use super::context::HirCtx;
 use super::pass_5::Expectation;
 use crate::ast;
-use crate::error::{Error, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::hir;
 
@@ -33,6 +32,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
     let mut unique = Vec::<hir::Param>::new();
 
     for param in item.params.iter() {
+        //@its still added to scope during proc typecheck
         if ctx
             .scope
             .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
@@ -70,13 +70,13 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     let item = ctx.registry.enum_item(id);
 
-    let mut unique = Vec::<hir::Variant>::new();
     let data = ctx.registry.enum_data(id);
-    let mut tag_ty = data.tag_ty;
-    let mut any_constant = false;
-    let mut any_has_fields = false;
     let origin_id = data.origin_id;
     let enum_name = data.name;
+    let mut tag_ty = data.tag_ty;
+    let mut any_constant = false;
+
+    let mut unique = Vec::<hir::Variant>::new();
 
     for variant in item.variants.iter() {
         let feedback = attr_check::check_attrs_enum_variant(ctx, variant.attrs);
@@ -116,9 +116,6 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
             //@could be empty field list, error and dont set the `any_has_fields`
             ast::VariantKind::HasFields(types) => {
                 let eval_id = ctx.registry.add_variant_eval();
-                if !any_has_fields && types.len() > 0 {
-                    any_has_fields = true;
-                }
 
                 let mut fields = Vec::with_capacity(types.len());
                 for ty in types {
@@ -138,23 +135,17 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
         unique.push(variant);
     }
 
-    if any_has_fields {
-        //@bypassing the attr_check set flag, for now no conflits are possible
-        let data = ctx.registry.enum_data_mut(id);
-        data.attr_set.set(hir::EnumFlag::HasFields);
-    }
-
+    // when `tag_ty` is unknown and any field is constant:
+    // force enum tag repr to be specified via attribute
     if tag_ty.is_err() && any_constant {
-        ctx.emit.error(Error::new(
-            "enum type must be specified\nuse #[repr(<int_ty>)] or #[repr(C)] attribute",
-            SourceRange::new(origin_id, enum_name.range),
-            None,
-        ));
+        let enum_src = ctx.src(enum_name.range);
+        err::item_enum_unknown_tag_ty(&mut ctx.emit, enum_src);
     }
 
+    // when `tag_ty` is unknown and all fields are non constant:
+    // perform default enum tag sizing: 0..<variant_count
     if tag_ty.is_err() && !any_constant {
         let variant_count = unique.len() as u64;
-
         let int_ty = if variant_count <= u8::MAX as u64 {
             hir::BasicInt::U8
         } else if variant_count <= u16::MAX as u64 {
@@ -164,12 +155,10 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
         } else {
             hir::BasicInt::U64
         };
-
-        let data = ctx.registry.enum_data_mut(id);
-        data.tag_ty = Ok(int_ty);
         tag_ty = Ok(int_ty);
     }
 
+    // when `tag_ty` is unknown: set all Evals to `ResolvedError`
     if tag_ty.is_err() {
         for variant in unique.iter() {
             match variant.kind {
@@ -185,8 +174,9 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
         }
     }
 
-    let variants = ctx.arena.alloc_slice(&unique);
-    ctx.registry.enum_data_mut(id).variants = variants;
+    let data = ctx.registry.enum_data_mut(id);
+    data.variants = ctx.arena.alloc_slice(&unique);
+    data.tag_ty = tag_ty;
 }
 
 fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'hir>) {

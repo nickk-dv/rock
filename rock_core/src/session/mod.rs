@@ -26,6 +26,7 @@ pub struct Session<'s> {
     pub module: Modules<'s>,
     pub stats: BuildStats,
     pub config: Config,
+    pub root_id: PackageID,
 }
 
 pub struct Modules<'s> {
@@ -73,7 +74,6 @@ pub struct BuildStats {
 }
 
 pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
-pub const ROOT_PACKAGE_ID: PackageID = PackageID(1);
 
 impl<'s> Modules<'s> {
     fn new(cap: usize) -> Modules<'s> {
@@ -244,17 +244,16 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
         module: Modules::new(64),
         stats: BuildStats::default(),
         config,
+        root_id: PackageID(0),
     };
 
-    //@when working on a `core` itself this does not work
-    // leads to core as `root` package depending on itself
-    //@ROOT_PACKAGE_ID and CORE_PACKAGE_ID can differ from 1 and 0
-    // make sure core based mappings work when working on `core` itself
     let core_dir = session.curr_exe_dir.join("core");
     process_package(&mut session, &core_dir, None, true)?;
 
     let root_dir = session.curr_work_dir.clone();
-    process_package(&mut session, &root_dir, None, false)?;
+    if root_dir != core_dir {
+        session.root_id = process_package(&mut session, &root_dir, None, false)?;
+    }
 
     session.stats.package_count = session.graph.package_count() as u32;
     session.stats.module_count = session.module.modules.len() as u32;
@@ -296,6 +295,7 @@ fn process_package(
     //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
     let dependencies = manifest.dependencies.clone();
 
+    // disallow core lib from having any dependencies
     assert!(!is_core || manifest.dependencies.is_empty());
     #[rustfmt::skip]
     let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };

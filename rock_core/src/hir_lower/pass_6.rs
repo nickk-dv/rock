@@ -4,10 +4,10 @@ use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;
-use crate::session::{self, ModuleOrDirectory};
+use crate::session::ModuleOrDirectory;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {
-    let root_package = ctx.session.graph.package(session::ROOT_PACKAGE_ID);
+    let root_package = ctx.session.graph.package(ctx.session.root_id);
     if root_package.manifest().package.kind != PackageKind::Bin {
         return;
     }

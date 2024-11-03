@@ -35,7 +35,7 @@ pub fn build(
     build_path.push(config.build_kind.as_str());
     fs_env::dir_create(&build_path, false)?;
 
-    let manifest = session.graph.package(session::ROOT_PACKAGE_ID).manifest();
+    let manifest = session.graph.package(session.root_id).manifest();
     let bin_name = match &manifest.build.bin_name {
         Some(name) => name.as_str(),
         None => manifest.package.name.as_str(),
