@@ -265,22 +265,10 @@ fn check_const_dependency_cycle<'hir>(
             let variant = data.variant(variant_id);
             SourceRange::new(data.origin_id, variant.name.range)
         }
-        ConstDependency::EnumLayout(id) => {
-            let data = ctx.registry.enum_data(id);
-            SourceRange::new(data.origin_id, data.name.range)
-        }
-        ConstDependency::StructLayout(id) => {
-            let data = ctx.registry.struct_data(id);
-            SourceRange::new(data.origin_id, data.name.range)
-        }
-        ConstDependency::Const(id) => {
-            let data = ctx.registry.const_data(id);
-            SourceRange::new(data.origin_id, data.name.range)
-        }
-        ConstDependency::Global(id) => {
-            let data = ctx.registry.global_data(id);
-            SourceRange::new(data.origin_id, data.name.range)
-        }
+        ConstDependency::EnumLayout(id) => ctx.registry.enum_data(id).src(),
+        ConstDependency::StructLayout(id) => ctx.registry.struct_data(id).src(),
+        ConstDependency::Const(id) => ctx.registry.const_data(id).src(),
+        ConstDependency::Global(id) => ctx.registry.global_data(id).src(),
         ConstDependency::ArrayLen(eval_id) => {
             let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
             if let hir::ConstEval::Unresolved(expr) = eval {
@@ -327,8 +315,7 @@ fn check_const_dependency_cycle<'hir>(
                     "{prefix}depends on size of `{}`{postfix}",
                     ctx.name(data.name.id)
                 );
-                let src = SourceRange::new(data.origin_id, data.name.range);
-                (msg, src)
+                (msg, data.src())
             }
             ConstDependency::StructLayout(id) => {
                 let data = ctx.registry.struct_data(id);
@@ -336,8 +323,7 @@ fn check_const_dependency_cycle<'hir>(
                     "{prefix}depends on size of `{}`{postfix}",
                     ctx.name(data.name.id)
                 );
-                let src = SourceRange::new(data.origin_id, data.name.range);
-                (msg, src)
+                (msg, data.src())
             }
             ConstDependency::Const(id) => {
                 let data = ctx.registry.const_data(id);
@@ -345,8 +331,7 @@ fn check_const_dependency_cycle<'hir>(
                     "{prefix}depends on `{}` const value{postfix}",
                     ctx.name(data.name.id)
                 );
-                let src = SourceRange::new(data.origin_id, data.name.range);
-                (msg, src)
+                (msg, data.src())
             }
             ConstDependency::Global(id) => {
                 let data = ctx.registry.global_data(id);
@@ -354,8 +339,7 @@ fn check_const_dependency_cycle<'hir>(
                     "{prefix}depends on `{}` global value{postfix}",
                     ctx.name(data.name.id)
                 );
-                let src = SourceRange::new(data.origin_id, data.name.range);
-                (msg, src)
+                (msg, data.src())
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
@@ -730,14 +714,13 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             Ok(())
         }
         ast::ExprKind::Sizeof { ty } => {
-            let ty = pass_3::type_resolve_delayed(ctx, origin_id, *ty);
+            let ty = pass_3::type_resolve(ctx, *ty, true);
             add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
             Ok(())
         }
         //@args_list not used
         ast::ExprKind::Item { path, args_list } => {
-            let (value_id, _) = pass_5::path_resolve_value(ctx, origin_id, path);
-            match value_id {
+            match pass_5::path_resolve_value(ctx, path) {
                 pass_5::ValueID::None => Err(parent_id),
                 pass_5::ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
@@ -753,11 +736,11 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     add_variant_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
                     Ok(())
                 }
-                pass_5::ValueID::Const(const_id) => {
+                pass_5::ValueID::Const(const_id, _) => {
                     add_const_var_const_dependency(ctx, tree, parent_id, const_id)?;
                     Ok(())
                 }
-                pass_5::ValueID::Global(_) => {
+                pass_5::ValueID::Global(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -766,7 +749,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::Param(_) => {
+                pass_5::ValueID::Param(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -775,7 +758,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::Local(_) => {
+                pass_5::ValueID::Local(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -784,7 +767,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     );
                     Err(parent_id)
                 }
-                pass_5::ValueID::LocalBind(_) => {
+                pass_5::ValueID::LocalBind(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
@@ -803,7 +786,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
         ast::ExprKind::StructInit { struct_init } => match struct_init.path {
             //@cannot infer struct / enum variant type in constants
             Some(path) => {
-                if let Some(struct_id) = pass_5::path_resolve_struct(ctx, origin_id, path) {
+                if let Some(struct_id) = pass_5::path_resolve_struct(ctx, path) {
                     let ty = hir::Type::Struct(struct_id);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, ty)?;
                     for init in struct_init.input {
@@ -973,38 +956,46 @@ fn resolve_const_dependency_tree<'hir>(
     }
 }
 
-//@change how this is handled, still check double resolve
-// with assert to catch potential bugs in implementation
 fn resolve_and_update_const_eval<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
 ) {
     let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
-    ctx.proc.reset_origin(origin_id);
+    ctx.scope.set_origin(origin_id);
+
+    //@reset any possible blocks / locals
+    // currently blocks or stmts are not supported in contants
+    // so this is in theory not required
+    ctx.scope.local.reset();
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
-            let value_res = resolve_const_expr(ctx, origin_id, expect, expr);
+            let value_res = resolve_const_expr(ctx, expect, expr);
             let value_res = value_res.map(|v| ctx.const_intern.intern(v));
             let (eval, _) = ctx.registry.const_eval_mut(eval_id);
             *eval = hir::Eval::from_res(value_res);
         }
-        _ => panic!("calling `resolve_const_expr` on already resolved expr"),
+        _ => unreachable!(
+            "internal: resolve_and_update_const_eval() called on already resolved eval"
+        ),
     };
 }
 
+/// typecheck and fold contant expression
+/// in currently active scope origin_id
 #[must_use]
-pub fn resolve_const_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+pub fn resolve_const_expr<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    expr: ast::ConstExpr,
+    expr: ast::ConstExpr<'ast>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let error_count = ctx.emit.error_count();
     let expr_res = pass_5::typecheck_expr(ctx, expect, expr.0);
 
     if !ctx.emit.did_error(error_count) {
-        let src = SourceRange::new(origin_id, expr_res.expr.range);
+        //@will panic on non foldable expressions (fold panic on invalid)
+        let src = ctx.src(expr_res.expr.range);
         fold::fold_const_expr(ctx, src, expr_res.expr)
     } else {
         Err(())

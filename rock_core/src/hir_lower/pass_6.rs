@@ -28,7 +28,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
         }
     };
 
-    if let Some(proc_id) = ctx.scope.global.find_proc_main(target_id, main_id) {
+    if let Some(proc_id) = ctx.scope.global.find_defined_proc(target_id, main_id) {
         check_main_procedure(ctx, proc_id);
     } else {
         err::entry_main_proc_not_found(&mut ctx.emit);

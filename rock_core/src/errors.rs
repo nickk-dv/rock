@@ -479,7 +479,7 @@ pub fn import_name_discard_redundant(emit: &mut impl WarningSink, src: SourceRan
     emit.warning(Warning::new(msg, src, None));
 }
 
-//==================== CHECK ITEMS ====================
+//==================== CHECK ITEM ====================
 
 pub fn item_param_already_defined(
     emit: &mut impl ErrorSink,
@@ -512,6 +512,30 @@ pub fn item_field_already_defined(
     let msg = format!("field `{name}` is defined multiple times");
     let info = Info::new("existing field", existing);
     emit.error(Error::new(msg, field_src, info));
+}
+
+//==================== CHECK PATH ====================
+
+pub fn path_not_expected(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    found_src: SourceRange,
+    name: &str,
+    expected: &'static str,
+    found: &'static str,
+) {
+    let msg = format!("expected {expected}, found {found} `{name}`");
+    let info = Info::new("defined here", found_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn path_unexpected_segment(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    after_kind: &'static str,
+) {
+    let msg = format!("unexpected path segment after {after_kind}");
+    emit.error(Error::new(msg, src, None));
 }
 
 //==================== CHECK CONSTANT ====================
@@ -646,10 +670,52 @@ pub fn tycheck_type_mismatch(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_break_outside_loop(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "break outside of loop";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_break_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer_src: SourceRange) {
+    let msg = "break in loop started outside of defer";
+    let info = Info::new("in this defer", defer_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_continue_outside_loop(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "continue outside of loop";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_continue_in_defer(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    defer_src: SourceRange,
+) {
+    let msg = "continue in loop started outside of defer";
+    let info = Info::new("in this defer", defer_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_return_in_defer(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    defer_src: SourceRange,
+) {
+    let msg = "cannot return in defer";
+    let info = Info::new("in this defer", defer_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_defer_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer_src: SourceRange) {
+    let msg = "defer statements cannot be nested";
+    let info = Info::new("in this defer", defer_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 //==================== TYPECHECK UNUSED ====================
 
-pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, kind: &'static str) {
-    let msg = format!("unused {kind}");
+pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, expr_kind: &'static str) {
+    let msg = format!("unused {expr_kind}");
     emit.warning(Warning::new(msg, src, None));
 }
 
@@ -923,5 +989,10 @@ pub fn entry_main_wrong_return_ty(emit: &mut impl ErrorSink, ret_src: SourceRang
 
 pub fn internal_generic_types_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "internal: generic parameterized types are not implemented";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn internal_slice_expr_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "internal: slice expression not implemented";
     emit.error(Error::new(msg, src, None));
 }

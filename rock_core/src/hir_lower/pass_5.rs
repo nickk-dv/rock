@@ -1,7 +1,8 @@
 use super::attr_check;
 use super::constant;
-use super::context::{HirCtx, SymbolKind};
-use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus, VariableID};
+use super::context::scope::{BlockStatus, SymbolID, SymbolOrModule, VariableID};
+use super::context::HirCtx;
+use super::proc_scope::{BlockEnter, DeferStatus, Diverges, LoopStatus};
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr, Warning, WarningSink};
 use crate::errors as err;
@@ -23,16 +24,20 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
     if let Some(block) = item.block {
         let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
-        ctx.proc.reset(data.origin_id, data.params, expect);
 
-        let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
-        let locals = ctx.arena.alloc_slice(ctx.proc.finish_locals());
-        let local_binds = ctx.arena.alloc_slice(ctx.proc.finish_local_binds());
+        ctx.scope.set_origin(data.origin_id);
+        ctx.scope.local.reset();
+        ctx.scope.local.set_proc_context(data.params, expect);
+        let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
+
+        let (locals, binds) = ctx.scope.local.finish_proc_context();
+        let locals = ctx.arena.alloc_slice(locals);
+        let binds = ctx.arena.alloc_slice(binds);
 
         let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
         data.locals = locals;
-        data.local_binds = local_binds;
+        data.local_binds = binds;
     }
 }
 
@@ -152,7 +157,6 @@ impl<'hir> Expectation<'hir> {
 
 pub fn type_expectation_check(
     ctx: &mut HirCtx,
-    origin_id: ModuleID,
     from_range: TextRange,
     found_ty: hir::Type,
     expect: Expectation,
@@ -167,7 +171,7 @@ pub fn type_expectation_check(
             if type_matches(ctx, expect_ty, found_ty) {
                 return;
             }
-            let src = SourceRange::new(origin_id, from_range);
+            let src = ctx.src(from_range);
             let expected_ty = type_format(ctx, expect_ty);
             let found_ty = type_format(ctx, found_ty);
             err::tycheck_type_mismatch(
@@ -277,16 +281,16 @@ impl<'hir> BlockResult<'hir> {
 }
 
 #[must_use]
-pub fn typecheck_expr<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+pub fn typecheck_expr<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    expr: &ast::Expr,
+    expr: &ast::Expr<'ast>,
 ) -> ExprResult<'hir> {
     let expr_res = match expr.kind {
         ast::ExprKind::Lit { lit } => typecheck_lit(ctx, expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            typecheck_block(ctx, expect, *block, BlockEnter::None).into_type_result()
+            typecheck_block(ctx, expect, *block, BlockStatus::None).into_type_result()
         }
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
@@ -322,7 +326,7 @@ pub fn typecheck_expr<'hir>(
     };
 
     if !expr_res.ignore {
-        type_expectation_check(ctx, ctx.proc.origin(), expr.range, expr_res.ty, expect);
+        type_expectation_check(ctx, expr.range, expr_res.ty, expect);
     }
     expr_res.into_expr_result(ctx, expr.range)
 }
@@ -401,10 +405,10 @@ fn type_unify_control_flow<'hir>(ty: &mut hir::Type<'hir>, res_ty: hir::Type<'hi
     }
 }
 
-fn typecheck_if<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_if<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     mut expect: Expectation<'hir>,
-    if_: &ast::If,
+    if_: &ast::If<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut if_type = hir::Type::NEVER;
@@ -419,7 +423,7 @@ fn typecheck_if<'hir>(
 
     let else_block = match if_.else_block {
         Some(block) => {
-            let block_res = typecheck_block(ctx, expect, block, BlockEnter::None);
+            let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
             type_unify_control_flow(&mut if_type, block_res.ty);
             Some(block_res.block)
         }
@@ -433,7 +437,7 @@ fn typecheck_if<'hir>(
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
         ctx.emit.error(Error::new(
             "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
-            SourceRange::new(ctx.proc.origin(), expr_range),
+            ctx.src( expr_range),
             None,
         ));
     }
@@ -448,22 +452,20 @@ fn typecheck_if<'hir>(
     TypeResult::new_ignore(if_type, kind)
 }
 
-fn typecheck_branch<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_branch<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: &mut Expectation<'hir>,
     if_type: &mut hir::Type<'hir>,
-    branch: &ast::Branch,
+    branch: &ast::Branch<'ast>,
 ) -> hir::Branch<'hir> {
     let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
     let cond_res = typecheck_expr(ctx, expect_bool, branch.cond);
-    let block_res = typecheck_block(ctx, *expect, branch.block, BlockEnter::None);
+    let block_res = typecheck_block(ctx, *expect, branch.block, BlockStatus::None);
     type_unify_control_flow(if_type, block_res.ty);
 
     if let Expectation::None = expect {
         if !block_res.ty.is_error() && !block_res.ty.is_never() {
-            let expect_src = block_res
-                .tail_range
-                .map(|range| SourceRange::new(ctx.proc.origin(), range));
+            let expect_src = block_res.tail_range.map(|range| ctx.src(range));
             *expect = Expectation::HasType(block_res.ty, expect_src);
         }
     }
@@ -474,10 +476,10 @@ fn typecheck_branch<'hir>(
     }
 }
 
-fn typecheck_match<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_match<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     mut expect: Expectation<'hir>,
-    match_: &ast::Match,
+    match_: &ast::Match<'ast>,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut match_type = hir::Type::NEVER;
@@ -487,7 +489,7 @@ fn typecheck_match<'hir>(
     let kind_res = super::match_check::match_kind(on_res.ty);
 
     if let Err(true) = kind_res {
-        let src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+        let src = ctx.src(on_res.expr.range);
         let ty_fmt = type_format(ctx, on_res.ty);
         let msg = format!("cannot match on value of type `{}`", ty_fmt.as_str());
         ctx.emit.error(Error::new(msg, src, None));
@@ -495,12 +497,12 @@ fn typecheck_match<'hir>(
 
     let (pat_expect, ref_mut) = match kind_res {
         Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
-            let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+            let expect_src = ctx.src(on_res.expr.range);
             let enum_ty = hir::Type::Enum(enum_id);
             (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
         }
         Ok(_) => {
-            let expect_src = SourceRange::new(ctx.proc.origin(), on_res.expr.range);
+            let expect_src = ctx.src(on_res.expr.range);
             (Expectation::HasType(on_res.ty, Some(expect_src)), None)
         }
         Err(_) => (Expectation::None, None),
@@ -508,17 +510,15 @@ fn typecheck_match<'hir>(
 
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
-        //@hack adding a scope to capture local_binds from patterns
-        // make sure this doesnt break anything with blocks | non-block arm expressions
-        ctx.proc.push_block(BlockEnter::None);
+        ctx.scope.local.start_block(BlockStatus::None);
         let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut);
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
         type_unify_control_flow(&mut match_type, expr_res.ty);
-        ctx.proc.pop_block();
+        ctx.scope.local.exit_block();
 
         if expect.is_none() {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
-                let expect_src = SourceRange::new(ctx.proc.origin(), arm.expr.range);
+                let expect_src = ctx.src(arm.expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
             }
         }
@@ -591,10 +591,10 @@ fn match_const_pats_resolved(ctx: &HirCtx, arms: &[hir::MatchArm]) -> bool {
     true
 }
 
-fn typecheck_pat<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_pat<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    pat: &ast::Pat,
+    pat: &ast::Pat<'ast>,
     ref_mut: Option<ast::Mut>,
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
@@ -609,7 +609,7 @@ fn typecheck_pat<'hir>(
         ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
 
-    type_expectation_check(ctx, ctx.proc.origin(), pat.range, pat_res.pat_ty, expect);
+    type_expectation_check(ctx, pat.range, pat_res.pat_ty, expect);
     pat_res.pat
 }
 
@@ -626,16 +626,14 @@ fn typecheck_pat_lit<'hir>(
     PatResult::new(hir::Pat::Lit(value), lit_res.ty)
 }
 
-fn typecheck_pat_item<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
+fn typecheck_pat_item<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    path: &ast::Path<'ast>,
     bind_list: Option<&ast::BindingList>,
     ref_mut: Option<ast::Mut>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
-    let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
-
-    match value_id {
+    match path_resolve_value(ctx, path) {
         ValueID::None => PatResult::error(),
         ValueID::Enum(enum_id, variant_id) => {
             let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
@@ -647,11 +645,11 @@ fn typecheck_pat_item<'hir>(
                 hir::Type::Enum(enum_id),
             )
         }
-        ValueID::Const(const_id) => {
-            if let Some(name) = field_names.first() {
+        ValueID::Const(const_id, fields) => {
+            if let Some(name) = fields.first() {
                 ctx.emit.error(Error::new(
                     "cannot access fields in patterns",
-                    SourceRange::new(ctx.proc.origin(), name.range),
+                    ctx.src(name.range),
                     None,
                 ));
             }
@@ -661,7 +659,7 @@ fn typecheck_pat_item<'hir>(
                 //@rephrase error
                 ctx.emit.error(Error::new(
                     "cannot destructure constants in patterns",
-                    SourceRange::new(ctx.proc.origin(), pat_range),
+                    ctx.src(pat_range),
                     None,
                 ));
             }
@@ -670,13 +668,13 @@ fn typecheck_pat_item<'hir>(
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
         ValueID::Proc(_)
-        | ValueID::Global(_)
-        | ValueID::Param(_)
-        | ValueID::Local(_)
-        | ValueID::LocalBind(_) => {
+        | ValueID::Global(_, _)
+        | ValueID::Param(_, _)
+        | ValueID::Local(_, _)
+        | ValueID::LocalBind(_, _) => {
             ctx.emit.error(Error::new(
                 "cannot use runtime values in patterns",
-                SourceRange::new(ctx.proc.origin(), pat_range),
+                ctx.src(pat_range),
                 None,
             ));
             PatResult::new(hir::Pat::Error, hir::Type::Error)
@@ -692,7 +690,7 @@ fn typecheck_pat_variant<'hir>(
     ref_mut: Option<ast::Mut>,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
-    let name_src = SourceRange::new(ctx.proc.origin(), name.range);
+    let name_src = ctx.src(name.range);
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => return PatResult::error(),
@@ -711,10 +709,10 @@ fn typecheck_pat_variant<'hir>(
     )
 }
 
-fn typecheck_pat_or<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_pat_or<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    pats: &[ast::Pat],
+    pats: &[ast::Pat<'ast>],
     ref_mut: Option<ast::Mut>,
 ) -> PatResult<'hir> {
     let mut patterns = Vec::with_capacity(pats.len());
@@ -727,13 +725,13 @@ fn typecheck_pat_or<'hir>(
     PatResult::new(hir::Pat::Or(pats), hir::Type::Error)
 }
 
-fn typecheck_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    target: &ast::Expr,
+fn typecheck_field<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target: &ast::Expr<'ast>,
     name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let field_result = check_field_from_type(ctx, ctx.proc.origin(), name, target_res.ty);
+    let field_result = check_field_from_type(ctx, name, target_res.ty);
     emit_field_expr(target_res.expr, field_result)
 }
 
@@ -766,7 +764,6 @@ impl<'hir> FieldResult<'hir> {
 
 fn check_field_from_type<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     name: ast::Name,
     ty: hir::Type<'hir>,
 ) -> Option<FieldResult<'hir>> {
@@ -777,17 +774,15 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => None,
-        hir::Type::Struct(struct_id) => {
-            match check_field_from_struct(ctx, origin_id, name, struct_id) {
-                Some((field_id, field)) => {
-                    let kind = FieldKind::Struct(struct_id, field_id);
-                    let field_ty = field.ty;
-                    Some(FieldResult::new(deref, kind, field_ty))
-                }
-                None => None,
+        hir::Type::Struct(struct_id) => match check_field_from_struct(ctx, name, struct_id) {
+            Some((field_id, field)) => {
+                let kind = FieldKind::Struct(struct_id, field_id);
+                let field_ty = field.ty;
+                Some(FieldResult::new(deref, kind, field_ty))
             }
-        }
-        hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, origin_id, name, slice) {
+            None => None,
+        },
+        hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, name, slice) {
             Some(field) => {
                 let kind = FieldKind::ArraySlice { field };
                 let field_ty = match field {
@@ -798,16 +793,14 @@ fn check_field_from_type<'hir>(
             }
             None => None,
         },
-        hir::Type::ArrayStatic(array) => {
-            match check_field_from_array(ctx, origin_id, name, array) {
-                Some(len) => {
-                    let kind = FieldKind::ArrayStatic { len };
-                    let field_ty = hir::Type::USIZE;
-                    Some(FieldResult::new(deref, kind, field_ty))
-                }
-                None => None,
+        hir::Type::ArrayStatic(array) => match check_field_from_array(ctx, name, array) {
+            Some(len) => {
+                let kind = FieldKind::ArrayStatic { len };
+                let field_ty = hir::Type::USIZE;
+                Some(FieldResult::new(deref, kind, field_ty))
             }
-        }
+            None => None,
+        },
         _ => {
             ctx.emit.error(Error::new(
                 format!(
@@ -815,7 +808,7 @@ fn check_field_from_type<'hir>(
                     ctx.name(name.id),
                     type_format(ctx, ty).as_str(),
                 ),
-                SourceRange::new(origin_id, name.range),
+                ctx.src(name.range),
                 None,
             ));
             None
@@ -825,21 +818,17 @@ fn check_field_from_type<'hir>(
 
 fn check_field_from_struct<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     name: ast::Name,
     struct_id: hir::StructID<'hir>,
 ) -> Option<(hir::FieldID<'hir>, &'hir hir::Field<'hir>)> {
     let data = ctx.registry.struct_data(struct_id);
     match data.find_field(name.id) {
         Some((field_id, field)) => {
-            if origin_id != data.origin_id && field.vis == ast::Vis::Private {
+            if ctx.scope.origin() != data.origin_id && field.vis == ast::Vis::Private {
                 ctx.emit.error(Error::new(
                     format!("field `{}` is private", ctx.name(name.id)),
-                    SourceRange::new(origin_id, name.range),
-                    Info::new(
-                        "defined here",
-                        SourceRange::new(data.origin_id, field.name.range),
-                    ),
+                    ctx.src(name.range),
+                    Info::new("defined here", data.src()),
                 ));
             }
             Some((field_id, field))
@@ -847,11 +836,8 @@ fn check_field_from_struct<'hir>(
         None => {
             ctx.emit.error(Error::new(
                 format!("field `{}` is not found", ctx.name(name.id)),
-                SourceRange::new(origin_id, name.range),
-                Info::new(
-                    "struct defined here",
-                    SourceRange::new(data.origin_id, data.name.range),
-                ),
+                ctx.src(name.range),
+                Info::new("struct defined here", data.src()),
             ));
             None
         }
@@ -860,7 +846,6 @@ fn check_field_from_struct<'hir>(
 
 fn check_field_from_slice<'hir>(
     ctx: &mut HirCtx,
-    origin_id: ModuleID,
     name: ast::Name,
     slice: &hir::ArraySlice,
 ) -> Option<hir::SliceField> {
@@ -875,7 +860,7 @@ fn check_field_from_slice<'hir>(
                     field_name,
                     type_format(ctx, hir::Type::ArraySlice(slice)).as_str(),
                 ),
-                SourceRange::new(origin_id, name.range),
+                ctx.src(name.range),
                 None,
             ));
             None
@@ -885,7 +870,6 @@ fn check_field_from_slice<'hir>(
 
 fn check_field_from_array<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     name: ast::Name,
     array: &hir::ArrayStatic,
 ) -> Option<hir::ConstValue<'hir>> {
@@ -915,7 +899,7 @@ fn check_field_from_array<'hir>(
                     field_name,
                     type_format(ctx, hir::Type::ArrayStatic(array)).as_str(),
                 ),
-                SourceRange::new(origin_id, name.range),
+                ctx.src(name.range),
                 None,
             ));
             None
@@ -994,10 +978,10 @@ impl<'hir> CollectionType<'hir> {
     }
 }
 
-fn typecheck_index<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    target: &ast::Expr,
-    index: &ast::Expr,
+fn typecheck_index<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target: &ast::Expr<'ast>,
+    index: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
@@ -1029,7 +1013,7 @@ fn typecheck_index<'hir>(
                     "cannot index value of type `{}`",
                     type_format(ctx, target_res.ty).as_str()
                 ),
-                SourceRange::new(ctx.proc.origin(), expr_range),
+                ctx.src(expr_range),
                 None,
             ));
             TypeResult::error()
@@ -1037,26 +1021,22 @@ fn typecheck_index<'hir>(
     }
 }
 
-fn typecheck_slice<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    target: &ast::Expr,
+fn typecheck_slice<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target: &ast::Expr<'ast>,
     mutt: ast::Mut,
-    range: &ast::Expr,
+    range: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let src = SourceRange::new(ctx.proc.origin(), expr_range);
-    ctx.emit.error(Error::new(
-        "internal: slice expression not implemented",
-        src,
-        None,
-    ));
+    let src = ctx.src(expr_range);
+    err::internal_slice_expr_not_implemented(&mut ctx.emit, src);
     TypeResult::error()
 }
 
-fn typecheck_call<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    target: &ast::Expr,
-    args_list: &ast::ArgumentList,
+fn typecheck_call<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target: &ast::Expr<'ast>,
+    args_list: &ast::ArgumentList<'ast>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     check_call_indirect(ctx, target_res, args_list)
@@ -1093,14 +1073,14 @@ impl BasicTypeKind {
     }
 }
 
-fn typecheck_cast<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    target: &ast::Expr,
-    into: &ast::Type,
+fn typecheck_cast<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target: &ast::Expr<'ast>,
+    into: &ast::Type<'ast>,
     range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let into = super::pass_3::type_resolve(ctx, ctx.proc.origin(), *into);
+    let into = super::pass_3::type_resolve(ctx, *into, false);
 
     if target_res.ty.is_error() || into.is_error() {
         return TypeResult::error();
@@ -1113,7 +1093,7 @@ fn typecheck_cast<'hir>(
                 type_format(ctx, target_res.ty).as_str(),
                 type_format(ctx, into).as_str()
             ),
-            SourceRange::new(ctx.proc.origin(), range),
+            ctx.src(range),
             None,
         ));
 
@@ -1192,7 +1172,7 @@ fn typecheck_cast<'hir>(
                 type_format(ctx, target_res.ty).as_str(),
                 type_format(ctx, into).as_str()
             ),
-            SourceRange::new(ctx.proc.origin(), range),
+            ctx.src(range),
             None,
         ));
     }
@@ -1208,18 +1188,17 @@ fn typecheck_cast<'hir>(
 //@resulting layout sizes are not checked to fit in usize
 // this can be partially adressed if each hir::Expr
 // is folded, thus range being range checked for `usize`
-fn typecheck_sizeof<'hir>(
-    ctx: &mut HirCtx,
-    ty: ast::Type,
+fn typecheck_sizeof<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    ty: ast::Type<'ast>,
     expr_range: TextRange, //@temp? used for array size overflow error
 ) -> TypeResult<'hir> {
-    let ty = super::pass_3::type_resolve(ctx, ctx.proc.origin(), ty);
+    let ty = super::pass_3::type_resolve(ctx, ty, false);
 
     //@usize semantics not finalized yet
     // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
-    let kind = match constant::type_layout(ctx, ty, SourceRange::new(ctx.proc.origin(), expr_range))
-    {
+    let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
         Ok(layout) => {
             let value = hir::ConstValue::Int {
                 val: layout.size(),
@@ -1234,24 +1213,18 @@ fn typecheck_sizeof<'hir>(
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
 
-fn typecheck_item<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
-    args_list: Option<&ast::ArgumentList>,
+fn typecheck_item<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    path: &ast::Path<'ast>,
+    args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let (value_id, field_names) = path_resolve_value(ctx, ctx.proc.origin(), path);
-
-    let item_res = match value_id {
+    let (item_res, fields) = match path_resolve_value(ctx, path) {
         ValueID::None => {
             default_check_arg_list_opt(ctx, args_list);
             return TypeResult::error();
         }
         ValueID::Proc(proc_id) => {
-            //@where do fields go? none expected?
-            // ValueID or something like it should provide
-            // remaining fields in each variant so its known when none can exist
-            // instead of hadling the empty slice and assuming its correct
             if let Some(args_list) = args_list {
                 return check_call_direct(ctx, proc_id, args_list);
             } else {
@@ -1274,39 +1247,51 @@ fn typecheck_item<'hir>(
             }
         }
         ValueID::Enum(enum_id, variant_id) => {
-            //@no fields is guaranteed by path resolve
-            // remove assert when stable, or path resolve is reworked
-            assert!(field_names.is_empty());
             return check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range);
         }
-        ValueID::Const(id) => TypeResult::new(
-            ctx.registry.const_data(id).ty,
-            hir::ExprKind::ConstVar { const_id: id },
+        ValueID::Const(id, fields) => (
+            TypeResult::new(
+                ctx.registry.const_data(id).ty,
+                hir::ExprKind::ConstVar { const_id: id },
+            ),
+            fields,
         ),
-        ValueID::Global(id) => TypeResult::new(
-            ctx.registry.global_data(id).ty,
-            hir::ExprKind::GlobalVar { global_id: id },
+        ValueID::Global(id, fields) => (
+            TypeResult::new(
+                ctx.registry.global_data(id).ty,
+                hir::ExprKind::GlobalVar { global_id: id },
+            ),
+            fields,
         ),
-        ValueID::Param(id) => TypeResult::new(
-            ctx.proc.get_param(id).ty,
-            hir::ExprKind::ParamVar { param_id: id },
+        ValueID::Param(id, fields) => (
+            TypeResult::new(
+                ctx.scope.local.param(id).ty,
+                hir::ExprKind::ParamVar { param_id: id },
+            ),
+            fields,
         ),
-        ValueID::Local(id) => TypeResult::new(
-            ctx.proc.get_local(id).ty,
-            hir::ExprKind::LocalVar { local_id: id },
+        ValueID::Local(id, fields) => (
+            TypeResult::new(
+                ctx.scope.local.local(id).ty,
+                hir::ExprKind::LocalVar { local_id: id },
+            ),
+            fields,
         ),
-        ValueID::LocalBind(id) => TypeResult::new(
-            ctx.proc.get_local_bind(id).ty,
-            hir::ExprKind::LocalBind { local_bind_id: id },
+        ValueID::LocalBind(id, fields) => (
+            TypeResult::new(
+                ctx.scope.local.bind(id).ty,
+                hir::ExprKind::LocalBind { local_bind_id: id },
+            ),
+            fields,
         ),
     };
 
     let mut target_res = item_res;
     let mut target_range = expr_range;
 
-    for &name in field_names {
+    for &name in fields {
         let expr_res = target_res.into_expr_result(ctx, target_range);
-        let field_result = check_field_from_type(ctx, ctx.proc.origin(), name, expr_res.ty);
+        let field_result = check_field_from_type(ctx, name, expr_res.ty);
         target_res = emit_field_expr(expr_res.expr, field_result);
         target_range = TextRange::new(expr_range.start(), name.range.end());
     }
@@ -1319,15 +1304,15 @@ fn typecheck_item<'hir>(
     }
 }
 
-fn typecheck_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_variant<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     name: ast::Name,
-    args_list: Option<&ast::ArgumentList>,
+    args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let error_src = SourceRange::new(ctx.proc.origin(), expr_range);
-    let enum_id = match infer_enum_type(ctx, expect, error_src) {
+    let name_src = ctx.src(name.range);
+    let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
             default_check_arg_list_opt(ctx, args_list);
@@ -1345,16 +1330,15 @@ fn typecheck_variant<'hir>(
     check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range)
 }
 
-fn typecheck_struct_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_struct_init<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    struct_init: &ast::StructInit,
+    struct_init: &ast::StructInit<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let expr_src = SourceRange::new(ctx.proc.origin(), expr_range);
     let struct_id = match struct_init.path {
-        Some(path) => path_resolve_struct(ctx, ctx.proc.origin(), path),
-        None => infer_struct_type(ctx, expect, expr_src),
+        Some(path) => path_resolve_struct(ctx, path),
+        None => infer_struct_type(ctx, expect, ctx.src(expr_range)),
     };
     let struct_id = match struct_id {
         Some(struct_id) => struct_id,
@@ -1365,7 +1349,7 @@ fn typecheck_struct_init<'hir>(
     };
 
     let data = ctx.registry.struct_data(struct_id);
-    let origin_id = data.origin_id;
+    let struct_origin_id = data.origin_id;
     let data_name = data.name;
     let field_count = data.fields.len();
 
@@ -1384,9 +1368,10 @@ fn typecheck_struct_init<'hir>(
         //@forced reborrow
         let data = ctx.registry.struct_data(struct_id);
 
+        //@REWORK TO USE find_field instead + remove find_field method
         match data.find_field(input.name.id) {
             Some((field_id, field)) => {
-                let expect_src = SourceRange::new(origin_id, field.ty_range);
+                let expect_src = SourceRange::new(struct_origin_id, field.ty_range);
                 let expect = Expectation::HasType(field.ty, Some(expect_src));
                 let input_res = typecheck_expr(ctx, expect, input.expr);
 
@@ -1396,18 +1381,18 @@ fn typecheck_struct_init<'hir>(
                             "field `{}` was already initialized",
                             ctx.name(input.name.id),
                         ),
-                        SourceRange::new(ctx.proc.origin(), input.name.range),
-                        Info::new("initialized here", SourceRange::new(origin_id, range)),
+                        ctx.src(input.name.range),
+                        Info::new("initialized here", ctx.src(range)),
                     ));
                 } else {
-                    if ctx.proc.origin() != origin_id {
+                    if ctx.scope.origin() != struct_origin_id {
                         if field.vis == ast::Vis::Private {
                             ctx.emit.error(Error::new(
                                 format!("field `{}` is private", ctx.name(field.name.id),),
-                                SourceRange::new(ctx.proc.origin(), input.name.range),
+                                ctx.src(input.name.range),
                                 Info::new(
                                     "defined here",
-                                    SourceRange::new(origin_id, field.name.range),
+                                    SourceRange::new(struct_origin_id, field.name.range),
                                 ),
                             ));
                         }
@@ -1429,10 +1414,10 @@ fn typecheck_struct_init<'hir>(
                         ctx.name(input.name.id),
                         ctx.name(data_name.id)
                     ),
-                    SourceRange::new(ctx.proc.origin(), input.name.range),
+                    ctx.src(input.name.range),
                     Info::new(
                         "struct defined here",
-                        SourceRange::new(origin_id, data_name.range),
+                        SourceRange::new(struct_origin_id, data_name.range),
                     ),
                 ));
                 let _ = typecheck_expr(ctx, Expectation::None, input.expr);
@@ -1461,7 +1446,7 @@ fn typecheck_struct_init<'hir>(
 
         ctx.emit.error(Error::new(
             message,
-            expr_src,
+            ctx.src(expr_range),
             Info::new(
                 "struct defined here",
                 SourceRange::new(data.origin_id, data.name.range),
@@ -1474,10 +1459,10 @@ fn typecheck_struct_init<'hir>(
     TypeResult::new(hir::Type::Struct(struct_id), kind)
 }
 
-fn typecheck_array_init<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_array_init<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    input: &[&ast::Expr],
+    input: &[&ast::Expr<'ast>],
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut expect = match expect {
@@ -1508,7 +1493,7 @@ fn typecheck_array_init<'hir>(
 
             // update expect with first non-error type
             if expect.is_none() && !did_error {
-                let expect_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                let expect_src = ctx.src(expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
             }
         }
@@ -1537,17 +1522,17 @@ fn typecheck_array_init<'hir>(
         let kind = hir::ExprKind::ArrayInit { array_init };
         TypeResult::new(hir::Type::ArrayStatic(array_ty), kind)
     } else {
-        let src = SourceRange::new(ctx.proc.origin(), expr_range);
+        let src = ctx.src(expr_range);
         err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
         TypeResult::error()
     }
 }
 
-fn typecheck_array_repeat<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_array_repeat<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     mut expect: Expectation<'hir>,
-    value: &ast::Expr,
-    len: ast::ConstExpr,
+    value: &ast::Expr<'ast>,
+    len: ast::ConstExpr<'ast>,
 ) -> TypeResult<'hir> {
     expect = match expect {
         Expectation::None => Expectation::None,
@@ -1560,12 +1545,8 @@ fn typecheck_array_repeat<'hir>(
     let expr_res = typecheck_expr(ctx, expect, value);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let value = constant::resolve_const_expr(
-        ctx,
-        ctx.proc.origin(),
-        Expectation::HasType(hir::Type::USIZE, None),
-        len,
-    );
+    let value =
+        constant::resolve_const_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), len);
     let len = match value {
         Ok(hir::ConstValue::Int { val, .. }) => Some(val),
         _ => None,
@@ -1588,9 +1569,9 @@ fn typecheck_array_repeat<'hir>(
     }
 }
 
-fn typecheck_deref<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    rhs: &ast::Expr,
+fn typecheck_deref<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    rhs: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
@@ -1611,7 +1592,7 @@ fn typecheck_deref<'hir>(
                     "cannot dereference value of type `{}`",
                     type_format(ctx, rhs_res.ty).as_str()
                 ),
-                SourceRange::new(ctx.proc.origin(), expr_range),
+                ctx.src(expr_range),
                 None,
             ));
             TypeResult::error()
@@ -1619,15 +1600,15 @@ fn typecheck_deref<'hir>(
     }
 }
 
-fn typecheck_address<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_address<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     mutt: ast::Mut,
-    rhs: &ast::Expr,
+    rhs: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
     let addr_res = check_expr_addressability(ctx, rhs_res.expr);
-    let src = SourceRange::new(ctx.proc.origin(), expr_range);
+    let src = ctx.src(expr_range);
 
     match addr_res.addr_base {
         AddrBase::Unknown => {}
@@ -1723,7 +1704,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Match { .. } => AddrBase::Temporary,
             hir::ExprKind::StructField { target, access } => {
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                    let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
@@ -1734,10 +1715,10 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Index { target, access } => {
                 if constraint.is_none() {
                     if access.deref == Some(ast::Mut::Immutable) {
-                        let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                        let deref_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutRef(deref_src);
                     } else if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
-                        let slice_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                        let slice_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutSlice(slice_src);
                     }
                 }
@@ -1747,7 +1728,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             hir::ExprKind::Slice { target, access } => {
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                    let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
@@ -1756,20 +1737,20 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             hir::ExprKind::Cast { .. } => AddrBase::Temporary,
             hir::ExprKind::ParamVar { param_id } => {
-                let param = ctx.proc.get_param(param_id);
-                let var_src = SourceRange::new(ctx.proc.origin(), param.name.range);
+                let param = ctx.scope.local.param(param_id);
+                let var_src = ctx.src(param.name.range);
                 let base_mutt = last_deref.unwrap_or(param.mutt);
                 AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::LocalVar { local_id } => {
-                let local = ctx.proc.get_local(local_id);
-                let var_src = SourceRange::new(ctx.proc.origin(), local.name.range);
+                let local = ctx.scope.local.local(local_id);
+                let var_src = ctx.src(local.name.range);
                 let base_mutt = last_deref.unwrap_or(local.mutt);
                 AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::LocalBind { local_bind_id } => {
-                let local_bind = ctx.proc.get_local_bind(local_bind_id);
-                let var_src = SourceRange::new(ctx.proc.origin(), local_bind.name.range);
+                let local_bind = ctx.scope.local.bind(local_bind_id);
+                let var_src = ctx.src(local_bind.name.range);
                 let base_mutt = last_deref.unwrap_or(local_bind.mutt);
                 AddrBase::Variable(base_mutt, var_src)
             }
@@ -1790,7 +1771,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::Deref { rhs, mutt, .. } => {
                 if constraint.is_none() && mutt == ast::Mut::Immutable {
-                    let deref_src = SourceRange::new(ctx.proc.origin(), expr.range);
+                    let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = rhs;
@@ -1809,9 +1790,9 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     }
 }
 
-fn typecheck_range<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    range: &ast::Range,
+fn typecheck_range<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: &ast::Range<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let struct_name = match range {
@@ -1823,11 +1804,12 @@ fn typecheck_range<'hir>(
         ast::Range::Inclusive(_, _) => "RangeInclusive",
     };
 
-    let (struct_id, range_id) = match core_find_struct(ctx, expr_range, "range", struct_name) {
+    //@improve facilities and error handling of getting things from core library
+    let (struct_id, range_id) = match core_find_struct(ctx, "range", struct_name) {
         Some(value) => value,
         None => {
             let msg = format!("failed to locate struct `{struct_name}` in `core:range`");
-            let src = SourceRange::new(ctx.proc.origin(), expr_range);
+            let src = ctx.src(expr_range);
             ctx.emit.error(Error::new(msg, src, None));
             return TypeResult::error();
         }
@@ -1915,7 +1897,6 @@ fn typecheck_range<'hir>(
 
 fn core_find_struct<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    dummy_range: TextRange,
     module_name: &'static str,
     struct_name: &'static str,
 ) -> Option<(hir::StructID<'hir>, ModuleID)> {
@@ -1929,32 +1910,16 @@ fn core_find_struct<'hir>(
         session::ModuleOrDirectory::Directory(_) => return None,
     };
 
-    let dummy_name = ast::Name {
-        id: struct_name,
-        range: dummy_range,
-    };
-
-    match ctx
-        .scope
-        .symbol_from_scope(&ctx.registry, ctx.proc.origin(), target_id, dummy_name)
-    {
-        Ok(struct_id) => match struct_id {
-            SymbolKind::Struct(id) => Some((id, target_id)),
-            _ => None,
-        },
-        Err(error) => {
-            error.emit(ctx);
-            None
-        }
-    }
+    let struct_id = ctx.scope.global.find_defined_struct(target_id, struct_name);
+    struct_id.map(|id| (id, target_id))
 }
 
-fn typecheck_unary<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_unary<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     op: ast::UnOp,
     op_range: TextRange,
-    rhs: &ast::Expr,
+    rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
     let rhs_expect = unary_rhs_expect(ctx, op, op_range, expect);
     let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
@@ -1979,18 +1944,18 @@ fn typecheck_unary<'hir>(
 // just using lhs leaves default s32 that doesnt match rhs
 // let x = 5 + 10 as u16;
 // let y = 5 as u16 + 10;
-fn typecheck_binary<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn typecheck_binary<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     op: ast::BinOp,
     op_range: TextRange,
-    bin: &ast::BinExpr,
+    bin: &ast::BinExpr<'ast>,
 ) -> TypeResult<'hir> {
     let lhs_expect = binary_lhs_expect(ctx, op, op_range, expect);
     let lhs_res = typecheck_expr(ctx, lhs_expect, bin.lhs);
     let bin_op = binary_op_check(ctx, op, op_range, lhs_res.ty);
 
-    let expect_src = SourceRange::new(ctx.proc.origin(), bin.lhs.range);
+    let expect_src = ctx.src(bin.lhs.range);
     let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
     let rhs_res = typecheck_expr(ctx, rhs_expect, bin.rhs);
     let _ = binary_op_check(ctx, op, op_range, rhs_res.ty);
@@ -2012,9 +1977,11 @@ fn typecheck_block<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     block: ast::Block,
-    enter: BlockEnter,
+    status: BlockStatus,
 ) -> BlockResult<'hir> {
-    ctx.proc.push_block(enter);
+    BlockResult::new(hir::Type::Error, hir::Block { stmts: &[] }, None)
+    /*
+    ctx.scope.local.start_block(status);
 
     let mut block_stmts: Vec<hir::Stmt> = Vec::with_capacity(block.stmts.len());
     let mut block_ty: Option<hir::Type> = None;
@@ -2023,7 +1990,7 @@ fn typecheck_block<'hir>(
     for stmt in block.stmts.iter().copied() {
         let stmt = match stmt.kind {
             ast::StmtKind::AttrStmt(attr) => {
-                let feedback = attr_check::check_attrs_stmt(ctx, ctx.proc.origin(), attr.attrs);
+                let feedback = attr_check::check_attrs_stmt(ctx, attr.attrs);
                 if feedback.cfg_state.disabled() {
                     continue;
                 }
@@ -2178,134 +2145,95 @@ fn typecheck_block<'hir>(
         BlockResult::new(block_ty, hir_block, tail_range)
     };
 
-    ctx.proc.pop_block();
+    ctx.scope.local.exit_block();
     block_result
+    */
 }
 
-/// returns `None` on invalid use of `break`
 fn typecheck_break<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir::Stmt<'hir>> {
-    match ctx.proc.loop_status() {
-        LoopStatus::None => {
-            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            ctx.emit.error(Error::new(
-                "cannot use `break` outside of loop",
-                SourceRange::new(ctx.proc.origin(), kw_range),
-                None,
-            ));
-            None
-        }
-        LoopStatus::Inside_WithDefer => {
-            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-            ctx.emit.error(Error::new(
-                "cannot use `break` in loop started outside of `defer`",
-                SourceRange::new(ctx.proc.origin(), kw_range),
-                None,
-            ));
-            None
-        }
-        LoopStatus::Inside => Some(hir::Stmt::Break),
+    let (loop_found, defer) = ctx.scope.local.find_prev_loop_before_defer();
+    if !loop_found {
+        let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
+        let src = ctx.src(kw_range);
+        err::tycheck_break_outside_loop(&mut ctx.emit, src);
+        None
+    } else if let Some(defer) = defer {
+        let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
+        let src = ctx.src(kw_range);
+        let defer_src = ctx.src(defer);
+        err::tycheck_break_in_defer(&mut ctx.emit, src, defer_src);
+        None
+    } else {
+        Some(hir::Stmt::Break)
     }
 }
 
-/// returns `None` on invalid use of `continue`
 fn typecheck_continue<'hir>(ctx: &mut HirCtx, stmt_range: TextRange) -> Option<hir::Stmt<'hir>> {
-    match ctx.proc.loop_status() {
-        LoopStatus::None => {
-            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            ctx.emit.error(Error::new(
-                "cannot use `continue` outside of loop",
-                SourceRange::new(ctx.proc.origin(), kw_range),
-                None,
-            ));
-            None
-        }
-        LoopStatus::Inside_WithDefer => {
-            let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
-            ctx.emit.error(Error::new(
-                "cannot use `continue` in loop started outside of `defer`",
-                SourceRange::new(ctx.proc.origin(), kw_range),
-                None,
-            ));
-            None
-        }
-        LoopStatus::Inside => Some(hir::Stmt::Continue),
+    let (loop_found, defer) = ctx.scope.local.find_prev_loop_before_defer();
+    if !loop_found {
+        let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
+        let src = ctx.src(kw_range);
+        err::tycheck_continue_outside_loop(&mut ctx.emit, src);
+        None
+    } else if let Some(defer) = defer {
+        let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 8.into());
+        let src = ctx.src(kw_range);
+        let defer_src = ctx.src(defer);
+        err::tycheck_continue_in_defer(&mut ctx.emit, src, defer_src);
+        None
+    } else {
+        Some(hir::Stmt::Continue)
     }
 }
 
-/// returns `None` on invalid use of `return`
-fn typecheck_return<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    expr: Option<&ast::Expr>,
+fn typecheck_return<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expr: Option<&ast::Expr<'ast>>,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
-    let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
+    let valid = if let Some(defer) = ctx.scope.local.find_prev_defer() {
         let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-        ctx.emit.error(Error::new(
-            "cannot use `return` inside `defer`",
-            SourceRange::new(ctx.proc.origin(), kw_range),
-            Info::new(
-                "in this defer",
-                SourceRange::new(ctx.proc.origin(), prev_defer),
-            ),
-        ));
+        let src = ctx.src(kw_range);
+        let defer_src = ctx.src(defer);
+        err::tycheck_return_in_defer(&mut ctx.emit, src, defer_src);
         false
     } else {
         true
     };
 
+    let expect = ctx.scope.local.return_expect();
     let expr = match expr {
         Some(expr) => {
-            let expr_res = typecheck_expr(ctx, ctx.proc.return_expect(), expr);
+            let expr_res = typecheck_expr(ctx, expect, expr);
             Some(expr_res.expr)
         }
         None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-            type_expectation_check(
-                ctx,
-                ctx.proc.origin(),
-                kw_range,
-                hir::Type::VOID,
-                ctx.proc.return_expect(),
-            );
+            type_expectation_check(ctx, kw_range, hir::Type::VOID, expect);
             None
         }
     };
 
-    if valid {
-        Some(hir::Stmt::Return(expr))
-    } else {
-        None
-    }
+    valid.then_some(hir::Stmt::Return(expr))
 }
 
-/// returns `None` on invalid use of `defer`
 fn typecheck_defer<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     block: ast::Block,
     stmt_range: TextRange,
 ) -> Option<hir::Stmt<'hir>> {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
-
-    let valid = if let DeferStatus::Inside(prev_defer) = ctx.proc.defer_status() {
-        ctx.emit.error(Error::new(
-            "`defer` statements cannot be nested",
-            SourceRange::new(ctx.proc.origin(), kw_range),
-            Info::new(
-                "already in this defer",
-                SourceRange::new(ctx.proc.origin(), prev_defer),
-            ),
-        ));
+    let valid = if let Some(defer) = ctx.scope.local.find_prev_defer() {
+        let src = ctx.src(kw_range);
+        let defer_src = ctx.src(defer);
+        err::tycheck_defer_in_defer(&mut ctx.emit, src, defer_src);
         false
     } else {
         true
     };
 
-    let block_res = typecheck_block(
-        ctx,
-        Expectation::HasType(hir::Type::VOID, None),
-        block,
-        BlockEnter::Defer(kw_range),
-    );
+    let expect = Expectation::HasType(hir::Type::VOID, None);
+    let block_res = typecheck_block(ctx, expect, block, BlockStatus::Defer(kw_range));
 
     if valid {
         let block = ctx.arena.alloc(block_res.block);
@@ -2315,9 +2243,9 @@ fn typecheck_defer<'hir>(
     }
 }
 
-fn typecheck_loop<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    loop_: &ast::Loop,
+fn typecheck_loop<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    loop_: &ast::Loop<'ast>,
 ) -> &'hir hir::Loop<'hir> {
     let kind = match loop_.kind {
         ast::LoopKind::Loop => hir::LoopKind::Loop,
@@ -2354,7 +2282,7 @@ fn typecheck_loop<'hir>(
         ctx,
         Expectation::HasType(hir::Type::VOID, None),
         loop_.block,
-        BlockEnter::Loop,
+        BlockStatus::Loop,
     );
 
     let loop_ = hir::Loop {
@@ -2370,52 +2298,28 @@ enum LocalResult<'hir> {
     Discard(&'hir hir::Expr<'hir>),
 }
 
-fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> LocalResult<'hir> {
-    //@theres no `nice` way to find both existing name from global (hir) scope
-    // and proc_scope, those are so far disconnected,
-    // some unified model of symbols might be better in the future
-    // this also applies to SymbolKind which is separate from VariableID (leads to some issues in path resolve) @1.04.24
-
+fn typecheck_local<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    local: &ast::Local<'ast>,
+) -> LocalResult<'hir> {
     let already_defined = match local.bind {
-        ast::Binding::Named(_, name) => {
-            if let Err(error) =
-                ctx.scope
-                    .already_defined_check(&ctx.registry, ctx.proc.origin(), name)
-            {
-                error.emit(ctx);
-                true
-            } else if let Some(existing_var) = ctx.proc.find_variable(name.id) {
-                let existing = match existing_var {
-                    VariableID::Param(id) => {
-                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
-                    }
-                    VariableID::Local(id) => {
-                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
-                    }
-                    VariableID::LocalBind(id) => {
-                        SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
-                    }
-                };
-                let name_src = SourceRange::new(ctx.proc.origin(), name.range);
-                let name = ctx.name(name.id);
-                err::scope_name_already_defined(&mut ctx.emit, name_src, existing, name);
-                true
-            } else {
-                false
-            }
-        }
+        ast::Binding::Named(_, name) => ctx
+            .scope
+            .check_already_defined(name, &ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err(),
         ast::Binding::Discard(_) => false,
     };
 
-    let (local_ty, expect) = match local.ty {
+    let (local_ty, expect) = match local.ty.clone() {
         Some(ty) => {
-            let local_ty = super::pass_3::type_resolve(ctx, ctx.proc.origin(), ty);
-            let expect_src = SourceRange::new(ctx.proc.origin(), ty.range);
+            let local_ty = super::pass_3::type_resolve(ctx, ty, false);
+            let expect_src = ctx.src(ty.range);
             let expect = Expectation::HasType(local_ty, Some(expect_src));
             (Some(local_ty), expect)
         }
         None => (None, Expectation::None),
     };
+
     let init_res = typecheck_expr(ctx, expect, local.init);
     let local_ty = local_ty.unwrap_or(init_res.ty);
 
@@ -2424,14 +2328,13 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
             if already_defined {
                 LocalResult::Error
             } else {
-                //@check for `never`, `void` to prevent panic during codegen
                 let local = hir::Local {
                     mutt,
                     name,
                     ty: local_ty,
                     init: init_res.expr,
                 };
-                let local_id = ctx.proc.push_local(local);
+                let local_id = ctx.scope.local.add_local(local);
                 LocalResult::Local(local_id)
             }
         }
@@ -2439,12 +2342,12 @@ fn typecheck_local<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, local: &ast::Local) -> 
     }
 }
 
-fn typecheck_assign<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    assign: &ast::Assign,
+fn typecheck_assign<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    assign: &ast::Assign<'ast>,
 ) -> &'hir hir::Assign<'hir> {
     let lhs_res = typecheck_expr(ctx, Expectation::None, assign.lhs);
-    let lhs_src = SourceRange::new(ctx.proc.origin(), assign.lhs.range);
+    let lhs_src = ctx.src(assign.lhs.range);
     let addr_res = check_expr_addressability(ctx, lhs_res.expr);
 
     match addr_res.addr_base {
@@ -2567,7 +2470,7 @@ fn find_enum_variant<'hir>(
             return Some((hir::VariantID::new_raw(idx), variant));
         }
     }
-    let src = SourceRange::new(ctx.proc.origin(), name.range);
+    let src = ctx.src(name.range);
     let enum_src = enum_data.src();
     let name = ctx.name(name.id);
     let enum_name = ctx.name(enum_data.name.id);
@@ -2586,7 +2489,7 @@ fn find_struct_field<'hir>(
             return Some((hir::FieldID::new_raw(idx), field));
         }
     }
-    let src = SourceRange::new(ctx.proc.origin(), name.range);
+    let src = ctx.src(name.range);
     let struct_src = struct_data.src();
     let name = ctx.name(name.id);
     let struct_name = ctx.name(struct_data.name.id);
@@ -2664,13 +2567,19 @@ fn infer_struct_type<'hir>(
 
 //==================== DEFAULT CHECK ====================
 
-fn default_check_arg_list<'hir>(ctx: &mut HirCtx, arg_list: &ast::ArgumentList) {
+fn default_check_arg_list<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
+    arg_list: &ast::ArgumentList<'ast>,
+) {
     for &expr in arg_list.exprs.iter() {
         let _ = typecheck_expr(ctx, Expectation::None, expr);
     }
 }
 
-fn default_check_arg_list_opt<'hir>(ctx: &mut HirCtx, arg_list: Option<&ast::ArgumentList>) {
+fn default_check_arg_list_opt<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
+    arg_list: Option<&ast::ArgumentList<'ast>>,
+) {
     if let Some(arg_list) = arg_list {
         for &expr in arg_list.exprs.iter() {
             let _ = typecheck_expr(ctx, Expectation::None, expr);
@@ -2678,7 +2587,7 @@ fn default_check_arg_list_opt<'hir>(ctx: &mut HirCtx, arg_list: Option<&ast::Arg
     }
 }
 
-fn default_check_field_init<'hir>(ctx: &mut HirCtx, input: &[ast::FieldInit]) {
+fn default_check_field_init<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, input: &[ast::FieldInit<'ast>]) {
     for field in input.iter() {
         let _ = typecheck_expr(ctx, Expectation::None, field.expr);
     }
@@ -2720,10 +2629,10 @@ fn bind_list_opt_range(bind_list: Option<&ast::BindingList>, default: TextRange)
     }
 }
 
-fn check_call_direct<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn check_call_direct<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     proc_id: hir::ProcID<'hir>,
-    arg_list: &ast::ArgumentList,
+    arg_list: &ast::ArgumentList<'ast>,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.proc_data(proc_id);
     let return_ty = data.return_ty;
@@ -2755,10 +2664,10 @@ fn check_call_direct<'hir>(
     TypeResult::new(return_ty, kind)
 }
 
-fn check_call_indirect<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn check_call_indirect<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     target_res: ExprResult<'hir>,
-    arg_list: &ast::ArgumentList,
+    arg_list: &ast::ArgumentList<'ast>,
 ) -> TypeResult<'hir> {
     let proc_ty = match target_res.ty {
         hir::Type::Error => {
@@ -2767,7 +2676,7 @@ fn check_call_indirect<'hir>(
         }
         hir::Type::Procedure(proc_ty) => proc_ty,
         _ => {
-            let src = SourceRange::new(ctx.proc.origin(), target_res.expr.range);
+            let src = ctx.src(target_res.expr.range);
             let ty_fmt = type_format(ctx, target_res.ty);
             err::tycheck_cannot_call_value_of_type(&mut ctx.emit, src, ty_fmt.as_str());
             default_check_arg_list(ctx, arg_list);
@@ -2817,8 +2726,7 @@ fn check_call_arg_count(
     };
 
     if wrong_count {
-        let range = arg_list_range(arg_list);
-        let src = SourceRange::new(ctx.proc.origin(), range);
+        let src = ctx.src(arg_list_range(arg_list));
         err::tycheck_unexpected_proc_arg_count(
             &mut ctx.emit,
             src,
@@ -2830,11 +2738,11 @@ fn check_call_arg_count(
     }
 }
 
-fn check_variant_input_opt<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn check_variant_input_opt<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     enum_id: hir::EnumID<'hir>,
     variant_id: hir::VariantID<'hir>,
-    arg_list: Option<&ast::ArgumentList>,
+    arg_list: Option<&ast::ArgumentList<'ast>>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.enum_data(enum_id);
@@ -2845,20 +2753,20 @@ fn check_variant_input_opt<'hir>(
     let expected_count = variant.fields.len();
 
     if input_count != expected_count {
+        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
+        let variant_src = SourceRange::new(data.origin_id, variant.name.range);
         err::tycheck_unexpected_variant_arg_count(
             &mut ctx.emit,
-            SourceRange::new(ctx.proc.origin(), arg_list_opt_range(arg_list, error_range)),
-            SourceRange::new(data.origin_id, variant.name.range),
+            src,
+            variant_src,
             input_count,
             expected_count,
         );
     } else if expected_count == 0 && arg_list.is_some() {
         //@implement same check for enum definition
-        err::tycheck_unexpected_variant_arg_list(
-            &mut ctx.emit,
-            SourceRange::new(ctx.proc.origin(), arg_list_opt_range(arg_list, error_range)),
-            SourceRange::new(data.origin_id, variant.name.range),
-        );
+        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
+        let variant_src = SourceRange::new(data.origin_id, variant.name.range);
+        err::tycheck_unexpected_variant_arg_list(&mut ctx.emit, src, variant_src);
     }
 
     let input = if let Some(arg_list) = arg_list {
@@ -2903,8 +2811,7 @@ fn check_variant_bind_count(
     let expected_count = variant.fields.len();
 
     if input_count != expected_count {
-        let range = bind_list_opt_range(bind_list, default);
-        let src = SourceRange::new(ctx.proc.origin(), range);
+        let src = ctx.src(bind_list_opt_range(bind_list, default));
         let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
         err::tycheck_unexpected_variant_bind_count(
             &mut ctx.emit,
@@ -2914,8 +2821,7 @@ fn check_variant_bind_count(
             expected_count,
         );
     } else if expected_count == 0 && bind_list.is_some() {
-        let range = bind_list_opt_range(bind_list, default);
-        let src = SourceRange::new(ctx.proc.origin(), range);
+        let src = ctx.src(bind_list_opt_range(bind_list, default));
         let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
         err::tycheck_unexpected_variant_bind_list(&mut ctx.emit, src, variant_src);
     }
@@ -2962,7 +2868,7 @@ fn add_variant_local_binds<'hir>(
             ty,
             field_id,
         };
-        let bind_id = ctx.proc.push_local_bind(local_bind);
+        let bind_id = ctx.scope.local.add_bind(local_bind);
         bind_ids.push(bind_id);
     }
 
@@ -2983,275 +2889,257 @@ param_var  -> <follow?> by <chained> field access
 local_var  -> <follow?> by <chained> field access
 */
 
-enum ResolvedPath<'hir> {
-    None,
+struct PathResolved<'hir, 'ast> {
+    kind: PathResolvedKind<'hir>,
+    at_name: ast::Name,
+    names: &'ast [ast::Name],
+}
+
+enum PathResolvedKind<'hir> {
+    Symbol(SymbolID<'hir>),
     Variable(VariableID<'hir>),
-    Symbol(SymbolKind<'hir>),
+    Module(ModuleID),
 }
 
-fn path_resolve<'hir>(
+fn path_resolve_2<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
-    path: &ast::Path,
-) -> (ResolvedPath<'hir>, usize) {
-    let name = path.names.first().cloned().expect("non empty path");
+    path: &ast::Path<'ast>,
+) -> Result<PathResolved<'hir, 'ast>, ()> {
+    let name = path.names.get(0).copied().expect("non empty path");
 
-    if let Some(var_id) = ctx.proc.find_variable(name.id) {
-        return (ResolvedPath::Variable(var_id), 0);
+    if let Some(var_id) = ctx.scope.local.find_variable(name.id) {
+        return Ok(PathResolved {
+            kind: PathResolvedKind::Variable(var_id),
+            at_name: name,
+            names: path.names.split_at(1).1,
+        });
     }
 
-    let (target_id, name) =
-        match ctx
-            .scope
-            .symbol_from_scope(&ctx.registry, origin_id, origin_id, name)
-        {
-            Ok(kind) => {
-                let next_name = path.names.get(1).cloned();
-                match (kind, next_name) {
-                    (SymbolKind::Module(module_id), Some(name)) => (module_id, name),
-                    _ => return (ResolvedPath::Symbol(kind), 0),
-                }
-            }
-            Err(error) => {
-                error.emit(ctx);
-                return (ResolvedPath::None, 0);
-            }
-        };
+    let symbol = ctx.scope.global.find_symbol(
+        ctx.scope.origin(),
+        ctx.scope.origin(),
+        name,
+        &ctx.session,
+        &ctx.registry,
+        &mut ctx.emit,
+    )?;
 
-    match ctx
-        .scope
-        .symbol_from_scope(&ctx.registry, origin_id, target_id, name)
-    {
-        Ok(kind) => (ResolvedPath::Symbol(kind), 1),
-        Err(error) => {
-            error.emit(ctx);
-            (ResolvedPath::None, 1)
+    let target_id = match symbol {
+        SymbolOrModule::Symbol(symbol_id) => {
+            return Ok(PathResolved {
+                kind: PathResolvedKind::Symbol(symbol_id),
+                at_name: name,
+                names: path.names.split_at(1).1,
+            })
         }
+        SymbolOrModule::Module(module_id) => module_id,
+    };
+
+    let name = if let Some(name) = path.names.get(1).copied() {
+        name
+    } else {
+        return Ok(PathResolved {
+            kind: PathResolvedKind::Module(target_id),
+            at_name: name,
+            names: path.names.split_at(1).1,
+        });
+    };
+
+    let symbol = ctx.scope.global.find_symbol(
+        ctx.scope.origin(),
+        target_id,
+        name,
+        &ctx.session,
+        &ctx.registry,
+        &mut ctx.emit,
+    )?;
+
+    match symbol {
+        SymbolOrModule::Symbol(symbol_id) => Ok(PathResolved {
+            kind: PathResolvedKind::Symbol(symbol_id),
+            at_name: name,
+            names: path.names.split_at(2).1,
+        }),
+        SymbolOrModule::Module(_) => unreachable!("module from other module"),
     }
 }
 
-//@duplication issue with other path resolve procs
-// mainly due to bad scope / symbol design
+fn path_check_unexpected_segment(
+    ctx: &mut HirCtx,
+    names: &[ast::Name],
+    after_kind: &'static str,
+) -> Result<(), ()> {
+    if let Some(next) = names.first().copied() {
+        let start = next.range.start();
+        let end = names.last().unwrap().range.end();
+        let src = ctx.src(TextRange::new(start, end));
+        err::path_unexpected_segment(&mut ctx.emit, src, after_kind);
+        Err(())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn path_resolve_type<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     path: &ast::Path,
 ) -> hir::Type<'hir> {
-    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
+    let path = match path_resolve_2(ctx, path) {
+        Ok(path) => path,
+        Err(()) => return hir::Type::Error,
+    };
 
-    let ty = match resolved {
-        ResolvedPath::None => return hir::Type::Error,
-        ResolvedPath::Variable(variable) => {
-            let name = path.names[name_idx];
-
-            let source = match variable {
-                VariableID::Param(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
-                }
-                VariableID::Local(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
-                }
-                VariableID::LocalBind(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
-                }
-            };
-            //@calling this `local` for both params and locals, validate wording consistency
-            // by maybe extracting all error formats to separate module @07.04.24
-            ctx.emit.error(Error::new(
-                format!("expected type, found local `{}`", ctx.name(name.id)),
-                SourceRange::new(origin_id, name.range),
-                Info::new("defined here", source),
-            ));
-            return hir::Type::Error;
-        }
-        ResolvedPath::Symbol(kind) => match kind {
-            SymbolKind::Enum(id) => hir::Type::Enum(id),
-            SymbolKind::Struct(id) => hir::Type::Struct(id),
+    let ty = match path.kind {
+        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
+            SymbolID::Enum(id) => hir::Type::Enum(id),
+            SymbolID::Struct(id) => hir::Type::Struct(id),
             _ => {
-                let name = path.names[name_idx];
-                ctx.emit.error(Error::new(
-                    format!(
-                        "expected type, found {} `{}`",
-                        kind.kind_name(),
-                        ctx.name(name.id)
-                    ),
-                    SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", kind.src(&ctx.registry)),
-                ));
+                let src = ctx.src(path.at_name.range);
+                let defined_src = symbol_id.src(&ctx.registry);
+                let name = ctx.name(path.at_name.id);
+                #[rustfmt::skip] //@set line len to like 120, to stop wrapping
+                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", symbol_id.desc());
                 return hir::Type::Error;
             }
         },
+        PathResolvedKind::Variable(var_id) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = ctx.scope.var_src(var_id);
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", var_id.desc());
+            return hir::Type::Error;
+        }
+        PathResolvedKind::Module(_) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = src; //@no src avaiblable, store imported src
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", "module");
+            return hir::Type::Error;
+        }
     };
 
-    if let Some(remaining) = path.names.get(name_idx + 1..) {
-        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
-            let range = TextRange::new(first.range.start(), last.range.end());
-            ctx.emit.error(Error::new(
-                "unexpected path segment",
-                SourceRange::new(origin_id, range),
-                None,
-            ));
-        }
+    if path_check_unexpected_segment(ctx, path.names, "type").is_err() {
+        return hir::Type::Error;
     }
-
     ty
 }
 
-//@duplication issue with other path resolve procs
-// mainly due to bad scope / symbol design
 pub fn path_resolve_struct<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
     path: &ast::Path,
 ) -> Option<hir::StructID<'hir>> {
-    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
+    let path = match path_resolve_2(ctx, path) {
+        Ok(path) => path,
+        Err(()) => return None,
+    };
 
-    let struct_id = match resolved {
-        ResolvedPath::None => return None,
-        ResolvedPath::Variable(variable) => {
-            let name = path.names[name_idx];
-
-            let source = match variable {
-                VariableID::Param(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_param(id).name.range)
-                }
-                VariableID::Local(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local(id).name.range)
-                }
-                VariableID::LocalBind(id) => {
-                    SourceRange::new(ctx.proc.origin(), ctx.proc.get_local_bind(id).name.range)
-                }
-            };
-            //@calling this `local` for both params and locals, validate wording consistency
-            // by maybe extracting all error formats to separate module @07.04.24
-            ctx.emit.error(Error::new(
-                format!("expected struct type, found local `{}`", ctx.name(name.id)),
-                SourceRange::new(origin_id, name.range),
-                Info::new("defined here", source),
-            ));
-            return None;
-        }
-        ResolvedPath::Symbol(kind) => match kind {
-            SymbolKind::Struct(id) => Some(id),
+    let struct_id = match path.kind {
+        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
+            SymbolID::Struct(struct_id) => struct_id,
             _ => {
-                let name = path.names[name_idx];
-                ctx.emit.error(Error::new(
-                    format!(
-                        "expected struct type, found {} `{}`",
-                        kind.kind_name(),
-                        ctx.name(name.id)
-                    ),
-                    SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", kind.src(&ctx.registry)),
-                ));
+                let src = ctx.src(path.at_name.range);
+                let defined_src = symbol_id.src(&ctx.registry);
+                let name = ctx.name(path.at_name.id);
+                #[rustfmt::skip]
+                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", symbol_id.desc());
                 return None;
             }
         },
+        PathResolvedKind::Variable(var_id) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = ctx.scope.var_src(var_id);
+            let name = ctx.name(path.at_name.id);
+            #[rustfmt::skip]
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", var_id.desc());
+            return None;
+        }
+        PathResolvedKind::Module(_) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = src; //@no src avaiblable, store imported src
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "module");
+            return None;
+        }
     };
 
-    if let Some(remaining) = path.names.get(name_idx + 1..) {
-        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
-            let range = TextRange::new(first.range.start(), last.range.end());
-            ctx.emit.error(Error::new(
-                "unexpected path segment",
-                SourceRange::new(origin_id, range),
-                None,
-            ));
-        }
+    if path_check_unexpected_segment(ctx, path.names, "struct").is_err() {
+        return None;
     }
-    struct_id
-}
-
-pub enum ValueID<'hir> {
-    None,
-    Proc(hir::ProcID<'hir>),
-    Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
-    Const(hir::ConstID<'hir>),
-    Global(hir::GlobalID<'hir>),
-    Param(hir::ParamID<'hir>),
-    Local(hir::LocalID<'hir>),
-    LocalBind(hir::LocalBindID<'hir>),
+    Some(struct_id)
 }
 
 pub fn path_resolve_value<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    origin_id: ModuleID,
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
-) -> (ValueID<'hir>, &'ast [ast::Name]) {
-    let (resolved, name_idx) = path_resolve(ctx, origin_id, path);
-
-    let value_id = match resolved {
-        ResolvedPath::None => return (ValueID::None, &[]),
-        ResolvedPath::Variable(var) => match var {
-            VariableID::Param(id) => ValueID::Param(id),
-            VariableID::Local(id) => ValueID::Local(id),
-            VariableID::LocalBind(id) => ValueID::LocalBind(id),
-        },
-        ResolvedPath::Symbol(kind) => match kind {
-            SymbolKind::Proc(id) => {
-                if let Some(remaining) = path.names.get(name_idx + 1..) {
-                    if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
-                        let range = TextRange::new(first.range.start(), last.range.end());
-                        ctx.emit.error(Error::new(
-                            "unexpected path segment",
-                            SourceRange::new(origin_id, range),
-                            None,
-                        ));
-                    }
-                }
-                ValueID::Proc(id)
-            }
-            SymbolKind::Enum(enum_id) => {
-                if let Some(name) = path.names.get(name_idx + 1).copied() {
-                    let (variant_id, _) = match find_enum_variant(ctx, enum_id, name) {
-                        Some(found) => found,
-                        None => return (ValueID::None, &[]),
-                    };
-
-                    if let Some(remaining) = path.names.get(name_idx + 2..) {
-                        if let (Some(first), Some(last)) = (remaining.first(), remaining.last()) {
-                            let range = TextRange::new(first.range.start(), last.range.end());
-                            ctx.emit.error(Error::new(
-                                "unexpected path segment",
-                                SourceRange::new(origin_id, range),
-                                None,
-                            ));
-                        }
-                    }
-                    return (ValueID::Enum(enum_id, variant_id), &[]);
-                } else {
-                    let name = path.names[name_idx];
-                    ctx.emit.error(Error::new(
-                        format!(
-                            "expected value, found {} `{}`",
-                            kind.kind_name(),
-                            ctx.name(name.id)
-                        ),
-                        SourceRange::new(origin_id, name.range),
-                        Info::new("defined here", kind.src(&ctx.registry)),
-                    ));
-                    return (ValueID::None, &[]);
-                }
-            }
-            SymbolKind::Const(id) => ValueID::Const(id),
-            SymbolKind::Global(id) => ValueID::Global(id),
-            _ => {
-                let name = path.names[name_idx];
-                ctx.emit.error(Error::new(
-                    format!(
-                        "expected value, found {} `{}`",
-                        kind.kind_name(),
-                        ctx.name(name.id)
-                    ),
-                    SourceRange::new(origin_id, name.range),
-                    Info::new("defined here", kind.src(&ctx.registry)),
-                ));
-                return (ValueID::None, &[]);
-            }
-        },
+) -> ValueID<'hir, 'ast> {
+    let path = match path_resolve_2(ctx, path) {
+        Ok(path) => path,
+        Err(()) => return ValueID::None,
     };
 
-    let field_names = &path.names[name_idx + 1..];
-    (value_id, field_names)
+    match path.kind {
+        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
+            SymbolID::Proc(proc_id) => {
+                if path_check_unexpected_segment(ctx, path.names, "procedure").is_err() {
+                    ValueID::None
+                } else {
+                    ValueID::Proc(proc_id)
+                }
+            }
+            SymbolID::Enum(enum_id) => {
+                if let Some(next) = path.names.first().copied() {
+                    if let Some((variant_id, _)) = find_enum_variant(ctx, enum_id, next) {
+                        let names = path.names.split_at(1).1;
+                        if path_check_unexpected_segment(ctx, names, "enum variant").is_err() {
+                            ValueID::None
+                        } else {
+                            ValueID::Enum(enum_id, variant_id)
+                        }
+                    } else {
+                        ValueID::None
+                    }
+                } else {
+                    let src = ctx.src(path.at_name.range);
+                    let defined_src = symbol_id.src(&ctx.registry);
+                    let name = ctx.name(path.at_name.id);
+                    err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "enum");
+                    ValueID::None
+                }
+            }
+            SymbolID::Struct(_) => {
+                let src = ctx.src(path.at_name.range);
+                let defined_src = symbol_id.src(&ctx.registry);
+                let name = ctx.name(path.at_name.id);
+                err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "struct");
+                ValueID::None
+            }
+            SymbolID::Const(id) => ValueID::Const(id, path.names),
+            SymbolID::Global(id) => ValueID::Global(id, path.names),
+        },
+        PathResolvedKind::Variable(var_id) => match var_id {
+            VariableID::Param(id) => ValueID::Param(id, path.names),
+            VariableID::Local(id) => ValueID::Local(id, path.names),
+            VariableID::Bind(id) => ValueID::LocalBind(id, path.names),
+        },
+        PathResolvedKind::Module(_) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = src; //@no src avaiblable, store imported src
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "module");
+            ValueID::None
+        }
+    }
+}
+
+pub enum ValueID<'hir, 'ast> {
+    None,
+    Proc(hir::ProcID<'hir>),
+    Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
+    Const(hir::ConstID<'hir>, &'ast [ast::Name]),
+    Global(hir::GlobalID<'hir>, &'ast [ast::Name]),
+    Param(hir::ParamID<'hir>, &'ast [ast::Name]),
+    Local(hir::LocalID<'hir>, &'ast [ast::Name]),
+    LocalBind(hir::LocalBindID<'hir>, &'ast [ast::Name]),
 }
 
 //==================== UNARY EXPR ====================
@@ -3265,7 +3153,7 @@ fn unary_rhs_expect<'hir>(
     match op {
         ast::UnOp::Neg | ast::UnOp::BitNot => expect,
         ast::UnOp::LogicNot => {
-            let expect_src = SourceRange::new(ctx.proc.origin(), op_range);
+            let expect_src = ctx.src(op_range);
             Expectation::HasType(hir::Type::BOOL, Some(expect_src))
         }
     }
@@ -3315,7 +3203,7 @@ fn unary_op_check(
     };
 
     if un_op.is_none() {
-        let src = SourceRange::new(ctx.proc.origin(), op_range);
+        let src = ctx.src(op_range);
         let rhs_ty = type_format(ctx, rhs_ty);
         err::tycheck_cannot_apply_un_op(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
     }
@@ -3348,7 +3236,7 @@ fn binary_lhs_expect<'hir>(
         | ast::BinOp::Greater
         | ast::BinOp::GreaterEq => Expectation::None,
         ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
-            let expect_src = SourceRange::new(ctx.proc.origin(), op_range);
+            let expect_src = ctx.src(op_range);
             Expectation::HasType(hir::Type::BOOL, Some(expect_src))
         }
     }
@@ -3576,7 +3464,7 @@ fn binary_op_check(
     };
 
     if bin_op.is_none() {
-        let src = SourceRange::new(ctx.proc.origin(), op_range);
+        let src = ctx.src(op_range);
         let lhs_ty = type_format(ctx, lhs_ty);
         err::tycheck_cannot_apply_bin_op(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
     }

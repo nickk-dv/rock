@@ -78,7 +78,7 @@ struct BlockData {
 #[derive(Copy, Clone)]
 pub enum BlockStatus {
     None,
-    Loop(TextRange),
+    Loop,
     Defer(TextRange),
 }
 
@@ -146,11 +146,11 @@ impl<'hir> Scope<'hir> {
         emit: &mut ErrorWarningBuffer,
     ) -> Result<(), ()> {
         let existing = match self.local.find_variable(name.id) {
-            Some(variable) => variable,
+            Some(var_id) => var_id,
             None => return Ok(()),
         };
         let name_src = SourceRange::new(self.origin_id, name.range);
-        let existing = self.variable_src(existing);
+        let existing = self.var_src(existing);
         let name = session.intern_name.get(name.id);
         err::scope_name_already_defined(emit, name_src, existing, name);
         Ok(())
@@ -164,8 +164,8 @@ impl<'hir> Scope<'hir> {
         }
     }
 
-    fn variable_src(&self, variable: VariableID<'hir>) -> SourceRange {
-        let range = match variable {
+    pub fn var_src(&self, var_id: VariableID<'hir>) -> SourceRange {
+        let range = match var_id {
             VariableID::Param(id) => self.local.param(id).name.range,
             VariableID::Local(id) => self.local.local(id).name.range,
             VariableID::Bind(id) => self.local.bind(id).name.range,
@@ -270,15 +270,26 @@ impl<'hir> GlobalScope<'hir> {
         Err(())
     }
 
-    pub fn find_proc_main(
+    pub fn find_defined_proc(
         &self,
         target_id: ModuleID,
-        main_id: ID<InternName>,
+        name_id: ID<InternName>,
     ) -> Option<hir::ProcID<'hir>> {
         let target = self.module(target_id);
+        match target.symbols.get(&name_id).copied() {
+            Some(Symbol::Defined(SymbolID::Proc(id))) => Some(id),
+            _ => None,
+        }
+    }
 
-        match target.symbols.get(&main_id).copied() {
-            Some(Symbol::Defined(SymbolID::Proc(proc_id))) => Some(proc_id),
+    pub fn find_defined_struct(
+        &self,
+        target_id: ModuleID,
+        name_id: ID<InternName>,
+    ) -> Option<hir::StructID<'hir>> {
+        let target = self.module(target_id);
+        match target.symbols.get(&name_id).copied() {
+            Some(Symbol::Defined(SymbolID::Struct(id))) => Some(id),
             _ => None,
         }
     }
@@ -290,38 +301,6 @@ impl<'hir> GlobalScope<'hir> {
     #[inline]
     fn module_mut(&mut self, module_id: ModuleID) -> &mut ModuleScope<'hir> {
         &mut self.modules[module_id.index()]
-    }
-}
-
-impl<'hir> SymbolID<'hir> {
-    pub fn desc(self) -> &'static str {
-        match self {
-            SymbolID::Proc(_) => "procedure",
-            SymbolID::Enum(_) => "enum",
-            SymbolID::Struct(_) => "struct",
-            SymbolID::Const(_) => "const",
-            SymbolID::Global(_) => "global",
-        }
-    }
-
-    fn src(self, registry: &Registry<'hir, '_>) -> SourceRange {
-        match self {
-            SymbolID::Proc(id) => registry.proc_data(id).src(),
-            SymbolID::Enum(id) => registry.enum_data(id).src(),
-            SymbolID::Struct(id) => registry.struct_data(id).src(),
-            SymbolID::Const(id) => registry.const_data(id).src(),
-            SymbolID::Global(id) => registry.global_data(id).src(),
-        }
-    }
-
-    fn vis(self, registry: &Registry<'hir, '_>) -> ast::Vis {
-        match self {
-            SymbolID::Proc(id) => registry.proc_data(id).vis,
-            SymbolID::Enum(id) => registry.enum_data(id).vis,
-            SymbolID::Struct(id) => registry.struct_data(id).vis,
-            SymbolID::Const(id) => registry.const_data(id).vis,
-            SymbolID::Global(id) => registry.global_data(id).vis,
-        }
     }
 }
 
@@ -359,6 +338,10 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn finish_proc_context(&self) -> (&[hir::Local<'hir>], &[hir::LocalBind<'hir>]) {
         (&self.locals, &self.binds)
+    }
+
+    pub fn return_expect(&self) -> Expectation<'hir> {
+        self.return_expect
     }
 
     pub fn start_block(&mut self, status: BlockStatus) {
@@ -424,23 +407,23 @@ impl<'hir> LocalScope<'hir> {
         for block in self.blocks.iter().rev() {
             match block.status {
                 BlockStatus::None => {}
-                BlockStatus::Loop(_) => {}
+                BlockStatus::Loop => {}
                 BlockStatus::Defer(range) => return Some(range),
             }
         }
         None
     }
 
-    pub fn find_prev_loop_before_defer(&self) -> (Option<TextRange>, Option<TextRange>) {
+    pub fn find_prev_loop_before_defer(&self) -> (bool, Option<TextRange>) {
         let mut defer = None;
         for block in self.blocks.iter().rev() {
             match block.status {
                 BlockStatus::None => {}
-                BlockStatus::Loop(range) => return (Some(range), defer),
+                BlockStatus::Loop => return (true, defer),
                 BlockStatus::Defer(range) => defer = Some(range),
             }
         }
-        (None, defer)
+        (false, defer)
     }
 
     #[inline]
@@ -463,5 +446,47 @@ impl<'hir> LocalScope<'hir> {
     #[inline]
     fn current_block_mut(&mut self) -> &mut BlockData {
         self.blocks.last_mut().unwrap()
+    }
+}
+
+impl<'hir> SymbolID<'hir> {
+    pub fn desc(self) -> &'static str {
+        match self {
+            SymbolID::Proc(_) => "procedure",
+            SymbolID::Enum(_) => "enum",
+            SymbolID::Struct(_) => "struct",
+            SymbolID::Const(_) => "const",
+            SymbolID::Global(_) => "global",
+        }
+    }
+
+    pub fn src(self, registry: &Registry<'hir, '_>) -> SourceRange {
+        match self {
+            SymbolID::Proc(id) => registry.proc_data(id).src(),
+            SymbolID::Enum(id) => registry.enum_data(id).src(),
+            SymbolID::Struct(id) => registry.struct_data(id).src(),
+            SymbolID::Const(id) => registry.const_data(id).src(),
+            SymbolID::Global(id) => registry.global_data(id).src(),
+        }
+    }
+
+    fn vis(self, registry: &Registry<'hir, '_>) -> ast::Vis {
+        match self {
+            SymbolID::Proc(id) => registry.proc_data(id).vis,
+            SymbolID::Enum(id) => registry.enum_data(id).vis,
+            SymbolID::Struct(id) => registry.struct_data(id).vis,
+            SymbolID::Const(id) => registry.const_data(id).vis,
+            SymbolID::Global(id) => registry.global_data(id).vis,
+        }
+    }
+}
+
+impl<'hir> VariableID<'hir> {
+    pub fn desc(self) -> &'static str {
+        match self {
+            VariableID::Param(_) => "parameter",
+            VariableID::Local(_) => "local",
+            VariableID::Bind(_) => "binding",
+        }
     }
 }

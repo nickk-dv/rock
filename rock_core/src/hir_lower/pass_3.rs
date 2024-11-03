@@ -32,6 +32,14 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
     let mut unique = Vec::<hir::Param>::new();
 
     for param in item.params.iter() {
+        if ctx
+            .scope
+            .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err()
+        {
+            continue;
+        }
+
         let existing = unique.iter().find(|&it| it.name.id == param.name.id);
         if let Some(existing) = existing {
             let param_src = ctx.src(param.name.range);
