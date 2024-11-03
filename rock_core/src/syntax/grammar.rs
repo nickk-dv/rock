@@ -1125,6 +1125,8 @@ fn path(p: &mut Parser) {
     m.complete(p, SyntaxKind::PATH);
 }
 
+const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
+
 fn bind(p: &mut Parser) {
     let m = p.start();
     if p.eat(T![mut]) {
@@ -1141,9 +1143,14 @@ fn bind_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        bind(p);
-        if !p.at(T![')']) {
-            p.expect(T![,]);
+        if p.at_set(FIRST_BIND) {
+            bind(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error("expected binding");
+            break;
         }
     }
     p.expect(T![')']);

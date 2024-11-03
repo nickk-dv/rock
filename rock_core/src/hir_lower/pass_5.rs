@@ -287,7 +287,7 @@ pub fn typecheck_expr<'hir, 'ast>(
     expr: &ast::Expr<'ast>,
 ) -> ExprResult<'hir> {
     let expr_res = match expr.kind {
-        ast::ExprKind::Lit { lit } => typecheck_lit(ctx, expect, lit),
+        ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(ctx, expect, *block, BlockStatus::None).into_type_result()
@@ -331,11 +331,7 @@ pub fn typecheck_expr<'hir, 'ast>(
     expr_res.into_expr_result(ctx, expr.range)
 }
 
-fn typecheck_lit<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    expect: Expectation,
-    lit: ast::Lit,
-) -> TypeResult<'hir> {
+fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
     let (value, ty) = match lit {
         ast::Lit::Void => {
             let value = hir::ConstValue::Void;
@@ -368,32 +364,25 @@ fn typecheck_lit<'hir>(
             (value, hir::Type::Basic(BasicType::Char))
         }
         ast::Lit::String(string_lit) => {
+            const REF_U8: hir::Type =
+                hir::Type::Reference(ast::Mut::Immutable, &hir::Type::Basic(BasicType::U8));
+            const SLICE_U8: hir::Type = hir::Type::ArraySlice(&hir::ArraySlice {
+                mutt: ast::Mut::Immutable,
+                elem_ty: hir::Type::Basic(BasicType::U8),
+            });
+
             let value = hir::ConstValue::String { string_lit };
-            let string_ty = alloc_string_lit_type(ctx, string_lit);
+            let string_ty = if string_lit.c_string {
+                REF_U8
+            } else {
+                SLICE_U8
+            };
             (value, string_ty)
         }
     };
 
     let kind = hir::ExprKind::Const { value };
     TypeResult::new(ty, kind)
-}
-
-//@use static constants to prevent type allocation?
-// could work for slices of basic / refs to basic
-pub fn alloc_string_lit_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    string_lit: ast::StringLit,
-) -> hir::Type<'hir> {
-    if string_lit.c_string {
-        let byte = ctx.arena.alloc(hir::Type::Basic(BasicType::U8));
-        hir::Type::Reference(ast::Mut::Immutable, byte)
-    } else {
-        let slice = ctx.arena.alloc(hir::ArraySlice {
-            mutt: ast::Mut::Immutable,
-            elem_ty: hir::Type::Basic(BasicType::U8),
-        });
-        hir::Type::ArraySlice(slice)
-    }
 }
 
 /// unify type across braches:  
@@ -435,11 +424,8 @@ fn typecheck_if<'hir, 'ast>(
     }
 
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
-        ctx.emit.error(Error::new(
-            "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value",
-            ctx.src( expr_range),
-            None,
-        ));
+        let src = ctx.src(expr_range);
+        err::tycheck_if_missing_else(&mut ctx.emit, src);
     }
 
     let if_ = hir::If {
@@ -491,8 +477,7 @@ fn typecheck_match<'hir, 'ast>(
     if let Err(true) = kind_res {
         let src = ctx.src(on_res.expr.range);
         let ty_fmt = type_format(ctx, on_res.ty);
-        let msg = format!("cannot match on value of type `{}`", ty_fmt.as_str());
-        ctx.emit.error(Error::new(msg, src, None));
+        err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
     }
 
     let (pat_expect, ref_mut) = match kind_res {
@@ -599,7 +584,7 @@ fn typecheck_pat<'hir, 'ast>(
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
-        ast::PatKind::Lit { lit } => typecheck_pat_lit(ctx, expect, lit),
+        ast::PatKind::Lit { lit } => typecheck_pat_lit(expect, lit),
         ast::PatKind::Item { path, bind_list } => {
             typecheck_pat_item(ctx, path, bind_list, ref_mut, pat.range)
         }
@@ -613,12 +598,8 @@ fn typecheck_pat<'hir, 'ast>(
     pat_res.pat
 }
 
-fn typecheck_pat_lit<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    expect: Expectation<'hir>,
-    lit: ast::Lit,
-) -> PatResult<'hir> {
-    let lit_res = typecheck_lit(ctx, expect, lit);
+fn typecheck_pat_lit(expect: Expectation, lit: ast::Lit) -> PatResult {
+    let lit_res = typecheck_lit(expect, lit);
     let value = match lit_res.kind {
         hir::ExprKind::Const { value } => value,
         _ => unreachable!(),
@@ -650,23 +631,13 @@ fn typecheck_pat_item<'hir, 'ast>(
         }
         ValueID::Const(const_id, fields) => {
             if let Some(name) = fields.first() {
-                ctx.emit.error(Error::new(
-                    "cannot access fields in patterns",
-                    ctx.src(name.range),
-                    None,
-                ));
+                let src = ctx.src(name.range);
+                err::tycheck_pat_const_field_access(&mut ctx.emit, src);
             }
-
-            let input_count = bind_list.map(|bl| bl.binds.len()).unwrap_or(0);
-            if input_count > 0 {
-                //@rephrase error
-                ctx.emit.error(Error::new(
-                    "cannot destructure constants in patterns",
-                    ctx.src(pat_range),
-                    None,
-                ));
+            if let Some(bind_list) = bind_list {
+                let src = ctx.src(bind_list.range);
+                err::tycheck_pat_const_with_bindings(&mut ctx.emit, src);
             }
-
             add_variant_local_binds(ctx, bind_list, None, None);
             let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
@@ -676,12 +647,9 @@ fn typecheck_pat_item<'hir, 'ast>(
         | ValueID::Param(_, _)
         | ValueID::Local(_, _)
         | ValueID::LocalBind(_, _) => {
+            let src = ctx.src(pat_range);
+            err::tycheck_pat_runtime_value(&mut ctx.emit, src);
             add_variant_local_binds(ctx, bind_list, None, None);
-            ctx.emit.error(Error::new(
-                "cannot use runtime values in patterns",
-                ctx.src(pat_range),
-                None,
-            ));
             PatResult::new(hir::Pat::Error, hir::Type::Error)
         }
     }
@@ -794,7 +762,7 @@ fn check_field_from_type<'hir>(
             }
             None => None,
         },
-        hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, name, slice) {
+        hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, name) {
             Some(field) => {
                 let kind = FieldKind::ArraySlice { field };
                 let field_ty = match field {
@@ -814,15 +782,10 @@ fn check_field_from_type<'hir>(
             None => None,
         },
         _ => {
-            ctx.emit.error(Error::new(
-                format!(
-                    "no field `{}` exists on value of type `{}`",
-                    ctx.name(name.id),
-                    type_format(ctx, ty).as_str(),
-                ),
-                ctx.src(name.range),
-                None,
-            ));
+            let src = ctx.src(name.range);
+            let field_name = ctx.name(name.id);
+            let ty_fmt = type_format(ctx, ty);
+            err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, ty_fmt.as_str());
             None
         }
     }
@@ -836,12 +799,12 @@ fn check_field_from_struct<'hir>(
     if let Some(field_id) = scope::check_find_struct_field(ctx, struct_id, name) {
         let data = ctx.registry.struct_data(struct_id);
         let field = data.field(field_id);
+
         if ctx.scope.origin() != data.origin_id && field.vis == ast::Vis::Private {
-            ctx.emit.error(Error::new(
-                format!("field `{}` is private", ctx.name(name.id)),
-                ctx.src(name.range),
-                Info::new("defined here", SourceRange::new(data.origin_id, field.name.range)),
-            ));
+            let src = ctx.src(name.range);
+            let field_name = ctx.name(name.id);
+            let field_src = SourceRange::new(data.origin_id, field.name.range);
+            err::tycheck_field_is_private(&mut ctx.emit, src, field_name, field_src);
         }
         Some((field_id, field))
     } else {
@@ -849,25 +812,14 @@ fn check_field_from_struct<'hir>(
     }
 }
 
-fn check_field_from_slice<'hir>(
-    ctx: &mut HirCtx,
-    name: ast::Name,
-    slice: &hir::ArraySlice,
-) -> Option<hir::SliceField> {
+fn check_field_from_slice<'hir>(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::SliceField> {
     let field_name = ctx.name(name.id);
     match field_name {
         "ptr" => Some(hir::SliceField::Ptr),
         "len" => Some(hir::SliceField::Len),
         _ => {
-            ctx.emit.error(Error::new(
-                format!(
-                    "no field `{}` exists on slice type `{}`\ndid you mean `len` or `ptr`?",
-                    field_name,
-                    type_format(ctx, hir::Type::ArraySlice(slice)).as_str(),
-                ),
-                ctx.src(name.range),
-                None,
-            ));
+            let src = ctx.src(name.range);
+            err::tycheck_field_not_found_slice(&mut ctx.emit, src, field_name);
             None
         }
     }
@@ -891,22 +843,15 @@ fn check_field_from_array<'hir>(
                     let (eval, _) = ctx.registry.const_eval(eval_id);
                     match eval.get_resolved() {
                         Ok(value_id) => ctx.const_intern.get(value_id),
-                        Err(()) => return None, //@field result doesnt communicate usize type if this is None
+                        Err(()) => return None,
                     }
                 }
             };
             Some(len)
         }
         _ => {
-            ctx.emit.error(Error::new(
-                format!(
-                    "no field `{}` exists on array type `{}`\ndid you mean `len`?",
-                    field_name,
-                    type_format(ctx, hir::Type::ArrayStatic(array)).as_str(),
-                ),
-                ctx.src(name.range),
-                None,
-            ));
+            let src = ctx.src(name.range);
+            err::tycheck_field_not_found_array(&mut ctx.emit, src, field_name);
             None
         }
     }
@@ -1012,15 +957,9 @@ fn typecheck_index<'hir, 'ast>(
         }
         Ok(None) => TypeResult::error(),
         Err(()) => {
-            //@use brackets range instead!
-            ctx.emit.error(Error::new(
-                format!(
-                    "cannot index value of type `{}`",
-                    type_format(ctx, target_res.ty).as_str()
-                ),
-                ctx.src(expr_range),
-                None,
-            ));
+            let src = ctx.src(expr_range);
+            let ty_fmt = type_format(ctx, target_res.ty);
+            err::tycheck_cannot_index_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
             TypeResult::error()
         }
     }
@@ -1082,8 +1021,9 @@ fn typecheck_cast<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     target: &ast::Expr<'ast>,
     into: &ast::Type<'ast>,
-    range: TextRange,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
+    use hir::CastKind;
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let into = super::pass_3::type_resolve(ctx, *into, false);
 
@@ -1091,27 +1031,6 @@ fn typecheck_cast<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    if type_matches(ctx, target_res.ty, into) {
-        ctx.emit.warning(Warning::new(
-            format!(
-                "redundant cast from `{}` into `{}`",
-                type_format(ctx, target_res.ty).as_str(),
-                type_format(ctx, into).as_str()
-            ),
-            ctx.src(range),
-            None,
-        ));
-
-        let kind = hir::ExprKind::Cast {
-            target: target_res.expr,
-            into: ctx.arena.alloc(into),
-            kind: hir::CastKind::NoOp,
-        };
-        return TypeResult::new(into, kind);
-    }
-
-    // invariant: from_size != into_size
-    // ensured by cast redundancy warning above
     let cast_kind = match (target_res.ty, into) {
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::new(from);
@@ -1123,63 +1042,69 @@ fn typecheck_cast<'hir, 'ast>(
                 BasicTypeKind::IntS => match into_kind {
                     BasicTypeKind::IntS | BasicTypeKind::IntU => {
                         if from_size < into_size {
-                            hir::CastKind::IntS_Sign_Extend
+                            CastKind::IntS_Sign_Extend
+                        } else if from_size > into_size {
+                            CastKind::Int_Trunc
                         } else {
-                            hir::CastKind::Int_Trunc
+                            CastKind::NoOp
                         }
                     }
-                    BasicTypeKind::Float => hir::CastKind::IntS_to_Float,
-                    _ => hir::CastKind::Error,
+                    BasicTypeKind::Float => CastKind::IntS_to_Float,
+                    _ => CastKind::Error,
                 },
                 BasicTypeKind::IntU => match into_kind {
                     BasicTypeKind::IntS | BasicTypeKind::IntU => {
                         if from_size < into_size {
-                            hir::CastKind::IntU_Zero_Extend
+                            CastKind::IntU_Zero_Extend
+                        } else if from_size > into_size {
+                            CastKind::Int_Trunc
                         } else {
-                            hir::CastKind::Int_Trunc
+                            CastKind::NoOp
                         }
                     }
-                    BasicTypeKind::Float => hir::CastKind::IntU_to_Float,
-                    _ => hir::CastKind::Error,
+                    BasicTypeKind::Float => CastKind::IntU_to_Float,
+                    _ => CastKind::Error,
                 },
                 BasicTypeKind::Float => match into_kind {
-                    BasicTypeKind::IntS => hir::CastKind::Float_to_IntS,
-                    BasicTypeKind::IntU => hir::CastKind::Float_to_IntU,
+                    BasicTypeKind::IntS => CastKind::Float_to_IntS,
+                    BasicTypeKind::IntU => CastKind::Float_to_IntU,
                     BasicTypeKind::Float => {
                         if from_size < into_size {
-                            hir::CastKind::Float_Extend
+                            CastKind::Float_Extend
+                        } else if from_size > into_size {
+                            CastKind::Float_Trunc
                         } else {
-                            hir::CastKind::Float_Trunc
+                            CastKind::NoOp
                         }
                     }
-                    _ => hir::CastKind::Error,
+                    _ => CastKind::Error,
                 },
-                BasicTypeKind::Bool => hir::CastKind::Error,
+                BasicTypeKind::Bool => CastKind::Error,
                 BasicTypeKind::Char => match into {
-                    BasicType::U32 => hir::CastKind::NoOp, // char is already u32
-                    _ => hir::CastKind::Error,
+                    BasicType::U32 => CastKind::NoOp,
+                    _ => CastKind::Error,
                 },
-                BasicTypeKind::Rawptr => hir::CastKind::Error,
-                BasicTypeKind::Void => hir::CastKind::Error,
-                BasicTypeKind::Never => hir::CastKind::Error,
+                BasicTypeKind::Rawptr => CastKind::Error,
+                BasicTypeKind::Void => CastKind::Error,
+                BasicTypeKind::Never => CastKind::Error,
             }
         }
-        _ => hir::CastKind::Error,
+        _ => CastKind::Error,
     };
 
-    if let hir::CastKind::Error = cast_kind {
-        //@cast could be primitive but still invalid
-        // wording might be improved
-        // or have 2 error types for this
-        ctx.emit.error(Error::new(
-            format!(
-                "non primitive cast from `{}` into `{}`",
-                type_format(ctx, target_res.ty).as_str(),
-                type_format(ctx, into).as_str()
-            ),
-            ctx.src(range),
-            None,
-        ));
+    if let CastKind::Error = cast_kind {
+        let src = ctx.src(expr_range);
+        let from_ty = type_format(ctx, target_res.ty);
+        let into_ty = type_format(ctx, into);
+        err::tycheck_cast_non_primitive(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
+        return TypeResult::error();
+    }
+
+    if type_matches(ctx, target_res.ty, into) {
+        let src = ctx.src(expr_range);
+        let from_ty = type_format(ctx, target_res.ty);
+        let into_ty = type_format(ctx, into);
+        err::tycheck_cast_redundant(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
     }
 
     let kind = hir::ExprKind::Cast {

@@ -699,6 +699,95 @@ pub fn tycheck_type_mismatch(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_if_missing_else(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_match_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
+    let msg = format!("cannot match on value of type `{ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_pat_const_field_access(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("cannot access fields in patterns");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_pat_const_with_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("constant patterns cannot have bindings");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_pat_runtime_value(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("cannot use runtime values in patterns");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_field_is_private(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+    field_src: SourceRange,
+) {
+    let msg = format!("field `{field_name}` is private");
+    let info = Info::new("defined here", field_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_field_not_found_ty(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+    ty_fmt: &str,
+) {
+    let msg = format!("no field `{field_name}` exists on value of type `{ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_field_not_found_slice(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+) {
+    let msg = format!("no field `{field_name}` exists on slice type\ndid you mean `ptr` or `len`?");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_field_not_found_array(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+) {
+    let msg = format!("no field `{field_name}` exists on array type\ndid you mean `len`?");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_index_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
+    let msg = format!("cannot index value of type `{ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cast_non_primitive(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    from_ty: &str,
+    into_ty: &str,
+) {
+    let msg = format!("non primitive cast from `{from_ty}` into `{into_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cast_redundant(
+    emit: &mut impl WarningSink,
+    src: SourceRange,
+    from_ty: &str,
+    into_ty: &str,
+) {
+    let msg = format!("redundant cast from `{from_ty}` into `{into_ty}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
 pub fn tycheck_unreachable_stmt(emit: &mut impl ErrorSink, src: SourceRange, after: SourceRange) {
     let msg = "unreachable statement";
     let info = Info::new("all statements after this are unreachable", after);
