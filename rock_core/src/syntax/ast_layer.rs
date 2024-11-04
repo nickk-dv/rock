@@ -1028,6 +1028,7 @@ impl<'syn> StmtAssign<'syn> {
 
 impl<'syn> StmtExprSemi<'syn> {
     node_find!(expr, Expr);
+    token_find_rev!(t_semi, T![;]);
 }
 
 impl<'syn> StmtExprTail<'syn> {

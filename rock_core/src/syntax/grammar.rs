@@ -121,9 +121,11 @@ const FIRST_ITEM: TokenSet = TokenSet::new(&[
 ]);
 
 const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
-
 const RECOVER_ATTR_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')'], T![']']]));
-const RECOVER_PARAM_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![->], T!['{'], T![;]]));
+
+const RECOVER_PARAM_LIST: TokenSet = TokenSet::new(&[T!['('], T!['{'], T![;]])
+    .combine(FIRST_ITEM)
+    .combine(FIRST_TYPE);
 const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_IMPORT_PATH: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![as], T![.], T![;]]));
@@ -140,7 +142,6 @@ fn proc_item(p: &mut Parser, m: Marker) {
     if p.at(T!['(']) {
         generic_params(p);
     }
-    p.expect(T![->]);
     ty(p);
     if p.at(T!['{']) {
         block(p);
@@ -504,12 +505,11 @@ fn type_proc(p: &mut Parser) {
     } else {
         p.error_recover("expected parameter type list", RECOVER_PARAM_TYPE_LIST);
     }
-    p.expect(T![->]);
     ty(p);
     m.complete(p, SyntaxKind::TYPE_PROCEDURE);
 }
 
-const RECOVER_PARAM_TYPE_LIST: TokenSet = TokenSet::new(&[T![->]]);
+const RECOVER_PARAM_TYPE_LIST: TokenSet = FIRST_ITEM.combine(FIRST_TYPE);
 
 fn param_type_list(p: &mut Parser) {
     let m = p.start();
@@ -576,7 +576,6 @@ fn stmt(p: &mut Parser) {
         T![defer] => stmt_defer(p),
         T![for] => stmt_loop(p),
         T![let] => stmt_local(p),
-        T![->] => stmt_expr_tail(p),
         T![#] => stmt_attr_stmt(p),
         _ => stmt_assign_or_expr_semi(p),
     }
@@ -665,14 +664,6 @@ fn stmt_local(p: &mut Parser) {
     m.complete(p, SyntaxKind::STMT_LOCAL);
 }
 
-fn stmt_expr_tail(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T![->]);
-    expr(p);
-    p.expect(T![;]);
-    m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
-}
-
 fn stmt_attr_stmt(p: &mut Parser) {
     let mc = attr_list(p);
     let m = p.start_before(mc);
@@ -690,12 +681,15 @@ fn stmt_assign_or_expr_semi(p: &mut Parser) {
         p.expect(T![;]);
         m.complete(p, SyntaxKind::STMT_ASSIGN);
     } else {
-        if !p.at_prev(T!['}']) {
-            p.expect(T![;]);
-        } else {
+        if p.at(T!['}']) {
+            m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
+        } else if p.at_prev(T!['}']) {
             p.eat(T![;]);
+            m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
+        } else {
+            p.expect(T![;]);
+            m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
         }
-        m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
     }
 }
 

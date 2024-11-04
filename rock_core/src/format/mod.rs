@@ -13,7 +13,11 @@ const TAB_STR: &'static str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
-const COMMENT_ALIGN_MARGIN: u32 = 16;
+const COMMENT_ALIGN_ITEM: u32 = 32;
+const COMMENT_ALIGN_VARIANT: u32 = 16;
+const COMMENT_ALIGN_FIELD: u32 = 16;
+const COMMENT_ALIGN_STMT: u32 = 0;
+const COMMENT_ALIGN_MATCH_ARM: u32 = 0;
 
 #[must_use]
 pub fn format<'syn>(
@@ -278,6 +282,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
     fmt: &mut Formatter<'syn, '_>,
     node_list: &Node<'syn>,
     format_fn: fn(&mut Formatter<'syn, '_>, I),
+    comment_align: u32,
 ) {
     let mut first = true; // prevent first \n insertion
     let mut new_line = false; // prevent last \n insertion
@@ -408,7 +413,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
             let new_min = min_offset.min(comment.line_offset);
             let new_max = max_offset.max(comment.line_offset);
             let spacing = new_max - new_min;
-            if spacing <= COMMENT_ALIGN_MARGIN {
+            if spacing <= comment_align {
                 min_offset = new_min;
                 max_offset = new_max;
             } else {
@@ -428,7 +433,6 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                 _ => unreachable!(),
             }
         }
-
         group_start = group_end;
     }
 
@@ -438,7 +442,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
 //==================== SOURCE FILE ====================
 
 fn source_file<'syn>(fmt: &mut Formatter<'syn, '_>, source_file: cst::SourceFile<'syn>) {
-    interleaved_node_list(fmt, source_file.0, item);
+    interleaved_node_list(fmt, source_file.0, item, COMMENT_ALIGN_ITEM);
 }
 
 fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
@@ -539,8 +543,6 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
     if let Some(generic) = item.generic_params(fmt.tree) {
         generic_params(fmt, generic);
     }
-    fmt.space();
-    fmt.write_str("->");
     fmt.space();
     ty(fmt, item.return_ty(fmt.tree).unwrap());
 
@@ -646,7 +648,7 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, variant_list.0, variant);
+    interleaved_node_list(fmt, variant_list.0, variant, COMMENT_ALIGN_VARIANT);
     fmt.tab_dec();
 
     fmt.write('}');
@@ -715,7 +717,7 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, field_list.0, field);
+    interleaved_node_list(fmt, field_list.0, field, COMMENT_ALIGN_FIELD);
     fmt.tab_dec();
 
     fmt.write('}');
@@ -976,8 +978,6 @@ fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn
 
     fmt.write(')');
     fmt.space();
-    fmt.write_str("->");
-    fmt.space();
     ty(fmt, proc_ty.return_ty(fmt.tree).unwrap());
 }
 
@@ -1014,7 +1014,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, block.0, stmt);
+    interleaved_node_list(fmt, block.0, stmt, COMMENT_ALIGN_STMT);
     fmt.tab_dec();
 
     fmt.tab_depth();
@@ -1138,23 +1138,15 @@ fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>,
 
 fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'syn>) {
     fmt.tab_depth();
-    let expr_cst = stmt.expr(fmt.tree).unwrap();
-    expr(fmt, expr_cst);
-
-    match expr_cst {
-        cst::Expr::If(_) => {}
-        cst::Expr::Block(_) => {}
-        cst::Expr::Match(_) => {}
-        _ => fmt.write(';'),
+    expr(fmt, stmt.expr(fmt.tree).unwrap());
+    if stmt.t_semi(fmt.tree).is_some() {
+        fmt.write(';');
     }
 }
 
 fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprTail<'syn>) {
     fmt.tab_depth();
-    fmt.write_str("->");
-    fmt.space();
     expr(fmt, stmt.expr(fmt.tree).unwrap());
-    fmt.write(';');
 }
 
 fn stmt_attr_stmt<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::StmtAttrStmt<'syn>) {
@@ -1242,7 +1234,7 @@ fn expr_match<'syn>(fmt: &mut Formatter<'syn, '_>, match_: cst::ExprMatch<'syn>)
     fmt.new_line();
 
     fmt.tab_inc();
-    interleaved_node_list(fmt, match_arm_list.0, match_arm);
+    interleaved_node_list(fmt, match_arm_list.0, match_arm, COMMENT_ALIGN_MATCH_ARM);
     fmt.tab_dec();
 
     fmt.tab_depth();

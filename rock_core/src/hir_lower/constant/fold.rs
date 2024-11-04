@@ -142,6 +142,8 @@ fn fold_index<'hir>(
 
     let index = match index {
         hir::ConstValue::Int { val, neg, int_ty } => {
+            //@we assume that index is in bounds of usize, same for `0`
+            // but neg flag does cause panic on `-0` investigate why and solve
             assert!(!neg);
             assert!(!int_ty.is_signed());
             val
