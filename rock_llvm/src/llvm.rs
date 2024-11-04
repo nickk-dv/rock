@@ -57,6 +57,7 @@ pub struct TypeStruct(sys::LLVMTypeRef);
 
 pub type OpCode = sys::LLVMOpcode;
 pub type Linkage = sys::LLVMLinkage;
+pub type CallConv = sys::LLVMCallConv;
 pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
 
@@ -493,7 +494,7 @@ impl Value {
 
         match ty_kind {
             sys::LLVMTypeKind::LLVMPointerTypeKind => ValuePtr(self.0),
-            _ => unreachable!(),
+            _ => unreachable!(), //@panics when trying to get ptr from constant var field
         }
     }
     pub fn into_fn(self) -> ValueFn {
@@ -530,6 +531,9 @@ impl ValueFn {
         } else {
             None
         }
+    }
+    pub fn set_call_conv(&self, cc: CallConv) {
+        unsafe { core::LLVMSetFunctionCallConv(self.0, cc) };
     }
 }
 

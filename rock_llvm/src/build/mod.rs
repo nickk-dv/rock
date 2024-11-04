@@ -75,13 +75,29 @@ pub fn build(
         }
     }
 
-    match config.target_os {
-        TargetOS::Windows => {
-            //args.push("/entry:main".into());
-            args.push("/defaultlib:libcmt.lib".into());
-            args.push("kernel32.lib".into());
+    //@consider each package `nodefaultlib`?
+    if manifest.build.nodefaultlib != Some(true) {
+        match config.target_os {
+            TargetOS::Windows => args.push("/defaultlib:libcmt.lib".into()),
+            TargetOS::Linux => args.push("-lc".into()),
         }
-        TargetOS::Linux => args.push("-lc".into()),
+    }
+    //@add links & libs from non-root packages in depth first order from pkg graph
+    if let Some(lib_paths) = manifest.build.lib_paths.as_ref() {
+        for lib_path in lib_paths {
+            match config.target_os {
+                TargetOS::Windows => args.push(format!("/libpath:{}", lib_path.to_string_lossy())),
+                TargetOS::Linux => args.push(format!("-L{}", lib_path.to_string_lossy())),
+            }
+        }
+    }
+    if let Some(links) = manifest.build.links.as_ref() {
+        for link in links {
+            match config.target_os {
+                TargetOS::Windows => args.push(format!("/defaultlib:{link}")),
+                TargetOS::Linux => args.push(format!("-l{link}")),
+            }
+        }
     }
 
     match config.build_kind {

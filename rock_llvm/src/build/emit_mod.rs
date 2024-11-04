@@ -182,6 +182,12 @@ fn codegen_function_values(cg: &mut Codegen) {
         //- inline hint when #[inline] is present
         let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
+
+        if is_external || is_main {
+            fn_val.set_call_conv(llvm::CallConv::LLVMCCallConv);
+        } else {
+            fn_val.set_call_conv(llvm::CallConv::LLVMFastCallConv);
+        }
         cg.procs.push((fn_val, fn_ty));
     }
 }
