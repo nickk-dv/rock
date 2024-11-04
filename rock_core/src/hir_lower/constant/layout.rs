@@ -10,11 +10,11 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
         hir::Type::Enum(id) => {
             let data = ctx.registry.enum_data(id);
-            data.layout.get_resolved()
+            data.layout.resolved()
         }
         hir::Type::Struct(id) => {
             let data = ctx.registry.struct_data(id);
-            data.layout.get_resolved()
+            data.layout.resolved()
         }
         hir::Type::Reference(_, _) => {
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
@@ -109,7 +109,7 @@ fn resolve_variant_layout(
     let data = ctx.registry.enum_data(enum_id);
     let src = SourceRange::new(data.origin_id, variant.name.range);
 
-    let tag_ty = data.tag_ty?;
+    let tag_ty = data.tag_ty.resolved()?;
     let tag_ty = [hir::Type::Basic(tag_ty.into_basic())];
     let mut types = tag_ty
         .iter()

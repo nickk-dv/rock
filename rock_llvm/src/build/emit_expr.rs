@@ -419,7 +419,7 @@ fn codegen_match_enum<'c>(
     };
 
     let enum_data = cg.hir.enum_data(enum_id);
-    let tag_ty = cg.basic_type(enum_data.tag_ty.unwrap().into_basic());
+    let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
     //@always expect pointer, use sepate semantics for no inner value enums (same as variant_init)
     // right now all enum_init are capable to generate a pointer (via entry alloca)
     let enum_ptr = codegen_expr_pointer(cg, proc_cg, match_.on_expr);

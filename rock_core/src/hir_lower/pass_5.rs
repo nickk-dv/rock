@@ -841,7 +841,7 @@ fn check_field_from_array<'hir>(
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
-                    match eval.get_resolved() {
+                    match eval.resolved() {
                         Ok(value_id) => ctx.const_intern.get(value_id),
                         Err(()) => return None,
                     }

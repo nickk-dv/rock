@@ -76,7 +76,7 @@ fn add_enum_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::EnumItem
         vis: item.vis,
         name: item.name,
         variants: &[],
-        tag_ty: Err(()),
+        tag_ty: hir::Eval::Unresolved(()),
         layout: hir::Eval::Unresolved(()),
     };
 

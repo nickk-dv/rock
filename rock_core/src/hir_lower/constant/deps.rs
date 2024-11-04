@@ -873,8 +873,8 @@ fn resolve_const_dependency_tree<'hir>(
                 let data = ctx.registry.enum_data(enum_id);
                 let variant = data.variant(variant_id);
 
-                // variant is set to `ResolvedError` if tag_ty is not known (safe to unwrap)
-                let tag_ty = data.tag_ty.unwrap();
+                //@variant is set to `ResolvedError` if tag_ty is not known (safe to unwrap)
+                let tag_ty = data.tag_ty.resolved_unwrap();
                 let expect = Expectation::HasType(hir::Type::Basic(tag_ty.into_basic()), None);
 
                 match variant.kind {
@@ -894,11 +894,11 @@ fn resolve_const_dependency_tree<'hir>(
                             let prev_value = match prev.kind {
                                 hir::VariantKind::Default(eval_id) => {
                                     let eval = ctx.registry.variant_eval(eval_id);
-                                    eval.get_resolved()
+                                    eval.resolved()
                                 }
                                 hir::VariantKind::Constant(eval_id) => {
                                     let (eval, _) = ctx.registry.const_eval(eval_id);
-                                    eval.get_resolved().map(|id| ctx.const_intern.get(id))
+                                    eval.resolved().map(|id| ctx.const_intern.get(id))
                                 }
                             };
 

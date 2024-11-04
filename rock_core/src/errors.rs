@@ -526,7 +526,7 @@ pub fn item_enum_non_int_tag_ty(emit: &mut impl ErrorSink, tag_src: SourceRange)
 }
 
 pub fn item_enum_unknown_tag_ty(emit: &mut impl ErrorSink, enum_src: SourceRange) {
-    let msg = "enum tag type must be specified\nadd type after name: `enum Example u8`\nor use #[repr_c] attribute";
+    let msg = "enum tag type must be specified\nadd type after name or use #[repr_c] attribute";
     emit.error(Error::new(msg, enum_src, None));
 }
 

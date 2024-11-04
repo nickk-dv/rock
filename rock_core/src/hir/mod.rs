@@ -55,7 +55,7 @@ pub struct EnumData<'hir> {
     pub vis: ast::Vis,
     pub name: ast::Name,
     pub variants: &'hir [Variant<'hir>],
-    pub tag_ty: Result<BasicInt, ()>,
+    pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
 }
 
@@ -890,11 +890,19 @@ where
         matches!(self, Eval::Resolved(_))
     }
 
-    pub fn get_resolved(&self) -> Result<R, ()> {
+    pub fn resolved(&self) -> Result<R, ()> {
         match self {
-            Eval::Unresolved(_) => unreachable!(),
+            Eval::Unresolved(_) => unreachable!("eval not resolved"),
             Eval::Resolved(val) => Ok(*val),
             Eval::ResolvedError => Err(()),
+        }
+    }
+
+    pub fn resolved_unwrap(&self) -> R {
+        match self {
+            Eval::Unresolved(_) => unreachable!("eval unresolved"),
+            Eval::Resolved(val) => *val,
+            Eval::ResolvedError => unreachable!("eval error"),
         }
     }
 }

@@ -142,7 +142,7 @@ fn pat_cov_int(
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.get_resolved().unwrap();
+            let value_id = eval.resolved_unwrap();
             let value = ctx.const_intern.get(value_id);
 
             let value = value.into_int();
@@ -212,7 +212,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.get_resolved().unwrap();
+            let value_id = eval.resolved_unwrap();
             let value = ctx.const_intern.get(value_id);
 
             match value {
@@ -277,7 +277,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.get_resolved().unwrap();
+            let value_id = eval.resolved_unwrap();
             let value = ctx.const_intern.get(value_id);
 
             match value {
@@ -342,7 +342,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.get_resolved().unwrap();
+            let value_id = eval.resolved_unwrap();
             let value = ctx.const_intern.get(value_id);
 
             match value {
@@ -423,7 +423,7 @@ fn pat_cov_enum<'hir>(
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.get_resolved().unwrap();
+            let value_id = eval.resolved_unwrap();
             let value = ctx.const_intern.get(value_id);
 
             match value {

@@ -228,7 +228,7 @@ fn fold_const_var<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let data = ctx.registry.const_data(const_id);
     let (eval, _) = ctx.registry.const_eval(data.value);
-    let value_id = eval.get_resolved()?;
+    let value_id = eval.resolved()?;
     let value = ctx.const_intern.get(value_id);
     Ok(value)
 }

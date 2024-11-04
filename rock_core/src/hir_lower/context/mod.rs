@@ -43,12 +43,12 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
 
         let mut const_values = Vec::with_capacity(self.registry.const_evals.len());
         for (eval, _) in self.registry.const_evals.iter() {
-            const_values.push(eval.get_resolved().expect("resolved constant"));
+            const_values.push(eval.resolved_unwrap());
         }
 
         let mut variant_tag_values = Vec::with_capacity(self.registry.const_evals.len());
         for eval in self.registry.variant_evals.iter() {
-            variant_tag_values.push(eval.get_resolved().expect("resolved variant tag"));
+            variant_tag_values.push(eval.resolved_unwrap());
         }
 
         let hir = hir::Hir {
@@ -73,7 +73,7 @@ impl hir::ArrayStaticLen {
             hir::ArrayStaticLen::Immediate(len) => Ok(len),
             hir::ArrayStaticLen::ConstEval(eval_id) => {
                 let (eval, _) = *ctx.registry.const_eval(eval_id);
-                let value_id = eval.get_resolved()?;
+                let value_id = eval.resolved()?;
 
                 match ctx.const_intern.get(value_id) {
                     hir::ConstValue::Int { val, .. } => Ok(val),

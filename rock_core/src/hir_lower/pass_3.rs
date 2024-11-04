@@ -131,25 +131,25 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     }
 
     let data = ctx.registry.enum_data(id);
-    let mut tag_ty = Err(());
+    let mut tag_ty = hir::Eval::Unresolved(());
 
     // enum tag type gets a priority since in attr_check
     // repr_c cannot be applied if `with tag type` was set
     if let Some(tag) = item.tag_ty {
         if let Some(int_ty) = hir::BasicInt::from_basic(tag.basic) {
-            tag_ty = Ok(int_ty);
+            tag_ty = hir::Eval::Resolved(int_ty);
         } else {
             let tag_src = ctx.src(tag.range);
             err::item_enum_non_int_tag_ty(&mut ctx.emit, tag_src);
+            tag_ty = hir::Eval::ResolvedError;
         }
     } else if data.attr_set.contains(hir::EnumFlag::ReprC) {
-        tag_ty = Ok(hir::BasicInt::S32);
+        tag_ty = hir::Eval::Resolved(hir::BasicInt::S32);
     }
 
-    //@use Eval so that tag_ty can be ResolvedError on invalid enum_tag_ty?
     // when `tag_ty` is unknown and all fields are non constant:
     // perform default enum tag sizing: 0..<variant_count
-    if tag_ty.is_err() && !any_constant {
+    if tag_ty.is_unresolved() && !any_constant {
         let variant_count = unique.len() as u64;
         let int_ty = if variant_count <= u8::MAX as u64 {
             hir::BasicInt::U8
@@ -160,18 +160,20 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
         } else {
             hir::BasicInt::U64
         };
-        tag_ty = Ok(int_ty);
+        tag_ty = hir::Eval::Resolved(int_ty);
     }
 
     // when `tag_ty` is unknown and any field is constant:
     // force enum tag repr to be specified via attribute
-    if tag_ty.is_err() && any_constant {
+    if tag_ty.is_unresolved() && any_constant {
         let enum_src = ctx.src(data.name.range);
         err::item_enum_unknown_tag_ty(&mut ctx.emit, enum_src);
+        tag_ty = hir::Eval::ResolvedError;
     }
 
     // when `tag_ty` is unknown: set all Evals to `ResolvedError`
-    if tag_ty.is_err() {
+    //@not needed?
+    if !tag_ty.is_resolved_ok() {
         for variant in unique.iter() {
             match variant.kind {
                 hir::VariantKind::Default(eval_id) => {
