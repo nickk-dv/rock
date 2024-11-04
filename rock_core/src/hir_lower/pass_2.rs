@@ -85,9 +85,9 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
         return;
     }
 
-    import_module(ctx, target_id, module_name, import.rename);
+    let _ = import_module(ctx, target_id, module_name, import.rename);
     for symbol in import.symbols {
-        import_symbol(ctx, target_id, symbol);
+        let _ = import_symbol(ctx, target_id, symbol);
     }
 }
 
@@ -99,7 +99,7 @@ fn import_module(
 ) -> Result<(), ()> {
     let alias = check_symbol_rename(ctx, module_name, rename, false)?;
     ctx.scope
-        .check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit);
+        .check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let origin_id = ctx.scope.origin();
     let symbol = Symbol::ImportedModule(target_id, alias.range);

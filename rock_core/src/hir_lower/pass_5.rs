@@ -4,7 +4,7 @@ use super::constant;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
-use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr, Warning, WarningSink};
+use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::{self, ModuleID};

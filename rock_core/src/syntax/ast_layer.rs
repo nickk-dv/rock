@@ -847,6 +847,7 @@ impl<'syn> EnumItem<'syn> {
     node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(generic_params, GenericParams);
+    token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
     node_find!(variant_list, VariantList);
 }
 

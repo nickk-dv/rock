@@ -575,16 +575,16 @@ crate::enum_as_str! {
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum EnumFlag {
-        ReprC "repr(C)",
-        ReprInt "repr(<int_ty>)",
+        ReprC "repr_c",
         WithFields "with fields",
+        WithTagType "with tag type",
     }
 }
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum StructFlag {
-        ReprC "repr(C)",
+        ReprC "repr_c",
     }
 }
 
@@ -645,8 +645,8 @@ impl ItemFlag for EnumFlag {
         }
         match self {
             EnumFlag::ReprC => false,
-            EnumFlag::ReprInt => matches!(other, EnumFlag::WithFields),
-            EnumFlag::WithFields => matches!(other, EnumFlag::ReprInt),
+            EnumFlag::WithFields => matches!(other, EnumFlag::WithTagType),
+            EnumFlag::WithTagType => matches!(other, EnumFlag::WithFields),
         }
     }
 }

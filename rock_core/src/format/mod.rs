@@ -626,6 +626,11 @@ fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {
     if let Some(generic) = item.generic_params(fmt.tree) {
         generic_params(fmt, generic);
     }
+    if let Some((basic, _)) = item.tag_ty(fmt.tree) {
+        fmt.space();
+        fmt.write_str(basic.as_str());
+    }
+
     fmt.space();
     variant_list(fmt, item.variant_list(fmt.tree).unwrap());
 }
@@ -654,7 +659,10 @@ fn variant<'syn>(fmt: &mut Formatter<'syn, '_>, variant: cst::Variant<'syn>) {
     fmt.tab_depth();
 
     name(fmt, variant.name(fmt.tree).unwrap());
-    if let Some(field_list) = variant.field_list(fmt.tree) {
+    if let Some(value) = variant.value(fmt.tree) {
+        fmt.write_str(" = ");
+        expr(fmt, value);
+    } else if let Some(field_list) = variant.field_list(fmt.tree) {
         variant_field_list(fmt, field_list);
     }
     fmt.write(',');

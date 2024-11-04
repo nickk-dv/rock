@@ -59,7 +59,14 @@ pub struct EnumItem<'ast> {
     pub vis: Vis,
     pub name: Name,
     pub generic: Option<&'ast GenericParams<'ast>>,
+    pub tag_ty: Option<&'ast EnumTagType>,
     pub variants: &'ast [Variant<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct EnumTagType {
+    pub basic: BasicType,
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
@@ -498,7 +505,7 @@ crate::size_lock!(48, Attr);
 crate::size_lock!(28, AttrParam);
 
 crate::size_lock!(104, ProcItem);
-crate::size_lock!(56, EnumItem);
+crate::size_lock!(64, EnumItem);
 crate::size_lock!(56, StructItem);
 crate::size_lock!(64, ConstItem);
 crate::size_lock!(64, GlobalItem);

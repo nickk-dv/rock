@@ -342,15 +342,6 @@ pub fn attr_param_value_unknown(
     emit.error(Error::new(msg, value_src, None));
 }
 
-pub fn attr_param_value_unexpected(
-    emit: &mut impl ErrorSink,
-    value_src: SourceRange,
-    param_name: &str,
-) {
-    let msg = format!("attribute parameter `{param_name}` expects no assigned string value");
-    emit.error(Error::new(msg, value_src, None));
-}
-
 pub fn attr_param_value_required(
     emit: &mut impl ErrorSink,
     param_src: SourceRange,
@@ -369,15 +360,6 @@ pub fn attr_param_list_unexpected(
     emit.error(Error::new(msg, list_src, None));
 }
 
-pub fn attr_param_list_expect_single(
-    emit: &mut impl ErrorSink,
-    param_src: SourceRange,
-    attr_name: &str,
-) {
-    let msg = format!("attribute `{attr_name}` expects a single parameter");
-    emit.error(Error::new(msg, param_src, None));
-}
-
 pub fn attr_param_list_required(
     emit: &mut impl ErrorSink,
     src: SourceRange,
@@ -389,9 +371,9 @@ pub fn attr_param_list_required(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn attr_duplicate(emit: &mut impl WarningSink, attr_src: SourceRange, attr_name: &str) {
+pub fn attr_duplicate(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
     let msg = format!("duplicate attribute `{attr_name}`");
-    emit.warning(Warning::new(msg, attr_src, None));
+    emit.error(Error::new(msg, attr_src, None));
 }
 
 pub fn attr_cannot_apply(
@@ -404,7 +386,18 @@ pub fn attr_cannot_apply(
     emit.error(Error::new(msg, attr_src, None));
 }
 
-pub fn attr_flag_cannot_apply(
+pub fn attr_not_compatible(
+    emit: &mut impl ErrorSink,
+    attr_src: SourceRange,
+    attr_name: &str,
+    old_flag: &str,
+    item_kinds: &'static str,
+) {
+    let msg = format!("attribute `{attr_name}` cannot be applied to `{old_flag}` {item_kinds}",);
+    emit.error(Error::new(msg, attr_src, None));
+}
+
+pub fn attr_flag_not_compatible(
     emit: &mut impl ErrorSink,
     item_src: SourceRange,
     new_flag: &str,
@@ -433,17 +426,6 @@ pub fn attr_proc_builtin_with_block(
     let msg = "`builtin` procedures cannot have a body";
     let info = Info::new("remove this block", block_src);
     emit.error(Error::new(msg, proc_src, info));
-}
-
-pub fn attr_struct_repr_int(
-    emit: &mut impl ErrorSink,
-    attr_src: SourceRange,
-    int_ty: &'static str,
-) {
-    let msg = format!(
-        "attribute `repr({int_ty})` cannot be applied to structs\nonly `repr(C)` is allowed",
-    );
-    emit.error(Error::new(msg, attr_src, None));
 }
 
 //==================== CHECK IMPORT ====================
@@ -538,8 +520,13 @@ pub fn item_field_already_defined(
     emit.error(Error::new(msg, field_src, info));
 }
 
+pub fn item_enum_non_int_tag_ty(emit: &mut impl ErrorSink, tag_src: SourceRange) {
+    let msg = "enum tag type must be an integer";
+    emit.error(Error::new(msg, tag_src, None));
+}
+
 pub fn item_enum_unknown_tag_ty(emit: &mut impl ErrorSink, enum_src: SourceRange) {
-    let msg = "enum type must be specified\nadd #[repr(<int_ty>)] or #[repr(C)] attribute";
+    let msg = "enum tag type must be specified\nadd type after name: `enum Example u8`\nor use #[repr_c] attribute";
     emit.error(Error::new(msg, enum_src, None));
 }
 
@@ -788,10 +775,10 @@ pub fn tycheck_cast_redundant(
     emit.warning(Warning::new(msg, src, None));
 }
 
-pub fn tycheck_unreachable_stmt(emit: &mut impl ErrorSink, src: SourceRange, after: SourceRange) {
+pub fn tycheck_unreachable_stmt(emit: &mut impl WarningSink, src: SourceRange, after: SourceRange) {
     let msg = "unreachable statement";
     let info = Info::new("all statements after this are unreachable", after);
-    emit.error(Error::new(msg, src, info));
+    emit.warning(Warning::new(msg, src, info));
 }
 
 pub fn tycheck_break_outside_loop(emit: &mut impl ErrorSink, src: SourceRange) {

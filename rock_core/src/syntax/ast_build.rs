@@ -294,6 +294,13 @@ fn enum_item<'ast>(
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let generic = generic_params(ctx, item.generic_params(ctx.tree));
 
+    let tag_ty = if let Some((basic, range)) = item.tag_ty(ctx.tree) {
+        let tag_ty = ast::EnumTagType { basic, range };
+        Some(ctx.arena.alloc(tag_ty))
+    } else {
+        None
+    };
+
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();
     for variant_cst in variant_list.variants(ctx.tree) {
@@ -306,6 +313,7 @@ fn enum_item<'ast>(
         vis,
         name,
         generic,
+        tag_ty,
         variants,
     };
     ctx.arena.alloc(enum_item)

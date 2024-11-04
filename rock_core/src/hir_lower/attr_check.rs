@@ -14,7 +14,6 @@ pub struct AttrFeedbackProc {
 pub struct AttrFeedbackEnum {
     pub cfg_state: CfgState,
     pub attr_set: BitSet<hir::EnumFlag>,
-    pub tag_ty: Option<hir::BasicInt>,
 }
 
 pub struct AttrFeedbackStruct {
@@ -119,7 +118,10 @@ pub fn check_attrs_proc<'ast>(ctx: &mut HirCtx, item: &ast::ProcItem) -> AttrFee
 pub fn check_attrs_enum<'ast>(ctx: &mut HirCtx, item: &ast::EnumItem) -> AttrFeedbackEnum {
     let mut cfg_state = CfgState::new_enabled();
     let mut attr_set = BitSet::empty();
-    let mut tag_ty = None;
+
+    if item.tag_ty.is_some() {
+        attr_set.set(hir::EnumFlag::WithTagType);
+    }
 
     for variant in item.variants {
         match variant.kind {
@@ -140,18 +142,7 @@ pub fn check_attrs_enum<'ast>(ctx: &mut HirCtx, item: &ast::EnumItem) -> AttrFee
         let attr_src = ctx.src(attr.range);
 
         let flag = match resolved.data {
-            AttrResolved::Repr(repr_kind) => {
-                if tag_ty.is_none() {
-                    tag_ty = match repr_kind {
-                        ReprKind::ReprC => Some(hir::BasicInt::S32),
-                        ReprKind::ReprInt(int_ty) => Some(int_ty),
-                    };
-                }
-                match repr_kind {
-                    ReprKind::ReprC => hir::EnumFlag::ReprC,
-                    ReprKind::ReprInt(_) => hir::EnumFlag::ReprInt,
-                }
-            }
+            AttrResolved::ReprC => hir::EnumFlag::ReprC,
             AttrResolved::Cfg(state) => {
                 cfg_state.combine(state);
                 continue;
@@ -178,7 +169,6 @@ pub fn check_attrs_enum<'ast>(ctx: &mut HirCtx, item: &ast::EnumItem) -> AttrFee
     AttrFeedbackEnum {
         cfg_state,
         attr_set,
-        tag_ty,
     }
 }
 
@@ -194,15 +184,7 @@ pub fn check_attrs_struct<'ast>(ctx: &mut HirCtx, item: &ast::StructItem) -> Att
         let attr_src = ctx.src(attr.range);
 
         let flag = match resolved.data {
-            AttrResolved::Repr(repr_kind) => match repr_kind {
-                ReprKind::ReprC => hir::StructFlag::ReprC,
-                ReprKind::ReprInt(int_ty) => {
-                    //@add as_str for BasicInt?
-                    let int_ty = int_ty.into_basic().as_str();
-                    err::attr_struct_repr_int(&mut ctx.emit, attr_src, int_ty);
-                    continue;
-                }
-            },
+            AttrResolved::ReprC => hir::StructFlag::ReprC,
             AttrResolved::Cfg(state) => {
                 cfg_state.combine(state);
                 continue;
@@ -368,10 +350,9 @@ fn resolve_attr(ctx: &mut HirCtx, attr: &ast::Attr) -> Result<AttrResolvedData, 
             let _ = expect_no_params(ctx, attr, attr_name)?;
             AttrResolved::Inline
         }
-        AttrKind::Repr => {
-            let param = expect_single_param(ctx, attr, attr_name)?;
-            let repr_kind = resolve_repr_param(ctx, param)?;
-            AttrResolved::Repr(repr_kind)
+        AttrKind::ReprC => {
+            let _ = expect_no_params(ctx, attr, attr_name)?;
+            AttrResolved::ReprC
         }
         AttrKind::ThreadLocal => {
             let _ = expect_no_params(ctx, attr, attr_name)?;
@@ -396,30 +377,6 @@ fn expect_no_params<'ast>(
         Err(())
     } else {
         Ok(())
-    }
-}
-
-fn expect_single_param<'ast>(
-    ctx: &mut HirCtx,
-    attr: &ast::Attr<'ast>,
-    attr_name: &str,
-) -> Result<&'ast ast::AttrParam, ()> {
-    if let Some((params, params_range)) = attr.params {
-        if let Some(param) = params.first() {
-            for param in params.iter().skip(1) {
-                let param_src = ctx.src(param.name.range);
-                err::attr_param_list_expect_single(&mut ctx.emit, param_src, attr_name);
-            }
-            Ok(param)
-        } else {
-            let list_src = ctx.src(params_range);
-            err::attr_param_list_required(&mut ctx.emit, list_src, attr_name, true);
-            Err(())
-        }
-    } else {
-        let attr_src = ctx.src(attr.name.range);
-        err::attr_param_list_required(&mut ctx.emit, attr_src, attr_name, false);
-        Err(())
     }
 }
 
@@ -526,26 +483,6 @@ fn resolve_cfg_params(
     Ok(cfg_state)
 }
 
-fn resolve_repr_param(ctx: &mut HirCtx, param: &ast::AttrParam) -> Result<ReprKind, ()> {
-    let param_name = ctx.name(param.name.id);
-
-    let repr_kind = if param_name == "C" {
-        Ok(ReprKind::ReprC)
-    } else if let Some(int_ty) = hir::BasicInt::from_str(param_name) {
-        Ok(ReprKind::ReprInt(int_ty))
-    } else {
-        let param_src = ctx.src(param.name.range);
-        err::attr_param_unknown(&mut ctx.emit, param_src, param_name);
-        Err(())
-    };
-
-    if let Some((_, value_range)) = param.value {
-        let value_src = ctx.src(value_range);
-        err::attr_param_value_unexpected(&mut ctx.emit, value_src, param_name);
-    }
-    repr_kind
-}
-
 struct AttrResolvedData {
     kind: AttrKind,
     data: AttrResolved,
@@ -555,7 +492,7 @@ enum AttrResolved {
     Cfg(CfgState),
     Builtin,
     Inline,
-    Repr(ReprKind),
+    ReprC,
     ThreadLocal,
 }
 
@@ -567,12 +504,6 @@ enum CfgOp {
     And,
     Not,
     Or,
-}
-
-#[derive(Copy, Clone)]
-enum ReprKind {
-    ReprC,
-    ReprInt(hir::BasicInt),
 }
 
 impl CfgState {
@@ -610,7 +541,7 @@ crate::enum_as_str! {
         CfgAny "cfg_any",
         Builtin "builtin",
         Inline "inline",
-        Repr "repr",
+        ReprC "repr_c",
         ThreadLocal "thread_local",
     }
 }
@@ -653,12 +584,10 @@ pub fn apply_item_flag<T: hir::ItemFlag>(
             continue;
         }
 
-        //@repr(C) and WithFields errors with wrong error message
-        // should use 2nd error style about flags in that case
         if let Some((kind, attr_src)) = attr_data {
-            err::attr_cannot_apply(emit, attr_src, kind.as_str(), item_kinds);
+            err::attr_not_compatible(emit, attr_src, kind.as_str(), flag.as_str(), item_kinds);
         } else {
-            err::attr_flag_cannot_apply(
+            err::attr_flag_not_compatible(
                 emit,
                 item_src,
                 new_flag.as_str(),

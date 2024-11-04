@@ -185,6 +185,9 @@ fn enum_item(p: &mut Parser, m: Marker) {
     if p.at(T!['(']) {
         generic_params(p);
     }
+    if p.peek().as_basic_type().is_some() {
+        p.bump(p.peek());
+    }
     if p.at(T!['{']) {
         variant_list(p);
     } else {
