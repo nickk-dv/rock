@@ -142,8 +142,6 @@ fn fold_index<'hir>(
 
     let index = match index {
         hir::ConstValue::Int { val, neg, int_ty } => {
-            //@we assume that index is in bounds of usize, same for `0`
-            // but neg flag does cause panic on `-0` investigate why and solve
             assert!(!neg);
             assert!(!int_ty.is_signed());
             val
@@ -570,11 +568,11 @@ pub fn int_range_check<'hir>(
     let max = int_ty.max_128(ptr_width);
 
     if val < min || val > max {
-        let int_ty = int_ty.into_basic().as_str(); //@as_str for BasicInt?
+        let int_ty = int_ty.as_str();
         err::const_int_out_of_range(&mut ctx.emit, src, int_ty, val, min, max);
         Err(())
     } else {
-        if val > 0 {
+        if val >= 0 {
             let val: u64 = val.try_into().unwrap();
             let neg = false;
             Ok(hir::ConstValue::Int { val, neg, int_ty })
@@ -604,7 +602,7 @@ fn float_range_check<'hir>(
         err::const_float_is_infinite(&mut ctx.emit, src);
         Err(())
     } else if val < min || val > max {
-        let float_ty = float_ty.into_basic().as_str(); //@as_str for BasicFloat?
+        let float_ty = float_ty.as_str();
         err::const_float_out_of_range(&mut ctx.emit, src, float_ty, val, min, max);
         Err(())
     } else {

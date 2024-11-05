@@ -94,7 +94,7 @@ pub fn lexer_unknown_symbol(emit: &mut impl ErrorSink, src: SourceRange, c: char
     } else {
         ""
     };
-    let msg = format!("unknown symbol token `{c:?}`{non_acsii}");
+    let msg = format!("unknown symbol token {c:?}{non_acsii}");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -721,6 +721,11 @@ pub fn tycheck_pat_const_with_bindings(emit: &mut impl ErrorSink, src: SourceRan
 
 pub fn tycheck_pat_runtime_value(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = format!("cannot use runtime values in patterns");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_pat_in_or_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("cannot use named bindings in `or` patterns, use `_`");
     emit.error(Error::new(msg, src, None));
 }
 

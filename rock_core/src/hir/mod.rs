@@ -476,24 +476,28 @@ where
     ResolvedError,
 }
 
-#[derive(Copy, Clone, PartialEq, Hash)]
-pub enum BasicInt {
-    S8,
-    S16,
-    S32,
-    S64,
-    Ssize,
-    U8,
-    U16,
-    U32,
-    U64,
-    Usize,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq, Hash)]
+    pub enum BasicInt {
+        S8 "s8",
+        S16 "s16",
+        S32 "s32",
+        S64 "s64",
+        Ssize "ssize",
+        U8 "u8",
+        U16 "u16",
+        U32 "u32",
+        U64 "u64",
+        Usize "usize",
+    }
 }
 
-#[derive(Copy, Clone, PartialEq, Hash)]
-pub enum BasicFloat {
-    F32,
-    F64,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq, Hash)]
+    pub enum BasicFloat {
+        F32 "f32",
+        F64 "f64",
+    }
 }
 
 #[allow(non_camel_case_types)]

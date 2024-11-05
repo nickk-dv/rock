@@ -496,7 +496,7 @@ fn typecheck_match<'hir, 'ast>(
     let mut arms = Vec::with_capacity(match_.arms.len());
     for arm in match_.arms {
         ctx.scope.local.start_block(BlockStatus::None);
-        let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut);
+        let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut, false);
         let expr_res = typecheck_expr(ctx, expect, arm.expr);
         type_unify_control_flow(&mut match_type, expr_res.ty);
         ctx.scope.local.exit_block();
@@ -581,15 +581,16 @@ fn typecheck_pat<'hir, 'ast>(
     expect: Expectation<'hir>,
     pat: &ast::Pat<'ast>,
     ref_mut: Option<ast::Mut>,
+    in_or_pat: bool,
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { lit } => typecheck_pat_lit(expect, lit),
         ast::PatKind::Item { path, bind_list } => {
-            typecheck_pat_item(ctx, path, bind_list, ref_mut, pat.range)
+            typecheck_pat_item(ctx, path, bind_list, ref_mut, in_or_pat, pat.range)
         }
         ast::PatKind::Variant { name, bind_list } => {
-            typecheck_pat_variant(ctx, expect, name, bind_list, ref_mut, pat.range)
+            typecheck_pat_variant(ctx, expect, name, bind_list, ref_mut, in_or_pat, pat.range)
         }
         ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
@@ -612,17 +613,18 @@ fn typecheck_pat_item<'hir, 'ast>(
     path: &ast::Path<'ast>,
     bind_list: Option<&ast::BindingList>,
     ref_mut: Option<ast::Mut>,
+    in_or_pat: bool,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
-            add_variant_local_binds(ctx, bind_list, None, None);
+            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
             PatResult::error()
         }
         ValueID::Enum(enum_id, variant_id) => {
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-            let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
-            let bind_ids = add_variant_local_binds(ctx, bind_list, Some(variant), ref_mut);
+            let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
+            let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut, in_or_pat);
 
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -638,7 +640,7 @@ fn typecheck_pat_item<'hir, 'ast>(
                 let src = ctx.src(bind_list.range);
                 err::tycheck_pat_const_with_bindings(&mut ctx.emit, src);
             }
-            add_variant_local_binds(ctx, bind_list, None, None);
+            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
             let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
@@ -649,7 +651,7 @@ fn typecheck_pat_item<'hir, 'ast>(
         | ValueID::LocalBind(_, _) => {
             let src = ctx.src(pat_range);
             err::tycheck_pat_runtime_value(&mut ctx.emit, src);
-            add_variant_local_binds(ctx, bind_list, None, None);
+            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
             PatResult::new(hir::Pat::Error, hir::Type::Error)
         }
     }
@@ -661,27 +663,28 @@ fn typecheck_pat_variant<'hir>(
     name: ast::Name,
     bind_list: Option<&ast::BindingList>,
     ref_mut: Option<ast::Mut>,
+    in_or_pat: bool,
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     let name_src = ctx.src(name.range);
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
-            add_variant_local_binds(ctx, bind_list, None, None);
+            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
             return PatResult::error();
         }
     };
     let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
         None => {
-            add_variant_local_binds(ctx, bind_list, None, None);
+            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
             return PatResult::error();
         }
     };
 
     check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
-    let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
-    let bind_ids = add_variant_local_binds(ctx, bind_list, Some(variant), ref_mut);
+    let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
+    let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut, in_or_pat);
 
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -697,7 +700,7 @@ fn typecheck_pat_or<'hir, 'ast>(
 ) -> PatResult<'hir> {
     let mut patterns = Vec::with_capacity(pats.len());
     for pat in pats {
-        let pat = typecheck_pat(ctx, expect, pat, ref_mut);
+        let pat = typecheck_pat(ctx, expect, pat, ref_mut, true);
         patterns.push(pat);
     }
     let pats = ctx.arena.alloc_slice(&patterns);
@@ -2697,11 +2700,24 @@ fn add_variant_local_binds<'hir>(
     bind_list: Option<&ast::BindingList>,
     variant: Option<&hir::Variant<'hir>>,
     ref_mut: Option<ast::Mut>,
+    in_or_pat: bool,
 ) -> &'hir [hir::LocalBindID<'hir>] {
     let bind_list = match bind_list {
         Some(bind_list) => bind_list,
         None => return &[],
     };
+
+    if in_or_pat {
+        if bind_list
+            .binds
+            .iter()
+            .any(|bind| matches!(bind, ast::Binding::Named(_, _)))
+        {
+            let src = ctx.src(bind_list.range);
+            err::tycheck_pat_in_or_bindings(&mut ctx.emit, src);
+            return &[];
+        }
+    }
 
     let expected_count = if let Some(variant) = variant {
         variant.fields.len()
