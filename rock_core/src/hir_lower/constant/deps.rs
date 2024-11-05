@@ -24,6 +24,7 @@ enum ConstDependency<'hir> {
 pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
+        let error_count = ctx.emit.error_count();
 
         for (idx, variant) in data.variants.iter().enumerate() {
             let variant_id = hir::VariantID::new_raw(idx);
@@ -50,6 +51,52 @@ pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
                 } else {
                     resolve_const_dependency_tree(ctx, &tree);
                 }
+            }
+        }
+
+        if ctx.emit.did_error(error_count) {
+            continue;
+        }
+        ctx.enum_tag_set.clear();
+        let data = ctx.registry.enum_data(enum_id);
+
+        for (idx, variant) in data.variants.iter().enumerate() {
+            let variant_id = hir::VariantID::new_raw(idx);
+
+            let tag_value = match variant.kind {
+                hir::VariantKind::Default(eval_id) => {
+                    if let Ok(value) = ctx.registry.variant_eval(eval_id).resolved() {
+                        value.into_int()
+                    } else {
+                        continue;
+                    }
+                }
+                hir::VariantKind::Constant(eval_id) => {
+                    if let Ok(value_id) = ctx.registry.const_eval(eval_id).0.resolved() {
+                        ctx.const_intern.get(value_id).into_int()
+                    } else {
+                        continue;
+                    }
+                }
+            };
+
+            if let Some(existing_id) = ctx.enum_tag_set.get(&tag_value).copied() {
+                let existing_variant = data.variant(existing_id);
+
+                let variant_src = SourceRange::new(data.origin_id, variant.name.range);
+                let existing = SourceRange::new(data.origin_id, existing_variant.name.range);
+                let variant_name = ctx.name(variant.name.id);
+                let existing_name = ctx.name(existing_variant.name.id);
+                err::item_enum_duplicate_tag_value(
+                    &mut ctx.emit,
+                    variant_src,
+                    existing,
+                    variant_name,
+                    existing_name,
+                    tag_value,
+                );
+            } else {
+                ctx.enum_tag_set.insert(tag_value, variant_id);
             }
         }
     }
@@ -387,7 +434,10 @@ fn const_dependencies_mark_error_up_to_root<'hir>(
                 let variant = data.variant(variant_id);
 
                 match variant.kind {
-                    hir::VariantKind::Default(_) => unreachable!(),
+                    hir::VariantKind::Default(eval_id) => {
+                        let eval = ctx.registry.variant_eval_mut(eval_id);
+                        *eval = hir::VariantEval::ResolvedError;
+                    }
                     hir::VariantKind::Constant(eval_id) => {
                         let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                         *eval = hir::ConstEval::ResolvedError;

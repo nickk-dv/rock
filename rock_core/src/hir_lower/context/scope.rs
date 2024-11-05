@@ -138,7 +138,7 @@ impl<'hir> Scope<'hir> {
         let existing = self.symbol_src(existing, registry);
         let name = session.intern_name.get(name.id);
         err::scope_name_already_defined(emit, name_src, existing, name);
-        Ok(())
+        Err(())
     }
 
     fn check_already_defined_local(
@@ -155,7 +155,7 @@ impl<'hir> Scope<'hir> {
         let existing = self.var_src(existing);
         let name = session.intern_name.get(name.id);
         err::scope_name_already_defined(emit, name_src, existing, name);
-        Ok(())
+        Err(())
     }
 
     fn symbol_src(&self, symbol: Symbol<'hir>, registry: &Registry<'hir, '_>) -> SourceRange {

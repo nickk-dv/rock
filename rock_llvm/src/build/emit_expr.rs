@@ -217,7 +217,18 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
 }
 
 fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Value {
-    unimplemented!("const variant impossible to implement");
+    let enum_data = cg.hir.enum_data(variant.enum_id);
+    let hir_variant = enum_data.variant(variant.variant_id);
+
+    if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+        unimplemented!("constant variant with fields");
+    }
+
+    let variant_tag = match hir_variant.kind {
+        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.raw_index()],
+        hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+    };
+    codegen_const(cg, variant_tag)
 }
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {

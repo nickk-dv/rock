@@ -530,6 +530,19 @@ pub fn item_enum_unknown_tag_ty(emit: &mut impl ErrorSink, enum_src: SourceRange
     emit.error(Error::new(msg, enum_src, None));
 }
 
+pub fn item_enum_duplicate_tag_value(
+    emit: &mut impl ErrorSink,
+    variant_src: SourceRange,
+    existing: SourceRange,
+    variant_name: &str,
+    existing_name: &str,
+    tag_value: i128,
+) {
+    let msg = format!("duplicate variant tag value\nboth `{variant_name}` and `{existing_name}` have the same `{tag_value}` value");
+    let info = Info::new("existing variant with same tag", existing);
+    emit.error(Error::new(msg, variant_src, info));
+}
+
 //==================== CHECK PATH ====================
 
 pub fn path_not_expected(

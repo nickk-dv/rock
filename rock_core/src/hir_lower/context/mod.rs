@@ -7,6 +7,7 @@ use crate::intern::InternName;
 use crate::session::Session;
 use crate::support::{Arena, ID};
 use crate::text::TextRange;
+use std::collections::HashMap;
 
 pub struct HirCtx<'hir, 's, 's_ref> {
     pub arena: Arena<'hir>,
@@ -14,6 +15,7 @@ pub struct HirCtx<'hir, 's, 's_ref> {
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
     pub const_intern: hir::ConstInternPool<'hir>,
+    pub enum_tag_set: HashMap<i128, hir::VariantID<'hir>>,
     pub session: &'s_ref Session<'s>,
 }
 
@@ -25,6 +27,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             scope: scope::Scope::new(session),
             registry: registry::Registry::new(session),
             const_intern: hir::ConstInternPool::new(),
+            enum_tag_set: HashMap::with_capacity(128),
             session,
         }
     }
