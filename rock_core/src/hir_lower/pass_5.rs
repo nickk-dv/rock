@@ -4,7 +4,7 @@ use super::constant;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
-use crate::error::{Error, ErrorSink, Info, SourceRange, StringOrStr};
+use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::{self, ModuleID};
@@ -1313,26 +1313,16 @@ fn typecheck_struct_init<'hir, 'ast>(
         let input_res = typecheck_expr(ctx, expect, input.expr);
 
         if let FieldStatus::Init(range) = field_status[field_id.raw_index()] {
-            ctx.emit.error(Error::new(
-                format!(
-                    "field `{}` was already initialized",
-                    ctx.name(input.name.id),
-                ),
-                ctx.src(input.name.range),
-                Info::new("initialized here", ctx.src(range)),
-            ));
+            let src = ctx.src(input.name.range);
+            let prev_src = ctx.src(range);
+            let field_name = ctx.name(input.name.id);
+            err::tycheck_field_already_initialized(&mut ctx.emit, src, prev_src, field_name);
         } else {
-            if ctx.scope.origin() != struct_origin_id {
-                if field.vis == ast::Vis::Private {
-                    ctx.emit.error(Error::new(
-                        format!("field `{}` is private", ctx.name(field.name.id),),
-                        ctx.src(input.name.range),
-                        Info::new(
-                            "defined here",
-                            SourceRange::new(struct_origin_id, field.name.range),
-                        ),
-                    ));
-                }
+            if ctx.scope.origin() != struct_origin_id && field.vis == ast::Vis::Private {
+                let src = ctx.src(input.name.range);
+                let field_name = ctx.name(input.name.id);
+                let field_src = SourceRange::new(struct_origin_id, field.name.range);
+                err::tycheck_field_is_private(&mut ctx.emit, src, field_name, field_src);
             }
 
             let field_init = hir::FieldInit {
@@ -1345,33 +1335,38 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
     }
 
-    let data = ctx.registry.struct_data(struct_id);
-
     if init_count < field_count {
-        //@change message to list limited number of fields based on their name len()
-        let mut message = "missing field initializers: ".to_string();
+        let data = ctx.registry.struct_data(struct_id);
+        let missing_count = field_count - init_count;
+        let mut mentioned = 0_usize;
+        let mut message = String::with_capacity(128);
+        message.push_str("missing field initializers: ");
 
         for (idx, status) in field_status.iter().enumerate() {
             if let FieldStatus::None = status {
-                let field = data.field(hir::FieldID::new_raw(idx));
+                let field_id = hir::FieldID::new_raw(idx);
+                let field = data.field(field_id);
+
                 message.push('`');
                 message.push_str(ctx.name(field.name.id));
-                if idx + 1 != field_count {
-                    message.push_str("`, ");
-                } else {
-                    message.push('`');
+                message.push('`');
+                mentioned += 1;
+
+                if mentioned >= 5 {
+                    use std::fmt::Write;
+                    let remaining = missing_count - mentioned;
+                    let _ = write!(message, " and {remaining} more...");
+                    break;
+                } else if mentioned < missing_count {
+                    message.push(',');
+                    message.push(' ');
                 }
             }
         }
 
-        ctx.emit.error(Error::new(
-            message,
-            ctx.src(expr_range),
-            Info::new(
-                "struct defined here",
-                SourceRange::new(data.origin_id, data.name.range),
-            ),
-        ));
+        let src = ctx.src(expr_range);
+        let struct_src = SourceRange::new(data.origin_id, data.name.range);
+        err::tycheck_missing_field_initializers(&mut ctx.emit, src, struct_src, message);
     }
 
     let input = ctx.arena.alloc_slice(&field_inits);
@@ -1507,14 +1502,9 @@ fn typecheck_deref<'hir, 'ast>(
             TypeResult::new(*ref_ty, kind)
         }
         _ => {
-            ctx.emit.error(Error::new(
-                format!(
-                    "cannot dereference value of type `{}`",
-                    type_format(ctx, rhs_res.ty).as_str()
-                ),
-                ctx.src(expr_range),
-                None,
-            ));
+            let src = ctx.src(expr_range);
+            let ty_fmt = type_format(ctx, rhs_res.ty);
+            err::tycheck_cannot_deref_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
             TypeResult::error()
         }
     }
@@ -2839,7 +2829,7 @@ fn unary_op_check(
     if un_op.is_none() {
         let src = ctx.src(op_range);
         let rhs_ty = type_format(ctx, rhs_ty);
-        err::tycheck_cannot_apply_un_op(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
+        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
     }
     un_op
 }
@@ -3100,7 +3090,7 @@ fn binary_op_check(
     if bin_op.is_none() {
         let src = ctx.src(op_range);
         let lhs_ty = type_format(ctx, lhs_ty);
-        err::tycheck_cannot_apply_bin_op(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
+        err::tycheck_bin_op_cannot_apply(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
     }
     bin_op
 }

@@ -291,7 +291,7 @@ pub fn scope_symbol_not_found(
 ) {
     let msg = match from_module {
         Some(from_module) => format!("name `{name}` is not found in `{from_module}` module"),
-        None => format!("name `{name}` is not found in this module"),
+        None => format!("name `{name}` is not found in this scope"),
     };
     emit.error(Error::new(msg, name_src, None));
 }
@@ -793,6 +793,33 @@ pub fn tycheck_cast_redundant(
     emit.warning(Warning::new(msg, src, None));
 }
 
+pub fn tycheck_field_already_initialized(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    prev_src: SourceRange,
+    field_name: &str,
+) {
+    let msg = format!("field `{field_name}` already initialized");
+    let info = Info::new("initialized here", prev_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_missing_field_initializers(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    struct_src: SourceRange,
+    message: String,
+) {
+    let msg = message;
+    let info = Info::new("struct defined here", struct_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
+    let msg = format!("cannot dereference value of type `{ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_unreachable_stmt(emit: &mut impl WarningSink, src: SourceRange, after: SourceRange) {
     let msg = "unreachable statement";
     let info = Info::new("all statements after this are unreachable", after);
@@ -1046,7 +1073,7 @@ pub fn tycheck_cannot_assign_val_behind_slice(
 
 //==================== TYPECHECK OTHER ====================
 
-pub fn tycheck_cannot_apply_un_op(
+pub fn tycheck_un_op_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,
@@ -1056,7 +1083,7 @@ pub fn tycheck_cannot_apply_un_op(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_apply_bin_op(
+pub fn tycheck_bin_op_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,
