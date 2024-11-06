@@ -55,6 +55,13 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
                 mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
             }
         }
+        (hir::Type::MultiReference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
+            if mutt2 == ast::Mut::Mutable {
+                type_matches(ctx, *ref_ty, *ref_ty2)
+            } else {
+                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
+            }
+        }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
                 && (proc_ty.is_variadic == proc_ty2.is_variadic)
@@ -102,7 +109,16 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 ast::Mut::Immutable => "",
             };
             let ref_ty_format = type_format(ctx, *ref_ty);
-            let format = format!("&{}{}", mut_str, ref_ty_format.as_str());
+            let format = format!("&{mut_str}{}", ref_ty_format.as_str());
+            format.into()
+        }
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            let mut_str = match mutt {
+                ast::Mut::Mutable => "mut",
+                ast::Mut::Immutable => "",
+            };
+            let ref_ty_format = type_format(ctx, *ref_ty);
+            let format = format!("[&{mut_str}]{}", ref_ty_format.as_str());
             format.into()
         }
         hir::Type::Procedure(proc_ty) => {
@@ -117,7 +133,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             if proc_ty.is_variadic {
                 format.push_str(", ..")
             }
-            format.push_str(") -> ");
+            format.push_str(") ");
             let return_format = type_format(ctx, proc_ty.return_ty);
             format.push_str(return_format.as_str());
             format.into()
@@ -894,10 +910,11 @@ fn emit_field_expr<'hir>(
 struct CollectionType<'hir> {
     deref: Option<ast::Mut>,
     elem_ty: hir::Type<'hir>,
-    kind: SliceOrArray<'hir>,
+    kind: CollectionKind<'hir>,
 }
 
-enum SliceOrArray<'hir> {
+enum CollectionKind<'hir> {
+    Multi(ast::Mut),
     Slice(&'hir hir::ArraySlice<'hir>),
     Array(&'hir hir::ArrayStatic<'hir>),
 }
@@ -910,15 +927,20 @@ impl<'hir> CollectionType<'hir> {
         ) -> Result<Option<CollectionType>, ()> {
             match ty {
                 hir::Type::Error => Ok(None),
+                hir::Type::MultiReference(mutt, ref_ty) => Ok(Some(CollectionType {
+                    deref,
+                    elem_ty: *ref_ty,
+                    kind: CollectionKind::Multi(mutt),
+                })),
                 hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
                     deref,
                     elem_ty: slice.elem_ty,
-                    kind: SliceOrArray::Slice(slice),
+                    kind: CollectionKind::Slice(slice),
                 })),
                 hir::Type::ArrayStatic(array) => Ok(Some(CollectionType {
                     deref,
                     elem_ty: array.elem_ty,
-                    kind: SliceOrArray::Array(array),
+                    kind: CollectionKind::Array(array),
                 })),
                 _ => Err(()),
             }
@@ -943,8 +965,9 @@ fn typecheck_index<'hir, 'ast>(
     match CollectionType::from(target_res.ty) {
         Ok(Some(collection)) => {
             let kind = match collection.kind {
-                SliceOrArray::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
-                SliceOrArray::Array(array) => hir::IndexKind::Array(array.len),
+                CollectionKind::Multi(mutt) => hir::IndexKind::Multi(mutt),
+                CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
+                CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
             };
             let access = hir::IndexAccess {
                 deref: collection.deref,
@@ -1353,9 +1376,11 @@ fn typecheck_struct_init<'hir, 'ast>(
                 mentioned += 1;
 
                 if mentioned >= 5 {
-                    use std::fmt::Write;
                     let remaining = missing_count - mentioned;
-                    let _ = write!(message, " and {remaining} more...");
+                    if remaining > 0 {
+                        use std::fmt::Write;
+                        let _ = write!(message, " and {remaining} more...");
+                    }
                     break;
                 } else if mentioned < missing_count {
                     message.push(',');
@@ -1547,6 +1572,9 @@ fn typecheck_address<'hir, 'ast>(
                     AddrConstraint::ImmutRef(deref_src) => {
                         err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
                     }
+                    AddrConstraint::ImmutMulti(multi_src) => {
+                        err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
+                    }
                     AddrConstraint::ImmutSlice(slice_src) => {
                         err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src, slice_src);
                     }
@@ -1578,6 +1606,7 @@ enum AddrBase {
 enum AddrConstraint {
     None,
     ImmutRef(SourceRange),
+    ImmutMulti(SourceRange),
     ImmutSlice(SourceRange),
 }
 
@@ -1624,15 +1653,23 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Index { target, access } => {
                 if constraint.is_none() {
+                    //@for index access store brackets range?
+                    // unclear which access is the issue since entire index expr range is used
+                    // same bracket range is needed for typecheck_index errors + backend maybe
                     if access.deref == Some(ast::Mut::Immutable) {
                         let deref_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutRef(deref_src);
                     } else if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
                         let slice_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutSlice(slice_src);
+                    } else if matches!(access.kind, hir::IndexKind::Multi(ast::Mut::Immutable)) {
+                        let multi_src = ctx.src(expr.range);
+                        constraint = AddrConstraint::ImmutMulti(multi_src);
                     }
                 }
                 expr = target;
+                //@this should track if its owned or not
+                // incorrect for slice / multi ptr, still errors due to base var mut
                 last_deref = None;
                 continue;
             }
@@ -2272,6 +2309,9 @@ fn typecheck_assign<'hir, 'ast>(
             }
             AddrConstraint::ImmutRef(deref_src) => {
                 err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, lhs_src, deref_src);
+            }
+            AddrConstraint::ImmutMulti(multi_src) => {
+                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, lhs_src, multi_src);
             }
             AddrConstraint::ImmutSlice(slice_src) => {
                 err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, lhs_src, slice_src);

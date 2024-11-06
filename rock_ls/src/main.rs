@@ -751,6 +751,7 @@ fn semantic_visit_node(
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_GENERIC => None,
                     SyntaxKind::TYPE_REFERENCE => None,
+                    SyntaxKind::TYPE_MULTI_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
                     SyntaxKind::PARAM_TYPE_LIST => None,
                     SyntaxKind::TYPE_ARRAY_SLICE => None,

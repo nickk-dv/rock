@@ -20,6 +20,10 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::new_equal(ptr_size))
         }
+        hir::Type::MultiReference(_, _) => {
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
+            Ok(hir::Layout::new_equal(ptr_size))
+        }
         hir::Type::Procedure(_) => {
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::new_equal(ptr_size))

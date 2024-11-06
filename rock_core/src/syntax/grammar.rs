@@ -492,7 +492,7 @@ fn ty(p: &mut Parser) {
             m.complete(p, SyntaxKind::TYPE_REFERENCE);
         }
         T![proc] => type_proc(p),
-        T!['['] => type_slice_or_array(p),
+        T!['['] => type_at_bracket(p),
         _ => p.error("expected type"),
     }
 }
@@ -531,7 +531,7 @@ fn param_type_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::PARAM_TYPE_LIST);
 }
 
-fn type_slice_or_array(p: &mut Parser) {
+fn type_at_bracket(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['[']);
 
@@ -540,6 +540,11 @@ fn type_slice_or_array(p: &mut Parser) {
         p.expect(T![']']);
         ty(p);
         m.complete(p, SyntaxKind::TYPE_ARRAY_SLICE);
+    } else if p.eat(T![&]) {
+        p.eat(T![mut]);
+        p.expect(T![']']);
+        ty(p);
+        m.complete(p, SyntaxKind::TYPE_MULTI_REFERENCE);
     } else {
         expr(p);
         p.expect(T![']']);

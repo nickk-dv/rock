@@ -140,6 +140,7 @@ pub enum Type<'hir> {
     Enum(EnumID<'hir>),
     Struct(StructID<'hir>),
     Reference(ast::Mut, &'hir Type<'hir>),
+    MultiReference(ast::Mut, &'hir Type<'hir>),
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
@@ -385,6 +386,7 @@ pub struct IndexAccess<'hir> {
 
 #[derive(Copy, Clone)]
 pub enum IndexKind {
+    Multi(ast::Mut),
     Slice(ast::Mut),
     Array(ArrayStaticLen),
 }

@@ -612,6 +612,7 @@ fn add_type_size_const_dependencies<'hir>(
             add_struct_size_const_dependency(ctx, tree, parent_id, id)?;
         }
         hir::Type::Reference(_, _) => {}
+        hir::Type::MultiReference(_, _) => {}
         hir::Type::Procedure(_) => {}
         hir::Type::ArraySlice(_) => {}
         hir::Type::ArrayStatic(array) => {
@@ -700,6 +701,9 @@ fn add_type_usage_const_dependencies<'hir>(
             }
         }
         hir::Type::Reference(_, ref_ty) => {
+            add_type_usage_const_dependencies(ctx, tree, parent_id, *ref_ty)?
+        }
+        hir::Type::MultiReference(_, ref_ty) => {
             add_type_usage_const_dependencies(ctx, tree, parent_id, *ref_ty)?
         }
         hir::Type::Procedure(proc_ty) => {

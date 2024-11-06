@@ -266,6 +266,15 @@ pub fn type_resolve<'hir, 'ast>(
                 hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
             }
         }
+        ast::TypeKind::MultiReference(mutt, ref_ty) => {
+            let ref_ty = type_resolve(ctx, *ref_ty, delayed);
+            //@temp resolve to same hir::Type
+            if ref_ty.is_error() {
+                hir::Type::Error
+            } else {
+                hir::Type::MultiReference(mutt, ctx.arena.alloc(ref_ty))
+            }
+        }
         ast::TypeKind::Procedure(proc_ty) => {
             let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
             for param_ty in proc_ty.param_types {

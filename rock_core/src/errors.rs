@@ -1051,6 +1051,26 @@ pub fn tycheck_cannot_assign_val_behind_ref(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_cannot_ref_val_behind_multi_ref(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    multi_src: SourceRange,
+) {
+    let msg = "cannot get `&mut` to a value behind an immutable multi-reference";
+    let info = Info::new("immutable multi-reference accessed here", multi_src);
+    emit.error(Error::new(msg, src, info));
+}
+
+pub fn tycheck_cannot_assign_val_behind_multi_ref(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    multi_src: SourceRange,
+) {
+    let msg = "cannot assign to a value behind an immutable multi-reference";
+    let info = Info::new("immutable multi-reference accessed here", multi_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_cannot_ref_val_behind_slice(
     emit: &mut impl ErrorSink,
     src: SourceRange,

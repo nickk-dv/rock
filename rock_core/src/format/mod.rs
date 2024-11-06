@@ -927,6 +927,7 @@ fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
             generic_types(fmt, ty_cst.generic(fmt.tree).unwrap());
         }
         cst::Type::Reference(ty_cst) => ty_ref(fmt, ty_cst),
+        cst::Type::MultiReference(ty_cst) => ty_multi_ref(fmt, ty_cst),
         cst::Type::Procedure(ty_cst) => ty_proc(fmt, ty_cst),
         cst::Type::ArraySlice(slice) => ty_slice(fmt, slice),
         cst::Type::ArrayStatic(array) => ty_array(fmt, array),
@@ -950,6 +951,16 @@ fn ty_ref<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::TypeReference<'syn>)
         }
     }
     ty(fmt, ref_ty);
+}
+
+fn ty_multi_ref<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::TypeMultiReference<'syn>) {
+    fmt.write('[');
+    fmt.write('&');
+    if ty_cst.t_mut(fmt.tree).is_some() {
+        fmt.write_str("mut");
+    }
+    fmt.write(']');
+    ty(fmt, ty_cst.ref_ty(fmt.tree).unwrap());
 }
 
 fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn>) {

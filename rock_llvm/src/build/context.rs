@@ -115,6 +115,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::Enum(enum_id) => self.enum_type(enum_id),
             hir::Type::Struct(struct_id) => self.struct_type(struct_id).as_ty(),
             hir::Type::Reference(_, _) => self.cache.ptr_type,
+            hir::Type::MultiReference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,
             hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
             hir::Type::ArrayStatic(array) => self.array_type(array),

@@ -412,6 +412,7 @@ ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
 ast_node_impl!(TypeGeneric, SyntaxKind::TYPE_GENERIC);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
+ast_node_impl!(TypeMultiReference, SyntaxKind::TYPE_MULTI_REFERENCE);
 ast_node_impl!(TypeProcedure, SyntaxKind::TYPE_PROCEDURE);
 ast_node_impl!(ParamTypeList, SyntaxKind::PARAM_TYPE_LIST);
 ast_node_impl!(TypeArraySlice, SyntaxKind::TYPE_ARRAY_SLICE);
@@ -522,6 +523,7 @@ pub enum Type<'syn> {
     Custom(TypeCustom<'syn>),
     Generic(TypeGeneric<'syn>),
     Reference(TypeReference<'syn>),
+    MultiReference(TypeMultiReference<'syn>),
     Procedure(TypeProcedure<'syn>),
     ArraySlice(TypeArraySlice<'syn>),
     ArrayStatic(TypeArrayStatic<'syn>),
@@ -534,6 +536,9 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
             SyntaxKind::TYPE_GENERIC => Some(Type::Generic(TypeGeneric(node))),
             SyntaxKind::TYPE_REFERENCE => Some(Type::Reference(TypeReference(node))),
+            SyntaxKind::TYPE_MULTI_REFERENCE => {
+                Some(Type::MultiReference(TypeMultiReference(node)))
+            }
             SyntaxKind::TYPE_PROCEDURE => Some(Type::Procedure(TypeProcedure(node))),
             SyntaxKind::TYPE_ARRAY_SLICE => Some(Type::ArraySlice(TypeArraySlice(node))),
             SyntaxKind::TYPE_ARRAY_STATIC => Some(Type::ArrayStatic(TypeArrayStatic(node))),
@@ -546,6 +551,7 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
             Type::Custom(ty) => ty.find_range(tree),
             Type::Generic(ty) => ty.find_range(tree),
             Type::Reference(ty) => ty.find_range(tree),
+            Type::MultiReference(ty) => ty.find_range(tree),
             Type::Procedure(ty) => ty.find_range(tree),
             Type::ArraySlice(ty) => ty.find_range(tree),
             Type::ArrayStatic(ty) => ty.find_range(tree),
@@ -955,6 +961,11 @@ impl<'syn> TypeGeneric<'syn> {
 }
 
 impl<'syn> TypeReference<'syn> {
+    token_find!(t_mut, T![mut]);
+    node_find!(ref_ty, Type);
+}
+
+impl<'syn> TypeMultiReference<'syn> {
     token_find!(t_mut, T![mut]);
     node_find!(ref_ty, Type);
 }

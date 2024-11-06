@@ -169,6 +169,7 @@ pub enum TypeKind<'ast> {
     Custom(&'ast Path<'ast>),
     Generic(&'ast GenericType<'ast>),
     Reference(Mut, &'ast Type<'ast>),
+    MultiReference(Mut, &'ast Type<'ast>),
     Procedure(&'ast ProcType<'ast>),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),

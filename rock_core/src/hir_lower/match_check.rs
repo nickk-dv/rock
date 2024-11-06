@@ -34,6 +34,7 @@ pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind<'hir>, boo
             }),
             _ => Err(true),
         },
+        hir::Type::MultiReference(_, _) => Err(true),
         hir::Type::Procedure(_) => Err(true),
         hir::Type::ArraySlice(slice) => {
             if matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8)) {

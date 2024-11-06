@@ -610,44 +610,48 @@ fn codegen_index<'c>(
     let index_val = codegen_expr_value(cg, proc_cg, access.index);
 
     let bound = match access.kind {
+        hir::IndexKind::Multi(_) => None,
         hir::IndexKind::Slice(_) => {
             let slice_len_ptr =
                 cg.build
                     .gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
-            cg.build
-                .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+            let len = cg
+                .build
+                .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len");
+            Some(len)
         }
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
-            cg.const_usize(len)
+            Some(cg.const_usize(len))
         }
     };
 
-    let check_bb = cg.append_bb(proc_cg, "bounds_check");
-    let exit_bb = cg.append_bb(proc_cg, "bounds_exit");
-    let cond = codegen_binary_op(cg, hir::BinOp::GreaterEq_IntU, index_val, bound);
-    cg.build.cond_br(cond, check_bb, exit_bb);
-    cg.build.position_at_end(check_bb);
-    //@insert panic call (cannot get reference to it currently)
-    cg.build.br(exit_bb); //@insert unrechable as hint?
-    cg.build.position_at_end(exit_bb);
+    if let Some(bound) = bound {
+        let check_bb = cg.append_bb(proc_cg, "bounds_check");
+        let exit_bb = cg.append_bb(proc_cg, "bounds_exit");
+        let cond = codegen_binary_op(cg, hir::BinOp::GreaterEq_IntU, index_val, bound);
+        cg.build.cond_br(cond, check_bb, exit_bb);
+        cg.build.position_at_end(check_bb);
+        //@insert panic call (cannot get reference to it currently)
+        cg.build.br(exit_bb); //@insert unrechable as hint?
+        cg.build.position_at_end(exit_bb);
+    }
 
+    let elem_ty = cg.ty(access.elem_ty);
     let elem_ptr = match access.kind {
+        hir::IndexKind::Multi(_) => {
+            cg.build
+                .gep(elem_ty, target_ptr, &[index_val], "multi_elem_ptr")
+        }
         hir::IndexKind::Slice(_) => {
             let slice_ptr = cg
                 .build
                 .load(cg.ptr_type(), target_ptr, "slice_ptr")
                 .into_ptr();
-
-            cg.build.gep(
-                cg.ty(access.elem_ty),
-                slice_ptr,
-                &[index_val],
-                "slice_elem_ptr",
-            )
+            cg.build
+                .gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
         }
         hir::IndexKind::Array(len) => {
-            let elem_ty = cg.ty(access.elem_ty);
             let len = cg.array_len(len);
             let array_ty = llvm::array_type(elem_ty, len);
 
