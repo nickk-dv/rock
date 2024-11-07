@@ -34,6 +34,10 @@ impl PackageGraph {
     pub fn package_count(&self) -> usize {
         self.packages.len()
     }
+    #[inline]
+    pub fn all_packages(&self) -> &HashMap<PackageID, Package> {
+        &self.packages
+    }
 
     #[inline]
     pub fn find_package_dep(

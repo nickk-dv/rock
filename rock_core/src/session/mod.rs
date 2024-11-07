@@ -36,6 +36,7 @@ pub struct Modules<'s> {
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PackageID(u32);
 pub struct Package {
+    root_dir: PathBuf,
     name_id: ID<InternName>,
     src: Directory,
     manifest: Manifest,
@@ -104,6 +105,10 @@ impl<'s> Modules<'s> {
 }
 
 impl Package {
+    #[inline]
+    pub fn root_dir(&self) -> &PathBuf {
+        &self.root_dir
+    }
     #[inline]
     pub fn name(&self) -> ID<InternName> {
         self.name_id
@@ -300,7 +305,7 @@ fn process_package(
     #[rustfmt::skip]
     let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
     #[rustfmt::skip]
-    let package = Package { name_id, src, manifest, deps, modules };
+    let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps, modules };
     let package_id = session.graph.add(package, root_dir);
 
     //@semver not considered

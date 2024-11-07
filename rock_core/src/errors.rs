@@ -1135,6 +1135,65 @@ pub fn entry_main_wrong_return_ty(emit: &mut impl ErrorSink, ret_src: SourceRang
     emit.error(Error::new(msg, ret_src, None));
 }
 
+//==================== BACKEND ====================
+
+pub fn backend_module_verify_failed(error: String) -> Error {
+    let msg = format!("llvm module verify failed, this is likely a compiler bug:\n{error}");
+    Error::message(msg)
+}
+
+pub fn backend_emit_object_failed(error: String) -> Error {
+    let msg = format!("llvm emit object failed, this is likely a compiler bug:\n{error}");
+    Error::message(msg)
+}
+
+pub fn backend_link_command_failed(error: String, linker_path: &PathBuf) -> Error {
+    let path = linker_path.to_string_lossy();
+    let msg = format!("link command failed, expected linker path: `{path}`\nreason: {error}");
+    Error::message(msg)
+}
+
+pub fn backend_run_command_failed(error: String, bin_path: &PathBuf) -> Error {
+    let path = bin_path.to_string_lossy();
+    let msg = format!("run command failed, expected binary path: `{path}`\nreason: {error}");
+    Error::message(msg)
+}
+
+pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> Error {
+    use std::fmt::Write;
+    let mut msg = String::with_capacity(512);
+    msg.push_str("failed to link the program:\n");
+
+    let code = match output.status.code() {
+        Some(code) => code.to_string(),
+        None => "<unknown>".to_string(),
+    };
+    let _ = write!(&mut msg, "status code: {code}\n\n");
+
+    if !output.stderr.is_empty() {
+        let _ = write!(
+            &mut msg,
+            "stderr output:\n{}\n",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    if !output.stdout.is_empty() {
+        let _ = write!(
+            &mut msg,
+            "stdout output:\n{}\n",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+
+    msg.push_str("used linker arguments:\n");
+    for arg in args {
+        let _ = write!(&mut msg, "\"{}\"\n", arg.as_str());
+    }
+    msg.pop();
+
+    Error::message(msg)
+}
+
 //==================== INTERNAL ====================
 
 pub fn internal_generic_types_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
