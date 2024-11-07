@@ -42,18 +42,18 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
     fs_env::dir_create(&root_dir, true)?;
     fs_env::dir_create(&src_dir, true)?;
 
-    const IMPORT_CORE_IO: &str = "import core:libc.{ printf };\n\n";
+    const IMPORT_PRINTF: &str = "import core:libc.{ printf };\n\n";
     match data.kind {
         PackageKind::Bin => {
             let bin_content = format!(
-                "{IMPORT_CORE_IO}proc main() -> s32 {{\n    let _ = printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
+                "{IMPORT_PRINTF}proc main() s32 {{\n    let _ = printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
         }
         PackageKind::Lib => {
             let lib_content = format!(
-                "{IMPORT_CORE_IO}proc test() -> void {{\n    let _ = printf(c\"Lib `{}` works\\n\");\n}}\n",
+                "{IMPORT_PRINTF}proc test() void {{\n    let _ = printf(c\"Lib `{}` works\\n\");\n}}\n",
                 data.name
             );
             fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
