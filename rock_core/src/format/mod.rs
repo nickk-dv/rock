@@ -1,6 +1,6 @@
 use crate::ast;
 use crate::support::AsStr;
-use crate::syntax::ast_layer::{self as cst, AstNode};
+use crate::syntax::ast_layer::{self as cst, AstNode, AstNodeIterator};
 use crate::syntax::syntax_kind::{SyntaxKind, SyntaxSet};
 use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
@@ -13,9 +13,9 @@ const TAB_STR: &'static str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
-const COMMENT_ALIGN_ITEM: u32 = 32;
-const COMMENT_ALIGN_VARIANT: u32 = 16;
-const COMMENT_ALIGN_FIELD: u32 = 16;
+const COMMENT_ALIGN_ITEM: u32 = 36;
+const COMMENT_ALIGN_VARIANT: u32 = 24;
+const COMMENT_ALIGN_FIELD: u32 = 24;
 const COMMENT_ALIGN_STMT: u32 = 0;
 const COMMENT_ALIGN_MATCH_ARM: u32 = 0;
 
@@ -23,14 +23,17 @@ const COMMENT_ALIGN_MATCH_ARM: u32 = 0;
 pub fn format<'syn>(
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
+    line_ranges: &'syn [TextRange],
     cache: &mut FormatterCache,
 ) -> String {
     let mut fmt = Formatter {
         tree,
         source,
+        line_ranges,
         cache,
         line_num: 0,
         line_offset: 0,
+        line_num_src: 0,
         tab_depth: 0,
     };
 
@@ -91,9 +94,11 @@ pub fn format<'syn>(
 struct Formatter<'syn, 'cache> {
     tree: &'syn SyntaxTree<'syn>,
     source: &'syn str,
+    line_ranges: &'syn [TextRange],
     cache: &'cache mut FormatterCache,
     line_num: u32,
     line_offset: u32,
+    line_num_src: u32,
     tab_depth: u32,
 }
 
@@ -183,7 +188,34 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         });
     }
 
-    fn wrap(&self, node: &Node) -> bool {
+    fn wrap_line_break_based<N: AstNode<'syn>>(
+        &mut self,
+        mut node_iter: AstNodeIterator<'syn, N>,
+    ) -> bool {
+        let first = match node_iter.next() {
+            Some(node) => node,
+            None => return false,
+        };
+        let first_start = first.find_range(self.tree).start();
+
+        // seek `line_num_src` to the first node's range.start
+        let mut line_range = self.line_ranges[self.line_num_src as usize];
+        while !line_range.contains_exclusive(first_start) {
+            self.line_num_src += 1;
+            line_range = self.line_ranges[self.line_num_src as usize];
+        }
+
+        // any subsequent node on different line indicates a wrap
+        for node in node_iter {
+            let range = node.find_range(self.tree);
+            if !line_range.contains_exclusive(range.start()) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn wrap_content_len_based(&self, node: &Node) -> bool {
         let offset = self.line_offset + content_len(self, node);
         offset > WRAP_THRESHOLD
     }
@@ -278,10 +310,10 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
     }
 }
 
-fn interleaved_node_list<'syn, I: AstNode<'syn>>(
+fn interleaved_node_list<'syn, N: AstNode<'syn>>(
     fmt: &mut Formatter<'syn, '_>,
     node_list: &Node<'syn>,
-    format_fn: fn(&mut Formatter<'syn, '_>, I),
+    format_fn: fn(&mut Formatter<'syn, '_>, N),
     comment_align: u32,
 ) {
     let mut first = true; // prevent first \n insertion
@@ -300,7 +332,7 @@ fn interleaved_node_list<'syn, I: AstNode<'syn>>(
                 first = false;
 
                 let node = fmt.tree.node(node_id);
-                format_fn(fmt, I::cast(node).unwrap());
+                format_fn(fmt, N::cast(node).unwrap());
 
                 // search for line comment on the same line
                 while let Some(not_next) = not_iter.peek().copied() {
@@ -445,7 +477,7 @@ fn source_file<'syn>(fmt: &mut Formatter<'syn, '_>, source_file: cst::SourceFile
     interleaved_node_list(fmt, source_file.0, item, COMMENT_ALIGN_ITEM);
 }
 
-fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
+fn attr_list<'syn>(fmt: &mut Formatter<'syn, '_>, attr_list: cst::AttrList<'syn>) {
     for attr_cst in attr_list.attrs(fmt.tree) {
         fmt.tab_depth();
         attr(fmt, attr_cst);
@@ -453,7 +485,7 @@ fn attr_list(fmt: &mut Formatter, attr_list: cst::AttrList) {
     }
 }
 
-fn attr(fmt: &mut Formatter, attr: cst::Attr) {
+fn attr<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::Attr<'syn>) {
     fmt.write('#');
     fmt.write('[');
     name(fmt, attr.name(fmt.tree).unwrap());
@@ -463,7 +495,7 @@ fn attr(fmt: &mut Formatter, attr: cst::Attr) {
     fmt.write(']');
 }
 
-fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList) {
+fn attr_param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::AttrParamList<'syn>) {
     if param_list.params(fmt.tree).next().is_none() {
         fmt.write('(');
         fmt.write(')');
@@ -471,7 +503,7 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList) {
     }
 
     fmt.write('(');
-    let wrap = fmt.wrap(param_list.0);
+    let wrap = fmt.wrap_line_break_based(param_list.params(fmt.tree));
     if wrap {
         fmt.new_line();
     }
@@ -504,7 +536,9 @@ fn attr_param_list(fmt: &mut Formatter, param_list: cst::AttrParamList) {
 fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
     name(fmt, param.name(fmt.tree).unwrap());
     if let Some(value) = param.value(fmt.tree) {
-        fmt.write_str(" = ");
+        fmt.space();
+        fmt.write('=');
+        fmt.space();
         fmt.write_range(value.find_range(fmt.tree));
     }
 }
@@ -563,8 +597,9 @@ fn param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::ParamList<'s
         fmt.write(')');
         return;
     }
+
     fmt.write('(');
-    let wrap = fmt.wrap(param_list.0);
+    let wrap = fmt.wrap_line_break_based(param_list.params(fmt.tree));
     if wrap {
         fmt.new_line();
     }
@@ -643,14 +678,11 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
         fmt.write('}');
         return;
     }
-
     fmt.write('{');
     fmt.new_line();
-
     fmt.tab_inc();
     interleaved_node_list(fmt, variant_list.0, variant, COMMENT_ALIGN_VARIANT);
     fmt.tab_dec();
-
     fmt.write('}');
 }
 
@@ -712,14 +744,11 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
         fmt.write('}');
         return;
     }
-
     fmt.write('{');
     fmt.new_line();
-
     fmt.tab_inc();
     interleaved_node_list(fmt, field_list.0, field, COMMENT_ALIGN_FIELD);
     fmt.tab_dec();
-
     fmt.write('}');
 }
 
@@ -781,7 +810,7 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>)
     fmt.write(';');
 }
 
-fn import_item(fmt: &mut Formatter, item: cst::ImportItem) {
+fn import_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ImportItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
@@ -826,7 +855,7 @@ fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbol
     }
 
     fmt.write('{');
-    let wrap = fmt.wrap(import_symbol_list.0);
+    let wrap = fmt.wrap_content_len_based(import_symbol_list.0);
     if wrap {
         fmt.new_line();
     }
@@ -1434,7 +1463,7 @@ fn expr_binary<'syn>(fmt: &mut Formatter<'syn, '_>, binary: cst::ExprBinary<'syn
 
 //==================== PAT ====================
 
-fn pat(fmt: &mut Formatter, pat: cst::Pat) {
+fn pat<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::Pat<'syn>) {
     match pat {
         cst::Pat::Wild(_) => fmt.write('_'),
         cst::Pat::Lit(pat) => lit(fmt, pat.lit(fmt.tree).unwrap()),
@@ -1459,11 +1488,18 @@ fn pat_variant(fmt: &mut Formatter, pat: cst::PatVariant) {
     }
 }
 
-fn pat_or(fmt: &mut Formatter, pat_or: cst::PatOr) {
+fn pat_or<'syn>(fmt: &mut Formatter<'syn, '_>, pat_or: cst::PatOr<'syn>) {
+    let wrap = fmt.wrap_line_break_based(pat_or.pats(fmt.tree));
     let mut first = true;
+
     for pat_cst in pat_or.pats(fmt.tree) {
         if !first {
-            fmt.space();
+            if wrap {
+                fmt.new_line();
+                fmt.tab_depth();
+            } else {
+                fmt.space();
+            }
             fmt.write('|');
             fmt.space();
         }

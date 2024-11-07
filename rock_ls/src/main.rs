@@ -235,7 +235,12 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 return;
             }
             let file = session.vfs.file(module.file_id());
-            let formatted = rock_core::format::format(tree, &file.source, &mut context.fmt_cache);
+            let formatted = rock_core::format::format(
+                tree,
+                &file.source,
+                &file.line_ranges,
+                &mut context.fmt_cache,
+            );
 
             //@hack overshoot by 1 line to ignore last line chars
             let end_line = file.line_ranges.len() as u32 + 1;

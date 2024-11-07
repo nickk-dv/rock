@@ -66,11 +66,11 @@ impl TextRange {
         self.end += by;
     }
     #[inline]
-    const fn contains_exclusive(self, offset: TextOffset) -> bool {
+    pub const fn contains_exclusive(self, offset: TextOffset) -> bool {
         offset.0 >= self.start.0 && offset.0 < self.end.0
     }
     #[inline]
-    const fn contains_inclusive(self, offset: TextOffset) -> bool {
+    pub const fn contains_inclusive(self, offset: TextOffset) -> bool {
         offset.0 >= self.start.0 && offset.0 <= self.end.0
     }
 }

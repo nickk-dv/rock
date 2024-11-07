@@ -284,7 +284,7 @@ fn fmt() -> Result<(), Error> {
             let file = session.vfs.file(module.file_id());
 
             let tree = module.tree_expect();
-            let formatted = format::format(tree, &file.source, &mut cache);
+            let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
             fs_env::file_create_or_rewrite(file.path(), &formatted)?;
         }
         Ok(())
