@@ -741,15 +741,15 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_ITEM => Some(SemanticToken::Namespace),
                     SyntaxKind::IMPORT_PATH => Some(SemanticToken::Namespace),
                     SyntaxKind::IMPORT_SYMBOL_LIST => None,
-                    SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Property), //depends
-                    SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Property),
+                    SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Type), //default to type
+                    SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Type), //default to type
 
                     SyntaxKind::GENERIC_PARAMS => Some(SemanticToken::Type),
                     SyntaxKind::GENERIC_TYPES => None,
 
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
-                    SyntaxKind::TYPE_GENERIC => None,
+                    SyntaxKind::TYPE_GENERIC => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_REFERENCE => None,
                     SyntaxKind::TYPE_MULTI_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
@@ -785,7 +785,7 @@ fn semantic_visit_node(
                     SyntaxKind::EXPR_SIZEOF => None,
                     SyntaxKind::EXPR_ITEM => None,
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
-                    SyntaxKind::EXPR_STRUCT_INIT => None, //defer to path
+                    SyntaxKind::EXPR_STRUCT_INIT => Some(SemanticToken::Type),
                     SyntaxKind::FIELD_INIT_LIST => None,
                     SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
                     SyntaxKind::EXPR_ARRAY_INIT => None,
@@ -817,7 +817,7 @@ fn semantic_visit_node(
                     SyntaxKind::RANGE_INCLUSIVE => None,
 
                     SyntaxKind::NAME => ident_style, // use pushed style
-                    SyntaxKind::PATH => Some(SemanticToken::Property),
+                    SyntaxKind::PATH => ident_style.or(Some(SemanticToken::Property)),
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
                     SyntaxKind::BIND_LIST => None,
                     SyntaxKind::ARGS_LIST => None,
