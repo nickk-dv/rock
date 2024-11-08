@@ -18,6 +18,7 @@ const COMMENT_ALIGN_VARIANT: u32 = 24;
 const COMMENT_ALIGN_FIELD: u32 = 24;
 const COMMENT_ALIGN_STMT: u32 = 0;
 const COMMENT_ALIGN_MATCH_ARM: u32 = 0;
+const COMMENT_ALIGN_FIELD_INIT: u32 = 0;
 
 #[must_use]
 pub fn format<'syn>(
@@ -522,7 +523,6 @@ fn attr_param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::AttrPar
             fmt.tab_single();
         }
         first = false;
-
         attr_param(fmt, param);
     }
 
@@ -1272,11 +1272,9 @@ fn expr_match<'syn>(fmt: &mut Formatter<'syn, '_>, match_: cst::ExprMatch<'syn>)
 
     fmt.write('{');
     fmt.new_line();
-
     fmt.tab_inc();
     interleaved_node_list(fmt, match_arm_list.0, match_arm, COMMENT_ALIGN_MATCH_ARM);
     fmt.tab_dec();
-
     fmt.tab_depth();
     fmt.write('}');
 }
@@ -1359,6 +1357,9 @@ fn expr_struct_init<'syn>(fmt: &mut Formatter<'syn, '_>, struct_init: cst::ExprS
     field_init_list(fmt, struct_init.field_init_list(fmt.tree).unwrap());
 }
 
+//@cannot use `content_empty` + `interleaved_node_list` on wrap
+// due to tabbing requirement being deferred to field_init and no way to pass it
+// tabbing isnt done by interleaved_node_list due to args_list existing for some nodes
 fn field_init_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_init_list: cst::FieldInitList<'syn>) {
     if field_init_list.field_inits(fmt.tree).next().is_none() {
         fmt.write('{');
@@ -1367,19 +1368,37 @@ fn field_init_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_init_list: cst::Fi
     }
 
     fmt.write('{');
-    fmt.space();
+    let wrap = fmt.wrap_line_break_based(field_init_list.field_inits(fmt.tree));
+    if wrap {
+        fmt.tab_inc();
+    } else {
+        fmt.space();
+    }
 
     let mut first = true;
     for field_init_cst in field_init_list.field_inits(fmt.tree) {
-        if !first {
+        if wrap {
+            fmt.new_line();
+            fmt.tab_depth();
+            field_init(fmt, field_init_cst);
             fmt.write(',');
-            fmt.space();
+        } else {
+            if !first {
+                fmt.write(',');
+                fmt.space();
+            }
+            first = false;
+            field_init(fmt, field_init_cst);
         }
-        first = false;
-        field_init(fmt, field_init_cst);
     }
 
-    fmt.space();
+    if wrap {
+        fmt.tab_dec();
+        fmt.new_line();
+        fmt.tab_depth();
+    } else {
+        fmt.space();
+    }
     fmt.write('}');
 }
 
