@@ -274,7 +274,7 @@ fn fmt() -> Result<(), Error> {
     return Ok(());
 
     fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
-        //@only parse syntax trees? how to handle bin op prec errors?
+        //@only parse syntax trees for root package, instead of full session & parse
         ast_build::parse_all(session, true)?;
         let mut cache = format::FormatterCache::new();
 

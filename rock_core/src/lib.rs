@@ -1,9 +1,6 @@
 #![deny(unsafe_code)]
 
 pub mod ast;
-//@disabed in favor of
-//syntax tree based ast creation
-//pub mod ast_parse;
 pub mod config;
 pub mod error;
 pub mod errors;

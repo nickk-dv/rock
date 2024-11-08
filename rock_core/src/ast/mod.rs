@@ -31,7 +31,7 @@ pub struct Attr<'ast> {
 #[derive(Copy, Clone)]
 pub struct AttrParam {
     pub name: Name,
-    pub value: Option<(ID<InternLit>, TextRange)>, //@problem uses InternLit!
+    pub value: Option<(ID<InternLit>, TextRange)>,
 }
 
 #[derive(Copy, Clone)]
@@ -328,7 +328,6 @@ pub struct MatchArm<'ast> {
     pub expr: &'ast Expr<'ast>,
 }
 
-//@move path to expr itself + &field init list
 #[derive(Copy, Clone)]
 pub struct StructInit<'ast> {
     pub path: Option<&'ast Path<'ast>>,

@@ -1151,8 +1151,6 @@ fn typecheck_sizeof<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let ty = super::pass_3::type_resolve(ctx, ty, false);
 
-    //@usize semantics not finalized yet
-    // assigning usize type to constant int, since it represents size
     //@review source range for this type_size error 10.05.24
     let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
         Ok(layout) => {

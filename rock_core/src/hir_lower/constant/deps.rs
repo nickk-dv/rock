@@ -603,7 +603,7 @@ fn add_type_size_const_dependencies<'hir>(
     ty: hir::Type<'hir>,
 ) -> Result<(), TreeNodeID<ConstDependency<'hir>>> {
     match ty {
-        hir::Type::Error => {}
+        hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
         hir::Type::Enum(id) => {
             add_enum_size_const_dependency(ctx, tree, parent_id, id)?;
@@ -684,7 +684,7 @@ fn add_type_usage_const_dependencies<'hir>(
     ty: hir::Type<'hir>,
 ) -> Result<(), TreeNodeID<ConstDependency<'hir>>> {
     match ty {
-        hir::Type::Error => {}
+        hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
         hir::Type::Enum(id) => {
             let data = ctx.registry.enum_data(id);
@@ -750,7 +750,6 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
-        //@index or slicing
         ast::ExprKind::Index { target, index } => {
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, index)?;
@@ -773,10 +772,10 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
             Ok(())
         }
-        //@args_list not used
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path) {
                 ValueID::None => Err(parent_id),
+                //@fold panics on direct | indirect calls
                 ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
@@ -785,14 +784,30 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                     }
                     let data = ctx.registry.proc_data(proc_id);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, data.return_ty)?;
+
+                    if let Some(arg_list) = args_list {
+                        for arg in arg_list.exprs {
+                            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, arg)?;
+                        }
+                    }
                     Ok(())
                 }
                 ValueID::Enum(enum_id, variant_id) => {
                     add_variant_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
+                    if let Some(arg_list) = args_list {
+                        for arg in arg_list.exprs {
+                            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, arg)?;
+                        }
+                    }
                     Ok(())
                 }
                 ValueID::Const(const_id, _) => {
                     add_const_var_const_dependency(ctx, tree, parent_id, const_id)?;
+                    if let Some(arg_list) = args_list {
+                        for arg in arg_list.exprs {
+                            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, arg)?;
+                        }
+                    }
                     Ok(())
                 }
                 ValueID::Global(_, _) => {
@@ -833,31 +848,30 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                 }
             }
         }
-        ast::ExprKind::Variant { .. } => {
-            //@no type inference on this `ast name resolve` pass thus cannot infer variant type 14.06.24
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "variant selector");
-            Err(parent_id)
-        }
-        ast::ExprKind::StructInit { struct_init } => match struct_init.path {
-            //@cannot infer struct / enum variant type in constants
-            Some(path) => {
-                if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
-                    let ty = hir::Type::Struct(struct_id);
-                    add_type_usage_const_dependencies(ctx, tree, parent_id, ty)?;
-                    for init in struct_init.input {
-                        add_expr_const_dependencies(ctx, tree, parent_id, origin_id, init.expr)?;
-                    }
-                    Ok(())
-                } else {
-                    Err(parent_id)
+        ast::ExprKind::Variant { args_list, .. } => {
+            if let Some(arg_list) = args_list {
+                for arg in arg_list.exprs {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, arg)?;
                 }
             }
-            None => {
-                let src = SourceRange::new(origin_id, expr.range);
-                err::tycheck_cannot_infer_struct_type(&mut ctx.emit, src);
-                Err(parent_id)
+            Ok(())
+        }
+        ast::ExprKind::StructInit { struct_init } => {
+            //@make sure dependency order is correct for typecheck to work
+            // both with & without known struct type in the struct_init
+            if let Some(path) = struct_init.path {
+                if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
+                    let struct_ty = hir::Type::Struct(struct_id);
+                    add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
+                } else {
+                    return Err(parent_id);
+                }
             }
-        },
+            for init in struct_init.input {
+                add_expr_const_dependencies(ctx, tree, parent_id, origin_id, init.expr)?;
+            }
+            Ok(())
+        }
         ast::ExprKind::ArrayInit { input } => {
             for &expr in input {
                 add_expr_const_dependencies(ctx, tree, parent_id, origin_id, expr)?;
@@ -877,7 +891,29 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
-        ast::ExprKind::Range { range } => todo!("range feature"),
+        ast::ExprKind::Range { range } => {
+            match *range {
+                ast::Range::Full => {}
+                ast::Range::ToExclusive(end) => {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
+                }
+                ast::Range::ToInclusive(end) => {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
+                }
+                ast::Range::From(start) => {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
+                }
+                ast::Range::Exclusive(start, end) => {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
+                }
+                ast::Range::Inclusive(start, end) => {
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
+                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
+                }
+            }
+            Ok(())
+        }
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
