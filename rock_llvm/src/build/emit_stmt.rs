@@ -1,5 +1,6 @@
 use super::context::{Codegen, Expect, ProcCodegen};
 use super::emit_expr;
+use crate::llvm;
 use rock_core::hir;
 
 pub fn codegen_block<'c>(
@@ -147,17 +148,29 @@ fn codegen_local<'c>(
 ) {
     let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
     let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
-    emit_expr::codegen_expr_store(cg, proc_cg, local.init, local_ptr);
+
+    match local.init {
+        hir::LocalInit::Init(expr) => {
+            emit_expr::codegen_expr_store(cg, proc_cg, expr, local_ptr);
+        }
+        hir::LocalInit::Zeroed => {
+            let zero_init = llvm::const_all_zero(cg.ty(local.ty));
+            cg.build.store(zero_init, local_ptr);
+        }
+        hir::LocalInit::Undefined => {}
+    }
 }
 
+//@generates not needed load for tail values
+// values should be fully ignored and not stored anywhere
 fn codegen_discard<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
-    value: &hir::Expr<'c>,
+    value: Option<&hir::Expr<'c>>,
 ) {
-    //@generates not needed load for tail values
-    // values should be fully ignored and not stored anywhere
-    emit_expr::codegen_expr_value_opt(cg, proc_cg, value);
+    if let Some(expr) = value {
+        emit_expr::codegen_expr_value_opt(cg, proc_cg, expr);
+    }
 }
 
 fn codegen_assign<'c>(

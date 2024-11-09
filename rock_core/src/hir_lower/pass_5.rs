@@ -1147,7 +1147,7 @@ fn typecheck_cast<'hir, 'ast>(
                 },
                 BasicTypeKind::Char => match into {
                     BasicType::Char => CastKind::NoOp,
-                    BasicType::U32 => CastKind::NoOp,
+                    BasicType::U32 => CastKind::Char_to_U32,
                     _ => CastKind::Error,
                 },
                 BasicTypeKind::Rawptr => match into {
@@ -1168,15 +1168,15 @@ fn typecheck_cast<'hir, 'ast>(
 
     if let CastKind::Error = cast_kind {
         let src = ctx.src(expr_range);
-        let from_ty = type_format(ctx, from);
+        let from_ty = type_format(ctx, target_res.ty);
         let into_ty = type_format(ctx, into);
         err::tycheck_cast_non_primitive(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
         return TypeResult::error();
     }
 
-    if type_matches(ctx, from, into) {
+    if type_matches(ctx, target_res.ty, into) {
         let src = ctx.src(expr_range);
-        let from_ty = type_format(ctx, from);
+        let from_ty = type_format(ctx, target_res.ty);
         let into_ty = type_format(ctx, into);
         err::tycheck_cast_redundant(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
     }
@@ -2281,7 +2281,7 @@ fn typecheck_loop<'hir, 'ast>(
 enum LocalResult<'hir> {
     Error,
     Local(hir::LocalID<'hir>),
-    Discard(&'hir hir::Expr<'hir>),
+    Discard(Option<&'hir hir::Expr<'hir>>),
 }
 
 fn typecheck_local<'hir, 'ast>(
@@ -2296,35 +2296,58 @@ fn typecheck_local<'hir, 'ast>(
         ast::Binding::Discard(_) => false,
     };
 
-    let (local_ty, expect) = match local.ty.clone() {
+    let (mut local_ty, expect) = match local.ty.clone() {
         Some(ty) => {
             let local_ty = super::pass_3::type_resolve(ctx, ty, false);
             let expect_src = ctx.src(ty.range);
-            let expect = Expectation::HasType(local_ty, Some(expect_src));
-            (Some(local_ty), expect)
+            (
+                Some(local_ty),
+                Expectation::HasType(local_ty, Some(expect_src)),
+            )
         }
         None => (None, Expectation::None),
     };
 
-    let init_res = typecheck_expr(ctx, expect, local.init);
-    let local_ty = local_ty.unwrap_or(init_res.ty);
+    let init = match local.init {
+        ast::LocalInit::Init(expr) => {
+            let init_res = typecheck_expr(ctx, expect, expr);
+            local_ty = local_ty.or(Some(init_res.ty));
+            hir::LocalInit::Init(init_res.expr)
+        }
+        ast::LocalInit::Zeroed(_) => hir::LocalInit::Zeroed,
+        ast::LocalInit::Undefined(_) => hir::LocalInit::Undefined,
+    };
 
     match local.bind {
         ast::Binding::Named(mutt, name) => {
-            if already_defined {
-                LocalResult::Error
+            let ty = if let Some(ty) = local_ty {
+                ty
             } else {
-                let local = hir::Local {
-                    mutt,
-                    name,
-                    ty: local_ty,
-                    init: init_res.expr,
-                };
-                let local_id = ctx.scope.local.add_local(local);
-                LocalResult::Local(local_id)
+                let src = ctx.src(name.range);
+                err::tycheck_cannot_infer_local_type(&mut ctx.emit, src);
+                hir::Type::Error
+            };
+
+            if already_defined {
+                return LocalResult::Error;
             }
+
+            let local = hir::Local {
+                mutt,
+                name,
+                ty,
+                init,
+            };
+            let local_id = ctx.scope.local.add_local(local);
+            LocalResult::Local(local_id)
         }
-        ast::Binding::Discard(_) => LocalResult::Discard(init_res.expr),
+        //allowing discard locals to have no type
+        //@emit a warning for useless variables? eg: let _ = zeroed;
+        ast::Binding::Discard(_) => match init {
+            hir::LocalInit::Init(expr) => LocalResult::Discard(Some(expr)),
+            hir::LocalInit::Zeroed => LocalResult::Discard(None),
+            hir::LocalInit::Undefined => LocalResult::Discard(None),
+        },
     }
 }
 

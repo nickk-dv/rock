@@ -743,7 +743,14 @@ fn stmt_local<'ast>(
     } else {
         None
     };
-    let init = expr(ctx, local.init(ctx.tree).unwrap());
+
+    let init = if let Some(expr_cst) = local.init(ctx.tree) {
+        ast::LocalInit::Init(expr(ctx, expr_cst))
+    } else if let Some(range) = local.t_zeroed(ctx.tree) {
+        ast::LocalInit::Zeroed(range)
+    } else {
+        ast::LocalInit::Undefined(local.t_undefined(ctx.tree).unwrap())
+    };
 
     let local = ast::Local { bind, ty, init };
     ctx.arena.alloc(local)

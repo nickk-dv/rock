@@ -250,7 +250,14 @@ pub enum LoopKind<'ast> {
 pub struct Local<'ast> {
     pub bind: Binding,
     pub ty: Option<Type<'ast>>,
-    pub init: &'ast Expr<'ast>,
+    pub init: LocalInit<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum LocalInit<'ast> {
+    Init(&'ast Expr<'ast>),
+    Zeroed(TextRange),
+    Undefined(TextRange),
 }
 
 #[derive(Copy, Clone)]

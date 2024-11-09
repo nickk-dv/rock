@@ -1151,7 +1151,14 @@ fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
     fmt.space();
     fmt.write('=');
     fmt.space();
-    expr(fmt, stmt.init(fmt.tree).unwrap());
+
+    if stmt.t_zeroed(fmt.tree).is_some() {
+        fmt.write_str("zeroed");
+    } else if stmt.t_undefined(fmt.tree).is_some() {
+        fmt.write_str("undefined");
+    } else {
+        expr(fmt, stmt.init(fmt.tree).unwrap());
+    }
     fmt.write(';');
 }
 

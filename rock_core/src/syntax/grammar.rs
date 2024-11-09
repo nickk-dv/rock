@@ -664,7 +664,9 @@ fn stmt_local(p: &mut Parser) {
         ty(p);
     }
     p.expect(T![=]);
-    expr(p);
+    if !p.eat(T![zeroed]) && !p.eat(T![undefined]) {
+        expr(p);
+    }
     p.expect(T![;]);
     m.complete(p, SyntaxKind::STMT_LOCAL);
 }

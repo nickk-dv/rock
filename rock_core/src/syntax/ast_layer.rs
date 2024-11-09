@@ -1029,6 +1029,8 @@ impl<'syn> StmtLocal<'syn> {
     node_find!(bind, Bind);
     node_find!(ty, Type);
     node_find!(init, Expr);
+    token_find!(t_zeroed, T![zeroed]);
+    token_find!(t_undefined, T![undefined]);
 }
 
 impl<'syn> StmtAssign<'syn> {

@@ -855,7 +855,9 @@ fn semantic_visit_node(
                     | Token::KwDefer
                     | Token::KwFor
                     | Token::KwLet
-                    | Token::KwMut => SemanticToken::Keyword,
+                    | Token::KwMut
+                    | Token::KwZeroed
+                    | Token::KwUndefined => SemanticToken::Keyword,
                     Token::KwNull | Token::KwTrue | Token::KwFalse => SemanticToken::Number,
                     Token::KwIf | Token::KwElse | Token::KwMatch => SemanticToken::Keyword,
                     Token::KwDiscard => SemanticToken::Property,

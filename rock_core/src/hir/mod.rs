@@ -184,7 +184,7 @@ pub enum Stmt<'hir> {
     Defer(&'hir Block<'hir>),
     Loop(&'hir Loop<'hir>),
     Local(LocalID<'hir>),
-    Discard(&'hir Expr<'hir>),
+    Discard(Option<&'hir Expr<'hir>>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
@@ -212,7 +212,7 @@ pub enum LoopKind<'hir> {
 pub enum ForLoopBind<'hir> {
     Error,
     Local(LocalID<'hir>),
-    Discard(&'hir Expr<'hir>),
+    Discard(Option<&'hir Expr<'hir>>),
 }
 
 pub type LocalID<'hir> = ID<Local<'hir>>;
@@ -221,7 +221,14 @@ pub struct Local<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub init: &'hir Expr<'hir>,
+    pub init: LocalInit<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum LocalInit<'hir> {
+    Init(&'hir Expr<'hir>),
+    Zeroed,
+    Undefined,
 }
 
 #[derive(Copy, Clone)]

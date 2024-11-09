@@ -298,6 +298,8 @@ token_gen! {
     [for]      | "for"      | KwFor      | KW.
     [let]      | "let"      | KwLet      | KW.
     [mut]      | "mut"      | KwMut      | KW.
+    [zeroed]   | "zeroed"   | KwZeroed   | KW.
+    [undefined]| "undefined"| KwUndefined| KW.
 
     // keyword expressions
     [null]     | "null"     | KwNull     | KW.

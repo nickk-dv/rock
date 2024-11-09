@@ -868,6 +868,11 @@ pub fn tycheck_defer_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_cannot_infer_local_type(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot infer local type";
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== TYPECHECK UNUSED ====================
 
 pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, expr_kind: &'static str) {
