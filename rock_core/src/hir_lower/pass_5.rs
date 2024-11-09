@@ -42,6 +42,15 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 }
 
 pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
+    // implicit cast:
+    // &T -> rawptr
+    // [&]T -> rawptr
+    match (ty, ty2) {
+        (hir::Type::Basic(BasicType::Rawptr), hir::Type::Reference(_, _)) => return true,
+        (hir::Type::Basic(BasicType::Rawptr), hir::Type::MultiReference(_, _)) => return true,
+        _ => {}
+    }
+
     match (ty, ty2) {
         (hir::Type::Error, _) => true,
         (_, hir::Type::Error) => true,
@@ -56,6 +65,22 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             }
         }
         (hir::Type::MultiReference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
+            if mutt2 == ast::Mut::Mutable {
+                type_matches(ctx, *ref_ty, *ref_ty2)
+            } else {
+                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
+            }
+        }
+        // [&]T -> &T (@does apply recursively!)
+        (hir::Type::Reference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
+            if mutt2 == ast::Mut::Mutable {
+                type_matches(ctx, *ref_ty, *ref_ty2)
+            } else {
+                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
+            }
+        }
+        // &T -> [&]T (@does apply recursively!)
+        (hir::Type::MultiReference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             if mutt2 == ast::Mut::Mutable {
                 type_matches(ctx, *ref_ty, *ref_ty2)
             } else {
