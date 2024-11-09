@@ -42,15 +42,6 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hi
 }
 
 pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
-    // implicit cast:
-    // &T -> rawptr
-    // [&]T -> rawptr
-    match (ty, ty2) {
-        (hir::Type::Basic(BasicType::Rawptr), hir::Type::Reference(_, _)) => return true,
-        (hir::Type::Basic(BasicType::Rawptr), hir::Type::MultiReference(_, _)) => return true,
-        _ => {}
-    }
-
     match (ty, ty2) {
         (hir::Type::Error, _) => true,
         (_, hir::Type::Error) => true,
@@ -1076,13 +1067,32 @@ fn typecheck_cast<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     use hir::CastKind;
     let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let mut from = target_res.ty;
     let into = super::pass_3::type_resolve(ctx, *into, false);
 
-    if target_res.ty.is_error() || into.is_error() {
+    if from.is_error() || into.is_error() {
         return TypeResult::error();
     }
 
-    let cast_kind = match (target_res.ty, into) {
+    match (from, into) {
+        (hir::Type::Enum(enum_id), hir::Type::Basic(into)) => {
+            let enum_data = ctx.registry.enum_data(enum_id);
+            let into_kind = BasicTypeKind::new(into);
+
+            if !enum_data.attr_set.contains(hir::EnumFlag::WithFields)
+                && matches!(into_kind, BasicTypeKind::IntS | BasicTypeKind::IntU)
+            {
+                if let Ok(tag_ty) = enum_data.tag_ty.resolved() {
+                    from = hir::Type::Basic(tag_ty.into_basic());
+                } else {
+                    return TypeResult::error();
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let cast_kind = match (from, into) {
         (hir::Type::Basic(from), hir::Type::Basic(into)) => {
             let from_kind = BasicTypeKind::new(from);
             let into_kind = BasicTypeKind::new(into);
@@ -1130,30 +1140,43 @@ fn typecheck_cast<'hir, 'ast>(
                     }
                     _ => CastKind::Error,
                 },
-                BasicTypeKind::Bool => CastKind::Error,
+                BasicTypeKind::Bool => match into_kind {
+                    BasicTypeKind::Bool => CastKind::NoOp,
+                    BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::IntU_Zero_Extend,
+                    _ => CastKind::Error,
+                },
                 BasicTypeKind::Char => match into {
+                    BasicType::Char => CastKind::NoOp,
                     BasicType::U32 => CastKind::NoOp,
                     _ => CastKind::Error,
                 },
-                BasicTypeKind::Rawptr => CastKind::Error,
-                BasicTypeKind::Void => CastKind::Error,
+                BasicTypeKind::Rawptr => match into {
+                    BasicType::Rawptr => CastKind::NoOp,
+                    _ => CastKind::Error,
+                },
+                BasicTypeKind::Void => match into {
+                    BasicType::Void => CastKind::NoOp,
+                    _ => CastKind::Error,
+                },
                 BasicTypeKind::Never => CastKind::Error,
             }
         }
+        (hir::Type::Reference(_, _), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
+        (hir::Type::MultiReference(_, _), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
         _ => CastKind::Error,
     };
 
     if let CastKind::Error = cast_kind {
         let src = ctx.src(expr_range);
-        let from_ty = type_format(ctx, target_res.ty);
+        let from_ty = type_format(ctx, from);
         let into_ty = type_format(ctx, into);
         err::tycheck_cast_non_primitive(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
         return TypeResult::error();
     }
 
-    if type_matches(ctx, target_res.ty, into) {
+    if type_matches(ctx, from, into) {
         let src = ctx.src(expr_range);
-        let from_ty = type_format(ctx, target_res.ty);
+        let from_ty = type_format(ctx, from);
         let into_ty = type_format(ctx, into);
         err::tycheck_cast_redundant(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
     }

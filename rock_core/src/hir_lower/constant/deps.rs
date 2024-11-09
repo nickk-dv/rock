@@ -732,6 +732,9 @@ fn add_expr_const_dependencies<'hir, 'ast>(
     origin_id: ModuleID,
     expr: &ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID<ConstDependency<'hir>>> {
+    //@check_path uses set origin to report errors
+    ctx.scope.set_origin(origin_id);
+
     match expr.kind {
         ast::ExprKind::Lit { .. } => Ok(()),
         ast::ExprKind::If { .. } => {
