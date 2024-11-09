@@ -190,7 +190,26 @@ fn fold_cast<'hir>(
     }
 
     let target_src = SourceRange::new(src.module_id(), target.range);
-    let target = fold_const_expr(ctx, target_src, target)?;
+    let mut target = fold_const_expr(ctx, target_src, target)?;
+
+    if let hir::ConstValue::Variant { variant } = target {
+        assert!(variant.value_ids.is_empty());
+        let enum_data = ctx.registry.enum_data(variant.enum_id);
+        let variant = enum_data.variant(variant.variant_id);
+
+        // extract variant tag if available
+        target = match variant.kind {
+            hir::VariantKind::Default(id) => {
+                let eval = ctx.registry.variant_eval(id);
+                eval.resolved()?
+            }
+            hir::VariantKind::Constant(id) => {
+                let (eval, _) = ctx.registry.const_eval(id);
+                let value_id = eval.resolved()?;
+                ctx.const_intern.get(value_id)
+            }
+        };
+    }
 
     match kind {
         hir::CastKind::Error => unreachable!(),
@@ -205,19 +224,27 @@ fn fold_cast<'hir>(
         hir::CastKind::IntS_to_Float | hir::CastKind::IntU_to_Float => {
             let val = target.into_int();
             let float_ty = into_float_ty(into);
-            let val_cast = val as f64;
-            float_range_check(ctx, src, val_cast, float_ty)
+            float_range_check(ctx, src, val as f64, float_ty)
         }
         hir::CastKind::Float_to_IntS | hir::CastKind::Float_to_IntU => {
             let val = target.into_float();
             let int_ty = into_int_ty(into);
-            let val_cast = val as i128;
-            int_range_check(ctx, src, val_cast, int_ty)
+            int_range_check(ctx, src, val as i128, int_ty)
         }
         hir::CastKind::Float_Trunc | hir::CastKind::Float_Extend => {
             let val = target.into_float();
             let float_ty = into_float_ty(into);
             float_range_check(ctx, src, val, float_ty)
+        }
+        hir::CastKind::Bool_to_Int => {
+            let val = target.into_bool();
+            let int_ty = into_int_ty(into);
+            int_range_check(ctx, src, val as i128, int_ty)
+        }
+        hir::CastKind::Char_to_U32 => {
+            let val = target.into_char();
+            let int_ty = into_int_ty(into);
+            int_range_check(ctx, src, val as i128, int_ty)
         }
     }
 }
@@ -637,6 +664,12 @@ impl<'hir> hir::ConstValue<'hir> {
     fn into_bool(&self) -> bool {
         match *self {
             hir::ConstValue::Bool { val } => val,
+            _ => unreachable!(),
+        }
+    }
+    fn into_char(&self) -> char {
+        match *self {
+            hir::ConstValue::Char { val } => val,
             _ => unreachable!(),
         }
     }

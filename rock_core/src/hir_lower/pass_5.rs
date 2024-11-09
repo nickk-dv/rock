@@ -1142,7 +1142,7 @@ fn typecheck_cast<'hir, 'ast>(
                 },
                 BasicTypeKind::Bool => match into_kind {
                     BasicTypeKind::Bool => CastKind::NoOp,
-                    BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::IntU_Zero_Extend,
+                    BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::Bool_to_Int,
                     _ => CastKind::Error,
                 },
                 BasicTypeKind::Char => match into {

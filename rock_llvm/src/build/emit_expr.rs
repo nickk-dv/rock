@@ -695,6 +695,8 @@ fn codegen_cast<'c>(
         hir::CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "cast"),
         hir::CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "cast"),
         hir::CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "cast"),
+        hir::CastKind::Bool_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::Char_to_U32 => val,
     }
 }
 

@@ -431,6 +431,8 @@ pub enum CastKind {
     Float_to_IntU,
     Float_Trunc,
     Float_Extend,
+    Bool_to_Int,
+    Char_to_U32,
 }
 
 pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
