@@ -76,7 +76,7 @@ fn codegen_defer_blocks<'c>(
     if defer_range.is_empty() {
         return;
     }
-    for block_idx in defer_range {
+    for block_idx in defer_range.rev() {
         let defer_bb = cg.append_bb(proc_cg, "defer_bb");
         cg.build.br(defer_bb);
         cg.build.position_at_end(defer_bb);

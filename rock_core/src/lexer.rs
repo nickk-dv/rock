@@ -490,6 +490,8 @@ fn lex_number(lex: &mut Lexer, fc: char) {
 
     if lex.at('.') && matches!(lex.peek_next(), Some('0'..='9')) {
         lex.eat('.');
+        lex.buffer.push('.');
+
         skip_num_digits(lex);
         let mut float_error = false;
 
