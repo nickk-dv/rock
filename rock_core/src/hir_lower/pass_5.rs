@@ -2029,6 +2029,11 @@ fn typecheck_block<'hir, 'ast>(
                 check_stmt_diverges(ctx, false, stmt.range);
                 hir::Stmt::Loop(typecheck_loop(ctx, loop_))
             }
+            ast::StmtKind::For(_) => {
+                let src = ctx.src(stmt.range);
+                err::internal_for2_stmt_not_implemented(&mut ctx.emit, src);
+                continue;
+            }
             ast::StmtKind::Local(local) => {
                 //@can diverge any diverging expr inside
                 check_stmt_diverges(ctx, false, stmt.range);

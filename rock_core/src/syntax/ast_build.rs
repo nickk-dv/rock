@@ -667,6 +667,7 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
         }
         cst::Stmt::Defer(defer) => ast::StmtKind::Defer(stmt_defer(ctx, defer)),
         cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
+        cst::Stmt::For(for_) => ast::StmtKind::For(stmt_for(ctx, for_)),
         cst::Stmt::Local(local) => ast::StmtKind::Local(stmt_local(ctx, local)),
         cst::Stmt::Assign(assign) => ast::StmtKind::Assign(stmt_assign(ctx, assign)),
         cst::Stmt::ExprSemi(semi) => {
@@ -731,6 +732,45 @@ fn stmt_loop<'ast>(
     let block = block(ctx, loop_.block(ctx.tree).unwrap());
     let loop_ = ast::Loop { kind, block };
     ctx.arena.alloc(loop_)
+}
+
+fn stmt_for<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    for_: cst::StmtFor,
+) -> &'ast ast::For<'ast> {
+    let header = if let Some(header) = for_.header_cond(ctx.tree) {
+        let expr = expr(ctx, header.expr(ctx.tree).unwrap());
+        ast::ForHeader::Cond(expr)
+    } else if let Some(header) = for_.header_elem(ctx.tree) {
+        let ref_mut = if header.t_ampersand(ctx.tree).is_some() {
+            Some(mutt(header.t_mut(ctx.tree)))
+        } else {
+            None
+        };
+        let value = name(ctx, header.value(ctx.tree).unwrap());
+        let index = header.index(ctx.tree).map(|n| name(ctx, n));
+        let expr = expr(ctx, header.expr(ctx.tree).unwrap());
+
+        let header = ast::ForHeaderElem {
+            ref_mut,
+            value,
+            index,
+            expr,
+        };
+        ast::ForHeader::Elem(ctx.arena.alloc(header))
+    } else if let Some(header) = for_.header_pat(ctx.tree) {
+        let pat = pat(ctx, header.pat(ctx.tree).unwrap());
+        let expr = expr(ctx, header.expr(ctx.tree).unwrap());
+
+        let header = ast::ForHeaderPat { pat, expr };
+        ast::ForHeader::Pat(ctx.arena.alloc(header))
+    } else {
+        ast::ForHeader::Loop
+    };
+
+    let block = block(ctx, for_.block(ctx.tree).unwrap());
+    let for_ = ast::For { header, block };
+    ctx.arena.alloc(for_)
 }
 
 fn stmt_local<'ast>(

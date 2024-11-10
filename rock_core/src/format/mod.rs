@@ -1068,6 +1068,7 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
         cst::Stmt::Return(stmt) => stmt_return(fmt, stmt),
         cst::Stmt::Defer(stmt) => stmt_defer(fmt, stmt),
         cst::Stmt::Loop(stmt) => stmt_loop(fmt, stmt),
+        cst::Stmt::For(stmt) => stmt_for(fmt, stmt),
         cst::Stmt::Local(stmt) => stmt_local(fmt, stmt),
         cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
         cst::Stmt::ExprSemi(stmt) => stmt_expr_semi(fmt, stmt),
@@ -1133,6 +1134,47 @@ fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
         fmt.space();
     }
 
+    block(fmt, stmt.block(fmt.tree).unwrap(), false);
+}
+
+fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
+    fmt.tab_depth();
+    fmt.write_str("for2");
+
+    if let Some(header) = stmt.header_cond(fmt.tree) {
+        fmt.space();
+        expr(fmt, header.expr(fmt.tree).unwrap());
+    } else if let Some(header) = stmt.header_elem(fmt.tree) {
+        fmt.space();
+        if header.t_ampersand(fmt.tree).is_some() {
+            fmt.write('&');
+            if header.t_mut(fmt.tree).is_some() {
+                fmt.write_str("mut");
+                fmt.space();
+            }
+        }
+        name(fmt, header.value(fmt.tree).unwrap());
+        if let Some(name_cst) = header.index(fmt.tree) {
+            fmt.write(',');
+            fmt.space();
+            name(fmt, name_cst)
+        }
+        fmt.space();
+        fmt.write_str("in");
+        fmt.space();
+        expr(fmt, header.expr(fmt.tree).unwrap());
+    } else if let Some(header) = stmt.header_pat(fmt.tree) {
+        fmt.space();
+        fmt.write_str("let");
+        fmt.space();
+        pat(fmt, header.pat(fmt.tree).unwrap());
+        fmt.space();
+        fmt.write('=');
+        fmt.space();
+        expr(fmt, header.expr(fmt.tree).unwrap());
+    }
+
+    fmt.space();
     block(fmt, stmt.block(fmt.tree).unwrap(), false);
 }
 

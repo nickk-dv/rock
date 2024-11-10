@@ -1210,3 +1210,8 @@ pub fn internal_slice_expr_not_implemented(emit: &mut impl ErrorSink, src: Sourc
     let msg = "internal: slice expression not implemented";
     emit.error(Error::new(msg, src, None));
 }
+
+pub fn internal_for2_stmt_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "internal: for2 statement not implemented";
+    emit.error(Error::new(msg, src, None));
+}

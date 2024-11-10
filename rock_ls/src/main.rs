@@ -770,6 +770,10 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_LOOP => None,
                     SyntaxKind::LOOP_WHILE_HEADER => None,
                     SyntaxKind::LOOP_CLIKE_HEADER => None,
+                    SyntaxKind::STMT_FOR => None,
+                    SyntaxKind::FOR_HEADER_COND => None,
+                    SyntaxKind::FOR_HEADER_ELEM => Some(SemanticToken::Variable),
+                    SyntaxKind::FOR_HEADER_PAT => None,
                     SyntaxKind::STMT_LOCAL => None,
                     SyntaxKind::STMT_ASSIGN => None,
                     SyntaxKind::STMT_EXPR_SEMI => None,
@@ -854,6 +858,8 @@ fn semantic_visit_node(
                     | Token::KwReturn
                     | Token::KwDefer
                     | Token::KwFor
+                    | Token::KwFor2
+                    | Token::KwIn
                     | Token::KwLet
                     | Token::KwMut
                     | Token::KwZeroed

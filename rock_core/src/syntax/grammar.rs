@@ -580,6 +580,7 @@ fn stmt(p: &mut Parser) {
         T![return] => stmt_return(p),
         T![defer] => stmt_defer(p),
         T![for] => stmt_loop(p),
+        T![for2] => stmt_for(p),
         T![let] => stmt_local(p),
         T![#] => stmt_attr_stmt(p),
         _ => stmt_assign_or_expr_semi(p),
@@ -654,6 +655,59 @@ fn stmt_loop(p: &mut Parser) {
 
     block_expect(p);
     m.complete(p, SyntaxKind::STMT_LOOP);
+}
+
+fn stmt_for(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![for2]);
+
+    match p.peek() {
+        T!['{'] => {}
+        T![&] => {
+            let mh = p.start();
+            p.bump(T![&]);
+            p.eat(T![mut]);
+            name(p);
+            if p.eat(T![,]) {
+                name(p);
+            }
+            p.expect(T![in]);
+            expr(p);
+            mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+        }
+        T![ident] => {
+            if p.at_next(T![,]) || p.at_next(T![in]) {
+                let mh = p.start();
+                name(p);
+                if p.eat(T![,]) {
+                    name(p);
+                }
+                p.expect(T![in]);
+                expr(p);
+                mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+            } else {
+                let mh = p.start();
+                expr(p);
+                mh.complete(p, SyntaxKind::FOR_HEADER_COND);
+            }
+        }
+        T![let] => {
+            let mh = p.start();
+            p.bump(T![let]);
+            pat(p);
+            p.expect(T![=]);
+            expr(p);
+            mh.complete(p, SyntaxKind::FOR_HEADER_PAT);
+        }
+        _ => {
+            let mh = p.start();
+            expr(p);
+            mh.complete(p, SyntaxKind::FOR_HEADER_COND);
+        }
+    }
+
+    block_expect(p);
+    m.complete(p, SyntaxKind::STMT_FOR);
 }
 
 fn stmt_local(p: &mut Parser) {

@@ -426,6 +426,10 @@ ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
 ast_node_impl!(StmtLoop, SyntaxKind::STMT_LOOP);
 ast_node_impl!(LoopWhileHeader, SyntaxKind::LOOP_WHILE_HEADER);
 ast_node_impl!(LoopCLikeHeader, SyntaxKind::LOOP_CLIKE_HEADER);
+ast_node_impl!(StmtFor, SyntaxKind::STMT_FOR);
+ast_node_impl!(ForHeaderCond, SyntaxKind::FOR_HEADER_COND);
+ast_node_impl!(ForHeaderElem, SyntaxKind::FOR_HEADER_ELEM);
+ast_node_impl!(ForHeaderPat, SyntaxKind::FOR_HEADER_PAT);
 ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
 ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
@@ -566,6 +570,7 @@ pub enum Stmt<'syn> {
     Return(StmtReturn<'syn>),
     Defer(StmtDefer<'syn>),
     Loop(StmtLoop<'syn>),
+    For(StmtFor<'syn>),
     Local(StmtLocal<'syn>),
     Assign(StmtAssign<'syn>),
     ExprSemi(StmtExprSemi<'syn>),
@@ -581,6 +586,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             SyntaxKind::STMT_RETURN => Some(Stmt::Return(StmtReturn(node))),
             SyntaxKind::STMT_DEFER => Some(Stmt::Defer(StmtDefer(node))),
             SyntaxKind::STMT_LOOP => Some(Stmt::Loop(StmtLoop(node))),
+            SyntaxKind::STMT_FOR => Some(Stmt::For(StmtFor(node))),
             SyntaxKind::STMT_LOCAL => Some(Stmt::Local(StmtLocal(node))),
             SyntaxKind::STMT_ASSIGN => Some(Stmt::Assign(StmtAssign(node))),
             SyntaxKind::STMT_EXPR_SEMI => Some(Stmt::ExprSemi(StmtExprSemi(node))),
@@ -596,6 +602,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             Stmt::Return(stmt) => stmt.find_range(tree),
             Stmt::Defer(stmt) => stmt.find_range(tree),
             Stmt::Loop(stmt) => stmt.find_range(tree),
+            Stmt::For(stmt) => stmt.find_range(tree),
             Stmt::Local(stmt) => stmt.find_range(tree),
             Stmt::Assign(stmt) => stmt.find_range(tree),
             Stmt::ExprSemi(stmt) => stmt.find_range(tree),
@@ -1023,6 +1030,30 @@ impl<'syn> LoopCLikeHeader<'syn> {
     node_find!(local, StmtLocal);
     node_find!(cond, Expr);
     node_find!(assign, StmtAssign);
+}
+
+impl<'syn> StmtFor<'syn> {
+    node_find!(header_cond, ForHeaderCond);
+    node_find!(header_elem, ForHeaderElem);
+    node_find!(header_pat, ForHeaderPat);
+    node_find!(block, Block);
+}
+
+impl<'syn> ForHeaderCond<'syn> {
+    node_find!(expr, Expr);
+}
+
+impl<'syn> ForHeaderElem<'syn> {
+    token_find!(t_ampersand, T![&]);
+    token_find!(t_mut, T![mut]);
+    node_before_token!(value, Name, T![,]);
+    node_after_token!(index, Name, T![,]);
+    node_find!(expr, Expr);
+}
+
+impl<'syn> ForHeaderPat<'syn> {
+    node_find!(pat, Pat);
+    node_find!(expr, Expr);
 }
 
 impl<'syn> StmtLocal<'syn> {

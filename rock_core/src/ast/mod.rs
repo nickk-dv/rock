@@ -221,6 +221,7 @@ pub enum StmtKind<'ast> {
     Return(Option<&'ast Expr<'ast>>),
     Defer(&'ast Block<'ast>),
     Loop(&'ast Loop<'ast>),
+    For(&'ast For<'ast>),
     Local(&'ast Local<'ast>),
     Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
@@ -244,6 +245,34 @@ pub enum LoopKind<'ast> {
         cond: &'ast Expr<'ast>,
         assign: &'ast Assign<'ast>,
     },
+}
+
+#[derive(Copy, Clone)]
+pub struct For<'ast> {
+    pub header: ForHeader<'ast>,
+    pub block: Block<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ForHeader<'ast> {
+    Loop,
+    Cond(&'ast Expr<'ast>),
+    Elem(&'ast ForHeaderElem<'ast>),
+    Pat(&'ast ForHeaderPat<'ast>),
+}
+
+#[derive(Copy, Clone)]
+pub struct ForHeaderElem<'ast> {
+    pub ref_mut: Option<Mut>,
+    pub value: Name,
+    pub index: Option<Name>,
+    pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ForHeaderPat<'ast> {
+    pub pat: Pat<'ast>,
+    pub expr: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]
