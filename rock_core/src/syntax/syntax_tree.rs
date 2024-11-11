@@ -3,8 +3,8 @@ use super::syntax_kind::SyntaxKind;
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::session::ModuleID;
-use crate::support::{Arena, BufferOffset, IndexID, TempBuffer, ID};
-use crate::token::{Token, TokenList, Trivia};
+use crate::support::{Arena, BufferOffset, TempBuffer};
+use crate::token::{TokenID, TokenList, Trivia, TriviaID};
 
 pub struct SyntaxTree<'syn> {
     #[allow(unused)]
@@ -14,24 +14,25 @@ pub struct SyntaxTree<'syn> {
     complete: bool,
 }
 
+crate::define_id!(pub NodeID);
 pub struct Node<'syn> {
     pub kind: SyntaxKind,
-    pub content: &'syn [NodeOrToken<'syn>],
+    pub content: &'syn [NodeOrToken],
 }
 
 #[derive(Copy, Clone)]
-pub enum NodeOrToken<'syn> {
-    Node(ID<Node<'syn>>),
-    Token(ID<Token>),
-    Trivia(ID<Trivia>),
+pub enum NodeOrToken {
+    Node(NodeID),
+    Token(TokenID),
+    Trivia(TriviaID),
 }
 
 impl<'syn> SyntaxTree<'syn> {
     pub fn root(&self) -> &Node<'syn> {
-        self.nodes.id_get(ID::new_raw(0))
+        &self.nodes[0]
     }
-    pub fn node(&self, id: ID<Node<'syn>>) -> &Node<'syn> {
-        self.nodes.id_get(id)
+    pub fn node(&self, id: NodeID) -> &Node<'syn> {
+        &self.nodes[id.index()]
     }
     pub fn tokens(&self) -> &TokenList {
         &self.tokens
@@ -98,11 +99,11 @@ struct SyntaxTreeBuild<'syn, 'src> {
 
     arena: Arena<'syn>,
     nodes: Vec<Node<'syn>>,
-    content: TempBuffer<NodeOrToken<'syn>>,
-    node_stack: Vec<(BufferOffset<NodeOrToken<'syn>>, ID<Node<'syn>>)>,
+    content: TempBuffer<NodeOrToken>,
+    node_stack: Vec<(BufferOffset<NodeOrToken>, NodeID)>,
     parent_stack: Vec<SyntaxKind>,
-    curr_token: ID<Token>,
-    curr_trivia: ID<Trivia>,
+    curr_token: TokenID,
+    curr_trivia: TriviaID,
 }
 
 struct NodeTrivia {
@@ -147,8 +148,8 @@ pub fn tree_build<'syn>(
         content: TempBuffer::new(128),
         node_stack: Vec::with_capacity(32),
         parent_stack: Vec::with_capacity(32),
-        curr_token: ID::new_raw(0),
-        curr_trivia: ID::new_raw(0),
+        curr_token: TokenID::new(0),
+        curr_trivia: TriviaID::new(0),
     };
 
     tree_build_impl(&mut build);
@@ -171,7 +172,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
             kind: SyntaxKind::SOURCE_FILE,
             content: &[],
         };
-        let node_id = ID::new(&b.nodes);
+        let node_id = NodeID::new(b.nodes.len());
         let offset = b.content.start();
 
         b.nodes.push(node);
@@ -211,7 +212,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
                 while let Some(kind) = b.parent_stack.pop() {
                     let node = Node { kind, content: &[] };
-                    let node_id = ID::new(&b.nodes);
+                    let node_id = NodeID::new(b.nodes.len());
                     b.content.add(NodeOrToken::Node(node_id));
                     let offset = b.content.start();
 
@@ -227,7 +228,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
             Event::EndNode => {
                 let (offset, node_id) = b.node_stack.pop().unwrap();
                 let node_content = b.content.take(offset, &mut b.arena);
-                b.nodes.id_get_mut(node_id).content = node_content;
+                b.nodes[node_id.index()].content = node_content;
             }
             Event::Token => {
                 let token_trivia = attached_token_trivia(b);
@@ -242,18 +243,18 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
     // SOURCE_FILE EndNode:
     {
-        let n_remaining = b.tokens.trivia_count() - b.curr_trivia.raw_index();
+        let n_remaining = b.tokens.trivia_count() - b.curr_trivia.index();
         eat_n_outher_trivias(b, OutherTrivia(n_remaining));
 
         let (offset, node_id) = b.node_stack.pop().unwrap();
         let node_content = b.content.take(offset, &mut b.arena);
-        b.nodes.id_get_mut(node_id).content = node_content;
+        b.nodes[node_id.index()].content = node_content;
     }
 
     assert!(b.content.is_empty()); // all content has been taken
     assert!(b.node_stack.is_empty()); // each node had start & end event
-    assert_eq!(b.curr_token.raw_index() + 2, b.tokens.token_count()); // all tokens have been consumed (except 2 eof tokens)
-    assert_eq!(b.curr_trivia.raw_index(), b.tokens.trivia_count()); // all trivias have been consumed
+    assert_eq!(b.curr_token.index() + 2, b.tokens.token_count()); // all tokens have been consumed (except 2 eof tokens)
+    assert_eq!(b.curr_trivia.index(), b.tokens.trivia_count()); // all trivias have been consumed
 }
 
 fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia {
@@ -271,8 +272,8 @@ fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia
     let mut inner_count: usize = 0;
     let mut collect_inner = false;
     let token_range = b.tokens.token_range(b.curr_token);
-    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
-    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
+    let remaining_ids = b.curr_trivia.index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(TriviaID::new);
 
     for trivia_id in remaining_ids {
         let (trivia, range) = b.tokens.trivia_and_range(trivia_id);
@@ -325,8 +326,8 @@ fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
     let mut total_count: usize = 0;
     let mut mod_trivia_found = false;
     let token_range = b.tokens.token_range(b.curr_token);
-    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
-    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
+    let remaining_ids = b.curr_trivia.index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(TriviaID::new);
 
     for trivia_id in remaining_ids {
         let (trivia, range) = b.tokens.trivia_and_range(trivia_id);
@@ -364,8 +365,8 @@ fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
 fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
     let mut total_count: usize = 0;
     let token_range = b.tokens.token_range(b.curr_token);
-    let remaining_ids = b.curr_trivia.raw_index()..b.tokens.trivia_count();
-    let remaining_ids = remaining_ids.map(|idx| ID::new_raw(idx));
+    let remaining_ids = b.curr_trivia.index()..b.tokens.trivia_count();
+    let remaining_ids = remaining_ids.map(TriviaID::new);
 
     for trivia_id in remaining_ids {
         let range = b.tokens.trivia_range(trivia_id);
@@ -384,8 +385,8 @@ fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
 
 /// `InnerTrivia` is always considered valid
 fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
-    let trivia_ids = b.curr_trivia.raw_index()..(b.curr_trivia.raw_index() + n_inner.0);
-    let trivia_ids = trivia_ids.map(|idx| ID::new_raw(idx));
+    let trivia_ids = b.curr_trivia.index()..(b.curr_trivia.index() + n_inner.0);
+    let trivia_ids = trivia_ids.map(TriviaID::new);
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
@@ -395,8 +396,8 @@ fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
 
 /// `OutherTrivia` will error on `Doc` or `Mod` comments
 fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
-    let trivia_ids = b.curr_trivia.raw_index()..(b.curr_trivia.raw_index() + n_outher.0);
-    let trivia_ids = trivia_ids.map(|idx| ID::new_raw(idx));
+    let trivia_ids = b.curr_trivia.index()..(b.curr_trivia.index() + n_outher.0);
+    let trivia_ids = trivia_ids.map(TriviaID::new);
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();

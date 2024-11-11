@@ -1,6 +1,6 @@
 use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
-use crate::intern::{InternLit, InternPool};
+use crate::intern::{InternPool, LitID};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 use crate::token::{Token, TokenList, Trivia};
@@ -8,7 +8,7 @@ use std::{iter::Peekable, str::Chars};
 
 pub fn lex<'src, 's>(
     source: &'src str,
-    intern_lit: &'src mut InternPool<'s, InternLit>,
+    intern_lit: &'src mut InternPool<'s, LitID>,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> (TokenList, ErrorBuffer) {
@@ -26,13 +26,13 @@ struct Lexer<'src, 's> {
     source: &'src str,
     module_id: ModuleID,
     with_trivia: bool,
-    intern_lit: &'src mut InternPool<'s, InternLit>,
+    intern_lit: &'src mut InternPool<'s, LitID>,
 }
 
 impl<'src, 's> Lexer<'src, 's> {
     fn new(
         source: &'src str,
-        intern_lit: &'src mut InternPool<'s, InternLit>,
+        intern_lit: &'src mut InternPool<'s, LitID>,
         module_id: ModuleID,
         with_trivia: bool,
     ) -> Lexer<'src, 's> {

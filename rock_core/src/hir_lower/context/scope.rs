@@ -5,9 +5,8 @@ use crate::error::{ErrorWarningBuffer, SourceRange};
 use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::pass_5::Expectation;
-use crate::intern::InternName;
+use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
-use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
@@ -24,8 +23,8 @@ pub struct GlobalScope {
 }
 
 struct ModuleScope {
-    name_id: ID<InternName>,
-    symbols: HashMap<ID<InternName>, Symbol>,
+    name_id: NameID,
+    symbols: HashMap<NameID, Symbol>,
 }
 
 #[derive(Copy, Clone)]
@@ -201,7 +200,7 @@ impl GlobalScope {
         GlobalScope { modules }
     }
 
-    pub fn add_symbol(&mut self, origin_id: ModuleID, name_id: ID<InternName>, symbol: Symbol) {
+    pub fn add_symbol(&mut self, origin_id: ModuleID, name_id: NameID, symbol: Symbol) {
         let module = self.module_mut(origin_id);
         let existing = module.symbols.insert(name_id, symbol);
         assert!(existing.is_none());
@@ -267,11 +266,7 @@ impl GlobalScope {
         Err(())
     }
 
-    pub fn find_defined_proc(
-        &self,
-        target_id: ModuleID,
-        name_id: ID<InternName>,
-    ) -> Option<hir::ProcID> {
+    pub fn find_defined_proc(&self, target_id: ModuleID, name_id: NameID) -> Option<hir::ProcID> {
         let target = self.module(target_id);
         match target.symbols.get(&name_id).copied() {
             Some(Symbol::Defined(SymbolID::Proc(id))) => Some(id),
@@ -282,7 +277,7 @@ impl GlobalScope {
     pub fn find_defined_struct(
         &self,
         target_id: ModuleID,
-        name_id: ID<InternName>,
+        name_id: NameID,
     ) -> Option<hir::StructID> {
         let target = self.module(target_id);
         match target.symbols.get(&name_id).copied() {
@@ -386,7 +381,7 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
-    pub fn find_variable(&self, name_id: ID<InternName>) -> Option<VariableID> {
+    pub fn find_variable(&self, name_id: NameID) -> Option<VariableID> {
         for (idx, param) in self.params.iter().enumerate() {
             if name_id == param.name.id {
                 let param_id = hir::ParamID::new(idx);

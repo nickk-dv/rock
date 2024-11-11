@@ -204,7 +204,7 @@ fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
 }
 
 fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value {
-    let string_idx = string_lit.id.raw_index();
+    let string_idx = string_lit.id.index();
     let global_ptr = cg.string_lits[string_idx].as_ptr();
 
     if string_lit.c_string {

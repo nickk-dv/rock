@@ -1,9 +1,9 @@
 use crate::ast;
 use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
-use crate::intern::InternName;
+use crate::intern::NameID;
 use crate::session::ModuleID;
-use crate::support::{Arena, AsStr, BitSet, IndexID, ID};
+use crate::support::{Arena, AsStr, BitSet};
 use crate::text::TextRange;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -829,7 +829,7 @@ impl<'hir> ProcData<'hir> {
     pub fn local_bind(&self, id: LocalBindID) -> &'hir LocalBind<'hir> {
         &self.local_binds[id.index()]
     }
-    pub fn find_param(&self, id: ID<InternName>) -> Option<(ParamID, &'hir Param<'hir>)> {
+    pub fn find_param(&self, id: NameID) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
                 return Some((ParamID::new(idx), param));

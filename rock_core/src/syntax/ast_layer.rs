@@ -14,7 +14,7 @@ pub trait AstNode<'syn> {
 
 pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
     tree: &'syn SyntaxTree<'syn>,
-    iter: std::slice::Iter<'syn, NodeOrToken<'syn>>,
+    iter: std::slice::Iter<'syn, NodeOrToken>,
     phantom: PhantomData<T>,
 }
 

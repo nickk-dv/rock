@@ -3,21 +3,22 @@ use super::syntax_tree::SyntaxTree;
 use crate::ast;
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
-use crate::intern::{InternLit, InternName, InternPool};
+use crate::intern::{InternPool, NameID};
 use crate::session::{ModuleID, Session};
-use crate::support::{Arena, TempBuffer, ID};
+use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
+use crate::token::{LitCharID, LitFloatID, LitIntID, LitStringID};
 
 struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
     module_id: ModuleID,
-    int_id: ID<u64>,
-    float_id: ID<f64>,
-    char_id: ID<char>,
-    string_id: ID<(ID<InternLit>, bool)>,
+    int_id: LitIntID,
+    float_id: LitFloatID,
+    char_id: LitCharID,
+    string_id: LitStringID,
     source: &'src str,
-    intern_name: &'src mut InternPool<'s, InternName>,
+    intern_name: &'src mut InternPool<'s, NameID>,
     s: &'state mut AstBuildState<'ast>,
 }
 
@@ -46,17 +47,17 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
         module_id: ModuleID,
-        intern_name: &'src mut InternPool<'s, InternName>,
+        intern_name: &'src mut InternPool<'s, NameID>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild {
             arena: Arena::new(),
             tree,
             module_id,
-            int_id: ID::new_raw(0),
-            float_id: ID::new_raw(0),
-            char_id: ID::new_raw(0),
-            string_id: ID::new_raw(0),
+            int_id: LitIntID::new(0),
+            float_id: LitFloatID::new(0),
+            char_id: LitCharID::new(0),
+            string_id: LitStringID::new(0),
             source,
             intern_name,
             s: state,

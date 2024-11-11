@@ -1,47 +1,71 @@
-use crate::support::{Arena, ID};
+use crate::support::Arena;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
-use std::marker::PhantomData;
 
-pub struct InternLit;
-pub struct InternName;
+crate::define_id!(pub LitID);
+crate::define_id!(pub NameID);
 
-pub struct InternPool<'intern, T> {
+pub struct InternPool<'intern, T: InternID> {
     arena: Arena<'intern>,
     values: Vec<&'intern str>,
-    intern_map: HashMap<&'intern str, ID<T>, Fnv1aHasher>,
-    phantom: PhantomData<T>,
+    intern_map: HashMap<&'intern str, T, Fnv1aHasher>,
 }
 
-impl<'intern, T> InternPool<'intern, T> {
+impl<'intern, T: InternID + Copy> InternPool<'intern, T> {
     pub fn new(cap: usize) -> InternPool<'intern, T> {
         InternPool {
             arena: Arena::new(),
             values: Vec::with_capacity(cap),
             intern_map: HashMap::with_capacity_and_hasher(cap, Fnv1aHasher),
-            phantom: PhantomData,
         }
     }
 
-    pub fn intern(&mut self, string: &str) -> ID<T> {
-        if let Some(id) = self.intern_map.get(string).cloned() {
+    pub fn intern(&mut self, string: &str) -> T {
+        if let Some(id) = self.intern_map.get(string).copied() {
             return id;
         }
-        let id = ID::new_raw(self.values.len());
+        let id = T::from_usize(self.values.len());
         let str = self.arena.alloc_str(string);
         self.values.push(str);
         self.intern_map.insert(str, id);
         id
     }
 
-    pub fn get(&self, id: ID<T>) -> &'intern str {
-        self.values[id.raw_index()]
+    pub fn get(&self, id: T) -> &'intern str {
+        self.values[id.into_usize()]
     }
     pub fn get_all(&self) -> &[&'intern str] {
         &self.values
     }
-    pub fn get_id(&self, string: &str) -> Option<ID<T>> {
+    pub fn get_id(&self, string: &str) -> Option<T> {
         self.intern_map.get(string).copied()
+    }
+}
+
+trait InternID {
+    fn from_usize(val: usize) -> Self;
+    fn into_usize(self) -> usize;
+}
+
+impl InternID for LitID {
+    #[inline(always)]
+    fn from_usize(val: usize) -> Self {
+        LitID::new(val)
+    }
+    #[inline(always)]
+    fn into_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl InternID for NameID {
+    #[inline(always)]
+    fn from_usize(val: usize) -> NameID {
+        NameID::new(val)
+    }
+    #[inline(always)]
+    fn into_usize(self) -> usize {
+        self.0 as usize
     }
 }
 

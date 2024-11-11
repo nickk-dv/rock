@@ -6,7 +6,7 @@ pub mod syntax_kind;
 pub mod syntax_tree;
 
 use crate::error::{ErrorBuffer, ErrorSink};
-use crate::intern::{InternLit, InternPool};
+use crate::intern::{InternPool, LitID};
 use crate::lexer;
 use crate::session::ModuleID;
 use parser::Parser;
@@ -14,7 +14,7 @@ use syntax_tree::SyntaxTree;
 
 pub fn parse_tree<'syn>(
     source: &str,
-    intern_lit: &mut InternPool<'_, InternLit>,
+    intern_lit: &mut InternPool<'_, LitID>,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
@@ -34,7 +34,7 @@ pub fn parse_tree<'syn>(
 
 pub fn parse_tree_complete<'syn>(
     source: &str,
-    intern_lit: &mut InternPool<'_, InternLit>,
+    intern_lit: &mut InternPool<'_, LitID>,
     module_id: ModuleID,
     with_trivia: bool,
 ) -> Result<SyntaxTree<'syn>, ErrorBuffer> {

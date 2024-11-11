@@ -5,13 +5,13 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
-use rock_core::intern::{InternLit, InternName, InternPool};
+use rock_core::intern::{InternPool, LitID, NameID};
 
 pub fn codegen_module<'c, 's, 's_ref>(
     hir: hir::Hir<'c>,
     target: TargetTriple,
-    intern_lit: &'s_ref InternPool<'s, InternLit>,
-    intern_name: &'s_ref InternPool<'s, InternName>,
+    intern_lit: &'s_ref InternPool<'s, LitID>,
+    intern_name: &'s_ref InternPool<'s, NameID>,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, intern_lit, intern_name);
     codegen_string_lits(&mut cg);

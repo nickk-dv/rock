@@ -8,7 +8,6 @@ use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, Stri
 use crate::errors as err;
 use crate::hir;
 use crate::session::ModuleID;
-use crate::support::{IndexID, ID};
 use crate::text::TextRange;
 
 #[derive(Copy, Clone, PartialEq)]
@@ -216,16 +215,16 @@ struct Tree<T: PartialEq + Copy + Clone> {
     nodes: Vec<TreeNode<T>>,
 }
 
-type TreeNodeID<T> = ID<TreeNode<T>>;
+crate::define_id!(TreeNodeID);
 struct TreeNode<T: PartialEq + Copy + Clone> {
     value: T,
-    parent: Option<TreeNodeID<T>>,
+    parent: Option<TreeNodeID>,
 }
 
 impl<T: PartialEq + Copy + Clone> Tree<T> {
     #[must_use]
-    fn new_rooted(root: T) -> (Tree<T>, TreeNodeID<T>) {
-        let root_id = TreeNodeID::new_raw(0);
+    fn new_rooted(root: T) -> (Tree<T>, TreeNodeID) {
+        let root_id = TreeNodeID::new(0);
         let tree = Tree {
             nodes: vec![TreeNode {
                 value: root,
@@ -236,8 +235,8 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn add_child(&mut self, parent_id: TreeNodeID<T>, value: T) -> TreeNodeID<T> {
-        let id = TreeNodeID::new(&self.nodes);
+    fn add_child(&mut self, parent_id: TreeNodeID, value: T) -> TreeNodeID {
+        let id = TreeNodeID::new(self.nodes.len());
         self.nodes.push(TreeNode {
             value,
             parent: Some(parent_id),
@@ -246,7 +245,7 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn find_cycle(&self, id: TreeNodeID<T>) -> Option<TreeNodeID<T>> {
+    fn find_cycle(&self, id: TreeNodeID) -> Option<TreeNodeID> {
         let mut node = self.get_node(id);
         let value = node.value;
 
@@ -260,7 +259,7 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn get_values_up_to_node(&self, from_id: TreeNodeID<T>, up_to: TreeNodeID<T>) -> Vec<T> {
+    fn get_values_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
         let mut node = self.get_node(from_id);
         let mut values = vec![node.value];
 
@@ -275,7 +274,7 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn get_values_up_to_root(&self, from_id: TreeNodeID<T>) -> Vec<T> {
+    fn get_values_up_to_root(&self, from_id: TreeNodeID) -> Vec<T> {
         let mut node = self.get_node(from_id);
         let mut values = vec![node.value];
 
@@ -287,8 +286,8 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
     }
 
     #[must_use]
-    fn get_node(&self, id: TreeNodeID<T>) -> &TreeNode<T> {
-        self.nodes.id_get(id)
+    fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
+        &self.nodes[id.index()]
     }
 }
 
@@ -299,9 +298,9 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
 fn check_const_dependency_cycle<'hir>(
     ctx: &mut HirCtx,
     tree: &Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
-    node_id: TreeNodeID<ConstDependency>,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+    parent_id: TreeNodeID,
+    node_id: TreeNodeID,
+) -> Result<(), TreeNodeID> {
     let cycle_id = match tree.find_cycle(node_id) {
         Some(cycle_id) => cycle_id,
         None => return Ok(()),
@@ -424,7 +423,7 @@ fn check_const_dependency_cycle<'hir>(
 fn const_dependencies_mark_error_up_to_root<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &Tree<ConstDependency>,
-    from_id: TreeNodeID<ConstDependency>,
+    from_id: TreeNodeID,
 ) {
     let const_deps = tree.get_values_up_to_root(from_id);
     for dep in const_deps {
@@ -475,10 +474,10 @@ fn const_dependencies_mark_error_up_to_root<'hir>(
 fn add_variant_tag_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     let data = ctx.registry.enum_data(enum_id);
     match data.variant(variant_id).kind {
         hir::VariantKind::Default(eval_id) => {
@@ -535,10 +534,10 @@ fn add_variant_tag_const_dependency<'hir>(
 fn add_variant_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     add_variant_tag_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
 
     let data = ctx.registry.enum_data(enum_id);
@@ -552,9 +551,9 @@ fn add_variant_const_dependency<'hir>(
 fn add_const_var_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     const_id: hir::ConstID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     let data = ctx.registry.const_data(const_id);
     let const_ty = data.ty;
     let eval_id = data.value;
@@ -578,9 +577,9 @@ fn add_const_var_const_dependency<'hir>(
 fn add_array_len_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     eval_id: hir::ConstEvalID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
     match eval {
@@ -599,9 +598,9 @@ fn add_array_len_const_dependency<'hir>(
 fn add_type_size_const_dependencies<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     ty: hir::Type<'hir>,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
@@ -628,9 +627,9 @@ fn add_type_size_const_dependencies<'hir>(
 fn add_enum_size_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     enum_id: hir::EnumID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     let data = ctx.registry.enum_data(enum_id);
 
     match data.layout {
@@ -655,9 +654,9 @@ fn add_enum_size_const_dependency<'hir>(
 fn add_struct_size_const_dependency<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     struct_id: hir::StructID,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     let data = ctx.registry.struct_data(struct_id);
 
     match data.layout {
@@ -680,9 +679,9 @@ fn add_struct_size_const_dependency<'hir>(
 fn add_type_usage_const_dependencies<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     ty: hir::Type<'hir>,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
@@ -728,10 +727,10 @@ fn add_type_usage_const_dependencies<'hir>(
 fn add_expr_const_dependencies<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     tree: &mut Tree<ConstDependency>,
-    parent_id: TreeNodeID<ConstDependency>,
+    parent_id: TreeNodeID,
     origin_id: ModuleID,
     expr: &ast::Expr<'ast>,
-) -> Result<(), TreeNodeID<ConstDependency>> {
+) -> Result<(), TreeNodeID> {
     //@check_path uses set origin to report errors
     ctx.scope.set_origin(origin_id);
 

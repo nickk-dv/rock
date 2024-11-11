@@ -1,12 +1,11 @@
 use super::syntax_kind::SyntaxKind;
 use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
 use crate::session::ModuleID;
-use crate::support::ID;
-use crate::token::{Token, TokenList, TokenSet};
+use crate::token::{Token, TokenID, TokenList, TokenSet};
 use std::cell::Cell;
 
 pub struct Parser {
-    cursor: ID<Token>,
+    cursor: TokenID,
     tokens: TokenList,
     events: Vec<Event>,
     errors: ErrorBuffer,
@@ -37,7 +36,7 @@ pub struct MarkerClosed {
 impl Parser {
     pub fn new(tokens: TokenList, module_id: ModuleID) -> Parser {
         Parser {
-            cursor: ID::new_raw(0),
+            cursor: TokenID::new(0),
             tokens,
             events: Vec::new(),
             errors: ErrorBuffer::default(),

@@ -8,7 +8,7 @@ use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
 use crate::session::{self, ModuleID};
-use crate::support::{AsStr, ID};
+use crate::support::AsStr;
 use crate::text::TextRange;
 
 pub fn typecheck_procedures(ctx: &mut HirCtx) {

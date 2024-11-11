@@ -6,10 +6,9 @@ use crate::config::Config;
 use crate::error::Error;
 use crate::errors as err;
 use crate::fs_env;
-use crate::intern::{InternLit, InternName, InternPool};
+use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
-use crate::support::ID;
 use crate::syntax::syntax_tree::SyntaxTree;
 use graph::PackageGraph;
 use std::path::PathBuf;
@@ -20,8 +19,8 @@ pub struct Session<'s> {
     pub vfs: Vfs,
     pub curr_exe_dir: PathBuf,
     pub curr_work_dir: PathBuf,
-    pub intern_lit: InternPool<'s, InternLit>,
-    pub intern_name: InternPool<'s, InternName>,
+    pub intern_lit: InternPool<'s, LitID>,
+    pub intern_name: InternPool<'s, NameID>,
     pub graph: PackageGraph,
     pub module: Modules<'s>,
     pub stats: BuildStats,
@@ -37,7 +36,7 @@ pub struct Modules<'s> {
 pub struct PackageID(u32);
 pub struct Package {
     root_dir: PathBuf,
-    name_id: ID<InternName>,
+    name_id: NameID,
     src: Directory,
     manifest: Manifest,
     deps: Vec<PackageID>,
@@ -48,14 +47,14 @@ pub struct Package {
 pub struct ModuleID(u32);
 pub struct Module<'s> {
     origin: PackageID,
-    name_id: ID<InternName>,
+    name_id: NameID,
     file_id: FileID,
     tree: Option<SyntaxTree<'s>>,
     ast: Option<Ast<'s>>,
 }
 
 pub struct Directory {
-    name_id: ID<InternName>,
+    name_id: NameID,
     modules: Vec<ModuleID>,
     sub_dirs: Vec<Directory>,
 }
@@ -110,7 +109,7 @@ impl Package {
         &self.root_dir
     }
     #[inline]
-    pub fn name(&self) -> ID<InternName> {
+    pub fn name(&self) -> NameID {
         self.name_id
     }
     #[inline]
@@ -144,7 +143,7 @@ impl<'s> Module<'s> {
         self.origin
     }
     #[inline]
-    pub fn name(&self) -> ID<InternName> {
+    pub fn name(&self) -> NameID {
         self.name_id
     }
     #[inline]
@@ -206,12 +205,12 @@ pub enum ModuleOrDirectory<'s> {
 
 impl Directory {
     #[inline]
-    pub fn name(&self) -> ID<InternName> {
+    pub fn name(&self) -> NameID {
         self.name_id
     }
 
     #[must_use]
-    pub fn find(&self, session: &Session, name_id: ID<InternName>) -> ModuleOrDirectory {
+    pub fn find(&self, session: &Session, name_id: NameID) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
             if session.module.get(module_id).name_id == name_id {
                 return ModuleOrDirectory::Module(module_id);

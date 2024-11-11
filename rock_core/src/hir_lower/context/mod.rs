@@ -3,9 +3,9 @@ pub mod scope;
 
 use crate::error::{ErrorWarningBuffer, SourceRange, WarningBuffer};
 use crate::hir;
-use crate::intern::InternName;
+use crate::intern::NameID;
 use crate::session::Session;
-use crate::support::{Arena, ID};
+use crate::support::Arena;
 use crate::text::TextRange;
 use std::collections::HashMap;
 
@@ -37,7 +37,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
         SourceRange::new(self.scope.origin(), range)
     }
     #[inline]
-    pub fn name(&self, name_id: ID<InternName>) -> &'s str {
+    pub fn name(&self, name_id: NameID) -> &'s str {
         self.session.intern_name.get(name_id)
     }
 

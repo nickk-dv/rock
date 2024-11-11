@@ -1,8 +1,7 @@
 use crate::error::Error;
 use crate::errors as err;
-use crate::intern::{InternName, InternPool};
+use crate::intern::{InternPool, NameID};
 use crate::session::{Package, PackageID};
-use crate::support::ID;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -40,11 +39,7 @@ impl PackageGraph {
     }
 
     #[inline]
-    pub fn find_package_dep(
-        &self,
-        package_id: PackageID,
-        dep_name: ID<InternName>,
-    ) -> Option<PackageID> {
+    pub fn find_package_dep(&self, package_id: PackageID, dep_name: NameID) -> Option<PackageID> {
         let package = self.package(package_id);
         package.deps.iter().copied().find(|&dep_id| {
             let dep = self.package(dep_id);
@@ -75,7 +70,7 @@ impl PackageGraph {
         &mut self,
         from: PackageID,
         to: PackageID,
-        intern_name: &InternPool<'_, InternName>,
+        intern_name: &InternPool<'_, NameID>,
         manifest_path: &PathBuf,
     ) -> Result<(), Error> {
         let mut path = vec![from];
@@ -110,7 +105,7 @@ impl PackageGraph {
     fn cycle_relation_msg(
         &self,
         path: &Vec<PackageID>,
-        intern_name: &InternPool<'_, InternName>,
+        intern_name: &InternPool<'_, NameID>,
     ) -> String {
         let mut msg = String::with_capacity(128);
         let relation_count = path.len() - 1;

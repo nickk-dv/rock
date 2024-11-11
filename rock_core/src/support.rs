@@ -2,7 +2,6 @@ pub use arena::Arena;
 pub use bitset::BitSet;
 pub use temp_buffer::{BufferOffset, TempBuffer};
 pub use timer::Timer;
-pub use typed_id::{IndexID, ID};
 
 #[allow(unsafe_code)]
 mod arena {
@@ -158,117 +157,6 @@ mod temp_buffer {
             let slice = arena.alloc_slice(&self.buffer[offset.idx..]);
             self.buffer.truncate(offset.idx);
             slice
-        }
-    }
-}
-
-mod typed_id {
-    use std::cmp::PartialEq;
-    use std::hash::{Hash, Hasher};
-    use std::marker::PhantomData;
-
-    pub struct ID<T> {
-        raw: u32,
-        phantom: PhantomData<T>,
-    }
-
-    pub trait IndexID<T> {
-        fn len(&self) -> usize;
-        fn id_get(&self, id: ID<T>) -> &T;
-        fn id_get_mut(&mut self, id: ID<T>) -> &mut T;
-    }
-
-    impl<T> ID<T> {
-        pub fn new(values: &impl IndexID<T>) -> ID<T> {
-            ID {
-                raw: values.len() as u32,
-                phantom: PhantomData,
-            }
-        }
-        pub const fn new_raw(index: usize) -> ID<T> {
-            ID {
-                raw: index as u32,
-                phantom: PhantomData,
-            }
-        }
-        pub const fn dummy() -> ID<T> {
-            ID {
-                raw: u32::MAX,
-                phantom: PhantomData,
-            }
-        }
-
-        #[inline]
-        pub const fn raw(self) -> u32 {
-            self.raw
-        }
-        #[inline]
-        pub const fn raw_index(self) -> usize {
-            self.raw as usize
-        }
-
-        #[must_use]
-        pub const fn inc(self) -> ID<T> {
-            let raw = self.raw + 1;
-            ID {
-                raw,
-                phantom: PhantomData,
-            }
-        }
-        #[must_use]
-        pub const fn dec(self) -> ID<T> {
-            assert!(self.raw > 0);
-            let raw = self.raw - 1;
-            ID {
-                raw,
-                phantom: PhantomData,
-            }
-        }
-    }
-
-    impl<T> Copy for ID<T> {}
-
-    impl<T> Clone for ID<T> {
-        fn clone(&self) -> Self {
-            *self
-        }
-    }
-
-    impl<T> Eq for ID<T> {}
-
-    impl<T> PartialEq for ID<T> {
-        fn eq(&self, other: &Self) -> bool {
-            self.raw == other.raw
-        }
-    }
-
-    impl<T> Hash for ID<T> {
-        fn hash<H: Hasher>(&self, state: &mut H) {
-            self.raw.hash(state);
-        }
-    }
-
-    impl<T: Clone> IndexID<T> for [T] {
-        fn len(&self) -> usize {
-            self.len()
-        }
-        fn id_get(&self, id: ID<T>) -> &T {
-            &self[id.raw as usize]
-        }
-        fn id_get_mut(&mut self, id: ID<T>) -> &mut T {
-            &mut self[id.raw as usize]
-        }
-    }
-
-    impl<T> IndexID<T> for Vec<T> {
-        fn len(&self) -> usize {
-            self.len()
-        }
-        fn id_get(&self, id: ID<T>) -> &T {
-            &self[id.raw as usize]
-        }
-        fn id_get_mut(&mut self, id: ID<T>) -> &mut T {
-            &mut self[id.raw as usize]
         }
     }
 }

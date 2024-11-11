@@ -2,8 +2,7 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
-use rock_core::intern::{InternLit, InternName, InternPool};
-use rock_core::support::{IndexID, ID};
+use rock_core::intern::{InternPool, LitID, NameID};
 
 pub struct Codegen<'c, 's, 's_ref> {
     pub target: llvm::IRTarget,
@@ -18,8 +17,8 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
-    pub intern_lit: &'s_ref InternPool<'s, InternLit>,
-    pub intern_name: &'s_ref InternPool<'s, InternName>,
+    pub intern_lit: &'s_ref InternPool<'s, LitID>,
+    pub intern_name: &'s_ref InternPool<'s, NameID>,
     cache: CodegenCache,
 }
 
@@ -53,7 +52,7 @@ pub enum Expect {
     Store(llvm::ValuePtr),
 }
 
-type TailValueID = ID<Option<TailValue>>;
+rock_core::define_id!(pub TailValueID);
 #[derive(Copy, Clone)]
 pub struct TailValue {
     pub value_ptr: llvm::ValuePtr,
@@ -80,8 +79,8 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn new(
         hir: hir::Hir<'c>,
         triple: TargetTriple,
-        intern_lit: &'s_ref InternPool<'s, InternLit>,
-        intern_name: &'s_ref InternPool<'s, InternName>,
+        intern_lit: &'s_ref InternPool<'s, LitID>,
+        intern_name: &'s_ref InternPool<'s, NameID>,
     ) -> Codegen<'c, 's, 's_ref> {
         let target = llvm::IRTarget::new(triple);
         let context = llvm::IRContext::new();
@@ -327,13 +326,13 @@ impl<'c> ProcCodegen<'c> {
     }
 
     pub fn add_tail_value(&mut self) -> TailValueID {
-        let value_id = TailValueID::new(&self.tail_values);
+        let value_id = TailValueID::new(self.tail_values.len());
         self.tail_values.push(None);
         value_id
     }
 
     pub fn tail_value(&self, value_id: TailValueID) -> Option<TailValue> {
-        *self.tail_values.id_get(value_id)
+        self.tail_values[value_id.index()]
     }
 
     pub fn set_tail_value(
@@ -346,7 +345,7 @@ impl<'c> ProcCodegen<'c> {
             value_ptr,
             value_ty,
         };
-        *self.tail_values.id_get_mut(value_id) = Some(value);
+        self.tail_values[value_id.index()] = Some(value);
     }
 }
 

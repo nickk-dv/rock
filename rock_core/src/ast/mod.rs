@@ -1,6 +1,5 @@
-use crate::intern::{InternLit, InternName};
-use crate::support::AsStr;
-use crate::support::{Arena, ID};
+use crate::intern::{LitID, NameID};
+use crate::support::{Arena, AsStr};
 use crate::text::TextRange;
 
 //@breaking change: removed cstring lit state, cstring lit
@@ -31,7 +30,7 @@ pub struct Attr<'ast> {
 #[derive(Copy, Clone)]
 pub struct AttrParam {
     pub name: Name,
-    pub value: Option<(ID<InternLit>, TextRange)>,
+    pub value: Option<(LitID, TextRange)>,
 }
 
 #[derive(Copy, Clone)]
@@ -413,7 +412,7 @@ pub enum Lit {
 
 #[derive(Copy, Clone, PartialEq, Hash)]
 pub struct StringLit {
-    pub id: ID<InternLit>,
+    pub id: LitID,
     pub c_string: bool,
 }
 
@@ -431,7 +430,7 @@ pub enum Range<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Name {
-    pub id: ID<InternName>,
+    pub id: NameID,
     pub range: TextRange,
 }
 

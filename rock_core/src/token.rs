@@ -1,7 +1,13 @@
 use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
-use crate::intern::InternLit;
-use crate::support::{IndexID, ID};
+use crate::intern::LitID;
 use crate::text::TextRange;
+
+crate::define_id!(pub TokenID);
+crate::define_id!(pub TriviaID);
+crate::define_id!(pub LitIntID);
+crate::define_id!(pub LitFloatID);
+crate::define_id!(pub LitCharID);
+crate::define_id!(pub LitStringID);
 
 pub struct TokenList {
     tokens: Vec<Token>,
@@ -11,7 +17,7 @@ pub struct TokenList {
     ints: Vec<u64>,
     floats: Vec<f64>,
     chars: Vec<char>,
-    strings: Vec<(ID<InternLit>, bool)>,
+    strings: Vec<(LitID, bool)>,
 }
 
 #[derive(Clone, Copy)]
@@ -57,43 +63,43 @@ impl TokenList {
         }
     }
 
-    pub fn token(&self, id: ID<Token>) -> Token {
-        *self.tokens.id_get(id)
+    pub fn token(&self, id: TokenID) -> Token {
+        self.tokens[id.index()]
     }
-    pub fn token_range(&self, id: ID<Token>) -> TextRange {
-        self.token_ranges[id.raw_index()]
+    pub fn token_range(&self, id: TokenID) -> TextRange {
+        self.token_ranges[id.index()]
     }
-    pub fn token_and_range(&self, id: ID<Token>) -> (Token, TextRange) {
-        (*self.tokens.id_get(id), self.token_ranges[id.raw_index()])
+    pub fn token_and_range(&self, id: TokenID) -> (Token, TextRange) {
+        (self.tokens[id.index()], self.token_ranges[id.index()])
     }
     pub fn token_count(&self) -> usize {
         self.tokens.len()
     }
 
-    pub fn trivia(&self, id: ID<Trivia>) -> Trivia {
-        *self.trivias.id_get(id)
+    pub fn trivia(&self, id: TriviaID) -> Trivia {
+        self.trivias[id.index()]
     }
-    pub fn trivia_range(&self, id: ID<Trivia>) -> TextRange {
-        self.trivia_ranges[id.raw_index()]
+    pub fn trivia_range(&self, id: TriviaID) -> TextRange {
+        self.trivia_ranges[id.index()]
     }
-    pub fn trivia_and_range(&self, id: ID<Trivia>) -> (Trivia, TextRange) {
-        (*self.trivias.id_get(id), self.trivia_ranges[id.raw_index()])
+    pub fn trivia_and_range(&self, id: TriviaID) -> (Trivia, TextRange) {
+        (self.trivias[id.index()], self.trivia_ranges[id.index()])
     }
     pub fn trivia_count(&self) -> usize {
         self.trivias.len()
     }
 
-    pub fn int(&self, id: ID<u64>) -> u64 {
-        *self.ints.id_get(id)
+    pub fn int(&self, id: LitIntID) -> u64 {
+        self.ints[id.index()]
     }
-    pub fn float(&self, id: ID<f64>) -> f64 {
-        *self.floats.id_get(id)
+    pub fn float(&self, id: LitFloatID) -> f64 {
+        self.floats[id.index()]
     }
-    pub fn char(&self, id: ID<char>) -> char {
-        *self.chars.id_get(id)
+    pub fn char(&self, id: LitCharID) -> char {
+        self.chars[id.index()]
     }
-    pub fn string(&self, id: ID<(ID<InternLit>, bool)>) -> (ID<InternLit>, bool) {
-        *self.strings.id_get(id)
+    pub fn string(&self, id: LitStringID) -> (LitID, bool) {
+        self.strings[id.index()]
     }
 
     pub fn add_token(&mut self, token: Token, range: TextRange) {
@@ -117,7 +123,7 @@ impl TokenList {
         self.add_token(Token::CharLit, range);
         self.chars.push(ch);
     }
-    pub fn add_string(&mut self, id: ID<InternLit>, c_string: bool, range: TextRange) {
+    pub fn add_string(&mut self, id: LitID, c_string: bool, range: TextRange) {
         self.add_token(Token::StringLit, range);
         self.strings.push((id, c_string));
     }

@@ -2,8 +2,7 @@ use super::context::HirCtx;
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink};
 use crate::hir;
-use crate::intern::InternLit;
-use crate::support::ID;
+use crate::intern::LitID;
 use crate::text::TextRange;
 use std::collections::HashSet;
 
@@ -482,7 +481,7 @@ struct PatCovChar {
 
 struct PatCovString {
     wild_covered: bool,
-    covered: Vec<ID<InternLit>>,
+    covered: Vec<LitID>,
 }
 
 struct PatCovEnum {
@@ -604,7 +603,7 @@ impl PatCovString {
         self.covered.clear();
     }
 
-    fn cover(&mut self, new_id: ID<InternLit>) -> Result<(), PatCovError> {
+    fn cover(&mut self, new_id: LitID) -> Result<(), PatCovError> {
         if self.wild_covered {
             Err(PatCovError::CoverFull)
         } else if let Some(_) = self
