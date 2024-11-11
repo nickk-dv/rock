@@ -15,7 +15,7 @@ pub struct HirCtx<'hir, 's, 's_ref> {
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
     pub const_intern: hir::ConstInternPool<'hir>,
-    pub enum_tag_set: HashMap<i128, hir::VariantID<'hir>>,
+    pub enum_tag_set: HashMap<i128, hir::VariantID>,
     pub session: &'s_ref Session<'s>,
 }
 

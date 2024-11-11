@@ -25,7 +25,7 @@ pub fn process_items(ctx: &mut HirCtx) {
     }
 }
 
-pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'hir>) {
+pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     let item = ctx.registry.proc_item(id);
 
@@ -66,7 +66,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID<'
     data.return_ty = return_ty;
 }
 
-fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>) {
+fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     let item = ctx.registry.enum_item(id);
 
@@ -193,7 +193,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID<'hir>
     data.tag_ty = tag_ty;
 }
 
-fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'hir>) {
+fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     let item = ctx.registry.struct_item(id);
 
@@ -227,7 +227,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID<'
     ctx.registry.struct_data_mut(id).fields = fields;
 }
 
-fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID<'hir>) {
+fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID) {
     ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
     let item = ctx.registry.const_item(id);
 
@@ -235,7 +235,7 @@ fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID<'hi
     ctx.registry.const_data_mut(id).ty = ty;
 }
 
-fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID<'hir>) {
+fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID) {
     ctx.scope.set_origin(ctx.registry.global_data(id).origin_id);
     let item = ctx.registry.global_item(id);
 

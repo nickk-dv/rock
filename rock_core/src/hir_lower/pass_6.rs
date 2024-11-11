@@ -36,7 +36,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
     }
 }
 
-fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID<'hir>) {
+fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
     let data = ctx.registry.proc_data_mut(proc_id);
     let main_src = data.src();
     ctx.scope.set_origin(data.origin_id);

@@ -81,7 +81,7 @@ fn fold_struct_field<'hir>(
 
     match target {
         hir::ConstValue::Struct { struct_ } => {
-            let value_id = struct_.value_ids[access.field_id.raw_index()];
+            let value_id = struct_.value_ids[access.field_id.index()];
             Ok(ctx.const_intern.get(value_id))
         }
         _ => unreachable!(),
@@ -263,8 +263,8 @@ fn fold_const_var<'hir>(
 fn fold_variant<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
-    enum_id: hir::EnumID<'hir>,
-    variant_id: hir::VariantID<'hir>,
+    enum_id: hir::EnumID,
+    variant_id: hir::VariantID,
     input: &&[&hir::Expr<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
@@ -297,7 +297,7 @@ fn fold_variant<'hir>(
 fn fold_struct_init<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
-    struct_id: hir::StructID<'hir>,
+    struct_id: hir::StructID,
     input: &[hir::FieldInit<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
@@ -307,7 +307,7 @@ fn fold_struct_init<'hir>(
     for init in input {
         let src = SourceRange::new(src.module_id(), init.expr.range);
         if let Ok(value) = fold_const_expr(ctx, src, init.expr) {
-            value_ids[init.field_id.raw_index()] = ctx.const_intern.intern(value);
+            value_ids[init.field_id.index()] = ctx.const_intern.intern(value);
         } else {
             correct = false;
         }

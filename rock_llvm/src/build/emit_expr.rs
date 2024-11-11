@@ -165,7 +165,7 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
         hir::ConstValue::String { string_lit } => codegen_const_string(cg, string_lit),
-        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.raw_index()].0.as_ptr().as_val(),
+        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
@@ -225,7 +225,7 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
     }
 
     let variant_tag = match hir_variant.kind {
-        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.raw_index()],
+        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
     };
     codegen_const(cg, variant_tag)
@@ -454,15 +454,15 @@ fn codegen_match_enum<'c>(
             hir::Pat::Variant(_, variant_id, bind_ids) => {
                 let variant = enum_data.variant(variant_id);
                 let variant_tag = match variant.kind {
-                    hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.raw_index()],
+                    hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
                     hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
                 };
                 let variant_tag = codegen_const(cg, variant_tag);
                 switch_cases.push((variant_tag, arm_bb));
 
                 if !variant.fields.is_empty() {
-                    let variant_ty = &cg.variants[enum_id.raw_index()];
-                    let variant_ty = variant_ty[variant_id.raw_index()].expect("variant ty");
+                    let variant_ty = &cg.variants[enum_id.index()];
+                    let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
 
                     for bind_id in bind_ids.iter().copied() {
                         let proc_data = cg.hir.proc_data(proc_cg.proc_id);
@@ -475,7 +475,7 @@ fn codegen_match_enum<'c>(
                             field_id,
                             "variant_field_ptr",
                         );
-                        let local_ptr = proc_cg.local_bind_ptrs[bind_id.raw_index()];
+                        let local_ptr = proc_cg.local_bind_ptrs[bind_id.index()];
 
                         if ref_mut.is_some() {
                             cg.build.store(field_ptr.as_val(), local_ptr);
@@ -498,7 +498,7 @@ fn codegen_match_enum<'c>(
                             let variant = enum_data.variant(variant_id);
                             let variant_tag = match variant.kind {
                                 hir::VariantKind::Default(id) => {
-                                    cg.hir.variant_tag_values[id.raw_index()]
+                                    cg.hir.variant_tag_values[id.index()]
                                 }
                                 hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
                             };
@@ -706,7 +706,7 @@ fn codegen_param_var(
     expect: Expect,
     param_id: hir::ParamID,
 ) -> llvm::Value {
-    let param_ptr = proc_cg.param_ptrs[param_id.raw_index()];
+    let param_ptr = proc_cg.param_ptrs[param_id.index()];
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -724,7 +724,7 @@ fn codegen_local_var(
     expect: Expect,
     local_id: hir::LocalID,
 ) -> llvm::Value {
-    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
+    let local_ptr = proc_cg.local_ptrs[local_id.index()];
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -742,7 +742,7 @@ fn codegen_local_bind_var(
     expect: Expect,
     local_bind_id: hir::LocalBindID,
 ) -> llvm::Value {
-    let local_ptr = proc_cg.local_bind_ptrs[local_bind_id.raw_index()];
+    let local_ptr = proc_cg.local_bind_ptrs[local_bind_id.index()];
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -755,11 +755,11 @@ fn codegen_local_bind_var(
 }
 
 fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
-    cg.consts[const_id.raw_index()]
+    cg.consts[const_id.index()]
 }
 
 fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {
-    let global_ptr = cg.globals[global_id.raw_index()].as_ptr();
+    let global_ptr = cg.globals[global_id.index()].as_ptr();
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -786,7 +786,7 @@ fn codegen_variant<'c>(
 
     //@generating each time
     let tag_value = match variant.kind {
-        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.raw_index()],
+        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
     };
     let tag_value = codegen_const(cg, tag_value);
@@ -797,8 +797,8 @@ fn codegen_variant<'c>(
         cg.build.store(tag_value, enum_ptr);
 
         if !variant.fields.is_empty() {
-            let variant_ty = &cg.variants[enum_id.raw_index()];
-            let variant_ty = variant_ty[variant_id.raw_index()].expect("variant ty");
+            let variant_ty = &cg.variants[enum_id.index()];
+            let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
 
             for (idx, expr) in input.iter().enumerate() {
                 let field_ptr =
@@ -836,7 +836,7 @@ fn codegen_call_direct<'c>(
         input_values.push(value);
     }
 
-    let (fn_val, fn_ty) = cg.procs[proc_id.raw_index()];
+    let (fn_val, fn_ty) = cg.procs[proc_id.index()];
     cg.build.call(fn_ty, fn_val, &input_values, "call_val")
 }
 

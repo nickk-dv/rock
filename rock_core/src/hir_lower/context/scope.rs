@@ -13,40 +13,40 @@ use std::collections::HashMap;
 
 pub struct Scope<'hir> {
     origin_id: ModuleID,
-    pub global: GlobalScope<'hir>,
+    pub global: GlobalScope,
     pub local: LocalScope<'hir>,
 }
 
 //==================== GLOBAL SCOPE ====================
 
-pub struct GlobalScope<'hir> {
-    modules: Vec<ModuleScope<'hir>>,
+pub struct GlobalScope {
+    modules: Vec<ModuleScope>,
 }
 
-struct ModuleScope<'hir> {
+struct ModuleScope {
     name_id: ID<InternName>,
-    symbols: HashMap<ID<InternName>, Symbol<'hir>>,
+    symbols: HashMap<ID<InternName>, Symbol>,
 }
 
 #[derive(Copy, Clone)]
-pub enum Symbol<'hir> {
-    Defined(SymbolID<'hir>),
-    Imported(SymbolID<'hir>, TextRange),
+pub enum Symbol {
+    Defined(SymbolID),
+    Imported(SymbolID, TextRange),
     ImportedModule(ModuleID, TextRange),
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolID<'hir> {
-    Proc(hir::ProcID<'hir>),
-    Enum(hir::EnumID<'hir>),
-    Struct(hir::StructID<'hir>),
-    Const(hir::ConstID<'hir>),
-    Global(hir::GlobalID<'hir>),
+pub enum SymbolID {
+    Proc(hir::ProcID),
+    Enum(hir::EnumID),
+    Struct(hir::StructID),
+    Const(hir::ConstID),
+    Global(hir::GlobalID),
 }
 
 #[derive(Copy, Clone)]
-pub enum SymbolOrModule<'hir> {
-    Symbol(SymbolID<'hir>),
+pub enum SymbolOrModule {
+    Symbol(SymbolID),
     Module(ModuleID),
 }
 
@@ -58,15 +58,15 @@ pub struct LocalScope<'hir> {
     blocks: Vec<BlockData>,
     locals: Vec<hir::Local<'hir>>,
     binds: Vec<hir::LocalBind<'hir>>,
-    locals_in_scope: Vec<hir::LocalID<'hir>>,
-    binds_in_scope: Vec<hir::LocalBindID<'hir>>,
+    locals_in_scope: Vec<hir::LocalID>,
+    binds_in_scope: Vec<hir::LocalBindID>,
 }
 
 #[derive(Copy, Clone)]
-pub enum VariableID<'hir> {
-    Param(hir::ParamID<'hir>),
-    Local(hir::LocalID<'hir>),
-    Bind(hir::LocalBindID<'hir>),
+pub enum VariableID {
+    Param(hir::ParamID),
+    Local(hir::LocalID),
+    Bind(hir::LocalBindID),
 }
 
 #[derive(Copy, Clone)]
@@ -158,7 +158,7 @@ impl<'hir> Scope<'hir> {
         Err(())
     }
 
-    fn symbol_src(&self, symbol: Symbol<'hir>, registry: &Registry<'hir, '_>) -> SourceRange {
+    fn symbol_src(&self, symbol: Symbol, registry: &Registry<'hir, '_>) -> SourceRange {
         match symbol {
             Symbol::Defined(symbol_id) => symbol_id.src(registry),
             Symbol::Imported(_, import) => SourceRange::new(self.origin_id, import),
@@ -166,7 +166,7 @@ impl<'hir> Scope<'hir> {
         }
     }
 
-    pub fn var_src(&self, var_id: VariableID<'hir>) -> SourceRange {
+    pub fn var_src(&self, var_id: VariableID) -> SourceRange {
         let range = match var_id {
             VariableID::Param(id) => self.local.param(id).name.range,
             VariableID::Local(id) => self.local.local(id).name.range,
@@ -176,8 +176,8 @@ impl<'hir> Scope<'hir> {
     }
 }
 
-impl<'hir> GlobalScope<'hir> {
-    fn new(session: &Session) -> GlobalScope<'hir> {
+impl GlobalScope {
+    fn new(session: &Session) -> GlobalScope {
         let mut modules = Vec::with_capacity(session.module.ids().count());
 
         for module_id in session.module.ids() {
@@ -201,12 +201,7 @@ impl<'hir> GlobalScope<'hir> {
         GlobalScope { modules }
     }
 
-    pub fn add_symbol(
-        &mut self,
-        origin_id: ModuleID,
-        name_id: ID<InternName>,
-        symbol: Symbol<'hir>,
-    ) {
+    pub fn add_symbol(&mut self, origin_id: ModuleID, name_id: ID<InternName>, symbol: Symbol) {
         let module = self.module_mut(origin_id);
         let existing = module.symbols.insert(name_id, symbol);
         assert!(existing.is_none());
@@ -220,7 +215,7 @@ impl<'hir> GlobalScope<'hir> {
         session: &Session,
         registry: &Registry,
         emit: &mut ErrorWarningBuffer,
-    ) -> Result<SymbolOrModule<'hir>, ()> {
+    ) -> Result<SymbolOrModule, ()> {
         let target = self.module(target_id);
 
         match target.symbols.get(&name.id).copied() {
@@ -276,7 +271,7 @@ impl<'hir> GlobalScope<'hir> {
         &self,
         target_id: ModuleID,
         name_id: ID<InternName>,
-    ) -> Option<hir::ProcID<'hir>> {
+    ) -> Option<hir::ProcID> {
         let target = self.module(target_id);
         match target.symbols.get(&name_id).copied() {
             Some(Symbol::Defined(SymbolID::Proc(id))) => Some(id),
@@ -288,7 +283,7 @@ impl<'hir> GlobalScope<'hir> {
         &self,
         target_id: ModuleID,
         name_id: ID<InternName>,
-    ) -> Option<hir::StructID<'hir>> {
+    ) -> Option<hir::StructID> {
         let target = self.module(target_id);
         match target.symbols.get(&name_id).copied() {
             Some(Symbol::Defined(SymbolID::Struct(id))) => Some(id),
@@ -297,11 +292,11 @@ impl<'hir> GlobalScope<'hir> {
     }
 
     #[inline]
-    fn module(&self, module_id: ModuleID) -> &ModuleScope<'hir> {
+    fn module(&self, module_id: ModuleID) -> &ModuleScope {
         &self.modules[module_id.index()]
     }
     #[inline]
-    fn module_mut(&mut self, module_id: ModuleID) -> &mut ModuleScope<'hir> {
+    fn module_mut(&mut self, module_id: ModuleID) -> &mut ModuleScope {
         &mut self.modules[module_id.index()]
     }
 }
@@ -373,8 +368,8 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
-    pub fn add_local(&mut self, local: hir::Local<'hir>) -> hir::LocalID<'hir> {
-        let local_id = hir::LocalID::new(&self.locals);
+    pub fn add_local(&mut self, local: hir::Local<'hir>) -> hir::LocalID {
+        let local_id = hir::LocalID::new(self.locals.len());
         self.locals.push(local);
         self.locals_in_scope.push(local_id);
         self.current_block_mut().local_count += 1;
@@ -382,8 +377,8 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
-    pub fn add_bind(&mut self, bind: hir::LocalBind<'hir>) -> hir::LocalBindID<'hir> {
-        let bind_id = hir::LocalBindID::new(&self.binds);
+    pub fn add_bind(&mut self, bind: hir::LocalBind<'hir>) -> hir::LocalBindID {
+        let bind_id = hir::LocalBindID::new(self.binds.len());
         self.binds.push(bind);
         self.binds_in_scope.push(bind_id);
         self.current_block_mut().bind_count += 1;
@@ -391,10 +386,10 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
-    pub fn find_variable(&self, name_id: ID<InternName>) -> Option<VariableID<'hir>> {
+    pub fn find_variable(&self, name_id: ID<InternName>) -> Option<VariableID> {
         for (idx, param) in self.params.iter().enumerate() {
             if name_id == param.name.id {
-                let param_id = hir::ParamID::new_raw(idx);
+                let param_id = hir::ParamID::new(idx);
                 return Some(VariableID::Param(param_id));
             }
         }
@@ -435,16 +430,16 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[inline]
-    pub fn param(&self, param_id: hir::ParamID<'hir>) -> &hir::Param<'hir> {
-        self.params.id_get(param_id)
+    pub fn param(&self, param_id: hir::ParamID) -> &hir::Param<'hir> {
+        &self.params[param_id.index()]
     }
     #[inline]
-    pub fn local(&self, local_id: hir::LocalID<'hir>) -> &hir::Local<'hir> {
-        self.locals.id_get(local_id)
+    pub fn local(&self, local_id: hir::LocalID) -> &hir::Local<'hir> {
+        &self.locals[local_id.index()]
     }
     #[inline]
-    pub fn bind(&self, bind_id: hir::LocalBindID<'hir>) -> &hir::LocalBind<'hir> {
-        self.binds.id_get(bind_id)
+    pub fn bind(&self, bind_id: hir::LocalBindID) -> &hir::LocalBind<'hir> {
+        &self.binds[bind_id.index()]
     }
 
     #[inline]
@@ -465,7 +460,7 @@ impl<'hir> LocalScope<'hir> {
     }
 }
 
-impl<'hir> SymbolID<'hir> {
+impl SymbolID {
     pub fn desc(self) -> &'static str {
         match self {
             SymbolID::Proc(_) => "procedure",
@@ -476,7 +471,7 @@ impl<'hir> SymbolID<'hir> {
         }
     }
 
-    pub fn src(self, registry: &Registry<'hir, '_>) -> SourceRange {
+    pub fn src(self, registry: &Registry) -> SourceRange {
         match self {
             SymbolID::Proc(id) => registry.proc_data(id).src(),
             SymbolID::Enum(id) => registry.enum_data(id).src(),
@@ -486,7 +481,7 @@ impl<'hir> SymbolID<'hir> {
         }
     }
 
-    fn vis(self, registry: &Registry<'hir, '_>) -> ast::Vis {
+    fn vis(self, registry: &Registry) -> ast::Vis {
         match self {
             SymbolID::Proc(id) => registry.proc_data(id).vis,
             SymbolID::Enum(id) => registry.enum_data(id).vis,
@@ -497,7 +492,7 @@ impl<'hir> SymbolID<'hir> {
     }
 }
 
-impl<'hir> VariableID<'hir> {
+impl VariableID {
     pub fn desc(self) -> &'static str {
         match self {
             VariableID::Param(_) => "parameter",
@@ -507,15 +502,15 @@ impl<'hir> VariableID<'hir> {
     }
 }
 
-pub fn check_find_enum_variant<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    enum_id: hir::EnumID<'hir>,
+pub fn check_find_enum_variant(
+    ctx: &mut HirCtx,
+    enum_id: hir::EnumID,
     name: ast::Name,
-) -> Option<ID<hir::Variant<'hir>>> {
+) -> Option<hir::VariantID> {
     let enum_data = ctx.registry.enum_data(enum_id);
     for (idx, variant) in enum_data.variants.iter().enumerate() {
         if variant.name.id == name.id {
-            return Some(hir::VariantID::new_raw(idx));
+            return Some(hir::VariantID::new(idx));
         }
     }
     let src = ctx.src(name.range);
@@ -526,15 +521,15 @@ pub fn check_find_enum_variant<'hir>(
     None
 }
 
-pub fn check_find_struct_field<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    struct_id: hir::StructID<'hir>,
+pub fn check_find_struct_field(
+    ctx: &mut HirCtx,
+    struct_id: hir::StructID,
     name: ast::Name,
-) -> Option<ID<hir::Field<'hir>>> {
+) -> Option<hir::FieldID> {
     let struct_data = ctx.registry.struct_data(struct_id);
     for (idx, field) in struct_data.fields.iter().enumerate() {
         if field.name.id == name.id {
-            return Some(hir::FieldID::new_raw(idx));
+            return Some(hir::FieldID::new(idx));
         }
     }
     let src = ctx.src(name.range);

@@ -868,6 +868,11 @@ pub fn tycheck_defer_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_cannot_iter_on_type(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
+    let msg = format!("cannot iterate on value of type `{ty_fmt}`\nonly arrays and slices support by element iteration");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_cannot_infer_local_type(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot infer local type";
     emit.error(Error::new(msg, src, None));
@@ -1208,10 +1213,5 @@ pub fn internal_generic_types_not_implemented(emit: &mut impl ErrorSink, src: So
 
 pub fn internal_slice_expr_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "internal: slice expression not implemented";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn internal_for2_stmt_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "internal: for2 statement not implemented";
     emit.error(Error::new(msg, src, None));
 }

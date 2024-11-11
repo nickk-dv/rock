@@ -6,33 +6,30 @@ use crate::hir;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-struct PathResolved<'hir, 'ast> {
-    kind: PathResolvedKind<'hir>,
+struct PathResolved<'ast> {
+    kind: PathResolvedKind,
     at_name: ast::Name,
     names: &'ast [ast::Name],
 }
 
-enum PathResolvedKind<'hir> {
-    Symbol(SymbolID<'hir>),
-    Variable(VariableID<'hir>),
+enum PathResolvedKind {
+    Symbol(SymbolID),
+    Variable(VariableID),
     Module(ModuleID),
 }
 
-pub enum ValueID<'hir, 'ast> {
+pub enum ValueID<'ast> {
     None,
-    Proc(hir::ProcID<'hir>),
-    Enum(hir::EnumID<'hir>, hir::VariantID<'hir>),
-    Const(hir::ConstID<'hir>, &'ast [ast::Name]),
-    Global(hir::GlobalID<'hir>, &'ast [ast::Name]),
-    Param(hir::ParamID<'hir>, &'ast [ast::Name]),
-    Local(hir::LocalID<'hir>, &'ast [ast::Name]),
-    LocalBind(hir::LocalBindID<'hir>, &'ast [ast::Name]),
+    Proc(hir::ProcID),
+    Enum(hir::EnumID, hir::VariantID),
+    Const(hir::ConstID, &'ast [ast::Name]),
+    Global(hir::GlobalID, &'ast [ast::Name]),
+    Param(hir::ParamID, &'ast [ast::Name]),
+    Local(hir::LocalID, &'ast [ast::Name]),
+    LocalBind(hir::LocalBindID, &'ast [ast::Name]),
 }
 
-fn path_resolve<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path<'ast>,
-) -> Result<PathResolved<'hir, 'ast>, ()> {
+fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
     let name = path.names.get(0).copied().expect("non empty path");
 
     if let Some(var_id) = ctx.scope.local.find_variable(name.id) {
@@ -152,10 +149,7 @@ pub fn path_resolve_type<'hir>(
     ty
 }
 
-pub fn path_resolve_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
-) -> Option<hir::StructID<'hir>> {
+pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::StructID> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return None,
@@ -196,10 +190,10 @@ pub fn path_resolve_struct<'hir>(
     Some(struct_id)
 }
 
-pub fn path_resolve_value<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
+pub fn path_resolve_value<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     path: &ast::Path<'ast>,
-) -> ValueID<'hir, 'ast> {
+) -> ValueID<'ast> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return ValueID::None,

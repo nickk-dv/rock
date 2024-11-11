@@ -16,17 +16,16 @@ pub struct Hir<'hir> {
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
-    pub const_values: Vec<ConstValueID<'hir>>,
+    pub const_values: Vec<ConstValueID>,
     pub variant_tag_values: Vec<ConstValue<'hir>>,
 }
 
 pub struct ConstInternPool<'hir> {
     arena: Arena<'hir>,
     values: Vec<ConstValue<'hir>>,
-    intern_map: HashMap<ConstValue<'hir>, ConstValueID<'hir>>,
+    intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
 }
 
-pub type ProcID<'hir> = ID<ProcData<'hir>>;
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
@@ -39,7 +38,6 @@ pub struct ProcData<'hir> {
     pub local_binds: &'hir [LocalBind<'hir>],
 }
 
-pub type ParamID<'hir> = ID<Param<'hir>>;
 #[derive(Copy, Clone)]
 pub struct Param<'hir> {
     pub mutt: ast::Mut,
@@ -48,7 +46,6 @@ pub struct Param<'hir> {
     pub ty_range: TextRange,
 }
 
-pub type EnumID<'hir> = ID<EnumData<'hir>>;
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<EnumFlag>,
@@ -59,18 +56,16 @@ pub struct EnumData<'hir> {
     pub layout: Eval<(), Layout>,
 }
 
-pub type VariantID<'hir> = ID<Variant<'hir>>;
-pub type VariantFieldID<'hir> = ID<VariantField<'hir>>;
 #[derive(Copy, Clone)]
 pub struct Variant<'hir> {
     pub name: ast::Name,
-    pub kind: VariantKind<'hir>,
+    pub kind: VariantKind,
     pub fields: &'hir [VariantField<'hir>],
 }
 
 #[derive(Copy, Clone)]
-pub enum VariantKind<'hir> {
-    Default(VariantEvalID<'hir>),
+pub enum VariantKind {
+    Default(VariantEvalID),
     Constant(ConstEvalID),
 }
 
@@ -80,10 +75,6 @@ pub struct VariantField<'hir> {
     pub ty_range: TextRange,
 }
 
-pub type VariantEvalID<'hir> = ID<VariantEval<'hir>>;
-pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
-
-pub type StructID<'hir> = ID<StructData<'hir>>;
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<StructFlag>,
@@ -93,7 +84,6 @@ pub struct StructData<'hir> {
     pub layout: Eval<(), Layout>,
 }
 
-pub type FieldID<'hir> = ID<Field<'hir>>;
 #[derive(Copy, Clone)]
 pub struct Field<'hir> {
     pub vis: ast::Vis,
@@ -102,7 +92,6 @@ pub struct Field<'hir> {
     pub ty_range: TextRange,
 }
 
-pub type ConstID<'hir> = ID<ConstData<'hir>>;
 pub struct ConstData<'hir> {
     pub origin_id: ModuleID,
     pub vis: ast::Vis,
@@ -111,7 +100,6 @@ pub struct ConstData<'hir> {
     pub value: ConstEvalID,
 }
 
-pub type GlobalID<'hir> = ID<GlobalData<'hir>>;
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<GlobalFlag>,
@@ -122,7 +110,6 @@ pub struct GlobalData<'hir> {
     pub value: ConstEvalID,
 }
 
-pub type ImportID = ID<ImportData>;
 pub struct ImportData {
     pub origin_id: ModuleID,
 }
@@ -137,8 +124,8 @@ pub struct Layout {
 pub enum Type<'hir> {
     Error,
     Basic(ast::BasicType),
-    Enum(EnumID<'hir>),
-    Struct(StructID<'hir>),
+    Enum(EnumID),
+    Struct(StructID),
     Reference(ast::Mut, &'hir Type<'hir>),
     MultiReference(ast::Mut, &'hir Type<'hir>),
     Procedure(&'hir ProcType<'hir>),
@@ -183,7 +170,8 @@ pub enum Stmt<'hir> {
     Return(Option<&'hir Expr<'hir>>),
     Defer(&'hir Block<'hir>),
     Loop(&'hir Loop<'hir>),
-    Local(LocalID<'hir>),
+    For(&'hir For<'hir>),
+    Local(LocalID),
     Discard(Option<&'hir Expr<'hir>>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
@@ -211,11 +199,43 @@ pub enum LoopKind<'hir> {
 #[derive(Copy, Clone)]
 pub enum ForLoopBind<'hir> {
     Error,
-    Local(LocalID<'hir>),
+    Local(LocalID),
     Discard(Option<&'hir Expr<'hir>>),
 }
 
-pub type LocalID<'hir> = ID<Local<'hir>>;
+#[derive(Copy, Clone)]
+pub struct For<'hir> {
+    pub kind: ForKind<'hir>,
+    pub block: Block<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ForKind<'hir> {
+    Loop,
+    Cond(&'hir Expr<'hir>),
+    Elem(&'hir ForElem<'hir>),
+    Pat(&'hir ForPat),
+}
+
+#[derive(Copy, Clone)]
+pub struct ForElem<'hir> {
+    //some local_id for name
+    //some opt local_id for index
+    pub by_pointer: bool,
+    pub deref: bool,
+    pub elem_ty: Type<'hir>,
+    pub kind: ForElemKind,
+    pub expr: &'hir Expr<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ForElemKind {
+    Slice,
+    Array(ArrayStaticLen),
+}
+
+pub struct ForPat {}
+
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
     pub mutt: ast::Mut,
@@ -252,21 +272,21 @@ pub enum ExprKind<'hir> {
     Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
-    Match        { kind: MatchKind<'hir>, match_: &'hir Match<'hir> },
-    StructField  { target: &'hir Expr<'hir>, access: StructFieldAccess<'hir> },
+    Match        { kind: MatchKind, match_: &'hir Match<'hir> },
+    StructField  { target: &'hir Expr<'hir>, access: StructFieldAccess },
     SliceField   { target: &'hir Expr<'hir>, access: SliceFieldAccess },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    ParamVar     { param_id: ParamID<'hir> },
-    LocalVar     { local_id: LocalID<'hir> },
-    LocalBind    { local_bind_id: LocalBindID<'hir> },
-    ConstVar     { const_id: ConstID<'hir> },
-    GlobalVar    { global_id: GlobalID<'hir> },
-    Variant      { enum_id: EnumID<'hir>, variant_id: VariantID<'hir>, input: &'hir &'hir [&'hir Expr<'hir>] },
-    CallDirect   { proc_id: ProcID<'hir>, input: &'hir [&'hir Expr<'hir>] },
+    ParamVar     { param_id: ParamID },
+    LocalVar     { local_id: LocalID },
+    LocalBind    { local_bind_id: LocalBindID },
+    ConstVar     { const_id: ConstID },
+    GlobalVar    { global_id: GlobalID },
+    Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    StructInit   { struct_id: StructID<'hir>, input: &'hir [FieldInit<'hir>] },
+    StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },
@@ -274,10 +294,6 @@ pub enum ExprKind<'hir> {
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
     Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
 }
-
-pub type ConstEvalID = ID<()>; // avoiding 'ast lifetime propagation
-pub type ConstEval<'hir, 'ast> = Eval<ast::ConstExpr<'ast>, ConstValueID<'hir>>;
-pub type ConstValueID<'hir> = ID<ConstValue<'hir>>;
 
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq)]
@@ -289,30 +305,30 @@ pub enum ConstValue<'hir> {
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
     String      { string_lit: ast::StringLit },
-    Procedure   { proc_id: ProcID<'hir> },
+    Procedure   { proc_id: ProcID },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
-    ArrayRepeat { value: ConstValueID<'hir>, len: u64 },
+    ArrayRepeat { value: ConstValueID, len: u64 },
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstVariant<'hir> {
-    pub enum_id: EnumID<'hir>,
-    pub variant_id: VariantID<'hir>,
-    pub value_ids: &'hir [ConstValueID<'hir>],
+    pub enum_id: EnumID,
+    pub variant_id: VariantID,
+    pub value_ids: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstStruct<'hir> {
-    pub struct_id: StructID<'hir>,
-    pub value_ids: &'hir [ConstValueID<'hir>],
+    pub struct_id: StructID,
+    pub value_ids: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub struct ConstArray<'hir> {
     pub len: u64,
-    pub value_ids: &'hir [ConstValueID<'hir>],
+    pub value_ids: &'hir [ConstValueID],
 }
 
 #[derive(Copy, Clone)]
@@ -330,15 +346,12 @@ pub struct Branch<'hir> {
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum MatchKind<'hir> {
+pub enum MatchKind {
     Int { int_ty: BasicInt },
     Bool,
     Char,
     String,
-    Enum {
-        enum_id: EnumID<'hir>,
-        ref_mut: Option<ast::Mut> 
-    },
+    Enum { enum_id: EnumID, ref_mut: Option<ast::Mut> },
 }
 
 #[derive(Copy, Clone)]
@@ -359,16 +372,16 @@ pub enum Pat<'hir> {
     Error,
     Wild,
     Lit(ConstValue<'hir>),
-    Const(ConstID<'hir>),
-    Variant(EnumID<'hir>, VariantID<'hir>, &'hir [LocalBindID<'hir>]),
+    Const(ConstID),
+    Variant(EnumID, VariantID, &'hir [LocalBindID]),
     Or(&'hir [Pat<'hir>]),
 }
 
 #[derive(Copy, Clone)]
-pub struct StructFieldAccess<'hir> {
+pub struct StructFieldAccess {
     pub deref: Option<ast::Mut>,
-    pub struct_id: StructID<'hir>,
-    pub field_id: FieldID<'hir>,
+    pub struct_id: StructID,
+    pub field_id: FieldID,
 }
 
 #[derive(Copy, Clone)]
@@ -442,13 +455,12 @@ pub enum CastKind {
     Char_to_U32,
 }
 
-pub type LocalBindID<'hir> = ID<LocalBind<'hir>>;
 #[derive(Copy, Clone)]
 pub struct LocalBind<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub field_id: Option<VariantFieldID<'hir>>,
+    pub field_id: Option<VariantFieldID>,
 }
 
 #[derive(Copy, Clone)]
@@ -459,7 +471,7 @@ pub struct CallIndirect<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct FieldInit<'hir> {
-    pub field_id: FieldID<'hir>,
+    pub field_id: FieldID,
     pub expr: &'hir Expr<'hir>,
 }
 
@@ -566,13 +578,35 @@ pub enum AssignOp {
     Bin(BinOp),
 }
 
+//==================== HIR IDS & EVALS ====================
+
+crate::define_id!(pub ProcID);
+crate::define_id!(pub EnumID);
+crate::define_id!(pub StructID);
+crate::define_id!(pub ConstID);
+crate::define_id!(pub GlobalID);
+crate::define_id!(pub ImportID);
+
+crate::define_id!(pub ParamID);
+crate::define_id!(pub LocalID);
+crate::define_id!(pub LocalBindID);
+crate::define_id!(pub VariantID);
+crate::define_id!(pub VariantFieldID);
+crate::define_id!(pub FieldID);
+
+crate::define_id!(pub ConstEvalID);
+crate::define_id!(pub ConstValueID);
+crate::define_id!(pub VariantEvalID);
+
+pub type ConstEval<'hir, 'ast> = Eval<ast::ConstExpr<'ast>, ConstValueID>;
+pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
+
 //==================== SIZE LOCK ====================
 
-use crate::size_lock;
-size_lock!(16, Type);
-size_lock!(16, Stmt);
-size_lock!(32, Expr);
-size_lock!(16, ConstValue);
+crate::size_lock!(16, Type);
+crate::size_lock!(16, Stmt);
+crate::size_lock!(32, Expr);
+crate::size_lock!(16, ConstValue);
 
 //==================== ITEM FLAGS ====================
 
@@ -691,26 +725,26 @@ impl ItemFlag for GlobalFlag {
 //==================== HIR IMPL ====================
 
 impl<'hir> Hir<'hir> {
-    pub fn proc_data(&self, id: ProcID<'hir>) -> &ProcData<'hir> {
-        self.procs.id_get(id)
+    pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
+        &self.procs[id.index()]
     }
-    pub fn enum_data(&self, id: EnumID<'hir>) -> &EnumData<'hir> {
-        self.enums.id_get(id)
+    pub fn enum_data(&self, id: EnumID) -> &EnumData<'hir> {
+        &self.enums[id.index()]
     }
-    pub fn struct_data(&self, id: StructID<'hir>) -> &StructData<'hir> {
-        self.structs.id_get(id)
+    pub fn struct_data(&self, id: StructID) -> &StructData<'hir> {
+        &self.structs[id.index()]
     }
-    pub fn const_data(&self, id: ConstID<'hir>) -> &ConstData<'hir> {
-        self.consts.id_get(id)
+    pub fn const_data(&self, id: ConstID) -> &ConstData<'hir> {
+        &self.consts[id.index()]
     }
-    pub fn global_data(&self, id: GlobalID<'hir>) -> &GlobalData<'hir> {
-        self.globals.id_get(id)
+    pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
+        &self.globals[id.index()]
     }
-    pub fn const_value(&self, id: ConstValueID<'hir>) -> ConstValue<'hir> {
+    pub fn const_value(&self, id: ConstValueID) -> ConstValue<'hir> {
         self.const_intern.get(id)
     }
     pub fn const_eval_value(&self, id: ConstEvalID) -> ConstValue<'hir> {
-        let value_id = self.const_values[id.raw_index()];
+        let value_id = self.const_values[id.index()];
         self.const_intern.get(value_id)
     }
 }
@@ -724,18 +758,18 @@ impl<'hir> ConstInternPool<'hir> {
         }
     }
 
-    pub fn intern(&mut self, value: ConstValue<'hir>) -> ConstValueID<'hir> {
+    pub fn intern(&mut self, value: ConstValue<'hir>) -> ConstValueID {
         if let Some(id) = self.intern_map.get(&value).cloned() {
             return id;
         }
-        let id = ConstValueID::new(&self.values);
+        let id = ConstValueID::new(self.values.len());
         self.values.push(value);
         self.intern_map.insert(value, id);
         id
     }
 
-    pub fn get(&self, id: ConstValueID<'hir>) -> ConstValue<'hir> {
-        *self.values.id_get(id)
+    pub fn get(&self, id: ConstValueID) -> ConstValue<'hir> {
+        self.values[id.index()]
     }
     pub fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.arena
@@ -786,19 +820,19 @@ impl<'hir> ProcData<'hir> {
     pub fn src(&self) -> SourceRange {
         SourceRange::new(self.origin_id, self.name.range)
     }
-    pub fn param(&self, id: ParamID<'hir>) -> &'hir Param<'hir> {
-        self.params.id_get(id)
+    pub fn param(&self, id: ParamID) -> &'hir Param<'hir> {
+        &self.params[id.index()]
     }
-    pub fn local(&self, id: LocalID<'hir>) -> &'hir Local<'hir> {
-        self.locals.id_get(id)
+    pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
+        &self.locals[id.index()]
     }
-    pub fn local_bind(&self, id: LocalBindID<'hir>) -> &'hir LocalBind<'hir> {
-        self.local_binds.id_get(id)
+    pub fn local_bind(&self, id: LocalBindID) -> &'hir LocalBind<'hir> {
+        &self.local_binds[id.index()]
     }
-    pub fn find_param(&self, id: ID<InternName>) -> Option<(ParamID<'hir>, &'hir Param<'hir>)> {
+    pub fn find_param(&self, id: ID<InternName>) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
-                return Some((ParamID::new_raw(idx), param));
+                return Some((ParamID::new(idx), param));
             }
         }
         None
@@ -809,18 +843,18 @@ impl<'hir> EnumData<'hir> {
     pub fn src(&self) -> SourceRange {
         SourceRange::new(self.origin_id, self.name.range)
     }
-    pub fn variant(&self, id: VariantID<'hir>) -> &'hir Variant<'hir> {
-        self.variants.id_get(id)
+    pub fn variant(&self, id: VariantID) -> &'hir Variant<'hir> {
+        &self.variants[id.index()]
     }
 }
 
 impl<'hir> Variant<'hir> {
-    pub fn field(&self, id: VariantFieldID<'hir>) -> &'hir VariantField<'hir> {
-        self.fields.id_get(id)
+    pub fn field(&self, id: VariantFieldID) -> &'hir VariantField<'hir> {
+        &self.fields[id.index()]
     }
-    pub fn field_id(&self, idx: usize) -> Option<VariantFieldID<'hir>> {
+    pub fn field_id(&self, idx: usize) -> Option<VariantFieldID> {
         if idx < self.fields.len() {
-            Some(VariantFieldID::new_raw(idx))
+            Some(VariantFieldID::new(idx))
         } else {
             None
         }
@@ -831,8 +865,8 @@ impl<'hir> StructData<'hir> {
     pub fn src(&self) -> SourceRange {
         SourceRange::new(self.origin_id, self.name.range)
     }
-    pub fn field(&self, id: FieldID<'hir>) -> &'hir Field<'hir> {
-        self.fields.id_get(id)
+    pub fn field(&self, id: FieldID) -> &'hir Field<'hir> {
+        &self.fields[id.index()]
     }
 }
 
@@ -1056,5 +1090,41 @@ impl BinOp {
             BinOp::LogicAnd => "&&",
             BinOp::LogicOr => "||",
         }
+    }
+}
+
+//@REMOVE BEFORE PUSH
+mod example {
+    use crate::ast;
+    use crate::hir::*;
+
+    struct VariableID(u32);
+    struct Variable<'hir> {
+        mutt: ast::Mut,
+        name: ast::Name,
+        ty: Type<'hir>,
+    }
+
+    #[derive(Copy, Clone)]
+    pub enum LocalInit<'hir> {
+        Init(&'hir Expr<'hir>),
+        Zeroed,
+        Undefined,
+    }
+
+    struct Param {
+        pub var_id: VariableID,
+        pub ty_range: TextRange,
+    }
+    struct Local<'hir> {
+        pub var_id: VariableID,
+        pub init: LocalInit<'hir>,
+    }
+    struct PatBind {
+        pub var_id: VariableID,
+        pub field_id: Option<VariantFieldID>,
+    }
+    struct ForBind {
+        pub var_id: VariableID,
     }
 }

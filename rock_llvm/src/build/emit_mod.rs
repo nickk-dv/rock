@@ -45,7 +45,7 @@ fn codegen_string_lits(cg: &mut Codegen) {
 }
 
 fn codegen_enum_types(cg: &mut Codegen) {
-    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
+    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
         let enum_data = cg.hir.enum_data(enum_id);
 
         let enum_ty = if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
@@ -90,7 +90,7 @@ fn codegen_struct_types(cg: &mut Codegen) {
 
 //@non optimized memory storage for variant type info
 fn codegen_variant_types(cg: &mut Codegen) {
-    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new_raw) {
+    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
         let enum_data = cg.hir.enum_data(enum_id);
 
         if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
@@ -206,7 +206,7 @@ fn codegen_function_bodies(cg: &Codegen) {
         };
 
         let fn_val = cg.procs[proc_idx].0;
-        let proc_id = hir::ProcID::new_raw(proc_idx);
+        let proc_id = hir::ProcID::new(proc_idx);
         //@re-use, reduce allocations
         let mut proc_cg = ProcCodegen::new(proc_id, fn_val);
 

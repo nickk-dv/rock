@@ -8,7 +8,7 @@ use crate::text::TextRange;
 use std::collections::HashSet;
 
 //@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
-pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind<'hir>, bool> {
+pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
         hir::Type::Basic(basic) => {
@@ -366,7 +366,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
 
 fn match_cov_enum<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    cov: &mut PatCovEnum<'hir>,
+    cov: &mut PatCovEnum,
     arms: &mut [hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
@@ -410,7 +410,7 @@ fn match_cov_enum<'hir>(
 
 fn pat_cov_enum<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    cov: &mut PatCovEnum<'hir>,
+    cov: &mut PatCovEnum,
     pat: hir::Pat<'hir>,
     pat_range: TextRange,
     enum_id: hir::EnumID,
@@ -461,12 +461,12 @@ trait PatCoverage<T> {
     fn not_covered(&mut self) -> &[T];
 }
 
-struct PatCov<'hir> {
+struct PatCov {
     cov_int: PatCovInt<i128>,
     cov_bool: PatCovBool,
     cov_char: PatCovChar,
     cov_string: PatCovString,
-    cov_enum: PatCovEnum<'hir>,
+    cov_enum: PatCovEnum,
 }
 
 struct PatCovBool {
@@ -485,14 +485,14 @@ struct PatCovString {
     covered: Vec<ID<InternLit>>,
 }
 
-struct PatCovEnum<'hir> {
+struct PatCovEnum {
     wild_covered: bool,
-    covered: HashSet<hir::VariantID<'hir>>,
-    not_covered: Vec<hir::VariantID<'hir>>,
+    covered: HashSet<hir::VariantID>,
+    not_covered: Vec<hir::VariantID>,
 }
 
-impl<'hir> PatCov<'hir> {
-    fn new() -> PatCov<'hir> {
+impl PatCov {
+    fn new() -> PatCov {
         PatCov {
             cov_int: PatCovInt::new(),
             cov_bool: PatCovBool::new(),
@@ -634,8 +634,8 @@ impl PatCovString {
     }
 }
 
-impl<'hir> PatCovEnum<'hir> {
-    fn new() -> PatCovEnum<'hir> {
+impl PatCovEnum {
+    fn new() -> PatCovEnum {
         PatCovEnum {
             wild_covered: false,
             covered: HashSet::with_capacity(32),
@@ -655,7 +655,7 @@ impl<'hir> PatCovEnum<'hir> {
 
     fn cover(
         &mut self,
-        variant_id: hir::VariantID<'hir>,
+        variant_id: hir::VariantID,
         variant_count: usize,
     ) -> Result<(), PatCovError> {
         if self.all_covered(variant_count) {
@@ -677,12 +677,12 @@ impl<'hir> PatCovEnum<'hir> {
         }
     }
 
-    fn not_covered(&mut self, variant_count: usize) -> &[hir::VariantID<'hir>] {
+    fn not_covered(&mut self, variant_count: usize) -> &[hir::VariantID] {
         if self.all_covered(variant_count) {
             &[]
         } else {
             let each_idx = 0..variant_count;
-            let variant_iter = each_idx.map(|idx| hir::VariantID::new_raw(idx));
+            let variant_iter = each_idx.map(|idx| hir::VariantID::new(idx));
             for variant_id in variant_iter {
                 if !self.covered.contains(&variant_id) {
                     self.not_covered.push(variant_id);

@@ -24,7 +24,7 @@ pub struct Codegen<'c, 's, 's_ref> {
 }
 
 pub struct ProcCodegen<'c> {
-    pub proc_id: hir::ProcID<'c>,
+    pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub local_ptrs: Vec<llvm::ValuePtr>,
@@ -157,11 +157,11 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     }
 
     pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
-        self.enums[enum_id.raw_index()]
+        self.enums[enum_id.index()]
     }
 
     pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::TypeStruct {
-        self.structs[struct_id.raw_index()]
+        self.structs[struct_id.index()]
     }
 
     pub fn ptr_type(&self) -> llvm::Type {
@@ -251,7 +251,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
 }
 
 impl<'c> ProcCodegen<'c> {
-    pub fn new(proc_id: hir::ProcID<'c>, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
+    pub fn new(proc_id: hir::ProcID, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
         ProcCodegen {
             proc_id,
             fn_val,

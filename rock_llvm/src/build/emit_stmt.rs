@@ -32,6 +32,7 @@ fn codegen_stmt<'c>(
         hir::Stmt::Return(expr) => codegen_return(cg, proc_cg, expr),
         hir::Stmt::Defer(block) => proc_cg.add_defer_block(*block),
         hir::Stmt::Loop(loop_) => codegen_loop(cg, proc_cg, loop_),
+        hir::Stmt::For(for_) => codegen_for(cg, proc_cg, for_),
         hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
         hir::Stmt::Discard(value) => codegen_discard(cg, proc_cg, value),
         hir::Stmt::Assign(assign) => codegen_assign(cg, proc_cg, assign),
@@ -141,13 +142,15 @@ fn codegen_loop<'c>(
     cg.build.position_at_end(exit_bb);
 }
 
+fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_: &hir::For<'c>) {}
+
 fn codegen_local<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
-    local_id: hir::LocalID<'c>,
+    local_id: hir::LocalID,
 ) {
     let local = cg.hir.proc_data(proc_cg.proc_id).local(local_id);
-    let local_ptr = proc_cg.local_ptrs[local_id.raw_index()];
+    let local_ptr = proc_cg.local_ptrs[local_id.index()];
 
     match local.init {
         hir::LocalInit::Init(expr) => {

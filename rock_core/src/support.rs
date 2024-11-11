@@ -337,6 +337,49 @@ macro_rules! size_lock {
     };
 }
 
+/// generate named ID type
+#[macro_export]
+macro_rules! define_id {
+    ($vis:vis $name:ident) => {
+        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+        $vis struct $name(u32);
+
+        impl $name {
+            #[must_use]
+            #[inline(always)]
+            $vis fn new(index: usize) -> $name {
+                $name(index as u32)
+            }
+            #[must_use]
+            #[inline(always)]
+            $vis fn dummy() -> $name {
+                $name(u32::MAX)
+            }
+            #[must_use]
+            #[inline(always)]
+            $vis fn raw(self) -> u32 {
+                self.0
+            }
+            #[must_use]
+            #[inline(always)]
+            $vis fn index(self) -> usize {
+                self.0 as usize
+            }
+            #[must_use]
+            #[inline(always)]
+            $vis fn inc(self) -> $name {
+                $name(self.0 + 1)
+            }
+            #[must_use]
+            #[inline(always)]
+            $vis fn dec(self) -> $name {
+                assert!(self.0 != 0);
+                $name(self.0 - 1)
+            }
+        }
+    }
+}
+
 /// multi-purpose trait designed for enums:  
 /// `const ALL` slice of all variants.  
 /// `fn as_str()` convert enum to string.  

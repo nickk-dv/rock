@@ -1,7 +1,6 @@
 use crate::ast;
 use crate::hir;
 use crate::session::{ModuleID, Session};
-use crate::support::IndexID;
 
 pub struct Registry<'hir, 'ast> {
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
@@ -78,8 +77,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ProcItem<'ast>,
         data: hir::ProcData<'hir>,
-    ) -> hir::ProcID<'hir> {
-        let id = hir::ProcID::new(&self.hir_procs);
+    ) -> hir::ProcID {
+        let id = hir::ProcID::new(self.hir_procs.len());
         self.ast_procs.push(item);
         self.hir_procs.push(data);
         id
@@ -89,8 +88,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::EnumItem<'ast>,
         data: hir::EnumData<'hir>,
-    ) -> hir::EnumID<'hir> {
-        let id = hir::EnumID::new(&self.hir_enums);
+    ) -> hir::EnumID {
+        let id = hir::EnumID::new(self.hir_enums.len());
         self.ast_enums.push(item);
         self.hir_enums.push(data);
         id
@@ -100,8 +99,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::StructItem<'ast>,
         data: hir::StructData<'hir>,
-    ) -> hir::StructID<'hir> {
-        let id = hir::StructID::new(&self.hir_structs);
+    ) -> hir::StructID {
+        let id = hir::StructID::new(self.hir_structs.len());
         self.ast_structs.push(item);
         self.hir_structs.push(data);
         id
@@ -111,8 +110,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::ConstItem<'ast>,
         data: hir::ConstData<'hir>,
-    ) -> hir::ConstID<'hir> {
-        let id = hir::ConstID::new(&self.hir_consts);
+    ) -> hir::ConstID {
+        let id = hir::ConstID::new(self.hir_consts.len());
         self.ast_consts.push(item);
         self.hir_consts.push(data);
         id
@@ -122,8 +121,8 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
         data: hir::GlobalData<'hir>,
-    ) -> hir::GlobalID<'hir> {
-        let id = hir::GlobalID::new(&self.hir_globals);
+    ) -> hir::GlobalID {
+        let id = hir::GlobalID::new(self.hir_globals.len());
         self.ast_globals.push(item);
         self.hir_globals.push(data);
         id
@@ -134,7 +133,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         item: &'ast ast::ImportItem<'ast>,
         data: hir::ImportData,
     ) -> hir::ImportID {
-        let id = hir::ImportID::new(&self.hir_imports);
+        let id = hir::ImportID::new(self.hir_imports.len());
         self.ast_imports.push(item);
         self.hir_imports.push(data);
         id
@@ -145,110 +144,107 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         const_expr: ast::ConstExpr<'ast>,
         origin_id: ModuleID,
     ) -> hir::ConstEvalID {
-        let id = hir::ConstEvalID::new_raw(self.const_evals.len());
+        let id = hir::ConstEvalID::new(self.const_evals.len());
         let eval = hir::ConstEval::Unresolved(const_expr);
         self.const_evals.push((eval, origin_id));
         id
     }
 
-    pub fn add_variant_eval(&mut self) -> hir::VariantEvalID<'hir> {
-        let id = hir::VariantEvalID::new(&self.variant_evals);
+    pub fn add_variant_eval(&mut self) -> hir::VariantEvalID {
+        let id = hir::VariantEvalID::new(self.variant_evals.len());
         let eval = hir::VariantEval::Unresolved(());
         self.variant_evals.push(eval);
         id
     }
 
-    pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID<'hir>> {
-        (0..self.hir_procs.len()).map(hir::ProcID::new_raw)
+    pub fn proc_ids(&self) -> impl Iterator<Item = hir::ProcID> {
+        (0..self.hir_procs.len()).map(hir::ProcID::new)
     }
-    pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID<'hir>> {
-        (0..self.hir_enums.len()).map(hir::EnumID::new_raw)
+    pub fn enum_ids(&self) -> impl Iterator<Item = hir::EnumID> {
+        (0..self.hir_enums.len()).map(hir::EnumID::new)
     }
-    pub fn struct_ids(&self) -> impl Iterator<Item = hir::StructID<'hir>> {
-        (0..self.hir_structs.len()).map(hir::StructID::new_raw)
+    pub fn struct_ids(&self) -> impl Iterator<Item = hir::StructID> {
+        (0..self.hir_structs.len()).map(hir::StructID::new)
     }
-    pub fn const_ids(&self) -> impl Iterator<Item = hir::ConstID<'hir>> {
-        (0..self.hir_consts.len()).map(hir::ConstID::new_raw)
+    pub fn const_ids(&self) -> impl Iterator<Item = hir::ConstID> {
+        (0..self.hir_consts.len()).map(hir::ConstID::new)
     }
-    pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID<'hir>> {
-        (0..self.hir_globals.len()).map(hir::GlobalID::new_raw)
+    pub fn global_ids(&self) -> impl Iterator<Item = hir::GlobalID> {
+        (0..self.hir_globals.len()).map(hir::GlobalID::new)
     }
     pub fn import_ids(&self) -> impl Iterator<Item = hir::ImportID> {
-        (0..self.hir_imports.len()).map(hir::ImportID::new_raw)
+        (0..self.hir_imports.len()).map(hir::ImportID::new)
     }
     pub fn const_eval_ids(&self) -> impl Iterator<Item = hir::ConstEvalID> {
-        (0..self.const_evals.len()).map(hir::ConstEvalID::new_raw)
+        (0..self.const_evals.len()).map(hir::ConstEvalID::new)
     }
 
-    pub fn proc_item(&self, id: hir::ProcID<'hir>) -> &'ast ast::ProcItem<'ast> {
-        self.ast_procs[id.raw_index()]
+    pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
+        &self.ast_procs[id.index()]
     }
     pub fn enum_item(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
-        self.ast_enums[id.raw_index()]
+        self.ast_enums[id.index()]
     }
     pub fn struct_item(&self, id: hir::StructID) -> &'ast ast::StructItem<'ast> {
-        self.ast_structs[id.raw_index()]
+        self.ast_structs[id.index()]
     }
     pub fn const_item(&self, id: hir::ConstID) -> &'ast ast::ConstItem<'ast> {
-        self.ast_consts[id.raw_index()]
+        self.ast_consts[id.index()]
     }
     pub fn global_item(&self, id: hir::GlobalID) -> &'ast ast::GlobalItem<'ast> {
-        self.ast_globals[id.raw_index()]
+        self.ast_globals[id.index()]
     }
     pub fn import_item(&self, id: hir::ImportID) -> &'ast ast::ImportItem<'ast> {
-        self.ast_imports[id.raw_index()]
+        self.ast_imports[id.index()]
     }
 
-    pub fn proc_data(&self, id: hir::ProcID<'hir>) -> &hir::ProcData<'hir> {
-        self.hir_procs.id_get(id)
+    pub fn proc_data(&self, id: hir::ProcID) -> &hir::ProcData<'hir> {
+        &self.hir_procs[id.index()]
     }
-    pub fn enum_data(&self, id: hir::EnumID<'hir>) -> &hir::EnumData<'hir> {
-        self.hir_enums.id_get(id)
+    pub fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
+        &self.hir_enums[id.index()]
     }
-    pub fn struct_data(&self, id: hir::StructID<'hir>) -> &hir::StructData<'hir> {
-        self.hir_structs.id_get(id)
+    pub fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
+        &self.hir_structs[id.index()]
     }
-    pub fn const_data(&self, id: hir::ConstID<'hir>) -> &hir::ConstData<'hir> {
-        self.hir_consts.id_get(id)
+    pub fn const_data(&self, id: hir::ConstID) -> &hir::ConstData<'hir> {
+        &self.hir_consts[id.index()]
     }
-    pub fn global_data(&self, id: hir::GlobalID<'hir>) -> &hir::GlobalData<'hir> {
-        self.hir_globals.id_get(id)
+    pub fn global_data(&self, id: hir::GlobalID) -> &hir::GlobalData<'hir> {
+        &self.hir_globals[id.index()]
     }
     pub fn import_data(&self, id: hir::ImportID) -> &hir::ImportData {
-        self.hir_imports.id_get(id)
+        &self.hir_imports[id.index()]
     }
     pub fn const_eval(&self, id: hir::ConstEvalID) -> &(hir::ConstEval<'hir, 'ast>, ModuleID) {
-        &self.const_evals[id.raw_index()]
+        &self.const_evals[id.index()]
     }
-    pub fn variant_eval(&self, id: hir::VariantEvalID<'hir>) -> &hir::VariantEval<'hir> {
-        self.variant_evals.id_get(id)
+    pub fn variant_eval(&self, id: hir::VariantEvalID) -> &hir::VariantEval<'hir> {
+        &self.variant_evals[id.index()]
     }
 
-    pub fn proc_data_mut(&mut self, id: hir::ProcID<'hir>) -> &mut hir::ProcData<'hir> {
-        self.hir_procs.id_get_mut(id)
+    pub fn proc_data_mut(&mut self, id: hir::ProcID) -> &mut hir::ProcData<'hir> {
+        &mut self.hir_procs[id.index()]
     }
-    pub fn enum_data_mut(&mut self, id: hir::EnumID<'hir>) -> &mut hir::EnumData<'hir> {
-        self.hir_enums.id_get_mut(id)
+    pub fn enum_data_mut(&mut self, id: hir::EnumID) -> &mut hir::EnumData<'hir> {
+        &mut self.hir_enums[id.index()]
     }
-    pub fn struct_data_mut(&mut self, id: hir::StructID<'hir>) -> &mut hir::StructData<'hir> {
-        self.hir_structs.id_get_mut(id)
+    pub fn struct_data_mut(&mut self, id: hir::StructID) -> &mut hir::StructData<'hir> {
+        &mut self.hir_structs[id.index()]
     }
-    pub fn const_data_mut(&mut self, id: hir::ConstID<'hir>) -> &mut hir::ConstData<'hir> {
-        self.hir_consts.id_get_mut(id)
+    pub fn const_data_mut(&mut self, id: hir::ConstID) -> &mut hir::ConstData<'hir> {
+        &mut self.hir_consts[id.index()]
     }
-    pub fn global_data_mut(&mut self, id: hir::GlobalID<'hir>) -> &mut hir::GlobalData<'hir> {
-        self.hir_globals.id_get_mut(id)
+    pub fn global_data_mut(&mut self, id: hir::GlobalID) -> &mut hir::GlobalData<'hir> {
+        &mut self.hir_globals[id.index()]
     }
     pub fn const_eval_mut(
         &mut self,
         id: hir::ConstEvalID,
     ) -> &mut (hir::ConstEval<'hir, 'ast>, ModuleID) {
-        &mut self.const_evals[id.raw_index()]
+        &mut self.const_evals[id.index()]
     }
-    pub fn variant_eval_mut(
-        &mut self,
-        id: hir::VariantEvalID<'hir>,
-    ) -> &mut hir::VariantEval<'hir> {
-        self.variant_evals.id_get_mut(id)
+    pub fn variant_eval_mut(&mut self, id: hir::VariantEvalID) -> &mut hir::VariantEval<'hir> {
+        &mut self.variant_evals[id.index()]
     }
 }
