@@ -1,0 +1,23 @@
+//#prelude
+import core:panics.{assert}
+import core:fmt.{print_s32}
+
+//#entry "add"
+//#expect
+//#!
+pub proc test_add() void {
+    let c = add(10, 20);
+    assert(c == 30, "");
+}
+proc add(a: s32, b: s32) s32 {
+    a + b
+}
+
+//#entry "print"
+//#expect(no_new_line)
+//10
+//#!
+pub proc test_print() void {
+    fmt.io_init();
+    print_s32(10);
+}

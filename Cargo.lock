@@ -148,6 +148,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rock_test"
+version = "0.0.0"
+
+[[package]]
 name = "ryu"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
