@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,7 +18,7 @@ fn main() {
 struct RockTestFile {
     name: String,
     prelude: String,
-    tests: HashMap<String, RockTest>,
+    tests: Vec<RockTest>,
 }
 
 #[derive(Debug)]
@@ -42,6 +42,7 @@ fn parse_tests() -> Vec<RockTestFile> {
 
     let read_dir = fs::read_dir(test_src_path).expect("`./rock_test/src` or `./src` must exist");
     let mut test_files = vec![];
+    let mut test_set = HashSet::with_capacity(64);
 
     for entry in read_dir {
         let dir = entry.expect("valid dir entry");
@@ -52,14 +53,14 @@ fn parse_tests() -> Vec<RockTestFile> {
         if extension != "rock" {
             continue;
         }
-        let test = parse_test_file(&path, text);
+        let test = parse_test_file(&path, &mut test_set, text);
         test_files.push(test);
     }
 
     test_files
 }
 
-fn parse_test_file(path: &PathBuf, text: String) -> RockTestFile {
+fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String) -> RockTestFile {
     let mut lines = text.lines().peekable();
     let mut prelude = String::with_capacity(256);
 
@@ -81,7 +82,7 @@ fn parse_test_file(path: &PathBuf, text: String) -> RockTestFile {
     }
     prelude.pop();
 
-    let mut tests = HashMap::with_capacity(16);
+    let mut tests = Vec::with_capacity(16);
 
     while lines.peek().is_some() {
         let entry_line = lines.next().expect("#entry line");
@@ -139,15 +140,15 @@ fn parse_test_file(path: &PathBuf, text: String) -> RockTestFile {
             expect,
             source,
         };
-
-        let existing = tests.insert(test.entry.clone(), test);
-        if let Some(duplicate) = existing {
+        if test_set.contains(&test.entry) {
             panic!(
-                "test file `{}` has multiple tests named `{}`",
+                "duplicate test name fould `{}` in `{}`",
+                test.entry,
                 path.to_string_lossy(),
-                duplicate.entry
             )
         }
+        test_set.insert(test.entry.clone());
+        tests.push(test);
     }
 
     RockTestFile {
@@ -158,12 +159,10 @@ fn parse_test_file(path: &PathBuf, text: String) -> RockTestFile {
 }
 
 fn setup_test_env(test_src: PathBuf) -> RockTestEnv {
-    let mut abs_path = test_src.canonicalize().unwrap();
-    abs_path.pop();
-
-    let run_root = abs_path.join("run");
+    let mut test_root = test_src.canonicalize().unwrap();
+    test_root.pop();
+    let run_root = test_root.join("run");
     let src_root = run_root.join("src");
-
     let main_path = src_root.join("main.rock");
     let test_path = src_root.join("test.rock");
     let manifest_path = run_root.join("Rock.toml");
@@ -183,8 +182,6 @@ version = "0.1.0"
 [build]
 [dependencies]"#;
 
-    fs::write(&main_path, "").unwrap();
-    fs::write(&test_path, "").unwrap();
     fs::write(&manifest_path, manifest).unwrap();
     std::env::set_current_dir(&run_root).unwrap();
 
@@ -204,29 +201,26 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
 
     let mut total_count = 0;
     let mut passed_count = 0;
+    let mut trailing_endl = true;
 
     for test_file in test_files {
         println!("\n{CB}src/{}{R}", test_file.name);
 
-        for (_, test) in test_file.tests {
+        for test in test_file.tests {
             let main_src = format!(
-                "import test.{{test_{}}}\nproc main() s32 {{ test_{}(); return 0; }}",
-                test.entry, test.entry
+                "import test.{{test_{0}}}\nproc main() s32 {{ test_{0}(); return 0; }}",
+                test.entry
             );
             let test_src = format!("{}{}", test.source, test_file.prelude);
+
             fs::write(&test_env.main_path, main_src).unwrap();
             fs::write(&test_env.test_path, test_src).unwrap();
 
-            //@run in release to skip debug info (faster)
-            let output = Command::new("rock")
-                .arg("r")
-                .arg("--release")
-                .output()
-                .unwrap();
-
-            //prevent stderr & stdout overlap
+            let output = Command::new("rock").arg("r").output().unwrap();
             let output_out = String::from_utf8_lossy(&output.stdout).into_owned();
             let output_err = String::from_utf8_lossy(&output.stderr).into_owned();
+
+            //prevent stderr & stdout overlap
             if !output_out.is_empty() && !output_err.is_empty() {
                 panic!("expected test outputs to be either stderr or stdout, not combined");
             }
@@ -243,18 +237,20 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
             total_count += 1;
             if output == test.expect {
                 passed_count += 1;
-                println!("{:.<40} [{GB}OK{R}]", test.entry);
+                trailing_endl = true;
+                println!("{:.<48} [{GB}OK{R}]", test.entry);
             } else {
-                println!("{:.<40} [{RB}ERROR{R}]", test.entry);
+                trailing_endl = false;
+                println!("{:.<48} [{RB}ERROR{R}]", test.entry);
                 println!("\n{RB}expected output:{R}\n{}{CB}[end]{R}", test.expect);
                 println!("{RB}received output:{R}\n{}{CB}[end]{R}\n", output);
             }
         }
     }
 
-    let result_color = if passed_count == total_count { GB } else { RB };
-    println!(
-        "\n{result_color}tests passed:{R} [{}/{}]\n",
-        passed_count, total_count
-    );
+    if trailing_endl {
+        println!();
+    }
+    let color = if passed_count == total_count { GB } else { RB };
+    println!("{color}tests passed:{R} [{passed_count}/{total_count}]\n",);
 }
