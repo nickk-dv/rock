@@ -25,6 +25,7 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::ParamVar { .. } => unreachable!(),
         hir::ExprKind::LocalVar { .. } => unreachable!(),
         hir::ExprKind::LocalBind { .. } => unreachable!(),
+        hir::ExprKind::ForBind { .. } => unreachable!(),
         hir::ExprKind::ConstVar { const_id } => fold_const_var(ctx, const_id),
         hir::ExprKind::GlobalVar { .. } => unreachable!(),
         hir::ExprKind::Variant {

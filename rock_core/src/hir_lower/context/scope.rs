@@ -57,8 +57,10 @@ pub struct LocalScope<'hir> {
     blocks: Vec<BlockData>,
     locals: Vec<hir::Local<'hir>>,
     binds: Vec<hir::LocalBind<'hir>>,
+    for_binds: Vec<hir::ForBind<'hir>>,
     locals_in_scope: Vec<hir::LocalID>,
     binds_in_scope: Vec<hir::LocalBindID>,
+    for_binds_in_scope: Vec<hir::ForBindID>,
 }
 
 #[derive(Copy, Clone)]
@@ -66,12 +68,14 @@ pub enum VariableID {
     Param(hir::ParamID),
     Local(hir::LocalID),
     Bind(hir::LocalBindID),
+    ForBind(hir::ForBindID),
 }
 
 #[derive(Copy, Clone)]
 struct BlockData {
-    bind_count: u32,
     local_count: u32,
+    bind_count: u32,
+    for_bind_count: u32,
     status: BlockStatus,
     diverges: Diverges,
 }
@@ -170,6 +174,7 @@ impl<'hir> Scope<'hir> {
             VariableID::Param(id) => self.local.param(id).name.range,
             VariableID::Local(id) => self.local.local(id).name.range,
             VariableID::Bind(id) => self.local.bind(id).name.range,
+            VariableID::ForBind(id) => self.local.for_bind(id).name.range,
         };
         SourceRange::new(self.origin_id, range)
     }
@@ -302,10 +307,12 @@ impl<'hir> LocalScope<'hir> {
             params: &[],
             return_expect: Expectation::None,
             blocks: Vec::with_capacity(64),
-            binds: Vec::with_capacity(64),
             locals: Vec::with_capacity(64),
-            binds_in_scope: Vec::with_capacity(64),
+            binds: Vec::with_capacity(64),
+            for_binds: Vec::with_capacity(64),
             locals_in_scope: Vec::with_capacity(64),
+            binds_in_scope: Vec::with_capacity(64),
+            for_binds_in_scope: Vec::with_capacity(64),
         }
     }
 
@@ -328,8 +335,14 @@ impl<'hir> LocalScope<'hir> {
         self.return_expect = return_expect;
     }
 
-    pub fn finish_proc_context(&self) -> (&[hir::Local<'hir>], &[hir::LocalBind<'hir>]) {
-        (&self.locals, &self.binds)
+    pub fn finish_proc_context(
+        &self,
+    ) -> (
+        &[hir::Local<'hir>],
+        &[hir::LocalBind<'hir>],
+        &[hir::ForBind<'hir>],
+    ) {
+        (&self.locals, &self.binds, &self.for_binds)
     }
 
     pub fn return_expect(&self) -> Expectation<'hir> {
@@ -345,6 +358,7 @@ impl<'hir> LocalScope<'hir> {
         let data = BlockData {
             local_count: 0,
             bind_count: 0,
+            for_bind_count: 0,
             status,
             diverges,
         };
@@ -358,6 +372,9 @@ impl<'hir> LocalScope<'hir> {
         }
         for _ in 0..curr.bind_count {
             self.binds_in_scope.pop();
+        }
+        for _ in 0..curr.for_bind_count {
+            self.for_binds_in_scope.pop();
         }
         self.blocks.pop();
     }
@@ -381,6 +398,17 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
+    pub fn add_for_bind(&mut self, bind: hir::ForBind<'hir>, in_scope: bool) -> hir::ForBindID {
+        let for_bind_id = hir::ForBindID::new(self.for_binds.len());
+        self.for_binds.push(bind);
+        if in_scope {
+            self.for_binds_in_scope.push(for_bind_id);
+            self.current_block_mut().for_bind_count += 1;
+        }
+        for_bind_id
+    }
+
+    #[must_use]
     pub fn find_variable(&self, name_id: NameID) -> Option<VariableID> {
         for (idx, param) in self.params.iter().enumerate() {
             if name_id == param.name.id {
@@ -396,6 +424,11 @@ impl<'hir> LocalScope<'hir> {
         for bind_id in self.binds_in_scope.iter().copied() {
             if name_id == self.bind(bind_id).name.id {
                 return Some(VariableID::Bind(bind_id));
+            }
+        }
+        for for_bind_id in self.for_binds_in_scope.iter().copied() {
+            if name_id == self.for_bind(for_bind_id).name.id {
+                return Some(VariableID::ForBind(for_bind_id));
             }
         }
         None
@@ -435,6 +468,10 @@ impl<'hir> LocalScope<'hir> {
     #[inline]
     pub fn bind(&self, bind_id: hir::LocalBindID) -> &hir::LocalBind<'hir> {
         &self.binds[bind_id.index()]
+    }
+    #[inline]
+    pub fn for_bind(&self, for_bind_id: hir::ForBindID) -> &hir::ForBind<'hir> {
+        &self.for_binds[for_bind_id.index()]
     }
 
     #[inline]
@@ -493,6 +530,7 @@ impl VariableID {
             VariableID::Param(_) => "parameter",
             VariableID::Local(_) => "local",
             VariableID::Bind(_) => "binding",
+            VariableID::ForBind(_) => "binding",
         }
     }
 }

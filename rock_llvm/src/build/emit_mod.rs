@@ -234,6 +234,12 @@ fn codegen_function_bodies(cg: &Codegen) {
             proc_cg.local_bind_ptrs.push(local_ptr);
         }
 
+        for for_bind in data.for_binds {
+            let local_ty = cg.ty(for_bind.ty);
+            let local_ptr = cg.build.alloca(local_ty, "for_bind");
+            proc_cg.for_bind_ptrs.push(local_ptr);
+        }
+
         let value_id = proc_cg.add_tail_value();
         emit_stmt::codegen_block(cg, &mut proc_cg, Expect::Value(Some(value_id)), block);
 

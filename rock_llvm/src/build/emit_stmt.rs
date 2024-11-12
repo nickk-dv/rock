@@ -142,7 +142,118 @@ fn codegen_loop<'c>(
     cg.build.position_at_end(exit_bb);
 }
 
-fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_: &hir::For<'c>) {}
+fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_: &hir::For<'c>) {
+    let entry_bb = cg.append_bb(proc_cg, "for_entry");
+    let body_bb = cg.append_bb(proc_cg, "for_body");
+    let exit_bb = cg.append_bb(proc_cg, "for_exit");
+    proc_cg.set_next_loop_info(exit_bb, entry_bb);
+
+    match for_.kind {
+        hir::ForKind::Loop => {
+            cg.build.br(entry_bb);
+            cg.build.position_at_end(entry_bb);
+            cg.build.br(body_bb);
+
+            cg.build.position_at_end(body_bb);
+            codegen_block(cg, proc_cg, Expect::Value(None), for_.block);
+            cg.build_br_no_term(entry_bb);
+        }
+        hir::ForKind::Cond(cond) => {
+            cg.build.br(entry_bb);
+            cg.build.position_at_end(entry_bb);
+            let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
+            cg.build.cond_br(cond, body_bb, exit_bb);
+
+            cg.build.position_at_end(body_bb);
+            codegen_block(cg, proc_cg, Expect::Value(None), for_.block);
+            cg.build_br_no_term(entry_bb);
+        }
+        hir::ForKind::Elem(for_elem) => {
+            let value_ptr = proc_cg.for_bind_ptrs[for_elem.value_id.index()];
+            let index_ptr = proc_cg.for_bind_ptrs[for_elem.index_id.index()];
+
+            // evaluate iteration ptr & reset index to 0
+            let iter_ptr = emit_expr::codegen_expr_pointer(cg, proc_cg, for_elem.expr);
+            let iter_ptr = if for_elem.deref {
+                cg.build
+                    .load(cg.ptr_type(), iter_ptr, "deref_ptr")
+                    .into_ptr()
+            } else {
+                iter_ptr
+            };
+            cg.build.store(cg.const_usize(0), index_ptr);
+
+            cg.build.br(entry_bb);
+            cg.build.position_at_end(entry_bb);
+
+            // evaluate loop condition
+            let index_val = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
+            let collection_len = match for_elem.kind {
+                hir::ForElemKind::Slice => {
+                    let slice_ty = cg.slice_type();
+                    let slice_len_ptr = cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
+                    cg.build
+                        .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+                }
+                hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
+            };
+            let cond =
+                emit_expr::codegen_binary_op(cg, hir::BinOp::Less_IntU, index_val, collection_len);
+
+            cg.build.cond_br(cond, body_bb, exit_bb);
+            cg.build.position_at_end(body_bb);
+
+            // get iteration value ptr (@no bounds check)
+            let elem_ty = cg.ty(for_elem.elem_ty);
+            let elem_ptr = match for_elem.kind {
+                hir::ForElemKind::Slice => {
+                    let slice_ptr = cg
+                        .build
+                        .load(cg.ptr_type(), iter_ptr, "slice_ptr")
+                        .into_ptr();
+                    cg.build
+                        .gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
+                }
+                hir::ForElemKind::Array(len) => {
+                    let len = cg.array_len(len);
+                    let array_ty = llvm::array_type(elem_ty, len);
+                    cg.build.gep(
+                        array_ty,
+                        iter_ptr,
+                        &[cg.const_usize_zero(), index_val],
+                        "array_elem_ptr",
+                    )
+                }
+            };
+
+            // store iteration value
+            if for_elem.by_pointer {
+                cg.build.store(elem_ptr.as_val(), value_ptr);
+            } else {
+                let elem_val = cg.build.load(elem_ty, elem_ptr, "elem_val");
+                cg.build.store(elem_val, value_ptr);
+            };
+
+            codegen_block(cg, proc_cg, Expect::Value(None), for_.block);
+
+            // increment index
+            if !cg.insert_bb_terminated() {
+                let index_val = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
+                let index_inc = emit_expr::codegen_binary_op(
+                    cg,
+                    hir::BinOp::Add_Int,
+                    index_val,
+                    cg.const_usize_one(),
+                );
+                cg.build.store(index_inc, index_ptr);
+                cg.build.br(entry_bb);
+            }
+        }
+        hir::ForKind::Pat(for_pat) => unimplemented!("for loop with pattern"),
+    }
+
+    cg.build.position_at_end(exit_bb);
+}
 
 fn codegen_local<'c>(
     cg: &Codegen<'c, '_, '_>,

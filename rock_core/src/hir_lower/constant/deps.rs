@@ -844,7 +844,16 @@ fn add_expr_const_dependencies<'hir, 'ast>(
                         &mut ctx.emit,
                         origin_id,
                         expr.range,
-                        "local bindings",
+                        "pattern bindings",
+                    );
+                    Err(parent_id)
+                }
+                ValueID::ForBind(_, _) => {
+                    error_cannot_refer_to_in_constants(
+                        &mut ctx.emit,
+                        origin_id,
+                        expr.range,
+                        "for loop bindings",
                     );
                     Err(parent_id)
                 }

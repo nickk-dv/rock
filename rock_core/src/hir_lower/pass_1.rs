@@ -48,6 +48,7 @@ fn add_proc_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ProcItem
         block: None,
         locals: &[],
         local_binds: &[],
+        for_binds: &[],
     };
 
     let proc_id = ctx.registry.add_proc(item, data);

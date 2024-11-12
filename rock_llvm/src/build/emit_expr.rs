@@ -123,6 +123,9 @@ fn codegen_expr<'c>(
         hir::ExprKind::LocalBind { local_bind_id } => {
             Some(codegen_local_bind_var(cg, proc_cg, expect, local_bind_id))
         }
+        hir::ExprKind::ForBind { for_bind_id } => {
+            Some(codegen_for_bind_var(cg, proc_cg, expect, for_bind_id))
+        }
         hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::ExprKind::Variant {
@@ -556,7 +559,7 @@ fn codegen_struct_field<'c>(
             let field_ty = cg.ty(field.ty);
             cg.build.load(field_ty, field_ptr, "field_val")
         }
-        Expect::Pointer => target_ptr.as_val(),
+        Expect::Pointer => field_ptr.as_val(),
     }
 }
 
@@ -749,6 +752,24 @@ fn codegen_local_bind_var(
             let local = cg.hir.proc_data(proc_cg.proc_id).local_bind(local_bind_id);
             let local_ty = cg.ty(local.ty);
             cg.build.load(local_ty, local_ptr, "local_bind_val")
+        }
+        Expect::Pointer => local_ptr.as_val(),
+    }
+}
+
+fn codegen_for_bind_var(
+    cg: &Codegen,
+    proc_cg: &ProcCodegen,
+    expect: Expect,
+    for_bind_id: hir::ForBindID,
+) -> llvm::Value {
+    let local_ptr = proc_cg.for_bind_ptrs[for_bind_id.index()];
+
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => {
+            let local = cg.hir.proc_data(proc_cg.proc_id).for_bind(for_bind_id);
+            let local_ty = cg.ty(local.ty);
+            cg.build.load(local_ty, local_ptr, "for_bind_val")
         }
         Expect::Pointer => local_ptr.as_val(),
     }

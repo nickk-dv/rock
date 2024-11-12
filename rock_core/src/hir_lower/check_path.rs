@@ -27,6 +27,7 @@ pub enum ValueID<'ast> {
     Param(hir::ParamID, &'ast [ast::Name]),
     Local(hir::LocalID, &'ast [ast::Name]),
     LocalBind(hir::LocalBindID, &'ast [ast::Name]),
+    ForBind(hir::ForBindID, &'ast [ast::Name]),
 }
 
 fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
@@ -242,6 +243,7 @@ pub fn path_resolve_value<'ast>(
             VariableID::Param(id) => ValueID::Param(id, path.names),
             VariableID::Local(id) => ValueID::Local(id, path.names),
             VariableID::Bind(id) => ValueID::LocalBind(id, path.names),
+            VariableID::ForBind(id) => ValueID::ForBind(id, path.names),
         },
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_name.range);

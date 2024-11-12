@@ -7,6 +7,7 @@ use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BasicFloat, BasicInt};
+use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
 use crate::text::TextRange;
@@ -30,14 +31,16 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
         ctx.scope.local.set_proc_context(data.params, expect); //shadowing params still addeded here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
 
-        let (locals, binds) = ctx.scope.local.finish_proc_context();
+        let (locals, binds, for_binds) = ctx.scope.local.finish_proc_context();
         let locals = ctx.arena.alloc_slice(locals);
         let binds = ctx.arena.alloc_slice(binds);
+        let for_binds = ctx.arena.alloc_slice(for_binds);
 
         let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
         data.locals = locals;
         data.local_binds = binds;
+        data.for_binds = for_binds;
     }
 }
 
@@ -680,7 +683,8 @@ fn typecheck_pat_item<'hir, 'ast>(
         | ValueID::Global(_, _)
         | ValueID::Param(_, _)
         | ValueID::Local(_, _)
-        | ValueID::LocalBind(_, _) => {
+        | ValueID::LocalBind(_, _)
+        | ValueID::ForBind(_, _) => {
             let src = ctx.src(pat_range);
             err::tycheck_pat_runtime_value(&mut ctx.emit, src);
             add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
@@ -1279,6 +1283,13 @@ fn typecheck_item<'hir, 'ast>(
             ),
             fields,
         ),
+        ValueID::ForBind(id, fields) => (
+            TypeResult::new(
+                ctx.scope.local.for_bind(id).ty,
+                hir::ExprKind::ForBind { for_bind_id: id },
+            ),
+            fields,
+        ),
     };
 
     let mut target_res = item_res;
@@ -1738,6 +1749,12 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 let local_bind = ctx.scope.local.bind(local_bind_id);
                 let var_src = ctx.src(local_bind.name.range);
                 let base_mutt = last_deref.unwrap_or(local_bind.mutt);
+                AddrBase::Variable(base_mutt, var_src)
+            }
+            hir::ExprKind::ForBind { for_bind_id } => {
+                let for_bind = ctx.scope.local.for_bind(for_bind_id);
+                let var_src = ctx.src(for_bind.name.range);
+                let base_mutt = last_deref.unwrap_or(for_bind.mutt);
                 AddrBase::Variable(base_mutt, var_src)
             }
             hir::ExprKind::ConstVar { const_id } => {
@@ -2316,9 +2333,38 @@ fn typecheck_for<'hir, 'ast>(
                 }
             };
 
+            let value_ty = if let Some(mutt) = header.ref_mut {
+                let ref_ty = ctx.arena.alloc(collection.elem_ty);
+                hir::Type::Reference(mutt, ref_ty)
+            } else {
+                collection.elem_ty
+            };
+            let value_bind = hir::ForBind {
+                mutt: ast::Mut::Immutable,
+                name: header.value,
+                ty: value_ty,
+            };
+            let index_bind = hir::ForBind {
+                mutt: ast::Mut::Immutable,
+                name: header.index.unwrap_or(ast::Name {
+                    id: NameID::dummy(),
+                    range: TextRange::zero(),
+                }),
+                ty: hir::Type::USIZE,
+            };
+
+            ctx.scope.local.start_block(BlockStatus::None);
+            let value_id = ctx.scope.local.add_for_bind(value_bind, true);
+            let index_id = ctx
+                .scope
+                .local
+                .add_for_bind(index_bind, header.index.is_some());
+
             let for_elem = hir::ForElem {
-                by_pointer: header.ref_mut.is_some(),
+                value_id,
+                index_id,
                 deref: collection.deref.is_some(),
+                by_pointer: header.ref_mut.is_some(),
                 elem_ty: collection.elem_ty,
                 kind: elem_kind,
                 expr: expr_res.expr,
@@ -2333,6 +2379,14 @@ fn typecheck_for<'hir, 'ast>(
 
     let expect = Expectation::HasType(hir::Type::VOID, None);
     let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+
+    // exit binding local scope
+    match for_.header {
+        ast::ForHeader::Loop => {}
+        ast::ForHeader::Cond(_) => {}
+        ast::ForHeader::Elem(_) => ctx.scope.local.exit_block(),
+        ast::ForHeader::Pat(_) => ctx.scope.local.exit_block(),
+    }
 
     let for_ = hir::For {
         kind,
@@ -2501,6 +2555,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
         hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
         hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local binding value"),
+        hir::ExprKind::ForBind { .. } => UnusedExpr::Yes("for loop binding value"), //@change naming everywhere
         hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),

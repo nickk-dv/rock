@@ -36,6 +36,7 @@ pub struct ProcData<'hir> {
     pub block: Option<Block<'hir>>,
     pub locals: &'hir [Local<'hir>],
     pub local_binds: &'hir [LocalBind<'hir>],
+    pub for_binds: &'hir [ForBind<'hir>],
 }
 
 #[derive(Copy, Clone)]
@@ -219,10 +220,10 @@ pub enum ForKind<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ForElem<'hir> {
-    //some local_id for name
-    //some opt local_id for index
-    pub by_pointer: bool,
+    pub value_id: ForBindID,
+    pub index_id: ForBindID,
     pub deref: bool,
+    pub by_pointer: bool,
     pub elem_ty: Type<'hir>,
     pub kind: ForElemKind,
     pub expr: &'hir Expr<'hir>,
@@ -235,6 +236,14 @@ pub enum ForElemKind {
 }
 
 pub struct ForPat {}
+
+crate::define_id!(pub ForBindID);
+#[derive(Copy, Clone)]
+pub struct ForBind<'hir> {
+    pub mutt: ast::Mut,
+    pub name: ast::Name,
+    pub ty: Type<'hir>,
+}
 
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
@@ -281,6 +290,7 @@ pub enum ExprKind<'hir> {
     ParamVar     { param_id: ParamID },
     LocalVar     { local_id: LocalID },
     LocalBind    { local_bind_id: LocalBindID },
+    ForBind      { for_bind_id: ForBindID },
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
@@ -829,6 +839,9 @@ impl<'hir> ProcData<'hir> {
     pub fn local_bind(&self, id: LocalBindID) -> &'hir LocalBind<'hir> {
         &self.local_binds[id.index()]
     }
+    pub fn for_bind(&self, id: ForBindID) -> &'hir ForBind<'hir> {
+        &self.for_binds[id.index()]
+    }
     pub fn find_param(&self, id: NameID) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {
             if param.name.id == id {
@@ -1090,41 +1103,5 @@ impl BinOp {
             BinOp::LogicAnd => "&&",
             BinOp::LogicOr => "||",
         }
-    }
-}
-
-//@REMOVE BEFORE PUSH
-mod example {
-    use crate::ast;
-    use crate::hir::*;
-
-    struct VariableID(u32);
-    struct Variable<'hir> {
-        mutt: ast::Mut,
-        name: ast::Name,
-        ty: Type<'hir>,
-    }
-
-    #[derive(Copy, Clone)]
-    pub enum LocalInit<'hir> {
-        Init(&'hir Expr<'hir>),
-        Zeroed,
-        Undefined,
-    }
-
-    struct Param {
-        pub var_id: VariableID,
-        pub ty_range: TextRange,
-    }
-    struct Local<'hir> {
-        pub var_id: VariableID,
-        pub init: LocalInit<'hir>,
-    }
-    struct PatBind {
-        pub var_id: VariableID,
-        pub field_id: Option<VariantFieldID>,
-    }
-    struct ForBind {
-        pub var_id: VariableID,
     }
 }
