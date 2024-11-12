@@ -514,6 +514,18 @@ pub mod core {
             name: *const c_char,
         ) -> LLVMValueRef;
 
+        pub fn LLVMBuildPhi(
+            b: LLVMBuilderRef,
+            ty: LLVMTypeRef,
+            name: *const c_char,
+        ) -> LLVMValueRef;
+        pub fn LLVMAddIncoming(
+            phi_node: LLVMValueRef,
+            incoming_values: *const LLVMValueRef,
+            incoming_blocks: *const LLVMBasicBlockRef,
+            count: c_uint,
+        );
+
         pub fn LLVMBuildCall2(
             b: LLVMBuilderRef,
             fn_ty: LLVMTypeRef,

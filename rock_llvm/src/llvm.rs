@@ -426,6 +426,19 @@ impl IRBuilder {
         })
     }
 
+    pub fn phi(&self, ty: Type, name: &str) -> Value {
+        let name = self.cstr_buf.cstr(name);
+        Value(unsafe { core::LLVMBuildPhi(self.builder, ty.0, name) })
+    }
+    pub fn phi_add_incoming(&self, phi: Value, values: &[Value], blocks: &[BasicBlock]) {
+        let count = values.len() as u32;
+        unsafe {
+            let values_ptr: *const sys::LLVMValueRef = std::mem::transmute(values.as_ptr());
+            let blocks_ptr: *const sys::LLVMBasicBlockRef = std::mem::transmute(blocks.as_ptr());
+            core::LLVMAddIncoming(phi.0, values_ptr, blocks_ptr, count);
+        }
+    }
+
     pub fn call(
         &self,
         fn_ty: TypeFn,

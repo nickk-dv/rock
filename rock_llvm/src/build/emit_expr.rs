@@ -1016,8 +1016,48 @@ fn codegen_binary<'c>(
     rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
     let lhs = codegen_expr_value(cg, proc_cg, lhs);
+    match op {
+        hir::BinOp::LogicAnd => codegen_binary_circuit(cg, proc_cg, op, lhs, rhs, false),
+        hir::BinOp::LogicOr => codegen_binary_circuit(cg, proc_cg, op, lhs, rhs, true),
+        _ => {
+            let rhs = codegen_expr_value(cg, proc_cg, rhs);
+            codegen_binary_op(cg, op, lhs, rhs)
+        }
+    }
+}
+
+fn codegen_binary_circuit<'c>(
+    cg: &Codegen<'c, '_, '_>,
+    proc_cg: &mut ProcCodegen<'c>,
+    op: hir::BinOp,
+    lhs: llvm::Value,
+    rhs: &hir::Expr<'c>,
+    exit_val: bool,
+) -> llvm::Value {
+    let value_name = if exit_val { "logic_or" } else { "logic_and" };
+    let next_name = if exit_val { "or_next" } else { "and_next" };
+    let exit_name = if exit_val { "or_exit" } else { "and_exit" };
+
+    let next_bb = cg.append_bb(proc_cg, next_name);
+    let exit_bb = cg.append_bb(proc_cg, exit_name);
+    let start_bb = cg.build.insert_bb();
+
+    let then_bb = if exit_val { exit_bb } else { next_bb };
+    let else_bb = if exit_val { next_bb } else { exit_bb };
+    cg.build.cond_br(lhs, then_bb, else_bb);
+
+    cg.build.position_at_end(next_bb);
     let rhs = codegen_expr_value(cg, proc_cg, rhs);
-    codegen_binary_op(cg, op, lhs, rhs)
+    let bin_val = codegen_binary_op(cg, op, lhs, rhs);
+    let bin_val_bb = cg.build.insert_bb();
+
+    cg.build.br(exit_bb);
+    cg.build.position_at_end(exit_bb);
+    let phi = cg.build.phi(cg.bool_type(), value_name);
+    let values = [bin_val, codegen_const_bool(cg, exit_val)];
+    let blocks = [bin_val_bb, start_bb];
+    cg.build.phi_add_incoming(phi, &values, &blocks);
+    phi
 }
 
 pub fn codegen_binary_op(
