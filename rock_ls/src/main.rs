@@ -205,7 +205,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(session) => session,
                 None => {
                     eprintln!(" - session is None");
-                    send_response_error(conn, id, None);
+                    send_response_format_error(conn, id);
                     return;
                 }
             };
@@ -213,7 +213,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
-                    send_response_error(conn, id, None);
+                    send_response_format_error(conn, id);
                     return;
                 }
             };
@@ -231,7 +231,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
             if !tree.complete() {
                 eprintln!(" - tree is incomplete");
-                send_response_error(conn, id, None);
+                send_response_format_error(conn, id);
                 return;
             }
             let file = session.vfs.file(module.file_id());
@@ -249,7 +249,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let edit_range = lsp::Range::new(edit_start, edit_end);
 
             let text_edit = lsp::TextEdit::new(edit_range, formatted);
-            let json = serde_json::to_value(vec![text_edit]).expect("json value");
+            let json = serde_json::to_value(vec![text_edit]).unwrap();
             send_response(conn, id, json);
         }
         Request::Hover(params) => {
@@ -451,16 +451,15 @@ fn send_response(conn: &Connection, id: RequestId, result: serde_json::Value) {
     send(conn, response);
 }
 
-fn send_response_error(conn: &Connection, id: RequestId, with_message: Option<String>) {
-    let response = if let Some(message) = with_message {
-        lsp_server::Response::new_err(id, lsp_server::ErrorCode::RequestFailed as i32, message)
-    } else {
-        lsp_server::Response::new_err(
-            id,
-            lsp_server::ErrorCode::ServerCancelled as i32,
-            "quiet ignore".into(),
-        )
-    };
+fn send_response_format_error(conn: &Connection, id: RequestId) {
+    let no_edits = serde_json::to_value::<Vec<lsp::TextEdit>>(vec![]).unwrap();
+    let response = lsp_server::Response::new_ok(id, no_edits);
+    send(conn, response);
+}
+
+fn send_response_error(conn: &Connection, id: RequestId, message: String) {
+    let response =
+        lsp_server::Response::new_err(id, lsp_server::ErrorCode::RequestFailed as i32, message);
     send(conn, response);
 }
 

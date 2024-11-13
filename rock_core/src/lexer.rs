@@ -131,9 +131,10 @@ fn source_file(lex: &mut Lexer) {
         }
     }
 
-    let dummy_range = TextRange::zero();
-    lex.tokens.add_token(Token::Eof, dummy_range);
-    lex.tokens.add_token(Token::Eof, dummy_range);
+    let end_offset: TextOffset = (lex.source.len() as u32).into();
+    let end_range = TextRange::empty_at(end_offset);
+    lex.tokens.add_token(Token::Eof, end_range);
+    lex.tokens.add_token(Token::Eof, end_range);
 }
 
 fn lex_whitespace(lex: &mut Lexer) {
