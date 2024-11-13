@@ -393,12 +393,17 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
                 } else {
                     file.line_ranges[range.start.line as usize]
                 };
+
                 let start_line_text = &file.source[start_line.as_usize()];
                 let mut start_offset = start_line.start();
                 let mut chars = start_line_text.chars();
-                for _ in 0..range.start.character {
+                let mut character_utf16: u32 = 0;
+                while character_utf16 < range.start.character {
                     if let Some(c) = chars.next() {
                         start_offset += (c.len_utf8() as u32).into();
+                        character_utf16 += c.len_utf16() as u32;
+                    } else {
+                        break;
                     }
                 }
 
@@ -412,9 +417,13 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
                 let end_line_text = &file.source[end_line.as_usize()];
                 let mut end_offset = end_line.start();
                 let mut chars = end_line_text.chars();
-                for _ in 0..range.end.character {
+                let mut character_utf16: u32 = 0;
+                while character_utf16 < range.end.character {
                     if let Some(c) = chars.next() {
                         end_offset += (c.len_utf8() as u32).into();
+                        character_utf16 += c.len_utf16() as u32;
+                    } else {
+                        break;
                     }
                 }
 

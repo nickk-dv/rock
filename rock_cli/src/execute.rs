@@ -85,13 +85,10 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
             },
         };
 
-        let mut dependencies = BTreeMap::new();
-        dependencies.insert("core".to_string(), rock_core::VERSION);
-
         let manifest = Manifest {
             package,
             build,
-            dependencies,
+            dependencies: BTreeMap::new(),
         };
 
         let manifest_text = package::manifest_serialize(&manifest)?;
