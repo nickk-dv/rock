@@ -13,12 +13,6 @@ const TAB_STR: &'static str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
-const COMMENT_ALIGN_ITEM: u32 = 36;
-const COMMENT_ALIGN_VARIANT: u32 = 24;
-const COMMENT_ALIGN_FIELD: u32 = 24;
-const COMMENT_ALIGN_STMT: u32 = 0;
-const COMMENT_ALIGN_MATCH_ARM: u32 = 0;
-const COMMENT_ALIGN_FIELD_INIT: u32 = 0;
 
 #[must_use]
 pub fn format<'syn>(
@@ -248,6 +242,54 @@ impl FormatterCache {
     }
 }
 
+trait InterleaveFormat<'syn> {
+    const COMMENT_ALIGN: u32;
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self);
+}
+
+impl<'syn> InterleaveFormat<'syn> for cst::Item<'syn> {
+    const COMMENT_ALIGN: u32 = 36;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        item(fmt, node);
+    }
+}
+impl<'syn> InterleaveFormat<'syn> for cst::Variant<'syn> {
+    const COMMENT_ALIGN: u32 = 24;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        variant(fmt, node);
+    }
+}
+impl<'syn> InterleaveFormat<'syn> for cst::Field<'syn> {
+    const COMMENT_ALIGN: u32 = 24;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        field(fmt, node);
+    }
+}
+impl<'syn> InterleaveFormat<'syn> for cst::Stmt<'syn> {
+    const COMMENT_ALIGN: u32 = 0;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        stmt(fmt, node, true);
+    }
+}
+impl<'syn> InterleaveFormat<'syn> for cst::MatchArm<'syn> {
+    const COMMENT_ALIGN: u32 = 0;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        match_arm(fmt, node);
+    }
+}
+impl<'syn> InterleaveFormat<'syn> for cst::FieldInit<'syn> {
+    const COMMENT_ALIGN: u32 = 0;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        field_init(fmt, node, true, true);
+    }
+}
+
 #[must_use]
 fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
     for not in node.content {
@@ -311,11 +353,9 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
     }
 }
 
-fn interleaved_node_list<'syn, N: AstNode<'syn>>(
+fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
     fmt: &mut Formatter<'syn, '_>,
     node_list: &Node<'syn>,
-    format_fn: fn(&mut Formatter<'syn, '_>, N),
-    comment_align: u32,
 ) {
     let mut first = true; // prevent first \n insertion
     let mut new_line = false; // prevent last \n insertion
@@ -333,7 +373,8 @@ fn interleaved_node_list<'syn, N: AstNode<'syn>>(
                 first = false;
 
                 let node = fmt.tree.node(node_id);
-                format_fn(fmt, N::cast(node).unwrap());
+                let node = N::cast(node).unwrap();
+                N::interleaved_format(fmt, node);
 
                 // search for line comment on the same line
                 while let Some(not_next) = not_iter.peek().copied() {
@@ -446,7 +487,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn>>(
             let new_min = min_offset.min(comment.line_offset);
             let new_max = max_offset.max(comment.line_offset);
             let spacing = new_max - new_min;
-            if spacing <= comment_align {
+            if spacing <= N::COMMENT_ALIGN {
                 min_offset = new_min;
                 max_offset = new_max;
             } else {
@@ -475,7 +516,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn>>(
 //==================== SOURCE FILE ====================
 
 fn source_file<'syn>(fmt: &mut Formatter<'syn, '_>, source_file: cst::SourceFile<'syn>) {
-    interleaved_node_list(fmt, source_file.0, item, COMMENT_ALIGN_ITEM);
+    interleaved_node_list::<cst::Item>(fmt, source_file.0);
 }
 
 fn attr_list<'syn>(fmt: &mut Formatter<'syn, '_>, attr_list: cst::AttrList<'syn>) {
@@ -681,7 +722,7 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
     fmt.write('{');
     fmt.new_line();
     fmt.tab_inc();
-    interleaved_node_list(fmt, variant_list.0, variant, COMMENT_ALIGN_VARIANT);
+    interleaved_node_list::<cst::Variant>(fmt, variant_list.0);
     fmt.tab_dec();
     fmt.write('}');
 }
@@ -747,7 +788,7 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
     fmt.write('{');
     fmt.new_line();
     fmt.tab_inc();
-    interleaved_node_list(fmt, field_list.0, field, COMMENT_ALIGN_FIELD);
+    interleaved_node_list::<cst::Field>(fmt, field_list.0);
     fmt.tab_dec();
     fmt.write('}');
 }
@@ -1052,16 +1093,20 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
 
     fmt.write('{');
     fmt.new_line();
-
     fmt.tab_inc();
-    interleaved_node_list(fmt, block.0, stmt, COMMENT_ALIGN_STMT);
+    interleaved_node_list::<cst::Stmt>(fmt, block.0);
     fmt.tab_dec();
-
     fmt.tab_depth();
     fmt.write('}');
 }
 
-fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
+fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
+    if tab {
+        match stmt {
+            cst::Stmt::AttrStmt(_) => {}
+            _ => fmt.tab_depth(),
+        }
+    }
     match stmt {
         cst::Stmt::Break(_) => stmt_break(fmt),
         cst::Stmt::Continue(_) => stmt_continue(fmt),
@@ -1078,21 +1123,17 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>) {
 }
 
 fn stmt_break<'syn>(fmt: &mut Formatter<'syn, '_>) {
-    fmt.tab_depth();
     fmt.write_str("break");
     fmt.write(';');
 }
 
 fn stmt_continue<'syn>(fmt: &mut Formatter<'syn, '_>) {
-    fmt.tab_depth();
     fmt.write_str("continue");
     fmt.write(';');
 }
 
 fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>) {
-    fmt.tab_depth();
     fmt.write_str("return");
-
     if let Some(expr_cst) = stmt.expr(fmt.tree) {
         fmt.space();
         expr(fmt, expr_cst);
@@ -1100,21 +1141,18 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>)
     fmt.write(';');
 }
 
-//@defer tabbing is wrong both for nested + regular short blocks
 fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) {
-    fmt.tab_depth();
     fmt.write_str("defer");
     fmt.space();
 
     if let Some(block_cst) = defer.block(fmt.tree) {
         block(fmt, block_cst, false);
     } else {
-        stmt(fmt, defer.stmt(fmt.tree).unwrap());
+        stmt(fmt, defer.stmt(fmt.tree).unwrap(), false);
     }
 }
 
 fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
-    fmt.tab_depth();
     fmt.write_str("for");
 
     if let Some(header) = stmt.while_header(fmt.tree) {
@@ -1138,7 +1176,6 @@ fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
 }
 
 fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
-    fmt.tab_depth();
     fmt.write_str("for2");
 
     if let Some(header) = stmt.header_cond(fmt.tree) {
@@ -1179,7 +1216,6 @@ fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
 }
 
 fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
-    fmt.tab_depth();
     fmt.write_str("let");
     fmt.space();
     bind(fmt, stmt.bind(fmt.tree).unwrap());
@@ -1205,7 +1241,6 @@ fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
 }
 
 fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>, semi: bool) {
-    fmt.tab_depth();
     expr(fmt, stmt.lhs(fmt.tree).unwrap());
     fmt.space();
 
@@ -1226,7 +1261,6 @@ fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>,
 }
 
 fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'syn>) {
-    fmt.tab_depth();
     expr(fmt, stmt.expr(fmt.tree).unwrap());
     if stmt.t_semi(fmt.tree).is_some() {
         fmt.write(';');
@@ -1234,13 +1268,12 @@ fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'
 }
 
 fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprTail<'syn>) {
-    fmt.tab_depth();
     expr(fmt, stmt.expr(fmt.tree).unwrap());
 }
 
 fn stmt_attr_stmt<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::StmtAttrStmt<'syn>) {
     attr_list(fmt, attr.attr_list(fmt.tree).unwrap());
-    stmt(fmt, attr.stmt(fmt.tree).unwrap());
+    stmt(fmt, attr.stmt(fmt.tree).unwrap(), true);
 }
 
 //==================== EXPR ====================
@@ -1322,7 +1355,7 @@ fn expr_match<'syn>(fmt: &mut Formatter<'syn, '_>, match_: cst::ExprMatch<'syn>)
     fmt.write('{');
     fmt.new_line();
     fmt.tab_inc();
-    interleaved_node_list(fmt, match_arm_list.0, match_arm, COMMENT_ALIGN_MATCH_ARM);
+    interleaved_node_list::<cst::MatchArm>(fmt, match_arm_list.0);
     fmt.tab_dec();
     fmt.tab_depth();
     fmt.write('}');
@@ -1406,57 +1439,59 @@ fn expr_struct_init<'syn>(fmt: &mut Formatter<'syn, '_>, struct_init: cst::ExprS
     field_init_list(fmt, struct_init.field_init_list(fmt.tree).unwrap());
 }
 
-//@cannot use `content_empty` + `interleaved_node_list` on wrap
-// due to tabbing requirement being deferred to field_init and no way to pass it
-// tabbing isnt done by interleaved_node_list due to args_list existing for some nodes
 fn field_init_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_init_list: cst::FieldInitList<'syn>) {
-    if field_init_list.field_inits(fmt.tree).next().is_none() {
+    if content_empty(fmt, field_init_list.0) {
         fmt.write('{');
         fmt.write('}');
         return;
     }
 
-    fmt.write('{');
     let wrap = fmt.wrap_line_break_based(field_init_list.field_inits(fmt.tree));
-    if wrap {
+    let empty = field_init_list.field_inits(fmt.tree).next().is_none();
+
+    if wrap || empty {
+        fmt.write('{');
+        fmt.new_line();
         fmt.tab_inc();
-    } else {
-        fmt.space();
+        interleaved_node_list::<cst::FieldInit>(fmt, field_init_list.0);
+        fmt.tab_dec();
+        fmt.tab_depth();
+        fmt.write('}');
+        return;
     }
 
+    fmt.write('{');
+    fmt.space();
     let mut first = true;
     for field_init_cst in field_init_list.field_inits(fmt.tree) {
-        if wrap {
-            fmt.new_line();
-            fmt.tab_depth();
-            field_init(fmt, field_init_cst);
+        if !first {
             fmt.write(',');
-        } else {
-            if !first {
-                fmt.write(',');
-                fmt.space();
-            }
-            first = false;
-            field_init(fmt, field_init_cst);
+            fmt.space();
         }
+        first = false;
+        field_init(fmt, field_init_cst, false, false);
     }
-
-    if wrap {
-        fmt.tab_dec();
-        fmt.new_line();
-        fmt.tab_depth();
-    } else {
-        fmt.space();
-    }
+    fmt.space();
     fmt.write('}');
 }
 
-fn field_init<'syn>(fmt: &mut Formatter<'syn, '_>, field_init: cst::FieldInit<'syn>) {
+fn field_init<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    field_init: cst::FieldInit<'syn>,
+    tab: bool,
+    comma: bool,
+) {
+    if tab {
+        fmt.tab_depth();
+    }
     name(fmt, field_init.name(fmt.tree).unwrap());
     if let Some(expr_cst) = field_init.expr(fmt.tree) {
         fmt.write(':');
         fmt.space();
         expr(fmt, expr_cst);
+    }
+    if comma {
+        fmt.write(',');
     }
 }
 
