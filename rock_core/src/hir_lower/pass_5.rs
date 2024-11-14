@@ -1675,6 +1675,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     let mut expr = expr;
     let mut constraint = AddrConstraint::None;
     let mut chain_level = 0;
+    let mut array_chain = None;
 
     loop {
         chain_level += 1;
@@ -1703,6 +1704,21 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Index { target, access } => {
+                if let Some(array_chain_level) = array_chain {
+                    if constraint.is_none() && array_chain_level + 1 == chain_level {
+                        match access.kind {
+                            hir::IndexKind::Array(_) => {
+                                if access.deref == Some(ast::Mut::Mutable) {
+                                    constraint = AddrConstraint::AllowMut;
+                                    array_chain = None;
+                                } else {
+                                    array_chain = Some(chain_level);
+                                }
+                            }
+                            _ => array_chain = None,
+                        }
+                    }
+                }
                 if chain_level == 1 {
                     match access.kind {
                         hir::IndexKind::Multi(ast::Mut::Mutable) => {
@@ -1714,6 +1730,8 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                         hir::IndexKind::Array(_) => {
                             if access.deref == Some(ast::Mut::Mutable) {
                                 constraint = AddrConstraint::AllowMut
+                            } else {
+                                array_chain = Some(chain_level);
                             }
                         }
                         _ => {}
