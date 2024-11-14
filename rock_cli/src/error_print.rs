@@ -180,18 +180,16 @@ fn print_context(
     line_num_pad: &str,
 ) {
     let prefix_range = TextRange::new(fmt.line_range.start(), fmt.range.start());
-    let source_range = TextRange::new(
-        fmt.range.start(),
-        (fmt.line_range.end() - 1.into()).min(fmt.range.end()),
-    );
+    let source_range = TextRange::new(fmt.range.start(), fmt.line_range.end().min(fmt.range.end()));
 
     let line_str = &fmt.source[fmt.line_range.as_usize()];
     let prefix_str = &fmt.source[prefix_range.as_usize()];
-    let source_str = &fmt.source[source_range.as_usize()];
+    let source_str = (&fmt.source[source_range.as_usize()]).trim_end();
 
     let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
     let marker_pad = " ".repeat(normalized_tab_len(prefix_str));
     let marker = severity_marker(fmt.severity).repeat(normalized_tab_len(source_str));
+    let space = if fmt.message.is_empty() { "" } else { " " };
     let message = fmt.message;
 
     let c = state.style.err.cyan;
@@ -202,7 +200,7 @@ fn print_context(
         handle,
         r#"{line_pad} {c}│
 {}{line_num_pad} │{r} {line}
-{line_pad} {c}│ {marker_pad}{}{marker} {message}
+{line_pad} {c}│ {marker_pad}{}{marker}{space}{message}
 {line_pad} {c}{box_char}─ {}:{:?}{r}"#,
         fmt.line_num,
         severity_color(&state.style, fmt.severity),

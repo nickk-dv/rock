@@ -1619,6 +1619,7 @@ fn typecheck_address<'hir, 'ast>(
                             err::tycheck_cannot_ref_var_immut(&mut ctx.emit, src, var_src);
                         }
                     }
+                    AddrConstraint::AllowMut => {}
                     AddrConstraint::ImmutRef(deref_src) => {
                         err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
                     }
@@ -1655,6 +1656,7 @@ enum AddrBase {
 
 enum AddrConstraint {
     None,
+    AllowMut,
     ImmutRef(SourceRange),
     ImmutMulti(SourceRange),
     ImmutSlice(SourceRange),
@@ -1666,19 +1668,16 @@ impl AddrConstraint {
     }
 }
 
-//@test this a lot, likely might be wrong, especially `last_deref` hack
+//@for index access store brackets range?
+// unclear which access is the issue since entire index expr range is used
+// same bracket range is needed for typecheck_index errors + backend maybe
 fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     let mut expr = expr;
     let mut constraint = AddrConstraint::None;
-
-    //@feels like a hack:
-    // deref on immut will add immut_ref constraint
-    // for variable base if last_deref will be used if exists
-    // in immut case doesnt matter, in mut case will override the mutt of variable itself
-    // allowing &mut varibles to be deref assigned, and taking &mut to * of &mut
-    let mut last_deref: Option<ast::Mut> = None;
+    let mut chain_level = 0;
 
     loop {
+        chain_level += 1;
         let addr_base = match expr.kind {
             hir::ExprKind::Error => AddrBase::Unknown,
             hir::ExprKind::Const { value } => match value {
@@ -1692,70 +1691,81 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Block { .. } => AddrBase::Temporary,
             hir::ExprKind::Match { .. } => AddrBase::Temporary,
             hir::ExprKind::StructField { target, access } => {
+                if chain_level == 1 && access.deref == Some(ast::Mut::Mutable) {
+                    constraint = AddrConstraint::AllowMut
+                }
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
                     let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
-                last_deref = None;
                 continue;
             }
             hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Index { target, access } => {
+                if chain_level == 1 {
+                    match access.kind {
+                        hir::IndexKind::Multi(ast::Mut::Mutable) => {
+                            constraint = AddrConstraint::AllowMut
+                        }
+                        hir::IndexKind::Slice(ast::Mut::Mutable) => {
+                            constraint = AddrConstraint::AllowMut
+                        }
+                        hir::IndexKind::Array(_) => {
+                            if access.deref == Some(ast::Mut::Mutable) {
+                                constraint = AddrConstraint::AllowMut
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 if constraint.is_none() {
-                    //@for index access store brackets range?
-                    // unclear which access is the issue since entire index expr range is used
-                    // same bracket range is needed for typecheck_index errors + backend maybe
-                    if access.deref == Some(ast::Mut::Immutable) {
-                        let deref_src = ctx.src(expr.range);
-                        constraint = AddrConstraint::ImmutRef(deref_src);
-                    } else if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
+                    if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
                         let slice_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutSlice(slice_src);
                     } else if matches!(access.kind, hir::IndexKind::Multi(ast::Mut::Immutable)) {
                         let multi_src = ctx.src(expr.range);
                         constraint = AddrConstraint::ImmutMulti(multi_src);
+                    } else if access.deref == Some(ast::Mut::Immutable) {
+                        let deref_src = ctx.src(expr.range);
+                        constraint = AddrConstraint::ImmutRef(deref_src);
                     }
                 }
                 expr = target;
-                //@this should track if its owned or not
-                // incorrect for slice / multi ptr, still errors due to base var mut
-                last_deref = None;
                 continue;
             }
             hir::ExprKind::Slice { target, access } => {
+                //@semantics not finished for slice expression
+                if chain_level == 1 && access.deref == Some(ast::Mut::Mutable) {
+                    constraint = AddrConstraint::AllowMut
+                }
                 if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
                     let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = target;
-                last_deref = None;
                 continue;
             }
             hir::ExprKind::Cast { .. } => AddrBase::Temporary,
             hir::ExprKind::ParamVar { param_id } => {
                 let param = ctx.scope.local.param(param_id);
                 let var_src = ctx.src(param.name.range);
-                let base_mutt = last_deref.unwrap_or(param.mutt);
-                AddrBase::Variable(base_mutt, var_src)
+                AddrBase::Variable(param.mutt, var_src)
             }
             hir::ExprKind::LocalVar { local_id } => {
                 let local = ctx.scope.local.local(local_id);
                 let var_src = ctx.src(local.name.range);
-                let base_mutt = last_deref.unwrap_or(local.mutt);
-                AddrBase::Variable(base_mutt, var_src)
+                AddrBase::Variable(local.mutt, var_src)
             }
             hir::ExprKind::LocalBind { local_bind_id } => {
                 let local_bind = ctx.scope.local.bind(local_bind_id);
                 let var_src = ctx.src(local_bind.name.range);
-                let base_mutt = last_deref.unwrap_or(local_bind.mutt);
-                AddrBase::Variable(base_mutt, var_src)
+                AddrBase::Variable(local_bind.mutt, var_src)
             }
             hir::ExprKind::ForBind { for_bind_id } => {
                 let for_bind = ctx.scope.local.for_bind(for_bind_id);
                 let var_src = ctx.src(for_bind.name.range);
-                let base_mutt = last_deref.unwrap_or(for_bind.mutt);
-                AddrBase::Variable(base_mutt, var_src)
+                AddrBase::Variable(for_bind.mutt, var_src)
             }
             hir::ExprKind::ConstVar { const_id } => {
                 let const_data = ctx.registry.const_data(const_id);
@@ -1763,8 +1773,7 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             hir::ExprKind::GlobalVar { global_id } => {
                 let global_data = ctx.registry.global_data(global_id);
-                let base_mutt = last_deref.unwrap_or(global_data.mutt);
-                AddrBase::Variable(base_mutt, global_data.src())
+                AddrBase::Variable(global_data.mutt, global_data.src())
             }
             hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
@@ -1773,12 +1782,14 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::Deref { rhs, mutt, .. } => {
+                if chain_level == 1 && mutt == ast::Mut::Mutable {
+                    constraint = AddrConstraint::AllowMut
+                }
                 if constraint.is_none() && mutt == ast::Mut::Immutable {
                     let deref_src = ctx.src(expr.range);
                     constraint = AddrConstraint::ImmutRef(deref_src)
                 }
                 expr = rhs;
-                last_deref = Some(mutt);
                 continue;
             }
             hir::ExprKind::Address { .. } => AddrBase::Temporary,
@@ -2493,6 +2504,7 @@ fn typecheck_assign<'hir, 'ast>(
                     err::tycheck_cannot_assign_var_immut(&mut ctx.emit, lhs_src, var_src);
                 }
             }
+            AddrConstraint::AllowMut => {}
             AddrConstraint::ImmutRef(deref_src) => {
                 err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, lhs_src, deref_src);
             }

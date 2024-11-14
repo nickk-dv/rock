@@ -232,6 +232,7 @@ macro_rules! define_id {
         #[derive(Copy, Clone, PartialEq, Eq, Hash)]
         $vis struct $name(u32);
 
+        #[allow(unused)]
         impl $name {
             #[must_use]
             #[inline(always)]

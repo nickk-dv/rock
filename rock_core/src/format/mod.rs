@@ -6,9 +6,6 @@ use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 use crate::token::Trivia;
 
-//@choose .next().is_none vs content_empty() for empty format lists (related to trivia)
-//@unify repeated wrapped lists formatting (generic fn)
-
 const TAB_STR: &'static str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
@@ -1516,12 +1513,10 @@ fn expr_array_repeat<'syn>(
     array_repeat: cst::ExprArrayRepeat<'syn>,
 ) {
     fmt.write('[');
-
     expr(fmt, array_repeat.value(fmt.tree).unwrap());
     fmt.write(';');
     fmt.space();
     expr(fmt, array_repeat.len(fmt.tree).unwrap());
-
     fmt.write(']');
 }
 

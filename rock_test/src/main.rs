@@ -23,6 +23,7 @@ struct RockTestFile {
 
 #[derive(Debug)]
 struct RockTest {
+    no_run: bool,
     entry: String,
     expect: String,
     source: String,
@@ -64,7 +65,7 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
     let mut lines = text.lines().peekable();
     let mut prelude = String::with_capacity(256);
 
-    let prelude_line = lines.next().expect("#prelude line");
+    let prelude_line = lines.next().expect("#prelude tag must exist");
     assert_eq!(
         prelude_line,
         "//#prelude",
@@ -85,7 +86,7 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
     let mut tests = Vec::with_capacity(16);
 
     while lines.peek().is_some() {
-        let entry_line = lines.next().expect("#entry line");
+        let entry_line = lines.next().expect("#entry line tag must exist");
         assert!(
             entry_line.starts_with("//#entry"),
             "test file `{}` expected `//#entry` tag",
@@ -101,7 +102,7 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
             + start_idx;
         let entry = entry_line[start_idx..end_idx].to_string();
 
-        let expect_line = lines.next().expect("#expect line");
+        let expect_line = lines.next().expect("#expect tag must exist");
         let expect = if expect_line.starts_with("//#expect") {
             let mut expect = String::with_capacity(128);
             while let Some(line) = lines.peek() {
@@ -136,6 +137,7 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
         }
 
         let test = RockTest {
+            no_run: entry_line.starts_with("//#entry(no_run)"),
             entry,
             expect,
             source,
@@ -207,10 +209,17 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
         println!("\n{CB}src/{}{R}", test_file.name);
 
         for test in test_file.tests {
-            let main_src = format!(
-                "import test.{{test_{0}}}\nproc main() s32 {{ test_{0}(); return 0; }}",
-                test.entry
-            );
+            let main_src = if test.no_run {
+                format!(
+                    "import test.{{test_{0}}}\nproc main() s32 {{ return 0; }}",
+                    test.entry
+                )
+            } else {
+                format!(
+                    "import test.{{test_{0}}}\nproc main() s32 {{ test_{0}(); return 0; }}",
+                    test.entry
+                )
+            };
             let test_src = format!("{}{}", test.source, test_file.prelude);
 
             fs::write(&test_env.main_path, main_src).unwrap();

@@ -42,7 +42,7 @@ impl<'intern, T: InternID + Copy> InternPool<'intern, T> {
     }
 }
 
-trait InternID {
+pub trait InternID {
     fn from_usize(val: usize) -> Self;
     fn into_usize(self) -> usize;
 }
