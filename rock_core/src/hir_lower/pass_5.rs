@@ -436,7 +436,6 @@ fn typecheck_if<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let mut if_type = hir::Type::NEVER;
-    let entry = typecheck_branch(ctx, &mut expect, &mut if_type, &if_.entry);
 
     let mut branches = Vec::with_capacity(if_.branches.len());
     for branch in if_.branches {
@@ -464,7 +463,6 @@ fn typecheck_if<'hir, 'ast>(
     }
 
     let if_ = hir::If {
-        entry,
         branches,
         else_block,
     };

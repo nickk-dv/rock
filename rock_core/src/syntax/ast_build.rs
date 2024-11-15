@@ -839,16 +839,8 @@ fn expr_kind<'ast>(
             ast::ExprKind::Lit { lit }
         }
         cst::Expr::If(if_) => {
-            let mut branches = if_.branches(ctx.tree);
-
-            let entry = branches.next().unwrap();
-            let entry = ast::Branch {
-                cond: expr(ctx, entry.cond(ctx.tree).unwrap()),
-                block: block(ctx, entry.block(ctx.tree).unwrap()),
-            };
-
             let offset = ctx.s.branches.start();
-            for branch in branches {
+            for branch in if_.branches(ctx.tree) {
                 let branch = ast::Branch {
                     cond: expr(ctx, branch.cond(ctx.tree).unwrap()),
                     block: block(ctx, branch.block(ctx.tree).unwrap()),
@@ -859,7 +851,6 @@ fn expr_kind<'ast>(
             let else_block = if_.else_block(ctx.tree).map(|b| block(ctx, b));
 
             let if_ = ast::If {
-                entry,
                 branches,
                 else_block,
             };

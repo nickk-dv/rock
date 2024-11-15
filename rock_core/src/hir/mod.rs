@@ -347,7 +347,6 @@ pub struct ConstArray<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct If<'hir> {
-    pub entry: Branch<'hir>,
     pub branches: &'hir [Branch<'hir>],
     pub else_block: Option<Block<'hir>>,
 }

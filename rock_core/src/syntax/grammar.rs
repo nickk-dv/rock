@@ -904,11 +904,11 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
 fn expr_if(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
 
-    let me = p.start();
+    let mb = p.start();
     p.bump(T![if]);
     expr(p);
     block_expect(p);
-    me.complete(p, SyntaxKind::IF_BRANCH);
+    mb.complete(p, SyntaxKind::IF_BRANCH);
 
     while p.eat(T![else]) {
         if p.at(T![if]) {

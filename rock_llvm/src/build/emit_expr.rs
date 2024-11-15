@@ -290,51 +290,35 @@ fn codegen_const_in_proc(
     }
 }
 
-//@simplify
 fn codegen_if<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
     expect: Expect,
     if_: &hir::If<'c>,
 ) {
-    let mut body_bb = cg.append_bb(proc_cg, "if_body");
     let exit_bb = cg.append_bb(proc_cg, "if_exit");
-
-    let mut next_bb = if !if_.branches.is_empty() || if_.else_block.is_some() {
-        cg.append_bb(proc_cg, "if_next")
-    } else {
-        exit_bb
-    };
-
-    let cond = codegen_expr_value(cg, proc_cg, if_.entry.cond);
-    cg.build.cond_br(cond, body_bb, next_bb);
-
-    cg.build.position_at_end(body_bb);
-    emit_stmt::codegen_block(cg, proc_cg, expect, if_.entry.block);
-    cg.build_br_no_term(exit_bb);
+    let mut branch_bb = cg.build.insert_bb();
 
     for (idx, branch) in if_.branches.iter().enumerate() {
-        let last = idx + 1 == if_.branches.len();
-        let create_next = !last || if_.else_block.is_some();
-
-        body_bb = cg.append_bb(proc_cg, "if_body");
-        cg.build.position_at_end(next_bb);
-
+        cg.build.position_at_end(branch_bb);
         let cond = codegen_expr_value(cg, proc_cg, branch.cond);
-        next_bb = if create_next {
-            cg.append_bb(proc_cg, "if_next")
+
+        let body_bb = cg.append_bb(proc_cg, "if_body");
+        let last_branch = idx + 1 == if_.branches.len() && if_.else_block.is_none();
+        branch_bb = if !last_branch {
+            cg.append_bb(proc_cg, "if_branch")
         } else {
             exit_bb
         };
-        cg.build.cond_br(cond, body_bb, next_bb);
 
+        cg.build.cond_br(cond, body_bb, branch_bb);
         cg.build.position_at_end(body_bb);
         emit_stmt::codegen_block(cg, proc_cg, expect, branch.block);
         cg.build_br_no_term(exit_bb);
     }
 
     if let Some(block) = if_.else_block {
-        cg.build.position_at_end(next_bb);
+        cg.build.position_at_end(branch_bb);
         emit_stmt::codegen_block(cg, proc_cg, expect, block);
         cg.build_br_no_term(exit_bb);
     }

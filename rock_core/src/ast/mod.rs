@@ -340,7 +340,6 @@ pub enum ExprKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct If<'ast> {
-    pub entry: Branch<'ast>,
     pub branches: &'ast [Branch<'ast>],
     pub else_block: Option<Block<'ast>>,
 }
