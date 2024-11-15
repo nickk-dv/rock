@@ -1,5 +1,6 @@
 pub mod ast_build;
 pub mod ast_layer;
+pub mod format;
 mod grammar;
 mod parser;
 pub mod syntax_kind;

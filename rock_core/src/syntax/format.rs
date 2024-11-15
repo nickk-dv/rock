@@ -1,8 +1,8 @@
+use super::ast_layer::{self as cst, AstNode, AstNodeIterator};
+use super::syntax_kind::{SyntaxKind, SyntaxSet};
+use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::ast;
 use crate::support::AsStr;
-use crate::syntax::ast_layer::{self as cst, AstNode, AstNodeIterator};
-use crate::syntax::syntax_kind::{SyntaxKind, SyntaxSet};
-use crate::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::text::TextRange;
 use crate::token::Trivia;
 

@@ -6,8 +6,8 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
-use rock_core::format::FormatterCache;
 use rock_core::session::FileData;
+use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
@@ -235,7 +235,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 return;
             }
             let file = session.vfs.file(module.file_id());
-            let formatted = rock_core::format::format(
+            let formatted = rock_core::syntax::format::format(
                 tree,
                 &file.source,
                 &file.line_ranges,

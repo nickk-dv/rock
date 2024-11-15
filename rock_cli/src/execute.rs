@@ -3,7 +3,6 @@ use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
 use rock_core::error::{Error, ErrorWarningBuffer};
-use rock_core::format;
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
@@ -12,6 +11,7 @@ use rock_core::package::semver::Semver;
 use rock_core::session::{self, BuildStats, Session};
 use rock_core::support::{AsStr, Timer};
 use rock_core::syntax::ast_build;
+use rock_core::syntax::format;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
