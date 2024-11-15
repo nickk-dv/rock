@@ -215,7 +215,7 @@ pub enum ForKind<'hir> {
     Loop,
     Cond(&'hir Expr<'hir>),
     Elem(&'hir ForElem<'hir>),
-    Pat(&'hir ForPat),
+    Pat(&'hir ForPat<'hir>),
 }
 
 #[derive(Copy, Clone)]
@@ -235,7 +235,11 @@ pub enum ForElemKind {
     Array(ArrayStaticLen),
 }
 
-pub struct ForPat {}
+#[derive(Copy, Clone)]
+pub struct ForPat<'hir> {
+    pub pat: Pat<'hir>,
+    pub expr: &'hir Expr<'hir>,
+}
 
 crate::define_id!(pub ForBindID);
 #[derive(Copy, Clone)]

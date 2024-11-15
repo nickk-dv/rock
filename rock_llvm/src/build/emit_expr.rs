@@ -341,6 +341,7 @@ fn codegen_if<'c>(
     cg.build.position_at_end(exit_bb);
 }
 
+//@getting enum variant tag is repetative
 fn codegen_match<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
@@ -348,139 +349,63 @@ fn codegen_match<'c>(
     kind: hir::MatchKind,
     match_: &hir::Match<'c>,
 ) {
-    match kind {
-        hir::MatchKind::Int { .. } => {}
-        hir::MatchKind::Bool => {}
-        hir::MatchKind::Char => {}
-        hir::MatchKind::String => unimplemented!("match on string"),
-        hir::MatchKind::Enum { .. } => {
-            codegen_match_enum(cg, proc_cg, expect, kind, match_);
-            return;
+    let (on_value, enum_ptr, bind_by_pointer) = match kind {
+        hir::MatchKind::Int { .. } | hir::MatchKind::Bool | hir::MatchKind::Char => {
+            let on_value = codegen_expr_value(cg, proc_cg, match_.on_expr);
+            (on_value, None, false)
         }
-    }
-
-    let on_value = codegen_expr_value(cg, proc_cg, match_.on_expr);
-    let insert_bb = cg.build.insert_bb();
-
-    let exit_bb = cg.append_bb(proc_cg, "match_exit");
-    let mut wild_bb = None;
-    let mut switch_cases = Vec::<(llvm::Value, llvm::BasicBlock)>::with_capacity(match_.arms.len());
-
-    for arm in match_.arms {
-        let arm_bb = cg.append_bb(proc_cg, "match_arm");
-        cg.build.position_at_end(arm_bb);
-        emit_stmt::codegen_block(cg, proc_cg, expect, arm.block);
-        cg.build_br_no_term(exit_bb);
-
-        match arm.pat {
-            hir::Pat::Wild => {
-                assert!(wild_bb.is_none());
-                wild_bb = Some(arm_bb);
-            }
-            hir::Pat::Or(pats) => {
-                for pat in pats {
-                    match pat {
-                        hir::Pat::Wild => {
-                            assert!(wild_bb.is_none());
-                            wild_bb = Some(arm_bb);
-                        }
-                        _ => {
-                            let value = codegen_match_pat_value(cg, *pat);
-                            switch_cases.push((value, arm_bb));
-                        }
-                    }
-                }
-            }
-            _ => {
-                let value = codegen_match_pat_value(cg, arm.pat);
-                switch_cases.push((value, arm_bb));
-            }
-        };
-    }
-
-    cg.build.position_at_end(insert_bb);
-    let else_bb = wild_bb.unwrap_or(exit_bb);
-    let case_count = switch_cases.len() as u32;
-    let switch = cg.build.switch(on_value, else_bb, case_count);
-
-    for (case_val, dest_bb) in switch_cases {
-        cg.build.add_case(switch, case_val, dest_bb);
-    }
-    cg.build.position_at_end(exit_bb);
-}
-
-fn codegen_match_pat_value<'c>(cg: &Codegen<'c, '_, '_>, pat: hir::Pat) -> llvm::Value {
-    match pat {
-        hir::Pat::Error => unreachable!(),
-        hir::Pat::Wild => unreachable!(),
-        hir::Pat::Lit(value) => codegen_const(cg, value),
-        hir::Pat::Const(const_id) => codegen_const_var(cg, const_id),
-        hir::Pat::Variant(_, _, _) => unimplemented!("match on enum"),
-        hir::Pat::Or(_) => unreachable!(),
-    }
-}
-
-fn codegen_match_enum<'c>(
-    cg: &Codegen<'c, '_, '_>,
-    proc_cg: &mut ProcCodegen<'c>,
-    expect: Expect,
-    kind: hir::MatchKind,
-    match_: &hir::Match<'c>,
-) {
-    let (enum_id, ref_mut) = match kind {
-        hir::MatchKind::Enum { enum_id, ref_mut } => (enum_id, ref_mut),
-        _ => unreachable!(),
+        hir::MatchKind::String => unimplemented!("match on string"),
+        hir::MatchKind::Enum { enum_id, ref_mut } => {
+            //@dont always expect a pointer if enum is fieldless (ir quality)
+            let enum_ptr = codegen_expr_pointer(cg, proc_cg, match_.on_expr);
+            let enum_data = cg.hir.enum_data(enum_id);
+            let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
+            let on_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
+            (on_value, Some(enum_ptr), ref_mut.is_some())
+        }
     };
 
-    let enum_data = cg.hir.enum_data(enum_id);
-    let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
-    //@always expect pointer, use sepate semantics for no inner value enums (same as variant_init)
-    // right now all enum_init are capable to generate a pointer (via entry alloca)
-    let enum_ptr = codegen_expr_pointer(cg, proc_cg, match_.on_expr);
-    let tag_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
-    let insert_bb = cg.build.insert_bb();
-
     let exit_bb = cg.append_bb(proc_cg, "match_exit");
+    let insert_bb = cg.build.insert_bb();
     let mut wild_bb = None;
-    let mut switch_cases = Vec::<(llvm::Value, llvm::BasicBlock)>::with_capacity(match_.arms.len());
+    let mut cases = Vec::<(llvm::Value, llvm::BasicBlock)>::with_capacity(match_.arms.len());
 
     for arm in match_.arms {
         let arm_bb = cg.append_bb(proc_cg, "match_arm");
         cg.build.position_at_end(arm_bb);
 
         match arm.pat {
-            hir::Pat::Error => todo!(),
-            hir::Pat::Wild => {
-                assert!(wild_bb.is_none());
-                wild_bb = Some(arm_bb);
-            }
-            hir::Pat::Variant(_, variant_id, bind_ids) => {
+            hir::Pat::Error => unreachable!(),
+            hir::Pat::Wild => wild_bb = Some(arm_bb),
+            hir::Pat::Lit(value) => cases.push((codegen_const(cg, value), arm_bb)),
+            hir::Pat::Const(const_id) => cases.push((codegen_const_var(cg, const_id), arm_bb)),
+            hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
+                let enum_data = cg.hir.enum_data(enum_id);
                 let variant = enum_data.variant(variant_id);
                 let variant_tag = match variant.kind {
                     hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
                     hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
                 };
                 let variant_tag = codegen_const(cg, variant_tag);
-                switch_cases.push((variant_tag, arm_bb));
+                cases.push((variant_tag, arm_bb));
 
-                if !variant.fields.is_empty() {
+                if !bind_ids.is_empty() {
                     let variant_ty = &cg.variants[enum_id.index()];
                     let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
 
                     for bind_id in bind_ids.iter().copied() {
                         let proc_data = cg.hir.proc_data(proc_cg.proc_id);
                         let local_bind = proc_data.local_bind(bind_id);
-                        let field_id = local_bind.field_id.unwrap().raw() + 1;
 
                         let field_ptr = cg.build.gep_struct(
                             variant_ty,
-                            enum_ptr,
-                            field_id,
+                            enum_ptr.unwrap(),
+                            local_bind.field_id.unwrap().raw() + 1,
                             "variant_field_ptr",
                         );
                         let local_ptr = proc_cg.local_bind_ptrs[bind_id.index()];
 
-                        if ref_mut.is_some() {
+                        if bind_by_pointer {
                             cg.build.store(field_ptr.as_val(), local_ptr);
                         } else {
                             let field_ty = cg.ty(local_bind.ty);
@@ -491,13 +416,16 @@ fn codegen_match_enum<'c>(
                 }
             }
             hir::Pat::Or(pats) => {
-                for pat in pats {
-                    match *pat {
-                        hir::Pat::Wild => {
-                            assert!(wild_bb.is_none());
-                            wild_bb = Some(arm_bb);
+                for pat in pats.iter().copied() {
+                    match pat {
+                        hir::Pat::Error | hir::Pat::Or(_) => unreachable!(),
+                        hir::Pat::Wild => wild_bb = Some(arm_bb),
+                        hir::Pat::Lit(value) => cases.push((codegen_const(cg, value), arm_bb)),
+                        hir::Pat::Const(const_id) => {
+                            cases.push((codegen_const_var(cg, const_id), arm_bb))
                         }
-                        hir::Pat::Variant(_, variant_id, _) => {
+                        hir::Pat::Variant(enum_id, variant_id, _) => {
+                            let enum_data = cg.hir.enum_data(enum_id);
                             let variant = enum_data.variant(variant_id);
                             let variant_tag = match variant.kind {
                                 hir::VariantKind::Default(id) => {
@@ -506,14 +434,12 @@ fn codegen_match_enum<'c>(
                                 hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
                             };
                             let variant_tag = codegen_const(cg, variant_tag);
-                            switch_cases.push((variant_tag, arm_bb));
+                            cases.push((variant_tag, arm_bb));
                         }
-                        _ => unreachable!(),
                     }
                 }
             }
-            _ => unreachable!(),
-        }
+        };
 
         emit_stmt::codegen_block(cg, proc_cg, expect, arm.block);
         cg.build_br_no_term(exit_bb);
@@ -521,10 +447,8 @@ fn codegen_match_enum<'c>(
 
     cg.build.position_at_end(insert_bb);
     let else_bb = wild_bb.unwrap_or(exit_bb);
-    let case_count = switch_cases.len() as u32;
-    let switch = cg.build.switch(tag_value, else_bb, case_count);
-
-    for (case_val, dest_bb) in switch_cases {
+    let switch = cg.build.switch(on_value, else_bb, cases.len() as u32);
+    for (case_val, dest_bb) in cases {
         cg.build.add_case(switch, case_val, dest_bb);
     }
     cg.build.position_at_end(exit_bb);

@@ -249,7 +249,14 @@ fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_
                 cg.build.br(entry_bb);
             }
         }
-        hir::ForKind::Pat(for_pat) => unimplemented!("for loop with pattern"),
+        hir::ForKind::Pat(for_pat) => {
+            //@todo implement match on single pattern
+            cg.build.br(entry_bb);
+            cg.build.position_at_end(entry_bb);
+            cg.build.br(body_bb);
+            cg.build.position_at_end(body_bb);
+            cg.build.br(exit_bb);
+        }
     }
 
     cg.build.position_at_end(exit_bb);

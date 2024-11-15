@@ -2401,8 +2401,37 @@ fn typecheck_for<'hir, 'ast>(
             hir::ForKind::Elem(ctx.arena.alloc(for_elem))
         }
         ast::ForHeader::Pat(header) => {
-            let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
-            return None;
+            let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
+            let kind_res = super::match_check::match_kind(on_res.ty);
+
+            //@duplicate code for pattern handling same as `match`
+            if let Err(true) = kind_res {
+                let src = ctx.src(on_res.expr.range);
+                let ty_fmt = type_format(ctx, on_res.ty);
+                err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
+            }
+
+            let (pat_expect, ref_mut) = match kind_res {
+                Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
+                    let expect_src = ctx.src(on_res.expr.range);
+                    let enum_ty = hir::Type::Enum(enum_id);
+                    (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
+                }
+                Ok(_) => {
+                    let expect_src = ctx.src(on_res.expr.range);
+                    (Expectation::HasType(on_res.ty, Some(expect_src)), None)
+                }
+                Err(_) => (Expectation::None, None),
+            };
+
+            ctx.scope.local.start_block(BlockStatus::None);
+            let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
+
+            let for_pat = hir::ForPat {
+                pat,
+                expr: on_res.expr,
+            };
+            hir::ForKind::Pat(ctx.arena.alloc(for_pat))
         }
     };
 
