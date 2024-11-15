@@ -1,0 +1,74 @@
+//#prelude
+import core:panics as _.{assert}
+import core:fmt;
+
+//#entry "expr_if_condition"
+//#expect(no_new_line)
+//x < 100
+//#!
+pub proc test_expr_if_condition() void {
+    let x = 0;
+    if x < 100 {
+        fmt.print_string("x < 100");
+    }
+}
+
+//#entry "expr_if_yield_value"
+//#expect
+//#!
+pub proc test_expr_if_yield_value() void {
+    let x = if true {
+        1
+    } else {
+        2
+    };
+    assert(x == 1, "x == 1");
+
+    let y = if false {
+        1
+    } else {
+        2
+    };
+    assert(y == 2, "x == 2");
+
+    let z = if false {
+        1
+    } else if true {
+        2
+    } else {
+        3
+    };
+    assert(z == 2, "z == 2");
+
+    let w = if false {
+        1
+    } else if false {
+        2
+    } else {
+        3
+    };
+    assert(w == 3, "w == 3");
+}
+
+//#entry "expr_if_yield_nested"
+//#expect
+//#!
+pub proc test_expr_if_yield_nested() void {
+    let cond_a = false;
+    let cond_b = true;
+
+    let x = if cond_a {
+        if cond_b {
+            1
+        } else {
+            2
+        }
+    } else {
+        if cond_b {
+            3
+        } else {
+            4
+        }
+    };
+    assert(x == 3, "x == 3");
+}
