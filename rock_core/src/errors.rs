@@ -520,6 +520,17 @@ pub fn item_field_already_defined(
     emit.error(Error::new(msg, field_src, info));
 }
 
+pub fn item_generic_param_already_defined(
+    emit: &mut impl ErrorSink,
+    param_src: SourceRange,
+    existing: SourceRange,
+    name: &str,
+) {
+    let msg = format!("generic parameter `{name}` is defined multiple times");
+    let info = Info::new("existing generic parameter", existing);
+    emit.error(Error::new(msg, param_src, info));
+}
+
 pub fn item_enum_non_int_tag_ty(emit: &mut impl ErrorSink, tag_src: SourceRange) {
     let msg = "enum tag type must be an integer";
     emit.error(Error::new(msg, tag_src, None));

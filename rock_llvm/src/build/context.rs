@@ -112,8 +112,19 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         match ty {
             hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => self.basic_type(basic),
-            hir::Type::Enum(enum_id) => self.enum_type(enum_id),
-            hir::Type::Struct(struct_id) => self.struct_type(struct_id).as_ty(),
+            hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
+            hir::Type::Enum(enum_id, gen_types) => {
+                if gen_types.is_some() {
+                    unimplemented!("codegen generic enum type")
+                }
+                self.enum_type(enum_id)
+            }
+            hir::Type::Struct(struct_id, gen_types) => {
+                if gen_types.is_some() {
+                    unimplemented!("codegen generic struct type")
+                }
+                self.struct_type(struct_id).as_ty()
+            }
             hir::Type::Reference(_, _) => self.cache.ptr_type,
             hir::Type::MultiReference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,

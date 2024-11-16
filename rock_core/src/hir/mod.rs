@@ -26,11 +26,18 @@ pub struct ConstInternPool<'hir> {
     intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
 }
 
+#[derive(Copy, Clone)]
+pub struct GenericParams<'hir> {
+    pub names: &'hir [ast::Name],
+    pub range: TextRange,
+}
+
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
+    pub gen_params: Option<&'hir GenericParams<'hir>>,
     pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
@@ -52,6 +59,7 @@ pub struct EnumData<'hir> {
     pub attr_set: BitSet<EnumFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
+    pub gen_params: Option<&'hir GenericParams<'hir>>,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
@@ -81,6 +89,7 @@ pub struct StructData<'hir> {
     pub attr_set: BitSet<StructFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
+    pub gen_params: Option<&'hir GenericParams<'hir>>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
 }
@@ -125,13 +134,21 @@ pub struct Layout {
 pub enum Type<'hir> {
     Error,
     Basic(ast::BasicType),
-    Enum(EnumID),
-    Struct(StructID),
+    InferDef(GenericItemID, u32),
+    Enum(EnumID, Option<&'hir [Type<'hir>]>),
+    Struct(StructID, Option<&'hir [Type<'hir>]>),
     Reference(ast::Mut, &'hir Type<'hir>),
     MultiReference(ast::Mut, &'hir Type<'hir>),
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum GenericItemID {
+    Proc(ProcID),
+    Enum(EnumID),
+    Struct(StructID),
 }
 
 #[derive(Copy, Clone)]
@@ -616,7 +633,7 @@ pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 
 //==================== SIZE LOCK ====================
 
-crate::size_lock!(16, Type);
+crate::size_lock!(24, Type);
 crate::size_lock!(16, Stmt);
 crate::size_lock!(32, Expr);
 crate::size_lock!(16, ConstValue);

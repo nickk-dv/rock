@@ -10,6 +10,7 @@ use std::collections::HashSet;
 pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
+        hir::Type::InferDef(_, _) => Err(true),
         hir::Type::Basic(basic) => {
             if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
                 Ok(hir::MatchKind::Int { int_ty })
@@ -21,13 +22,16 @@ pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind, bool> {
                 Err(true)
             }
         }
-        hir::Type::Enum(enum_id) => Ok(hir::MatchKind::Enum {
+        //@gen types not handled
+        hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum {
             enum_id,
             ref_mut: None,
         }),
-        hir::Type::Struct(_) => Err(true),
+        //@gen types not handled
+        hir::Type::Struct(_, _) => Err(true),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
-            hir::Type::Enum(enum_id) => Ok(hir::MatchKind::Enum {
+            //@gen types not handled
+            hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum {
                 enum_id,
                 ref_mut: Some(mutt),
             }),

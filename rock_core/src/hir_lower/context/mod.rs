@@ -1,6 +1,7 @@
 pub mod registry;
 pub mod scope;
 
+use crate::ast;
 use crate::error::{ErrorWarningBuffer, SourceRange, WarningBuffer};
 use crate::hir;
 use crate::intern::NameID;
@@ -39,6 +40,19 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
     #[inline]
     pub fn name(&self, name_id: NameID) -> &'s str {
         self.session.intern_name.get(name_id)
+    }
+
+    pub fn generic_param_name(
+        &self,
+        gen_item_id: hir::GenericItemID,
+        gen_param_idx: u32,
+    ) -> ast::Name {
+        let gen_params = match gen_item_id {
+            hir::GenericItemID::Proc(id) => self.registry.proc_data(id).gen_params.unwrap(),
+            hir::GenericItemID::Enum(id) => self.registry.enum_data(id).gen_params.unwrap(),
+            hir::GenericItemID::Struct(id) => self.registry.struct_data(id).gen_params.unwrap(),
+        };
+        gen_params.names[gen_param_idx as usize]
     }
 
     pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {

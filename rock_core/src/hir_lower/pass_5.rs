@@ -49,8 +49,52 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (hir::Type::Error, _) => true,
         (_, hir::Type::Error) => true,
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
-        (hir::Type::Enum(id), hir::Type::Enum(id2)) => id == id2,
-        (hir::Type::Struct(id), hir::Type::Struct(id2)) => id == id2,
+        (
+            hir::Type::InferDef(generic_id, param_idx),
+            hir::Type::InferDef(generic_id2, param_idx2),
+        ) => generic_id == generic_id2 && param_idx == param_idx2,
+        (hir::Type::Enum(id, gen_types), hir::Type::Enum(id2, gen_types2)) => {
+            if id != id2 {
+                return false;
+            }
+            //@add deep error ty search to return `true`
+            //when something errored (preserve false on different id?)
+            //expect same generic shape if 1 is generic
+            if gen_types.is_some() {
+                let types = gen_types.unwrap();
+                let types2 = gen_types2.unwrap();
+                assert_eq!(types.len(), types2.len());
+                for idx in 0..types.len() {
+                    if !type_matches(ctx, types[idx], types2[idx]) {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                true
+            }
+        }
+        (hir::Type::Struct(id, gen_types), hir::Type::Struct(id2, gen_types2)) => {
+            if id != id2 {
+                return false;
+            }
+            //@add deep error ty search to return `true`
+            //when something errored (preserve false on different id?)
+            //expect same generic shape if 1 is generic
+            if gen_types.is_some() {
+                let types = gen_types.unwrap();
+                let types2 = gen_types2.unwrap();
+                assert_eq!(types.len(), types2.len());
+                for idx in 0..types.len() {
+                    if !type_matches(ctx, types[idx], types2[idx]) {
+                        return false;
+                    }
+                }
+                true
+            } else {
+                true
+            }
+        }
         (hir::Type::Reference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             if mutt2 == ast::Mut::Mutable {
                 type_matches(ctx, *ref_ty, *ref_ty2)
@@ -114,13 +158,55 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
-        hir::Type::Enum(id) => {
-            let name = ctx.name(ctx.registry.enum_data(id).name.id);
-            name.to_string().into()
+        hir::Type::InferDef(gen_item_id, gen_param_idx) => {
+            let name = ctx.generic_param_name(gen_item_id, gen_param_idx);
+            ctx.name(name.id).to_string().into()
         }
-        hir::Type::Struct(id) => {
+        hir::Type::Enum(id, gen_types) => {
+            let name = ctx.name(ctx.registry.enum_data(id).name.id);
+
+            if let Some(gen_types) = gen_types {
+                let mut format = String::with_capacity(64);
+                let mut first = false;
+                format.push_str(name);
+                format.push('(');
+                for gen_type in gen_types {
+                    if !first {
+                        format.push(',');
+                        format.push(' ');
+                    }
+                    first = false;
+                    let gen_fmt = type_format(ctx, *gen_type);
+                    format.push_str(gen_fmt.as_str());
+                }
+                format.push(')');
+                format.into()
+            } else {
+                name.to_string().into()
+            }
+        }
+        hir::Type::Struct(id, gen_types) => {
             let name = ctx.name(ctx.registry.struct_data(id).name.id);
-            name.to_string().into()
+
+            if let Some(gen_types) = gen_types {
+                let mut format = String::with_capacity(64);
+                let mut first = false;
+                format.push_str(name);
+                format.push('(');
+                for gen_type in gen_types {
+                    if !first {
+                        format.push(',');
+                        format.push(' ');
+                    }
+                    first = false;
+                    let gen_fmt = type_format(ctx, *gen_type);
+                    format.push_str(gen_fmt.as_str());
+                }
+                format.push(')');
+                format.into()
+            } else {
+                name.to_string().into()
+            }
         }
         hir::Type::Reference(mutt, ref_ty) => {
             let mut_str = match mutt {
@@ -516,7 +602,8 @@ fn typecheck_match<'hir, 'ast>(
     let (pat_expect, ref_mut) = match kind_res {
         Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
             let expect_src = ctx.src(on_res.expr.range);
-            let enum_ty = hir::Type::Enum(enum_id);
+            //@gen types not handled
+            let enum_ty = hir::Type::Enum(enum_id, None);
             (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
         }
         Ok(_) => {
@@ -661,7 +748,8 @@ fn typecheck_pat_item<'hir, 'ast>(
 
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id, bind_ids),
-                hir::Type::Enum(enum_id),
+                //@gen types not handled
+                hir::Type::Enum(enum_id, None),
             )
         }
         ValueID::Const(const_id, fields) => {
@@ -722,7 +810,8 @@ fn typecheck_pat_variant<'hir>(
 
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id, bind_ids),
-        hir::Type::Enum(enum_id),
+        //@gen types not handled
+        hir::Type::Enum(enum_id, None),
     )
 }
 
@@ -791,7 +880,8 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => None,
-        hir::Type::Struct(struct_id) => match check_field_from_struct(ctx, struct_id, name) {
+        //@gen types not handled
+        hir::Type::Struct(struct_id, _) => match check_field_from_struct(ctx, struct_id, name) {
             Some((field_id, field)) => {
                 let kind = FieldKind::Struct(struct_id, field_id);
                 let field_ty = field.ty;
@@ -1070,7 +1160,8 @@ fn typecheck_cast<'hir, 'ast>(
     }
 
     match (from, into) {
-        (hir::Type::Enum(enum_id), hir::Type::Basic(into)) => {
+        //@gen types not handled
+        (hir::Type::Enum(enum_id, _), hir::Type::Basic(into)) => {
             let enum_data = ctx.registry.enum_data(enum_id);
             let into_kind = BasicTypeKind::new(into);
 
@@ -1444,7 +1535,8 @@ fn typecheck_struct_init<'hir, 'ast>(
 
     let input = ctx.arena.alloc_slice(&field_inits);
     let kind = hir::ExprKind::StructInit { struct_id, input };
-    TypeResult::new(hir::Type::Struct(struct_id), kind)
+    //@ignored gen_types
+    TypeResult::new(hir::Type::Struct(struct_id, None), kind)
 }
 
 fn typecheck_array_init<'hir, 'ast>(
@@ -1851,7 +1943,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: &[],
             };
-            TypeResult::new(hir::Type::Struct(struct_id), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
         }};
     }
 
@@ -1874,7 +1966,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: ctx.arena.alloc_slice(&input),
             };
-            TypeResult::new(hir::Type::Struct(struct_id), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
         }};
     }
 
@@ -1911,7 +2003,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: ctx.arena.alloc_slice(&input),
             };
-            TypeResult::new(hir::Type::Struct(struct_id), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
         }};
     }
 
@@ -2412,7 +2504,8 @@ fn typecheck_for<'hir, 'ast>(
             let (pat_expect, ref_mut) = match kind_res {
                 Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
                     let expect_src = ctx.src(on_res.expr.range);
-                    let enum_ty = hir::Type::Enum(enum_id);
+                    //@ignored gen_types
+                    let enum_ty = hir::Type::Enum(enum_id, None);
                     (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
                 }
                 Ok(_) => {
@@ -2674,9 +2767,11 @@ fn infer_enum_type(
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            hir::Type::Enum(enum_id) => Some(enum_id),
+            //@ignored gen_types
+            hir::Type::Enum(enum_id, _) => Some(enum_id),
             hir::Type::Reference(_, ref_ty) => match *ref_ty {
-                hir::Type::Enum(enum_id) => Some(enum_id),
+                //@ignored gen_types
+                hir::Type::Enum(enum_id, _) => Some(enum_id),
                 _ => None,
             },
             _ => None,
@@ -2697,7 +2792,8 @@ fn infer_struct_type(
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            hir::Type::Struct(struct_id) => Some(struct_id),
+            //@ignored gen_types
+            hir::Type::Struct(struct_id, _) => Some(struct_id),
             _ => None,
         },
     };
@@ -2936,7 +3032,8 @@ fn check_variant_input_opt<'hir, 'ast>(
         variant_id,
         input,
     };
-    TypeResult::new(hir::Type::Enum(enum_id), kind)
+    //@ignored gen_types
+    TypeResult::new(hir::Type::Enum(enum_id, None), kind)
 }
 
 fn check_variant_bind_count(

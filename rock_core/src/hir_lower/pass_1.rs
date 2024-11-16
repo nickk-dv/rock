@@ -43,6 +43,7 @@ fn add_proc_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ProcItem
         attr_set: feedback.attr_set,
         vis: item.vis,
         name: item.name,
+        gen_params: None,
         params: &[],
         return_ty: hir::Type::Error,
         block: None,
@@ -76,6 +77,7 @@ fn add_enum_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::EnumItem
         attr_set: feedback.attr_set,
         vis: item.vis,
         name: item.name,
+        gen_params: None,
         variants: &[],
         tag_ty: hir::Eval::Unresolved(()),
         layout: hir::Eval::Unresolved(()),
@@ -106,6 +108,7 @@ fn add_struct_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Struct
         attr_set: feedback.attr_set,
         vis: item.vis,
         name: item.name,
+        gen_params: None,
         fields: &[],
         layout: hir::Eval::Unresolved(()),
     };

@@ -117,8 +117,8 @@ pub fn path_resolve_type<'hir>(
 
     let ty = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Enum(id) => hir::Type::Enum(id),
-            SymbolID::Struct(id) => hir::Type::Struct(id),
+            SymbolID::Enum(id) => hir::Type::Enum(id, None),
+            SymbolID::Struct(id) => hir::Type::Struct(id, None),
             _ => {
                 let src = ctx.src(path.at_name.range);
                 let defined_src = symbol_id.src(&ctx.registry);

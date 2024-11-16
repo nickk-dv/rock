@@ -28,11 +28,12 @@ pub fn process_items(ctx: &mut HirCtx) {
 pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     let item = ctx.registry.proc_item(id);
+    let gen_params = process_generic_params(ctx, item.generic);
 
     let mut unique = Vec::<hir::Param>::new();
 
     for param in item.params.iter() {
-        //@its still added to scope during proc typecheck
+        //@shadows error, allow to take precedence (still add?)
         if ctx
             .scope
             .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
@@ -59,16 +60,17 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
         unique.push(param);
     }
 
-    let params = ctx.arena.alloc_slice(&unique);
     let return_ty = type_resolve(ctx, item.return_ty, true);
     let data = ctx.registry.proc_data_mut(id);
-    data.params = params;
+    data.gen_params = gen_params;
+    data.params = ctx.arena.alloc_slice(&unique);
     data.return_ty = return_ty;
 }
 
 fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     let item = ctx.registry.enum_item(id);
+    let gen_params = process_generic_params(ctx, item.generic);
 
     let mut unique = Vec::<hir::Variant>::new();
     let mut any_constant = false;
@@ -189,6 +191,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     }
 
     let data = ctx.registry.enum_data_mut(id);
+    data.gen_params = gen_params;
     data.variants = ctx.arena.alloc_slice(&unique);
     data.tag_ty = tag_ty;
 }
@@ -196,6 +199,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
 fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     let item = ctx.registry.struct_item(id);
+    let gen_params = process_generic_params(ctx, item.generic);
 
     let mut unique = Vec::<hir::Field>::new();
 
@@ -223,8 +227,9 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
         unique.push(field);
     }
 
-    let fields = ctx.arena.alloc_slice(&unique);
-    ctx.registry.struct_data_mut(id).fields = fields;
+    let data = ctx.registry.struct_data_mut(id);
+    data.gen_params = gen_params;
+    data.fields = ctx.arena.alloc_slice(&unique);
 }
 
 fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID) {
@@ -244,6 +249,46 @@ fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID) 
 }
 
 #[must_use]
+fn process_generic_params<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    params: Option<&ast::GenericParams>,
+) -> Option<&'hir hir::GenericParams<'hir>> {
+    let params = params?;
+    if params.names.is_empty() {
+        return None;
+    }
+
+    let mut unique = Vec::<ast::Name>::new();
+    for param in params.names.iter().copied() {
+        //@shadows error, allow to take precedence (still add?)
+        if ctx
+            .scope
+            .check_already_defined_global(param, ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err()
+        {
+            continue;
+        }
+
+        let existing = unique.iter().find(|&it| it.id == param.id);
+        if let Some(existing) = existing {
+            let param_src = ctx.src(param.range);
+            let existing = ctx.src(existing.range);
+            let name = ctx.name(param.id);
+            err::item_generic_param_already_defined(&mut ctx.emit, param_src, existing, name);
+            continue;
+        }
+        unique.push(param);
+    }
+
+    let names = ctx.arena.alloc_slice(&unique);
+    let gen_params = hir::GenericParams {
+        names,
+        range: params.range,
+    };
+    Some(ctx.arena.alloc(gen_params))
+}
+
+#[must_use]
 pub fn type_resolve<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     ast_ty: ast::Type<'ast>,
@@ -253,6 +298,8 @@ pub fn type_resolve<'hir, 'ast>(
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
         ast::TypeKind::Generic(generic) => {
+            //@could be generic, not only struct or enum!
+            let custom = check_path::path_resolve_type(ctx, generic.path);
             let src = ctx.src(ast_ty.range);
             err::internal_generic_types_not_implemented(&mut ctx.emit, src);
             hir::Type::Error

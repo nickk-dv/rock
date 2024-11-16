@@ -8,11 +8,18 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
     match ty {
         hir::Type::Error => Err(()),
         hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
-        hir::Type::Enum(id) => {
+        hir::Type::InferDef(_, _) => Err(()), //@silent error
+        hir::Type::Enum(id, gen_types) => {
+            if gen_types.is_some() {
+                return Err(()); //@silent error
+            }
             let data = ctx.registry.enum_data(id);
             data.layout.resolved()
         }
-        hir::Type::Struct(id) => {
+        hir::Type::Struct(id, gen_types) => {
+            if gen_types.is_some() {
+                return Err(()); //@silent error
+            }
             let data = ctx.registry.struct_data(id);
             data.layout.resolved()
         }
