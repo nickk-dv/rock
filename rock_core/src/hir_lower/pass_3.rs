@@ -28,19 +28,22 @@ pub fn process_items(ctx: &mut HirCtx) {
 pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     let item = ctx.registry.proc_item(id);
-    let gen_params = process_generic_params(ctx, item.generic);
+
+    if let Some(gen_params) = item.generic {
+        let gen_params = process_generic_params(ctx, gen_params);
+        ctx.registry.proc_data_mut(id).gen_params = gen_params;
+    }
 
     let mut unique = Vec::<hir::Param>::new();
 
     for param in item.params.iter() {
-        //@shadows error, allow to take precedence (still add?)
-        if ctx
-            .scope
-            .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
-            .is_err()
-        {
-            continue;
-        }
+        //@change error to `shadows` instead of already defined?
+        let _ = ctx.scope.check_already_defined_global(
+            param.name,
+            ctx.session,
+            &ctx.registry,
+            &mut ctx.emit,
+        );
 
         let existing = unique.iter().find(|&it| it.name.id == param.name.id);
         if let Some(existing) = existing {
@@ -62,7 +65,6 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
 
     let return_ty = type_resolve(ctx, item.return_ty, true);
     let data = ctx.registry.proc_data_mut(id);
-    data.gen_params = gen_params;
     data.params = ctx.arena.alloc_slice(&unique);
     data.return_ty = return_ty;
 }
@@ -70,7 +72,11 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
 fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     let item = ctx.registry.enum_item(id);
-    let gen_params = process_generic_params(ctx, item.generic);
+
+    if let Some(gen_params) = item.generic {
+        let gen_params = process_generic_params(ctx, gen_params);
+        ctx.registry.enum_data_mut(id).gen_params = gen_params;
+    }
 
     let mut unique = Vec::<hir::Variant>::new();
     let mut any_constant = false;
@@ -166,7 +172,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     }
 
     // when `tag_ty` is unknown and any field is constant:
-    // force enum tag repr to be specified via attribute
+    // force enum tag type to be specified
     if tag_ty.is_unresolved() && any_constant {
         let enum_src = ctx.src(data.name.range);
         err::item_enum_unknown_tag_ty(&mut ctx.emit, enum_src);
@@ -191,7 +197,6 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     }
 
     let data = ctx.registry.enum_data_mut(id);
-    data.gen_params = gen_params;
     data.variants = ctx.arena.alloc_slice(&unique);
     data.tag_ty = tag_ty;
 }
@@ -199,7 +204,11 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
 fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     let item = ctx.registry.struct_item(id);
-    let gen_params = process_generic_params(ctx, item.generic);
+
+    if let Some(gen_params) = item.generic {
+        let gen_params = process_generic_params(ctx, gen_params);
+        ctx.registry.struct_data_mut(id).gen_params = gen_params;
+    }
 
     let mut unique = Vec::<hir::Field>::new();
 
@@ -228,7 +237,6 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
     }
 
     let data = ctx.registry.struct_data_mut(id);
-    data.gen_params = gen_params;
     data.fields = ctx.arena.alloc_slice(&unique);
 }
 
@@ -251,23 +259,21 @@ fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID) 
 #[must_use]
 fn process_generic_params<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    params: Option<&ast::GenericParams>,
+    params: &ast::GenericParams,
 ) -> Option<&'hir hir::GenericParams<'hir>> {
-    let params = params?;
     if params.names.is_empty() {
         return None;
     }
 
     let mut unique = Vec::<ast::Name>::new();
     for param in params.names.iter().copied() {
-        //@shadows error, allow to take precedence (still add?)
-        if ctx
-            .scope
-            .check_already_defined_global(param, ctx.session, &ctx.registry, &mut ctx.emit)
-            .is_err()
-        {
-            continue;
-        }
+        //@change error to `shadows` instead of already defined?
+        let _ = ctx.scope.check_already_defined_global(
+            param,
+            ctx.session,
+            &ctx.registry,
+            &mut ctx.emit,
+        );
 
         let existing = unique.iter().find(|&it| it.id == param.id);
         if let Some(existing) = existing {

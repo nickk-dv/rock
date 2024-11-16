@@ -466,12 +466,6 @@ fn lex_number(lex: &mut Lexer, fc: char) {
                 lex_integer_bin(lex, start);
                 return;
             }
-            Some('o') => {
-                lex.bump(fc);
-                lex.bump('o');
-                lex_integer_oct(lex, start);
-                return;
-            }
             Some('x') => {
                 lex.bump(fc);
                 lex.bump('x');
@@ -610,52 +604,6 @@ fn lex_integer_bin(lex: &mut Lexer, start: TextOffset) {
         err::lexer_int_base_missing_digits(lex, lex.make_src(start));
     } else if digit_count > MAX_DIGITS {
         err::lexer_int_bin_overflow(lex, lex.make_src(start), digit_count);
-    }
-
-    lex.tokens.add_int(integer, lex.make_range(start));
-}
-
-fn lex_integer_oct(lex: &mut Lexer, start: TextOffset) {
-    const MAX_DIGITS: u32 = 22;
-    const SHIFT_BASE: u32 = 3;
-    const MAX_FIRST_DIGIT: u64 = 1;
-
-    let mut integer: u64 = 0;
-    let mut digit_count: u32 = 0;
-    let mut first_digit: u64 = 0;
-
-    let skipped = skip_zero_digits(lex);
-
-    while let Some(c) = lex.peek() {
-        let value: u64 = match c {
-            '0'..='7' => c as u64 - '0' as u64,
-            '8'..='9' => {
-                let start = lex.start_range();
-                lex.bump(c);
-                err::lexer_int_oct_invalid_digit(lex, lex.make_src(start), c);
-                continue;
-            }
-            '_' => {
-                lex.bump(c);
-                continue;
-            }
-            _ => break,
-        };
-
-        if digit_count == 0 {
-            first_digit = value;
-        }
-        lex.bump(c);
-        digit_count += 1;
-        integer = (integer << SHIFT_BASE) | value;
-    }
-
-    if digit_count == 0 && !skipped {
-        err::lexer_int_base_missing_digits(lex, lex.make_src(start));
-    } else if digit_count > MAX_DIGITS {
-        err::lexer_int_oct_overflow(lex, lex.make_src(start));
-    } else if digit_count == MAX_DIGITS && first_digit > MAX_FIRST_DIGIT {
-        err::lexer_int_oct_overflow(lex, lex.make_src(start));
     }
 
     lex.tokens.add_int(integer, lex.make_range(start));

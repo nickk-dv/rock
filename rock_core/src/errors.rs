@@ -187,11 +187,6 @@ pub fn lexer_int_bin_invalid_digit(emit: &mut impl ErrorSink, src: SourceRange, 
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_int_oct_invalid_digit(emit: &mut impl ErrorSink, src: SourceRange, digit: char) {
-    let msg = format!("invalid digit `{digit}` for base 8 octal integer");
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn lexer_int_bin_overflow(emit: &mut impl ErrorSink, src: SourceRange, digit_count: u32) {
     let msg = format!(
         "binary integer overflow\nexpected maximum of 64 binary digits, found {digit_count}",
@@ -203,11 +198,6 @@ pub fn lexer_int_hex_overflow(emit: &mut impl ErrorSink, src: SourceRange, digit
     let msg = format!(
         "hexadecimal integer overflow\nexpected maximum of 16 hexadecimal digits, found {digit_count}",
     );
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn lexer_int_oct_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("octal integer overflow\nmaximum value is `0o17_77777_77777_77777_77777`",);
     emit.error(Error::new(msg, src, None));
 }
 
