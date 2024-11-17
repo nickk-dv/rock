@@ -50,19 +50,19 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (_, hir::Type::Error) => true,
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (
-            hir::Type::InferDef(generic_id, param_idx),
-            hir::Type::InferDef(generic_id2, param_idx2),
-        ) => generic_id == generic_id2 && param_idx == param_idx2,
-        (hir::Type::Enum(id, gen_types), hir::Type::Enum(id2, gen_types2)) => {
+            hir::Type::InferDef(poly_def_id, poly_param_idx),
+            hir::Type::InferDef(poly_def_id2, poly_param_idx2),
+        ) => poly_def_id == poly_def_id2 && poly_param_idx == poly_param_idx2,
+        (hir::Type::Enum(id, poly_types), hir::Type::Enum(id2, poly_types2)) => {
             if id != id2 {
                 return false;
             }
             //@add deep error ty search to return `true`
             //when something errored (preserve false on different id?)
-            //expect same generic shape if 1 is generic
-            if gen_types.is_some() {
-                let types = gen_types.unwrap();
-                let types2 = gen_types2.unwrap();
+            //expect same poly shape if 1 is poly
+            if poly_types.is_some() {
+                let types = poly_types.unwrap();
+                let types2 = poly_types2.unwrap();
                 assert_eq!(types.len(), types2.len());
                 for idx in 0..types.len() {
                     if !type_matches(ctx, types[idx], types2[idx]) {
@@ -74,16 +74,16 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
                 true
             }
         }
-        (hir::Type::Struct(id, gen_types), hir::Type::Struct(id2, gen_types2)) => {
+        (hir::Type::Struct(id, poly_types), hir::Type::Struct(id2, poly_types2)) => {
             if id != id2 {
                 return false;
             }
             //@add deep error ty search to return `true`
             //when something errored (preserve false on different id?)
-            //expect same generic shape if 1 is generic
-            if gen_types.is_some() {
-                let types = gen_types.unwrap();
-                let types2 = gen_types2.unwrap();
+            //expect same poly shape if 1 is poly
+            if poly_types.is_some() {
+                let types = poly_types.unwrap();
+                let types2 = poly_types2.unwrap();
                 assert_eq!(types.len(), types2.len());
                 for idx in 0..types.len() {
                     if !type_matches(ctx, types[idx], types2[idx]) {
@@ -158,19 +158,19 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
-        hir::Type::InferDef(gen_item_id, gen_param_idx) => {
-            let name = ctx.generic_param_name(gen_item_id, gen_param_idx);
+        hir::Type::InferDef(poly_def_id, poly_param_idx) => {
+            let name = ctx.polymorph_param_name(poly_def_id, poly_param_idx);
             ctx.name(name.id).to_string().into()
         }
-        hir::Type::Enum(id, gen_types) => {
+        hir::Type::Enum(id, poly_types) => {
             let name = ctx.name(ctx.registry.enum_data(id).name.id);
 
-            if let Some(gen_types) = gen_types {
+            if let Some(poly_types) = poly_types {
                 let mut format = String::with_capacity(64);
                 let mut first = false;
                 format.push_str(name);
                 format.push('(');
-                for gen_type in gen_types {
+                for gen_type in poly_types {
                     if !first {
                         format.push(',');
                         format.push(' ');
@@ -185,15 +185,15 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 name.to_string().into()
             }
         }
-        hir::Type::Struct(id, gen_types) => {
+        hir::Type::Struct(id, poly_types) => {
             let name = ctx.name(ctx.registry.struct_data(id).name.id);
 
-            if let Some(gen_types) = gen_types {
+            if let Some(poly_types) = poly_types {
                 let mut format = String::with_capacity(64);
                 let mut first = false;
                 format.push_str(name);
                 format.push('(');
-                for gen_type in gen_types {
+                for gen_type in poly_types {
                     if !first {
                         format.push(',');
                         format.push(' ');
@@ -1535,7 +1535,7 @@ fn typecheck_struct_init<'hir, 'ast>(
 
     let input = ctx.arena.alloc_slice(&field_inits);
     let kind = hir::ExprKind::StructInit { struct_id, input };
-    //@ignored gen_types
+    //@ignored poly_types
     TypeResult::new(hir::Type::Struct(struct_id, None), kind)
 }
 
@@ -2504,7 +2504,7 @@ fn typecheck_for<'hir, 'ast>(
             let (pat_expect, ref_mut) = match kind_res {
                 Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
                     let expect_src = ctx.src(on_res.expr.range);
-                    //@ignored gen_types
+                    //@ignored poly_types
                     let enum_ty = hir::Type::Enum(enum_id, None);
                     (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
                 }
@@ -2767,10 +2767,10 @@ fn infer_enum_type(
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            //@ignored gen_types
+            //@ignored poly_types
             hir::Type::Enum(enum_id, _) => Some(enum_id),
             hir::Type::Reference(_, ref_ty) => match *ref_ty {
-                //@ignored gen_types
+                //@ignored poly_types
                 hir::Type::Enum(enum_id, _) => Some(enum_id),
                 _ => None,
             },
@@ -2792,7 +2792,7 @@ fn infer_struct_type(
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            //@ignored gen_types
+            //@ignored poly_types
             hir::Type::Struct(struct_id, _) => Some(struct_id),
             _ => None,
         },
@@ -3032,7 +3032,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         variant_id,
         input,
     };
-    //@ignored gen_types
+    //@ignored poly_types
     TypeResult::new(hir::Type::Enum(enum_id, None), kind)
 }
 

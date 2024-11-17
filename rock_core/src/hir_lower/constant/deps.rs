@@ -608,16 +608,16 @@ fn add_type_size_const_dependencies<'hir>(
             eprintln!("unhandled infer_def in (add_type_size_const_dependencies)");
             return Err(parent_id);
         }
-        hir::Type::Enum(id, gen_types) => {
-            if gen_types.is_some() {
-                eprintln!("unhandled gen_types in enum (add_type_size_const_dependencies)");
+        hir::Type::Enum(id, poly_types) => {
+            if poly_types.is_some() {
+                eprintln!("unhandled poly_types in enum (add_type_size_const_dependencies)");
                 return Err(parent_id);
             }
             add_enum_size_const_dependency(ctx, tree, parent_id, id)?;
         }
-        hir::Type::Struct(id, gen_types) => {
-            if gen_types.is_some() {
-                eprintln!("unhandled gen_types in struct (add_type_size_const_dependencies)");
+        hir::Type::Struct(id, poly_types) => {
+            if poly_types.is_some() {
+                eprintln!("unhandled poly_types in struct (add_type_size_const_dependencies)");
                 return Err(parent_id);
             }
             add_struct_size_const_dependency(ctx, tree, parent_id, id)?;
@@ -701,9 +701,9 @@ fn add_type_usage_const_dependencies<'hir>(
             eprintln!("unhandled infer_def in (add_type_usage_const_dependencies)");
             return Err(parent_id);
         }
-        hir::Type::Enum(id, gen_types) => {
-            if gen_types.is_some() {
-                eprintln!("unhandled gen_types in enum (add_type_usage_const_dependencies)");
+        hir::Type::Enum(id, poly_types) => {
+            if poly_types.is_some() {
+                eprintln!("unhandled poly_types in enum (add_type_usage_const_dependencies)");
                 return Err(parent_id);
             }
             let data = ctx.registry.enum_data(id);
@@ -713,9 +713,9 @@ fn add_type_usage_const_dependencies<'hir>(
                 }
             }
         }
-        hir::Type::Struct(id, gen_types) => {
-            if gen_types.is_some() {
-                eprintln!("unhandled gen_types in struct (add_type_usage_const_dependencies)");
+        hir::Type::Struct(id, poly_types) => {
+            if poly_types.is_some() {
+                eprintln!("unhandled poly_types in struct (add_type_usage_const_dependencies)");
                 return Err(parent_id);
             }
             let data = ctx.registry.struct_data(id);
@@ -896,7 +896,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             // both with & without known struct type in the struct_init
             if let Some(path) = struct_init.path {
                 if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
-                    //@gen_types not handled
+                    //@poly_types not handled
                     let struct_ty = hir::Type::Struct(struct_id, None);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
                 } else {

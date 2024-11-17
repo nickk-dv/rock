@@ -42,17 +42,17 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
         self.session.intern_name.get(name_id)
     }
 
-    pub fn generic_param_name(
+    pub fn polymorph_param_name(
         &self,
-        gen_item_id: hir::GenericItemID,
-        gen_param_idx: u32,
+        poly_def_id: hir::PolymorphDefID,
+        poly_param_idx: u32,
     ) -> ast::Name {
-        let gen_params = match gen_item_id {
-            hir::GenericItemID::Proc(id) => self.registry.proc_data(id).gen_params.unwrap(),
-            hir::GenericItemID::Enum(id) => self.registry.enum_data(id).gen_params.unwrap(),
-            hir::GenericItemID::Struct(id) => self.registry.struct_data(id).gen_params.unwrap(),
+        let poly_params = match poly_def_id {
+            hir::PolymorphDefID::Proc(id) => self.registry.proc_data(id).poly_params.unwrap(),
+            hir::PolymorphDefID::Enum(id) => self.registry.enum_data(id).poly_params.unwrap(),
+            hir::PolymorphDefID::Struct(id) => self.registry.struct_data(id).poly_params.unwrap(),
         };
-        gen_params.names[gen_param_idx as usize]
+        poly_params.names[poly_param_idx as usize]
     }
 
     pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {

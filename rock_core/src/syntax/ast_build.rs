@@ -251,7 +251,7 @@ fn proc_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let generic = generic_params(ctx, item.generic_params(ctx.tree));
+    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
 
     let offset = ctx.s.params.start();
     let param_list = item.param_list(ctx.tree).unwrap();
@@ -268,7 +268,7 @@ fn proc_item<'ast>(
         attrs,
         vis,
         name,
-        generic,
+        poly_params,
         params,
         is_variadic,
         return_ty,
@@ -293,7 +293,7 @@ fn enum_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let generic = generic_params(ctx, item.generic_params(ctx.tree));
+    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
 
     let tag_ty = if let Some((basic, range)) = item.tag_ty(ctx.tree) {
         let tag_ty = ast::EnumTagType { basic, range };
@@ -313,7 +313,7 @@ fn enum_item<'ast>(
         attrs,
         vis,
         name,
-        generic,
+        poly_params,
         tag_ty,
         variants,
     };
@@ -350,7 +350,7 @@ fn struct_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let generic = generic_params(ctx, item.generic_params(ctx.tree));
+    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
 
     let offset = ctx.s.fields.start();
     let field_list = item.field_list(ctx.tree).unwrap();
@@ -363,7 +363,7 @@ fn struct_item<'ast>(
         attrs,
         vis,
         name,
-        generic,
+        poly_params,
         fields,
     };
     ctx.arena.alloc(struct_item)
@@ -549,21 +549,21 @@ fn args_list<'ast>(
     ctx.arena.alloc(args_list)
 }
 
-fn generic_params<'ast>(
+fn polymorph_params<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    generic_params: Option<cst::GenericParams>,
-) -> Option<&'ast ast::GenericParams<'ast>> {
-    if let Some(generic_params) = generic_params {
-        let range = generic_params.find_range(ctx.tree);
+    poly_params: Option<cst::PolymorphParams>,
+) -> Option<&'ast ast::PolymorphParams<'ast>> {
+    if let Some(poly_params) = poly_params {
+        let range = poly_params.find_range(ctx.tree);
 
         let offset = ctx.s.names.start();
-        for name_cst in generic_params.names(ctx.tree) {
+        for name_cst in poly_params.names(ctx.tree) {
             let name = name(ctx, name_cst);
             ctx.s.names.add(name);
         }
         let names = ctx.s.names.take(offset, &mut ctx.arena);
 
-        let params = ast::GenericParams { names, range };
+        let params = ast::PolymorphParams { names, range };
         let params = ctx.arena.alloc(params);
         Some(params)
     } else {
@@ -571,20 +571,20 @@ fn generic_params<'ast>(
     }
 }
 
-fn generic_types<'ast>(
+fn polymorph_args<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    generic_types: cst::GenericTypes,
-) -> ast::GenericTypes<'ast> {
-    let range = generic_types.find_range(ctx.tree);
+    poly_args: cst::PolymorphArgs,
+) -> ast::PolymorphArgs<'ast> {
+    let range = poly_args.find_range(ctx.tree);
 
     let offset = ctx.s.types.start();
-    for ty_cst in generic_types.types(ctx.tree) {
+    for ty_cst in poly_args.types(ctx.tree) {
         let ty = ty(ctx, ty_cst);
         ctx.s.types.add(ty);
     }
     let types = ctx.s.types.take(offset, &mut ctx.arena);
 
-    ast::GenericTypes { types, range }
+    ast::PolymorphArgs { types, range }
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
@@ -599,13 +599,13 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
             ast::TypeKind::Custom(path)
         }
-        cst::Type::Generic(ty_cst) => {
+        cst::Type::Polymorph(ty_cst) => {
             let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
-            let generic = generic_types(ctx, ty_cst.generic(ctx.tree).unwrap());
+            let poly_args = polymorph_args(ctx, ty_cst.poly_args(ctx.tree).unwrap());
 
-            let generic = ast::GenericType { path, generic };
-            let generic = ctx.arena.alloc(generic);
-            ast::TypeKind::Generic(generic)
+            let poly_ty = ast::PolymorphType { path, poly_args };
+            let poly_ty = ctx.arena.alloc(poly_ty);
+            ast::TypeKind::Polymorph(poly_ty)
         }
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.t_mut(ctx.tree));

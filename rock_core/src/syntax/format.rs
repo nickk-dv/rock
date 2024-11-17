@@ -612,8 +612,8 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
     name(fmt, item.name(fmt.tree).unwrap());
     param_list(fmt, item.param_list(fmt.tree).unwrap());
 
-    if let Some(generic) = item.generic_params(fmt.tree) {
-        generic_params(fmt, generic);
+    if let Some(poly_params) = item.poly_params(fmt.tree) {
+        polymorph_params(fmt, poly_params);
     }
     fmt.space();
     ty(fmt, item.return_ty(fmt.tree).unwrap());
@@ -698,8 +698,8 @@ fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {
     fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
 
-    if let Some(generic) = item.generic_params(fmt.tree) {
-        generic_params(fmt, generic);
+    if let Some(poly_params) = item.poly_params(fmt.tree) {
+        polymorph_params(fmt, poly_params);
     }
     if let Some((basic, _)) = item.tag_ty(fmt.tree) {
         fmt.space();
@@ -769,8 +769,8 @@ fn struct_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::StructItem<'syn>)
     fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
 
-    if let Some(generic) = item.generic_params(fmt.tree) {
-        generic_params(fmt, generic);
+    if let Some(poly_params) = item.poly_params(fmt.tree) {
+        polymorph_params(fmt, poly_params);
     }
     fmt.space();
     field_list(fmt, item.field_list(fmt.tree).unwrap());
@@ -952,10 +952,10 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
 
 //==================== GENERIC ====================
 
-fn generic_params(fmt: &mut Formatter, generic_params: cst::GenericParams) {
+fn polymorph_params(fmt: &mut Formatter, poly_params: cst::PolymorphParams) {
     fmt.write('(');
     let mut first = true;
-    for name_cst in generic_params.names(fmt.tree) {
+    for name_cst in poly_params.names(fmt.tree) {
         if !first {
             fmt.write(',');
             fmt.space();
@@ -966,10 +966,10 @@ fn generic_params(fmt: &mut Formatter, generic_params: cst::GenericParams) {
     fmt.write(')');
 }
 
-fn generic_types<'syn>(fmt: &mut Formatter<'syn, '_>, generic_types: cst::GenericTypes<'syn>) {
+fn polymorph_args<'syn>(fmt: &mut Formatter<'syn, '_>, poly_args: cst::PolymorphArgs<'syn>) {
     fmt.write('(');
     let mut first = true;
-    for ty_cst in generic_types.types(fmt.tree) {
+    for ty_cst in poly_args.types(fmt.tree) {
         if !first {
             fmt.write(',');
             fmt.space();
@@ -989,9 +989,9 @@ fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
             fmt.write_str(basic.as_str());
         }
         cst::Type::Custom(ty_cst) => path(fmt, ty_cst.path(fmt.tree).unwrap()),
-        cst::Type::Generic(ty_cst) => {
+        cst::Type::Polymorph(ty_cst) => {
             path(fmt, ty_cst.path(fmt.tree).unwrap());
-            generic_types(fmt, ty_cst.generic(fmt.tree).unwrap());
+            polymorph_args(fmt, ty_cst.poly_args(fmt.tree).unwrap());
         }
         cst::Type::Reference(ty_cst) => ty_ref(fmt, ty_cst),
         cst::Type::MultiReference(ty_cst) => ty_multi_ref(fmt, ty_cst),

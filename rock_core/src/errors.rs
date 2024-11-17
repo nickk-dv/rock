@@ -510,14 +510,14 @@ pub fn item_field_already_defined(
     emit.error(Error::new(msg, field_src, info));
 }
 
-pub fn item_generic_param_already_defined(
+pub fn item_type_param_already_defined(
     emit: &mut impl ErrorSink,
     param_src: SourceRange,
     existing: SourceRange,
     name: &str,
 ) {
-    let msg = format!("generic parameter `{name}` is defined multiple times");
-    let info = Info::new("existing generic parameter", existing);
+    let msg = format!("type parameter `{name}` is defined multiple times");
+    let info = Info::new("existing type parameter", existing);
     emit.error(Error::new(msg, param_src, info));
 }
 
@@ -1207,8 +1207,8 @@ pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> E
 
 //==================== INTERNAL ====================
 
-pub fn internal_generic_types_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "internal: generic parameterized types are not implemented";
+pub fn internal_type_args_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "internal: type arguments are not implemented";
     emit.error(Error::new(msg, src, None));
 }
 

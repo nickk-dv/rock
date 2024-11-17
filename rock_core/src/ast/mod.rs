@@ -38,7 +38,7 @@ pub struct ProcItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
-    pub generic: Option<&'ast GenericParams<'ast>>,
+    pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub params: &'ast [Param<'ast>],
     pub is_variadic: bool,
     pub return_ty: Type<'ast>,
@@ -57,7 +57,7 @@ pub struct EnumItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
-    pub generic: Option<&'ast GenericParams<'ast>>,
+    pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub tag_ty: Option<&'ast EnumTagType>,
     pub variants: &'ast [Variant<'ast>],
 }
@@ -87,7 +87,7 @@ pub struct StructItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
     pub vis: Vis,
     pub name: Name,
-    pub generic: Option<&'ast GenericParams<'ast>>,
+    pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub fields: &'ast [Field<'ast>],
 }
 
@@ -140,16 +140,16 @@ pub enum SymbolRename {
     Discard(TextRange),
 }
 
-//==================== GENERIC ====================
+//==================== POLYMORPH ====================
 
 #[derive(Copy, Clone)]
-pub struct GenericParams<'ast> {
+pub struct PolymorphParams<'ast> {
     pub names: &'ast [Name],
     pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
-pub struct GenericTypes<'ast> {
+pub struct PolymorphArgs<'ast> {
     pub types: &'ast [Type<'ast>],
     pub range: TextRange,
 }
@@ -162,11 +162,13 @@ pub struct Type<'ast> {
     pub range: TextRange,
 }
 
+//@store PolyArgs in path itself
+//@remove Custom | Generic type separation
 #[derive(Copy, Clone)]
 pub enum TypeKind<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
-    Generic(&'ast GenericType<'ast>),
+    Polymorph(&'ast PolymorphType<'ast>),
     Reference(Mut, &'ast Type<'ast>),
     MultiReference(Mut, &'ast Type<'ast>),
     Procedure(&'ast ProcType<'ast>),
@@ -175,9 +177,9 @@ pub enum TypeKind<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct GenericType<'ast> {
+pub struct PolymorphType<'ast> {
     pub path: &'ast Path<'ast>,
-    pub generic: GenericTypes<'ast>,
+    pub poly_args: PolymorphArgs<'ast>,
 }
 
 #[derive(Copy, Clone)]

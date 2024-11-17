@@ -140,7 +140,7 @@ fn proc_item(p: &mut Parser, m: Marker) {
         p.error_recover("expected parameter list", RECOVER_PARAM_LIST);
     }
     if p.at(T!['(']) {
-        generic_params(p);
+        polymorph_params(p);
     }
     ty(p);
     if p.at(T!['{']) {
@@ -184,7 +184,7 @@ fn enum_item(p: &mut Parser, m: Marker) {
     p.bump(T![enum]);
     name(p);
     if p.at(T!['(']) {
-        generic_params(p);
+        polymorph_params(p);
     }
     if p.peek().as_basic_type().is_some() {
         p.bump(p.peek());
@@ -259,7 +259,7 @@ fn struct_item(p: &mut Parser, m: Marker) {
     p.bump(T![struct]);
     name(p);
     if p.at(T!['(']) {
-        generic_params(p);
+        polymorph_params(p);
     }
     if p.at(T!['{']) {
         field_list(p);
@@ -403,7 +403,7 @@ fn import_symbol_rename(p: &mut Parser) {
 
 //==================== GENERIC ====================
 
-fn generic_params(p: &mut Parser) {
+fn polymorph_params(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
@@ -413,15 +413,15 @@ fn generic_params(p: &mut Parser) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected generic parameter name", TokenSet::empty());
+            p.error_recover("expected type parameter", TokenSet::empty());
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::GENERIC_PARAMS);
+    m.complete(p, SyntaxKind::POLYMORPH_PARAMS);
 }
 
-fn generic_types(p: &mut Parser) {
+fn polymorph_args(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
@@ -431,12 +431,12 @@ fn generic_types(p: &mut Parser) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected generic type", TokenSet::empty());
+            p.error_recover("expected type argument", TokenSet::empty());
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::GENERIC_TYPES);
+    m.complete(p, SyntaxKind::POLYMORPH_ARGS);
 }
 
 //==================== TYPE ====================
@@ -478,8 +478,8 @@ fn ty(p: &mut Parser) {
             let m = p.start();
             path(p);
             if p.at(T!['(']) {
-                generic_types(p);
-                m.complete(p, SyntaxKind::TYPE_GENERIC);
+                polymorph_args(p);
+                m.complete(p, SyntaxKind::TYPE_POLYMORPH);
             } else {
                 m.complete(p, SyntaxKind::TYPE_CUSTOM);
             }

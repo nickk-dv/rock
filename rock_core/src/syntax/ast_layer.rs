@@ -405,12 +405,12 @@ ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
-ast_node_impl!(GenericParams, SyntaxKind::GENERIC_PARAMS);
-ast_node_impl!(GenericTypes, SyntaxKind::GENERIC_TYPES);
+ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
+ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
-ast_node_impl!(TypeGeneric, SyntaxKind::TYPE_GENERIC);
+ast_node_impl!(TypePolymorph, SyntaxKind::TYPE_POLYMORPH);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
 ast_node_impl!(TypeMultiReference, SyntaxKind::TYPE_MULTI_REFERENCE);
 ast_node_impl!(TypeProcedure, SyntaxKind::TYPE_PROCEDURE);
@@ -525,7 +525,7 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
 pub enum Type<'syn> {
     Basic(TypeBasic<'syn>),
     Custom(TypeCustom<'syn>),
-    Generic(TypeGeneric<'syn>),
+    Polymorph(TypePolymorph<'syn>),
     Reference(TypeReference<'syn>),
     MultiReference(TypeMultiReference<'syn>),
     Procedure(TypeProcedure<'syn>),
@@ -538,7 +538,7 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
-            SyntaxKind::TYPE_GENERIC => Some(Type::Generic(TypeGeneric(node))),
+            SyntaxKind::TYPE_POLYMORPH => Some(Type::Polymorph(TypePolymorph(node))),
             SyntaxKind::TYPE_REFERENCE => Some(Type::Reference(TypeReference(node))),
             SyntaxKind::TYPE_MULTI_REFERENCE => {
                 Some(Type::MultiReference(TypeMultiReference(node)))
@@ -553,7 +553,7 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match self {
             Type::Basic(ty) => ty.find_range(tree),
             Type::Custom(ty) => ty.find_range(tree),
-            Type::Generic(ty) => ty.find_range(tree),
+            Type::Polymorph(ty) => ty.find_range(tree),
             Type::Reference(ty) => ty.find_range(tree),
             Type::MultiReference(ty) => ty.find_range(tree),
             Type::Procedure(ty) => ty.find_range(tree),
@@ -838,7 +838,7 @@ impl<'syn> ProcItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
-    node_find!(generic_params, GenericParams);
+    node_find!(poly_params, PolymorphParams);
     node_find!(param_list, ParamList);
     node_find!(return_ty, Type);
     node_find!(block, Block);
@@ -859,7 +859,7 @@ impl<'syn> EnumItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
-    node_find!(generic_params, GenericParams);
+    node_find!(poly_params, PolymorphParams);
     token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
     node_find!(variant_list, VariantList);
 }
@@ -883,7 +883,7 @@ impl<'syn> StructItem<'syn> {
     node_find!(attr_list, AttrList);
     node_find!(vis, Vis);
     node_find!(name, Name);
-    node_find!(generic_params, GenericParams);
+    node_find!(poly_params, PolymorphParams);
     node_find!(field_list, FieldList);
 }
 
@@ -944,11 +944,11 @@ impl<'syn> ImportSymbolRename<'syn> {
 
 //==================== GENERIC ====================
 
-impl<'syn> GenericParams<'syn> {
+impl<'syn> PolymorphParams<'syn> {
     node_iter!(names, Name);
 }
 
-impl<'syn> GenericTypes<'syn> {
+impl<'syn> PolymorphArgs<'syn> {
     node_iter!(types, Type);
 }
 
@@ -962,9 +962,9 @@ impl<'syn> TypeCustom<'syn> {
     node_find!(path, Path);
 }
 
-impl<'syn> TypeGeneric<'syn> {
+impl<'syn> TypePolymorph<'syn> {
     node_find!(path, Path);
-    node_find!(generic, GenericTypes);
+    node_find!(poly_args, PolymorphArgs);
 }
 
 impl<'syn> TypeReference<'syn> {

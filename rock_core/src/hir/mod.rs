@@ -26,18 +26,12 @@ pub struct ConstInternPool<'hir> {
     intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
 }
 
-#[derive(Copy, Clone)]
-pub struct GenericParams<'hir> {
-    pub names: &'hir [ast::Name],
-    pub range: TextRange,
-}
-
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub gen_params: Option<&'hir GenericParams<'hir>>,
+    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
@@ -59,7 +53,7 @@ pub struct EnumData<'hir> {
     pub attr_set: BitSet<EnumFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub gen_params: Option<&'hir GenericParams<'hir>>,
+    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
@@ -89,7 +83,7 @@ pub struct StructData<'hir> {
     pub attr_set: BitSet<StructFlag>,
     pub vis: ast::Vis,
     pub name: ast::Name,
-    pub gen_params: Option<&'hir GenericParams<'hir>>,
+    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
 }
@@ -131,10 +125,16 @@ pub struct Layout {
 }
 
 #[derive(Copy, Clone)]
+pub struct PolymorphParams<'hir> {
+    pub names: &'hir [ast::Name],
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
     Basic(ast::BasicType),
-    InferDef(GenericItemID, u32),
+    InferDef(PolymorphDefID, u32),
     Enum(EnumID, Option<&'hir [Type<'hir>]>),
     Struct(StructID, Option<&'hir [Type<'hir>]>),
     Reference(ast::Mut, &'hir Type<'hir>),
@@ -145,7 +145,7 @@ pub enum Type<'hir> {
 }
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum GenericItemID {
+pub enum PolymorphDefID {
     Proc(ProcID),
     Enum(EnumID),
     Struct(StructID),

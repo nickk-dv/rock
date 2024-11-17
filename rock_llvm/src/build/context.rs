@@ -113,15 +113,15 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => self.basic_type(basic),
             hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
-            hir::Type::Enum(enum_id, gen_types) => {
-                if gen_types.is_some() {
-                    unimplemented!("codegen generic enum type")
+            hir::Type::Enum(enum_id, poly_types) => {
+                if poly_types.is_some() {
+                    unimplemented!("codegen polymorphic enum type")
                 }
                 self.enum_type(enum_id)
             }
-            hir::Type::Struct(struct_id, gen_types) => {
-                if gen_types.is_some() {
-                    unimplemented!("codegen generic struct type")
+            hir::Type::Struct(struct_id, poly_types) => {
+                if poly_types.is_some() {
+                    unimplemented!("codegen polymorphic struct type")
                 }
                 self.struct_type(struct_id).as_ty()
             }

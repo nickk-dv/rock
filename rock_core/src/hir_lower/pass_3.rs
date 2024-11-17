@@ -29,9 +29,9 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     let item = ctx.registry.proc_item(id);
 
-    if let Some(gen_params) = item.generic {
-        let gen_params = process_generic_params(ctx, gen_params);
-        ctx.registry.proc_data_mut(id).gen_params = gen_params;
+    if let Some(poly_params) = item.poly_params {
+        let poly_params = process_polymorph_params(ctx, poly_params);
+        ctx.registry.proc_data_mut(id).poly_params = poly_params;
     }
 
     let mut unique = Vec::<hir::Param>::new();
@@ -73,9 +73,9 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     let item = ctx.registry.enum_item(id);
 
-    if let Some(gen_params) = item.generic {
-        let gen_params = process_generic_params(ctx, gen_params);
-        ctx.registry.enum_data_mut(id).gen_params = gen_params;
+    if let Some(poly_params) = item.poly_params {
+        let poly_params = process_polymorph_params(ctx, poly_params);
+        ctx.registry.enum_data_mut(id).poly_params = poly_params;
     }
 
     let mut unique = Vec::<hir::Variant>::new();
@@ -205,9 +205,9 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     let item = ctx.registry.struct_item(id);
 
-    if let Some(gen_params) = item.generic {
-        let gen_params = process_generic_params(ctx, gen_params);
-        ctx.registry.struct_data_mut(id).gen_params = gen_params;
+    if let Some(poly_params) = item.poly_params {
+        let poly_params = process_polymorph_params(ctx, poly_params);
+        ctx.registry.struct_data_mut(id).poly_params = poly_params;
     }
 
     let mut unique = Vec::<hir::Field>::new();
@@ -257,16 +257,16 @@ fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID) 
 }
 
 #[must_use]
-fn process_generic_params<'hir>(
+fn process_polymorph_params<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    params: &ast::GenericParams,
-) -> Option<&'hir hir::GenericParams<'hir>> {
-    if params.names.is_empty() {
+    poly_params: &ast::PolymorphParams,
+) -> Option<&'hir hir::PolymorphParams<'hir>> {
+    if poly_params.names.is_empty() {
         return None;
     }
 
     let mut unique = Vec::<ast::Name>::new();
-    for param in params.names.iter().copied() {
+    for param in poly_params.names.iter().copied() {
         //@change error to `shadows` instead of already defined?
         let _ = ctx.scope.check_already_defined_global(
             param,
@@ -280,18 +280,18 @@ fn process_generic_params<'hir>(
             let param_src = ctx.src(param.range);
             let existing = ctx.src(existing.range);
             let name = ctx.name(param.id);
-            err::item_generic_param_already_defined(&mut ctx.emit, param_src, existing, name);
+            err::item_type_param_already_defined(&mut ctx.emit, param_src, existing, name);
             continue;
         }
         unique.push(param);
     }
 
     let names = ctx.arena.alloc_slice(&unique);
-    let gen_params = hir::GenericParams {
+    let poly_params = hir::PolymorphParams {
         names,
-        range: params.range,
+        range: poly_params.range,
     };
-    Some(ctx.arena.alloc(gen_params))
+    Some(ctx.arena.alloc(poly_params))
 }
 
 #[must_use]
@@ -303,11 +303,11 @@ pub fn type_resolve<'hir, 'ast>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
-        ast::TypeKind::Generic(generic) => {
-            //@could be generic, not only struct or enum!
-            let custom = check_path::path_resolve_type(ctx, generic.path);
+        ast::TypeKind::Polymorph(poly_ty) => {
+            //@could be poly param, not only struct or enum!
+            let custom = check_path::path_resolve_type(ctx, poly_ty.path);
             let src = ctx.src(ast_ty.range);
-            err::internal_generic_types_not_implemented(&mut ctx.emit, src);
+            err::internal_type_args_not_implemented(&mut ctx.emit, src);
             hir::Type::Error
         }
         ast::TypeKind::Reference(mutt, ref_ty) => {

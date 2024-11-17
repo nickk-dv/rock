@@ -757,12 +757,12 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Type), //default to type
                     SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Type), //default to type
 
-                    SyntaxKind::GENERIC_PARAMS => Some(SemanticToken::Type),
-                    SyntaxKind::GENERIC_TYPES => None,
+                    SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
+                    SyntaxKind::POLYMORPH_ARGS => None,
 
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
-                    SyntaxKind::TYPE_GENERIC => Some(SemanticToken::Type),
+                    SyntaxKind::TYPE_POLYMORPH => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_REFERENCE => None,
                     SyntaxKind::TYPE_MULTI_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
