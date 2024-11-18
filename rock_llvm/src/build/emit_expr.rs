@@ -213,7 +213,7 @@ fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value
     if string_lit.c_string {
         global_ptr.as_val()
     } else {
-        let string = cg.intern_lit.get(string_lit.id);
+        let string = cg.session.intern_lit.get(string_lit.id);
         let slice_len = cg.const_usize(string.len() as u64);
         llvm::const_struct_named(cg.slice_type(), &[global_ptr.as_val(), slice_len])
     }

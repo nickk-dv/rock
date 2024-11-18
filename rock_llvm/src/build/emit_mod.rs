@@ -5,15 +5,14 @@ use crate::llvm;
 use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
-use rock_core::intern::{InternPool, LitID, NameID};
+use rock_core::session::Session;
 
 pub fn codegen_module<'c, 's, 's_ref>(
     hir: hir::Hir<'c>,
     target: TargetTriple,
-    intern_lit: &'s_ref InternPool<'s, LitID>,
-    intern_name: &'s_ref InternPool<'s, NameID>,
+    session: &'s_ref Session<'s>,
 ) -> (llvm::IRTarget, llvm::IRModule) {
-    let mut cg = Codegen::new(hir, target, intern_lit, intern_name);
+    let mut cg = Codegen::new(hir, target, session);
     codegen_string_lits(&mut cg);
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
@@ -26,7 +25,7 @@ pub fn codegen_module<'c, 's, 's_ref>(
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {
-    for (idx, &string) in cg.intern_lit.get_all().iter().enumerate() {
+    for (idx, &string) in cg.session.intern_lit.get_all().iter().enumerate() {
         let c_string = true; //@always gen cstrings, optional c_string state were temp removed
         let str_val = llvm::const_string(&cg.context, string, c_string);
         let str_ty = llvm::typeof_value(str_val);
@@ -57,7 +56,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
             };
             let array_ty = cg.array_type(&array_ty);
 
-            let enum_name = cg.intern_name.get(enum_data.name.id);
+            let enum_name = cg.session.intern_name.get(enum_data.name.id);
             let enum_ty = cg.context.struct_create_named(enum_name);
             cg.context.struct_set_body(enum_ty, &[array_ty], false);
             enum_ty.as_ty()
@@ -106,7 +105,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
                         field_types.push(cg.ty(field.ty));
                     }
 
-                    let variant_name = cg.intern_name.get(variant.name.id);
+                    let variant_name = cg.session.intern_name.get(variant.name.id);
                     let variant_ty = cg.context.struct_create_named(variant_name);
                     cg.context.struct_set_body(variant_ty, &field_types, false);
                     variant_types.push(Some(variant_ty));
@@ -161,12 +160,25 @@ fn codegen_function_values(cg: &mut Codegen) {
         let is_main = data.attr_set.contains(hir::ProcFlag::Main);
 
         let name = if is_external || is_main {
-            cg.intern_name.get(data.name.id)
+            cg.session.intern_name.get(data.name.id)
         } else {
-            "rock_proc"
+            let module_origin = cg.session.module.get(data.origin_id);
+            let package_origin = cg.session.graph.package(module_origin.origin());
+
+            let package_name = cg.session.intern_name.get(package_origin.name());
+            let module_name = cg.session.intern_name.get(module_origin.name());
+            let proc_name = cg.session.intern_name.get(data.name.id);
+
+            cg.string_buf.clear();
+            cg.string_buf.push_str(package_name);
+            cg.string_buf.push(':');
+            cg.string_buf.push_str(module_name);
+            cg.string_buf.push('.');
+            cg.string_buf.push_str(proc_name);
+            cg.string_buf.as_str()
         };
 
-        let linkage = if is_main || is_external {
+        let linkage = if is_external || is_main {
             llvm::Linkage::LLVMExternalLinkage
         } else {
             llvm::Linkage::LLVMInternalLinkage
