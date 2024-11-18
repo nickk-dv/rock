@@ -405,12 +405,8 @@ ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
-ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
-ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
-
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
-ast_node_impl!(TypePolymorph, SyntaxKind::TYPE_POLYMORPH);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
 ast_node_impl!(TypeMultiReference, SyntaxKind::TYPE_MULTI_REFERENCE);
 ast_node_impl!(TypeProcedure, SyntaxKind::TYPE_PROCEDURE);
@@ -482,10 +478,13 @@ ast_node_impl!(RangeExclusive, SyntaxKind::RANGE_EXCLUSIVE);
 ast_node_impl!(RangeInclusive, SyntaxKind::RANGE_INCLUSIVE);
 
 ast_node_impl!(Name, SyntaxKind::NAME);
-ast_node_impl!(Path, SyntaxKind::PATH);
 ast_node_impl!(Bind, SyntaxKind::BIND);
 ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
 ast_node_impl!(ArgsList, SyntaxKind::ARGS_LIST);
+ast_node_impl!(Path, SyntaxKind::PATH);
+ast_node_impl!(PathSegment, SyntaxKind::PATH_SEGMENT);
+ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
+ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
 
 #[derive(Copy, Clone)]
 pub enum Item<'syn> {
@@ -525,7 +524,6 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
 pub enum Type<'syn> {
     Basic(TypeBasic<'syn>),
     Custom(TypeCustom<'syn>),
-    Polymorph(TypePolymorph<'syn>),
     Reference(TypeReference<'syn>),
     MultiReference(TypeMultiReference<'syn>),
     Procedure(TypeProcedure<'syn>),
@@ -538,7 +536,6 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
-            SyntaxKind::TYPE_POLYMORPH => Some(Type::Polymorph(TypePolymorph(node))),
             SyntaxKind::TYPE_REFERENCE => Some(Type::Reference(TypeReference(node))),
             SyntaxKind::TYPE_MULTI_REFERENCE => {
                 Some(Type::MultiReference(TypeMultiReference(node)))
@@ -553,7 +550,6 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
         match self {
             Type::Basic(ty) => ty.find_range(tree),
             Type::Custom(ty) => ty.find_range(tree),
-            Type::Polymorph(ty) => ty.find_range(tree),
             Type::Reference(ty) => ty.find_range(tree),
             Type::MultiReference(ty) => ty.find_range(tree),
             Type::Procedure(ty) => ty.find_range(tree),
@@ -942,16 +938,6 @@ impl<'syn> ImportSymbolRename<'syn> {
     token_find!(t_discard, T![_]);
 }
 
-//==================== GENERIC ====================
-
-impl<'syn> PolymorphParams<'syn> {
-    node_iter!(names, Name);
-}
-
-impl<'syn> PolymorphArgs<'syn> {
-    node_iter!(types, Type);
-}
-
 //==================== TYPE ====================
 
 impl<'syn> TypeBasic<'syn> {
@@ -960,11 +946,6 @@ impl<'syn> TypeBasic<'syn> {
 
 impl<'syn> TypeCustom<'syn> {
     node_find!(path, Path);
-}
-
-impl<'syn> TypePolymorph<'syn> {
-    node_find!(path, Path);
-    node_find!(poly_args, PolymorphArgs);
 }
 
 impl<'syn> TypeReference<'syn> {
@@ -1269,10 +1250,6 @@ impl<'syn> Name<'syn> {
     token_find!(ident, T![ident]);
 }
 
-impl<'syn> Path<'syn> {
-    node_iter!(names, Name);
-}
-
 impl<'syn> Bind<'syn> {
     token_find!(t_mut, T![mut]);
     node_find!(name, Name);
@@ -1285,4 +1262,21 @@ impl<'syn> BindList<'syn> {
 
 impl<'syn> ArgsList<'syn> {
     node_iter!(exprs, Expr);
+}
+
+impl<'syn> Path<'syn> {
+    node_iter!(segments, PathSegment);
+}
+
+impl<'syn> PathSegment<'syn> {
+    node_find!(name, Name);
+    node_find!(poly_args, PolymorphArgs);
+}
+
+impl<'syn> PolymorphArgs<'syn> {
+    node_iter!(types, Type);
+}
+
+impl<'syn> PolymorphParams<'syn> {
+    node_iter!(names, Name);
 }

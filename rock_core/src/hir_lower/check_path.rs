@@ -9,7 +9,7 @@ use crate::text::TextRange;
 struct PathResolved<'ast> {
     kind: PathResolvedKind,
     at_name: ast::Name,
-    names: &'ast [ast::Name],
+    names: &'ast [ast::PathSegment<'ast>],
 }
 
 enum PathResolvedKind {
@@ -22,29 +22,29 @@ pub enum ValueID<'ast> {
     None,
     Proc(hir::ProcID),
     Enum(hir::EnumID, hir::VariantID),
-    Const(hir::ConstID, &'ast [ast::Name]),
-    Global(hir::GlobalID, &'ast [ast::Name]),
-    Param(hir::ParamID, &'ast [ast::Name]),
-    Local(hir::LocalID, &'ast [ast::Name]),
-    LocalBind(hir::LocalBindID, &'ast [ast::Name]),
-    ForBind(hir::ForBindID, &'ast [ast::Name]),
+    Const(hir::ConstID, &'ast [ast::PathSegment<'ast>]),
+    Global(hir::GlobalID, &'ast [ast::PathSegment<'ast>]),
+    Param(hir::ParamID, &'ast [ast::PathSegment<'ast>]),
+    Local(hir::LocalID, &'ast [ast::PathSegment<'ast>]),
+    LocalBind(hir::LocalBindID, &'ast [ast::PathSegment<'ast>]),
+    ForBind(hir::ForBindID, &'ast [ast::PathSegment<'ast>]),
 }
 
 fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
-    let name = path.names.get(0).copied().expect("non empty path");
+    let name = path.segments.get(0).copied().expect("non empty path");
 
-    if let Some(var_id) = ctx.scope.local.find_variable(name.id) {
+    if let Some(var_id) = ctx.scope.local.find_variable(name.name.id) {
         return Ok(PathResolved {
             kind: PathResolvedKind::Variable(var_id),
-            at_name: name,
-            names: path.names.split_at(1).1,
+            at_name: name.name,
+            names: path.segments.split_at(1).1,
         });
     }
 
     let symbol = ctx.scope.global.find_symbol(
         ctx.scope.origin(),
         ctx.scope.origin(),
-        name,
+        name.name,
         &ctx.session,
         &ctx.registry,
         &mut ctx.emit,
@@ -54,27 +54,27 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
         SymbolOrModule::Symbol(symbol_id) => {
             return Ok(PathResolved {
                 kind: PathResolvedKind::Symbol(symbol_id),
-                at_name: name,
-                names: path.names.split_at(1).1,
+                at_name: name.name,
+                names: path.segments.split_at(1).1,
             })
         }
         SymbolOrModule::Module(module_id) => module_id,
     };
 
-    let name = if let Some(name) = path.names.get(1).copied() {
+    let name = if let Some(name) = path.segments.get(1).copied() {
         name
     } else {
         return Ok(PathResolved {
             kind: PathResolvedKind::Module(target_id),
-            at_name: name,
-            names: path.names.split_at(1).1,
+            at_name: name.name,
+            names: path.segments.split_at(1).1,
         });
     };
 
     let symbol = ctx.scope.global.find_symbol(
         ctx.scope.origin(),
         target_id,
-        name,
+        name.name,
         &ctx.session,
         &ctx.registry,
         &mut ctx.emit,
@@ -83,8 +83,8 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
     match symbol {
         SymbolOrModule::Symbol(symbol_id) => Ok(PathResolved {
             kind: PathResolvedKind::Symbol(symbol_id),
-            at_name: name,
-            names: path.names.split_at(2).1,
+            at_name: name.name,
+            names: path.segments.split_at(2).1,
         }),
         SymbolOrModule::Module(_) => unreachable!("module from other module"),
     }
@@ -92,12 +92,12 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
 
 fn path_check_unexpected_segment(
     ctx: &mut HirCtx,
-    names: &[ast::Name],
+    names: &[ast::PathSegment],
     after_kind: &'static str,
 ) -> Result<(), ()> {
     if let Some(next) = names.first().copied() {
-        let start = next.range.start();
-        let end = names.last().unwrap().range.end();
+        let start = next.name.range.start();
+        let end = names.last().unwrap().name.range.end();
         let src = ctx.src(TextRange::new(start, end));
         err::path_unexpected_segment(&mut ctx.emit, src, after_kind);
         Err(())
@@ -211,7 +211,9 @@ pub fn path_resolve_value<'ast>(
             }
             SymbolID::Enum(enum_id) => {
                 if let Some(next) = path.names.first().copied() {
-                    if let Some(variant_id) = scope::check_find_enum_variant(ctx, enum_id, next) {
+                    if let Some(variant_id) =
+                        scope::check_find_enum_variant(ctx, enum_id, next.name)
+                    {
                         let names = path.names.split_at(1).1;
                         if path_check_unexpected_segment(ctx, names, "enum variant").is_err() {
                             ValueID::None

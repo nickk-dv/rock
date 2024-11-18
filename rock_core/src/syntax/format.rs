@@ -950,36 +950,6 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     }
 }
 
-//==================== GENERIC ====================
-
-fn polymorph_params(fmt: &mut Formatter, poly_params: cst::PolymorphParams) {
-    fmt.write('(');
-    let mut first = true;
-    for name_cst in poly_params.names(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            fmt.space();
-        }
-        first = false;
-        name(fmt, name_cst);
-    }
-    fmt.write(')');
-}
-
-fn polymorph_args<'syn>(fmt: &mut Formatter<'syn, '_>, poly_args: cst::PolymorphArgs<'syn>) {
-    fmt.write('(');
-    let mut first = true;
-    for ty_cst in poly_args.types(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            fmt.space();
-        }
-        first = false;
-        ty(fmt, ty_cst);
-    }
-    fmt.write(')');
-}
-
 //==================== TYPE ====================
 
 fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
@@ -988,11 +958,7 @@ fn ty<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::Type<'syn>) {
             let (basic, _) = ty_cst.basic(fmt.tree).unwrap();
             fmt.write_str(basic.as_str());
         }
-        cst::Type::Custom(ty_cst) => path(fmt, ty_cst.path(fmt.tree).unwrap()),
-        cst::Type::Polymorph(ty_cst) => {
-            path(fmt, ty_cst.path(fmt.tree).unwrap());
-            polymorph_args(fmt, ty_cst.poly_args(fmt.tree).unwrap());
-        }
+        cst::Type::Custom(ty_cst) => path_type(fmt, ty_cst.path(fmt.tree).unwrap()),
         cst::Type::Reference(ty_cst) => ty_ref(fmt, ty_cst),
         cst::Type::MultiReference(ty_cst) => ty_multi_ref(fmt, ty_cst),
         cst::Type::Procedure(ty_cst) => ty_proc(fmt, ty_cst),
@@ -1414,7 +1380,7 @@ fn expr_sizeof<'syn>(fmt: &mut Formatter<'syn, '_>, sizeof: cst::ExprSizeof<'syn
 }
 
 fn expr_item<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::ExprItem<'syn>) {
-    path(fmt, expr.path(fmt.tree).unwrap());
+    path_expr(fmt, expr.path(fmt.tree).unwrap());
     if let Some(args_list_cst) = expr.args_list(fmt.tree) {
         args_list(fmt, args_list_cst);
     }
@@ -1430,7 +1396,7 @@ fn expr_variant<'syn>(fmt: &mut Formatter<'syn, '_>, variant: cst::ExprVariant<'
 
 fn expr_struct_init<'syn>(fmt: &mut Formatter<'syn, '_>, struct_init: cst::ExprStructInit<'syn>) {
     if let Some(path_cst) = struct_init.path(fmt.tree) {
-        path(fmt, path_cst);
+        path_expr(fmt, path_cst);
     }
     fmt.write('.');
     field_init_list(fmt, struct_init.field_init_list(fmt.tree).unwrap());
@@ -1571,8 +1537,8 @@ fn pat<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::Pat<'syn>) {
     }
 }
 
-fn pat_item(fmt: &mut Formatter, pat: cst::PatItem) {
-    path(fmt, pat.path(fmt.tree).unwrap());
+fn pat_item<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::PatItem<'syn>) {
+    path_expr(fmt, pat.path(fmt.tree).unwrap());
     if let Some(bind_list_cst) = pat.bind_list(fmt.tree) {
         bind_list(fmt, bind_list_cst);
     }
@@ -1645,17 +1611,6 @@ fn name(fmt: &mut Formatter, name: cst::Name) {
     fmt.write_range(range);
 }
 
-fn path(fmt: &mut Formatter, path: cst::Path) {
-    let mut first = true;
-    for name_cst in path.names(fmt.tree) {
-        if !first {
-            fmt.write('.');
-        }
-        first = false;
-        name(fmt, name_cst);
-    }
-}
-
 fn bind(fmt: &mut Formatter, bind: cst::Bind) {
     if let Some(name_cst) = bind.name(fmt.tree) {
         if bind.t_mut(fmt.tree).is_some() {
@@ -1692,6 +1647,63 @@ fn args_list<'syn>(fmt: &mut Formatter<'syn, '_>, args_list: cst::ArgsList<'syn>
         }
         first = false;
         expr(fmt, expr_cst);
+    }
+    fmt.write(')');
+}
+
+fn path_type<'syn>(fmt: &mut Formatter<'syn, '_>, path: cst::Path<'syn>) {
+    let mut first = true;
+    for segment in path.segments(fmt.tree) {
+        if !first {
+            fmt.write('.');
+        }
+        first = false;
+        name(fmt, segment.name(fmt.tree).unwrap());
+        if let Some(poly_args) = segment.poly_args(fmt.tree) {
+            polymorph_args(fmt, poly_args);
+        }
+    }
+}
+
+fn path_expr<'syn>(fmt: &mut Formatter<'syn, '_>, path: cst::Path<'syn>) {
+    let mut first = true;
+    for segment in path.segments(fmt.tree) {
+        if !first {
+            fmt.write('.');
+        }
+        first = false;
+        name(fmt, segment.name(fmt.tree).unwrap());
+        if let Some(poly_args) = segment.poly_args(fmt.tree) {
+            fmt.write(':');
+            polymorph_args(fmt, poly_args);
+        }
+    }
+}
+
+fn polymorph_args<'syn>(fmt: &mut Formatter<'syn, '_>, poly_args: cst::PolymorphArgs<'syn>) {
+    fmt.write('(');
+    let mut first = true;
+    for ty_cst in poly_args.types(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        ty(fmt, ty_cst);
+    }
+    fmt.write(')');
+}
+
+fn polymorph_params(fmt: &mut Formatter, poly_params: cst::PolymorphParams) {
+    fmt.write('(');
+    let mut first = true;
+    for name_cst in poly_params.names(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            fmt.space();
+        }
+        first = false;
+        name(fmt, name_cst);
     }
     fmt.write(')');
 }

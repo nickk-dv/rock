@@ -401,44 +401,6 @@ fn import_symbol_rename(p: &mut Parser) {
     m.complete(p, SyntaxKind::IMPORT_SYMBOL_RENAME);
 }
 
-//==================== GENERIC ====================
-
-fn polymorph_params(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T!['(']);
-    while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
-            name(p);
-            if !p.at(T![')']) {
-                p.expect(T![,]);
-            }
-        } else {
-            p.error_recover("expected type parameter", TokenSet::empty());
-            break;
-        }
-    }
-    p.expect(T![')']);
-    m.complete(p, SyntaxKind::POLYMORPH_PARAMS);
-}
-
-fn polymorph_args(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T!['(']);
-    while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at_set(FIRST_TYPE) {
-            ty(p);
-            if !p.at(T![')']) {
-                p.expect(T![,]);
-            }
-        } else {
-            p.error_recover("expected type argument", TokenSet::empty());
-            break;
-        }
-    }
-    p.expect(T![')']);
-    m.complete(p, SyntaxKind::POLYMORPH_ARGS);
-}
-
 //==================== TYPE ====================
 
 const FIRST_TYPE: TokenSet = TokenSet::new(&[
@@ -476,13 +438,8 @@ fn ty(p: &mut Parser) {
     match p.peek() {
         T![ident] => {
             let m = p.start();
-            path(p);
-            if p.at(T!['(']) {
-                polymorph_args(p);
-                m.complete(p, SyntaxKind::TYPE_POLYMORPH);
-            } else {
-                m.complete(p, SyntaxKind::TYPE_CUSTOM);
-            }
+            path_type(p);
+            m.complete(p, SyntaxKind::TYPE_CUSTOM);
         }
         T![&] => {
             let m = p.start();
@@ -972,14 +929,14 @@ fn expr_item_or_struct_init(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
 
     let mp = p.start();
-    name(p);
+    path_segment_expr(p);
     while p.eat(T![.]) {
         if p.at(T!['{']) {
             mp.complete(p, SyntaxKind::PATH);
             field_init_list(p);
             return m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
         }
-        name(p);
+        path_segment_expr(p);
     }
     mp.complete(p, SyntaxKind::PATH);
 
@@ -1100,7 +1057,7 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
         }
         T![ident] => {
             let m = p.start();
-            path(p);
+            path_expr(p);
             if p.at(T!['(']) {
                 bind_list(p);
             }
@@ -1174,15 +1131,6 @@ fn name(p: &mut Parser) {
     m.complete(p, SyntaxKind::NAME);
 }
 
-fn path(p: &mut Parser) {
-    let m = p.start();
-    name(p);
-    while p.eat(T![.]) {
-        name(p);
-    }
-    m.complete(p, SyntaxKind::PATH);
-}
-
 const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
 
 fn bind(p: &mut Parser) {
@@ -1226,4 +1174,76 @@ fn args_list(p: &mut Parser) {
     }
     p.expect(T![')']);
     m.complete(p, SyntaxKind::ARGS_LIST);
+}
+
+fn path_type(p: &mut Parser) {
+    let m = p.start();
+    path_segment_type(p);
+    while p.eat(T![.]) {
+        path_segment_type(p);
+    }
+    m.complete(p, SyntaxKind::PATH);
+}
+
+fn path_segment_type(p: &mut Parser) {
+    let m = p.start();
+    name(p);
+    if p.at(T!['(']) {
+        polymorph_args(p);
+    }
+    m.complete(p, SyntaxKind::PATH_SEGMENT);
+}
+
+fn path_expr(p: &mut Parser) {
+    let m = p.start();
+    path_segment_expr(p);
+    while p.eat(T![.]) {
+        path_segment_expr(p);
+    }
+    m.complete(p, SyntaxKind::PATH);
+}
+
+fn path_segment_expr(p: &mut Parser) {
+    let m = p.start();
+    name(p);
+    if p.eat(T![:]) {
+        polymorph_args(p);
+    }
+    m.complete(p, SyntaxKind::PATH_SEGMENT);
+}
+
+fn polymorph_args(p: &mut Parser) {
+    let m = p.start();
+    p.expect(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at_set(FIRST_TYPE) {
+            ty(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected type argument", TokenSet::empty());
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::POLYMORPH_ARGS);
+}
+
+fn polymorph_params(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            name(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected type parameter", TokenSet::empty());
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::POLYMORPH_PARAMS);
 }

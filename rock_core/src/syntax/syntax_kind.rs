@@ -29,12 +29,8 @@ pub enum SyntaxKind {
     IMPORT_SYMBOL,
     IMPORT_SYMBOL_RENAME,
 
-    POLYMORPH_PARAMS,
-    POLYMORPH_ARGS,
-
     TYPE_BASIC,
     TYPE_CUSTOM,
-    TYPE_POLYMORPH,
     TYPE_REFERENCE,
     TYPE_MULTI_REFERENCE,
     TYPE_PROCEDURE,
@@ -106,10 +102,13 @@ pub enum SyntaxKind {
     RANGE_INCLUSIVE,
 
     NAME,
-    PATH,
     BIND,
     BIND_LIST,
     ARGS_LIST,
+    PATH,
+    PATH_SEGMENT,
+    POLYMORPH_ARGS,
+    POLYMORPH_PARAMS,
 }
 
 #[derive(Clone, Copy)]

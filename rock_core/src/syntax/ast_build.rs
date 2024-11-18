@@ -40,6 +40,7 @@ struct AstBuildState<'ast> {
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
     names: TempBuffer<ast::Name>,
     binds: TempBuffer<ast::Binding>,
+    segments: TempBuffer<ast::PathSegment<'ast>>,
 }
 
 impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
@@ -92,6 +93,7 @@ impl<'ast> AstBuildState<'ast> {
             field_inits: TempBuffer::new(32),
             names: TempBuffer::new(32),
             binds: TempBuffer::new(32),
+            segments: TempBuffer::new(32),
         }
     }
 }
@@ -251,7 +253,9 @@ fn proc_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
+    let poly_params = item
+        .poly_params(ctx.tree)
+        .map(|poly| polymorph_params(ctx, poly));
 
     let offset = ctx.s.params.start();
     let param_list = item.param_list(ctx.tree).unwrap();
@@ -293,7 +297,9 @@ fn enum_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
+    let poly_params = item
+        .poly_params(ctx.tree)
+        .map(|poly| polymorph_params(ctx, poly));
 
     let tag_ty = if let Some((basic, range)) = item.tag_ty(ctx.tree) {
         let tag_ty = ast::EnumTagType { basic, range };
@@ -350,7 +356,9 @@ fn struct_item<'ast>(
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
     let vis = vis(item.vis(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = polymorph_params(ctx, item.poly_params(ctx.tree));
+    let poly_params = item
+        .poly_params(ctx.tree)
+        .map(|poly| polymorph_params(ctx, poly));
 
     let offset = ctx.s.fields.start();
     let field_list = item.field_list(ctx.tree).unwrap();
@@ -486,107 +494,6 @@ fn import_symbol_rename(
     }
 }
 
-fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
-    let range = name.find_range(ctx.tree);
-    let string = &ctx.source[range.as_usize()];
-    let id = ctx.intern_name.intern(string);
-    ast::Name { range, id }
-}
-
-fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
-    let offset = ctx.s.names.start();
-    for name_cst in path.names(ctx.tree) {
-        let name = name(ctx, name_cst);
-        ctx.s.names.add(name);
-    }
-    let names = ctx.s.names.take(offset, &mut ctx.arena);
-
-    ctx.arena.alloc(ast::Path { names })
-}
-
-fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
-    if let Some(name_cst) = bind.name(ctx.tree) {
-        let mutt = mutt(bind.t_mut(ctx.tree));
-        let name = name(ctx, name_cst);
-        ast::Binding::Named(mutt, name)
-    } else {
-        let range = bind.t_discard(ctx.tree).unwrap();
-        ast::Binding::Discard(range)
-    }
-}
-
-fn bind_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    bind_list: cst::BindList,
-) -> &'ast ast::BindingList<'ast> {
-    let range = bind_list.find_range(ctx.tree);
-
-    let offset = ctx.s.binds.start();
-    for bind_cst in bind_list.binds(ctx.tree) {
-        let bind = bind(ctx, bind_cst);
-        ctx.s.binds.add(bind);
-    }
-    let binds = ctx.s.binds.take(offset, &mut ctx.arena);
-
-    let bind_list = ast::BindingList { binds, range };
-    ctx.arena.alloc(bind_list)
-}
-
-fn args_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    args_list: cst::ArgsList,
-) -> &'ast ast::ArgumentList<'ast> {
-    let range = args_list.find_range(ctx.tree);
-
-    let offset = ctx.s.exprs.start();
-    for expr_cst in args_list.exprs(ctx.tree) {
-        let expr = expr(ctx, expr_cst);
-        ctx.s.exprs.add(expr);
-    }
-    let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
-
-    let args_list = ast::ArgumentList { exprs, range };
-    ctx.arena.alloc(args_list)
-}
-
-fn polymorph_params<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    poly_params: Option<cst::PolymorphParams>,
-) -> Option<&'ast ast::PolymorphParams<'ast>> {
-    if let Some(poly_params) = poly_params {
-        let range = poly_params.find_range(ctx.tree);
-
-        let offset = ctx.s.names.start();
-        for name_cst in poly_params.names(ctx.tree) {
-            let name = name(ctx, name_cst);
-            ctx.s.names.add(name);
-        }
-        let names = ctx.s.names.take(offset, &mut ctx.arena);
-
-        let params = ast::PolymorphParams { names, range };
-        let params = ctx.arena.alloc(params);
-        Some(params)
-    } else {
-        None
-    }
-}
-
-fn polymorph_args<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    poly_args: cst::PolymorphArgs,
-) -> ast::PolymorphArgs<'ast> {
-    let range = poly_args.find_range(ctx.tree);
-
-    let offset = ctx.s.types.start();
-    for ty_cst in poly_args.types(ctx.tree) {
-        let ty = ty(ctx, ty_cst);
-        ctx.s.types.add(ty);
-    }
-    let types = ctx.s.types.take(offset, &mut ctx.arena);
-
-    ast::PolymorphArgs { types, range }
-}
-
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
     let range = ty_cst.find_range(ctx.tree);
 
@@ -598,14 +505,6 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
         cst::Type::Custom(ty_cst) => {
             let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
             ast::TypeKind::Custom(path)
-        }
-        cst::Type::Polymorph(ty_cst) => {
-            let path = path(ctx, ty_cst.path(ctx.tree).unwrap());
-            let poly_args = polymorph_args(ctx, ty_cst.poly_args(ctx.tree).unwrap());
-
-            let poly_ty = ast::PolymorphType { path, poly_args };
-            let poly_ty = ctx.arena.alloc(poly_ty);
-            ast::TypeKind::Polymorph(poly_ty)
         }
         cst::Type::Reference(ty_cst) => {
             let mutt = mutt(ty_cst.t_mut(ctx.tree));
@@ -924,11 +823,17 @@ fn expr_kind<'ast>(
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
             for field_init_cst in field_init_list.field_inits(ctx.tree) {
                 let name = name(ctx, field_init_cst.name(ctx.tree).unwrap());
+
                 let expr = if let Some(expr_cst) = field_init_cst.expr(ctx.tree) {
                     expr(ctx, expr_cst)
                 } else {
-                    let names = ctx.arena.alloc_slice(&[name]);
-                    let path = ctx.arena.alloc(ast::Path { names });
+                    let segment = ast::PathSegment {
+                        name,
+                        poly_args: None,
+                    };
+                    let segments = ctx.arena.alloc_slice(&[segment]);
+                    let path = ctx.arena.alloc(ast::Path { segments });
+
                     let kind = ast::ExprKind::Item {
                         path,
                         args_list: None,
@@ -939,6 +844,7 @@ fn expr_kind<'ast>(
                     };
                     ctx.arena.alloc(expr)
                 };
+
                 let field_init = ast::FieldInit { name, expr };
                 ctx.s.field_inits.add(field_init);
             }
@@ -1166,4 +1072,113 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> a
     let stmts = ctx.s.stmts.take(offset, &mut ctx.arena);
 
     ast::Block { stmts, range }
+}
+
+fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
+    let range = name.find_range(ctx.tree);
+    let string = &ctx.source[range.as_usize()];
+    let id = ctx.intern_name.intern(string);
+    ast::Name { range, id }
+}
+
+fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
+    if let Some(name_cst) = bind.name(ctx.tree) {
+        let mutt = mutt(bind.t_mut(ctx.tree));
+        let name = name(ctx, name_cst);
+        ast::Binding::Named(mutt, name)
+    } else {
+        let range = bind.t_discard(ctx.tree).unwrap();
+        ast::Binding::Discard(range)
+    }
+}
+
+fn bind_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    bind_list: cst::BindList,
+) -> &'ast ast::BindingList<'ast> {
+    let range = bind_list.find_range(ctx.tree);
+
+    let offset = ctx.s.binds.start();
+    for bind_cst in bind_list.binds(ctx.tree) {
+        let bind = bind(ctx, bind_cst);
+        ctx.s.binds.add(bind);
+    }
+    let binds = ctx.s.binds.take(offset, &mut ctx.arena);
+
+    let bind_list = ast::BindingList { binds, range };
+    ctx.arena.alloc(bind_list)
+}
+
+fn args_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    args_list: cst::ArgsList,
+) -> &'ast ast::ArgumentList<'ast> {
+    let range = args_list.find_range(ctx.tree);
+
+    let offset = ctx.s.exprs.start();
+    for expr_cst in args_list.exprs(ctx.tree) {
+        let expr = expr(ctx, expr_cst);
+        ctx.s.exprs.add(expr);
+    }
+    let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
+
+    let args_list = ast::ArgumentList { exprs, range };
+    ctx.arena.alloc(args_list)
+}
+
+fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
+    let offset = ctx.s.segments.start();
+    for segment in path.segments(ctx.tree) {
+        let segment = path_segment(ctx, segment);
+        ctx.s.segments.add(segment);
+    }
+    let segments = ctx.s.segments.take(offset, &mut ctx.arena);
+
+    let path = ast::Path { segments };
+    ctx.arena.alloc(path)
+}
+
+fn path_segment<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    segment: cst::PathSegment,
+) -> ast::PathSegment<'ast> {
+    let name = name(ctx, segment.name(ctx.tree).unwrap());
+    let poly_args = segment
+        .poly_args(ctx.tree)
+        .map(|pa| polymorph_args(ctx, pa));
+    ast::PathSegment { name, poly_args }
+}
+
+fn polymorph_args<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    poly_args: cst::PolymorphArgs,
+) -> &'ast ast::PolymorphArgs<'ast> {
+    let range = poly_args.find_range(ctx.tree);
+
+    let offset = ctx.s.types.start();
+    for ty_cst in poly_args.types(ctx.tree) {
+        let ty = ty(ctx, ty_cst);
+        ctx.s.types.add(ty);
+    }
+    let types = ctx.s.types.take(offset, &mut ctx.arena);
+
+    let poly_args = ast::PolymorphArgs { types, range };
+    ctx.arena.alloc(poly_args)
+}
+
+fn polymorph_params<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    poly_params: cst::PolymorphParams,
+) -> &'ast ast::PolymorphParams<'ast> {
+    let range = poly_params.find_range(ctx.tree);
+
+    let offset = ctx.s.names.start();
+    for name_cst in poly_params.names(ctx.tree) {
+        let name = name(ctx, name_cst);
+        ctx.s.names.add(name);
+    }
+    let names = ctx.s.names.take(offset, &mut ctx.arena);
+
+    let params = ast::PolymorphParams { names, range };
+    ctx.arena.alloc(params)
 }

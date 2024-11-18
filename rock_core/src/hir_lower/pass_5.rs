@@ -754,7 +754,7 @@ fn typecheck_pat_item<'hir, 'ast>(
         }
         ValueID::Const(const_id, fields) => {
             if let Some(name) = fields.first() {
-                let src = ctx.src(name.range);
+                let src = ctx.src(name.name.range);
                 err::tycheck_pat_const_field_access(&mut ctx.emit, src);
             }
             if let Some(bind_list) = bind_list {
@@ -1386,9 +1386,9 @@ fn typecheck_item<'hir, 'ast>(
 
     for &name in fields {
         let expr_res = target_res.into_expr_result(ctx, target_range);
-        let field_result = check_field_from_type(ctx, name, expr_res.ty);
+        let field_result = check_field_from_type(ctx, name.name, expr_res.ty);
         target_res = emit_field_expr(expr_res.expr, field_result);
-        target_range = TextRange::new(expr_range.start(), name.range.end());
+        target_range = TextRange::new(expr_range.start(), name.name.range.end());
     }
 
     if let Some(args_list) = args_list {

@@ -1089,11 +1089,11 @@ fn resolve_and_update_const_eval<'hir>(
     expect: Expectation<'hir>,
 ) {
     let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
-    ctx.scope.set_origin(origin_id);
 
     //@reset any possible blocks / locals
-    // currently blocks or stmts are not supported in contants
+    // currently blocks or stmts are not supported in constants
     // so this is in theory not required
+    ctx.scope.set_origin(origin_id);
     ctx.scope.local.reset();
 
     match eval {

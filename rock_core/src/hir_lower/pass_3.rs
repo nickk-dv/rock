@@ -303,13 +303,6 @@ pub fn type_resolve<'hir, 'ast>(
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
         ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
-        ast::TypeKind::Polymorph(poly_ty) => {
-            //@could be poly param, not only struct or enum!
-            let custom = check_path::path_resolve_type(ctx, poly_ty.path);
-            let src = ctx.src(ast_ty.range);
-            err::internal_type_args_not_implemented(&mut ctx.emit, src);
-            hir::Type::Error
-        }
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, *ref_ty, delayed);
 

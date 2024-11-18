@@ -140,20 +140,6 @@ pub enum SymbolRename {
     Discard(TextRange),
 }
 
-//==================== POLYMORPH ====================
-
-#[derive(Copy, Clone)]
-pub struct PolymorphParams<'ast> {
-    pub names: &'ast [Name],
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub struct PolymorphArgs<'ast> {
-    pub types: &'ast [Type<'ast>],
-    pub range: TextRange,
-}
-
 //==================== TYPE ====================
 
 #[derive(Copy, Clone)]
@@ -162,24 +148,15 @@ pub struct Type<'ast> {
     pub range: TextRange,
 }
 
-//@store PolyArgs in path itself
-//@remove Custom | Generic type separation
 #[derive(Copy, Clone)]
 pub enum TypeKind<'ast> {
     Basic(BasicType),
     Custom(&'ast Path<'ast>),
-    Polymorph(&'ast PolymorphType<'ast>),
     Reference(Mut, &'ast Type<'ast>),
     MultiReference(Mut, &'ast Type<'ast>),
     Procedure(&'ast ProcType<'ast>),
     ArraySlice(&'ast ArraySlice<'ast>),
     ArrayStatic(&'ast ArrayStatic<'ast>),
-}
-
-#[derive(Copy, Clone)]
-pub struct PolymorphType<'ast> {
-    pub path: &'ast Path<'ast>,
-    pub poly_args: PolymorphArgs<'ast>,
 }
 
 #[derive(Copy, Clone)]
@@ -436,11 +413,6 @@ pub struct Name {
 }
 
 #[derive(Copy, Clone)]
-pub struct Path<'ast> {
-    pub names: &'ast [Name],
-}
-
-#[derive(Copy, Clone)]
 pub enum Binding {
     Named(Mut, Name),
     Discard(TextRange),
@@ -455,6 +427,29 @@ pub struct BindingList<'ast> {
 #[derive(Copy, Clone)]
 pub struct ArgumentList<'ast> {
     pub exprs: &'ast [&'ast Expr<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct Path<'ast> {
+    pub segments: &'ast [PathSegment<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct PathSegment<'ast> {
+    pub name: Name,
+    pub poly_args: Option<&'ast PolymorphArgs<'ast>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct PolymorphArgs<'ast> {
+    pub types: &'ast [Type<'ast>],
+    pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct PolymorphParams<'ast> {
+    pub names: &'ast [Name],
     pub range: TextRange,
 }
 

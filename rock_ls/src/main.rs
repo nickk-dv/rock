@@ -757,12 +757,8 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Type), //default to type
                     SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Type), //default to type
 
-                    SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
-                    SyntaxKind::POLYMORPH_ARGS => None,
-
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
-                    SyntaxKind::TYPE_POLYMORPH => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_REFERENCE => None,
                     SyntaxKind::TYPE_MULTI_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
@@ -834,10 +830,13 @@ fn semantic_visit_node(
                     SyntaxKind::RANGE_INCLUSIVE => None,
 
                     SyntaxKind::NAME => ident_style, // use pushed style
-                    SyntaxKind::PATH => ident_style.or(Some(SemanticToken::Property)),
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
                     SyntaxKind::BIND_LIST => None,
                     SyntaxKind::ARGS_LIST => None,
+                    SyntaxKind::PATH => ident_style.or(Some(SemanticToken::Property)),
+                    SyntaxKind::PATH_SEGMENT => ident_style.or(Some(SemanticToken::Property)),
+                    SyntaxKind::POLYMORPH_ARGS => None,
+                    SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
                 };
 
                 semantic_visit_node(builder, tree, node, ident_style);

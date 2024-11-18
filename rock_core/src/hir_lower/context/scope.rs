@@ -14,6 +14,7 @@ pub struct Scope<'hir> {
     origin_id: ModuleID,
     pub global: GlobalScope,
     pub local: LocalScope<'hir>,
+    pub poly: Option<hir::PolymorphDefID>,
 }
 
 //==================== GLOBAL SCOPE ====================
@@ -102,6 +103,7 @@ impl<'hir> Scope<'hir> {
             origin_id: ModuleID::dummy(),
             global: GlobalScope::new(session),
             local: LocalScope::new(),
+            poly: None,
         }
     }
 
