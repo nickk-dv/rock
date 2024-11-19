@@ -8,9 +8,10 @@ pub fn source_file(p: &mut Parser) {
         if p.at_set(FIRST_ITEM) {
             item(p);
         } else {
-            //@is this sync useful?
             p.error("expected item");
-            p.sync_to(FIRST_ITEM);
+            let me = p.start();
+            p.bump_sync(FIRST_ITEM);
+            me.complete(p, SyntaxKind::ERROR);
         }
     }
     m.complete(p, SyntaxKind::SOURCE_FILE);
@@ -23,7 +24,6 @@ fn item(p: &mut Parser) {
         mc = Some(attr_list(p));
     }
 
-    //@not used in import, ignored without errors
     if p.at(T![pub]) {
         let mc_vis = visibility(p);
         if mc.is_none() {
@@ -46,7 +46,7 @@ fn item(p: &mut Parser) {
         T![import] => import_item(p, m),
         _ => {
             p.error("expected item");
-            p.sync_to(FIRST_ITEM);
+            p.bump_sync(FIRST_ITEM);
             m.complete(p, SyntaxKind::ERROR);
         }
     }
@@ -90,8 +90,6 @@ fn attr_param_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::ATTR_PARAM_LIST);
 }
 
-//@basic ty cannot be represented,
-// use name intern IDs instead for value & name?
 fn attr_param(p: &mut Parser) {
     let m = p.start();
     name(p);
@@ -796,12 +794,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
             expr(p);
             m.complete(p, SyntaxKind::RANGE_TO_INCLUSIVE)
         }
-        _ => {
-            //@double error node is created, we still need marker_closed for Error
-            let m = p.start();
-            p.error_bump("expected expression");
-            m.complete(p, SyntaxKind::ERROR)
-        }
+        _ => p.error_recover("expected expression", TokenSet::empty()),
     };
 
     tail_expr(p, mc)
@@ -890,7 +883,7 @@ fn expr_match(p: &mut Parser) -> MarkerClosed {
     if p.at(T!['{']) {
         match_arm_list(p);
     } else {
-        p.error_bump("expected match arm list");
+        p.error("expected match arm list");
     }
     m.complete(p, SyntaxKind::EXPR_MATCH)
 }
@@ -1084,13 +1077,7 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             }
             m.complete(p, SyntaxKind::PAT_VARIANT)
         }
-        _ => {
-            //@double error node is created, we still need marker_closed for Error
-            //@add recovery!
-            let m = p.start();
-            p.error_bump("expected pattern");
-            m.complete(p, SyntaxKind::ERROR)
-        }
+        _ => p.error_recover("expected pattern", TokenSet::empty()),
     }
 }
 

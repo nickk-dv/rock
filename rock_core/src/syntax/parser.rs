@@ -111,20 +111,17 @@ impl Parser {
         assert!(self.steps.get() < 1_000_000, "parser is stuck");
     }
 
-    pub fn error_bump(&mut self, msg: impl Into<StringOrStr>) {
-        self.error_recover(msg, TokenSet::empty())
-    }
-
-    pub fn error_recover(&mut self, msg: impl Into<StringOrStr>, recovery: TokenSet) {
-        if self.at_set(recovery) {
-            self.error(msg);
-            return;
-        }
-
-        let m = self.start();
+    pub fn error_recover(
+        &mut self,
+        msg: impl Into<StringOrStr>,
+        recovery: TokenSet,
+    ) -> MarkerClosed {
         self.error(msg);
-        self.do_bump_any();
-        m.complete(self, SyntaxKind::ERROR);
+        let m = self.start();
+        if !self.at_set(recovery) {
+            self.do_bump_any();
+        }
+        m.complete(self, SyntaxKind::ERROR)
     }
 
     //@tweak where error is displayed (currently next or last token)
@@ -140,15 +137,13 @@ impl Parser {
         self.errors.error(Error::new(msg, src, None));
     }
 
-    pub fn sync_to(&mut self, token_set: TokenSet) {
+    pub fn bump_sync(&mut self, token_set: TokenSet) {
         if self.at_set(token_set) || self.at(Token::Eof) {
             return;
         }
-        let m = self.start();
         while !self.at_set(token_set) && !self.at(Token::Eof) {
             self.do_bump_any();
         }
-        m.complete(self, SyntaxKind::ERROR);
     }
 
     #[must_use]
