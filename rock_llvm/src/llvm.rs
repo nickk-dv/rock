@@ -470,6 +470,17 @@ impl IRBuilder {
             _ => Some(call_value),
         }
     }
+
+    pub fn extract_value(&self, agg_val: Value, index: u32, name: &str) -> Value {
+        unsafe {
+            Value(core::LLVMBuildExtractValue(
+                self.builder,
+                agg_val.0,
+                index,
+                self.cstr_buf.cstr(name),
+            ))
+        }
+    }
 }
 
 impl Drop for IRBuilder {

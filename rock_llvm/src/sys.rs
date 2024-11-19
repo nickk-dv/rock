@@ -534,6 +534,13 @@ pub mod core {
             arg_count: c_uint,
             name: *const c_char,
         ) -> LLVMValueRef;
+
+        pub fn LLVMBuildExtractValue(
+            b: LLVMBuilderRef,
+            agg_val: LLVMValueRef,
+            index: c_uint,
+            name: *const c_char,
+        ) -> LLVMValueRef;
     }
 }
 

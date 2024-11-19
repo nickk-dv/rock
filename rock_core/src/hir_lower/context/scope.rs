@@ -322,10 +322,12 @@ impl<'hir> LocalScope<'hir> {
         self.params = &[];
         self.return_expect = Expectation::None;
         self.blocks.clear();
-        self.binds.clear();
         self.locals.clear();
-        self.binds_in_scope.clear();
+        self.binds.clear();
+        self.for_binds.clear();
         self.locals_in_scope.clear();
+        self.binds_in_scope.clear();
+        self.for_binds_in_scope.clear();
     }
 
     pub fn set_proc_context(
