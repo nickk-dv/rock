@@ -452,6 +452,7 @@ pub fn typecheck_expr<'hir, 'ast>(
     expr_res.into_expr_result(ctx, expr.range)
 }
 
+//@not range checked
 fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
     let (value, ty) = match lit {
         ast::Lit::Void => {
@@ -705,7 +706,7 @@ fn typecheck_pat<'hir, 'ast>(
 ) -> hir::Pat<'hir> {
     let pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
-        ast::PatKind::Lit { lit } => typecheck_pat_lit(expect, lit),
+        ast::PatKind::Lit { expr } => typecheck_pat_lit(ctx, expect, expr),
         ast::PatKind::Item { path, bind_list } => {
             typecheck_pat_item(ctx, path, bind_list, ref_mut, in_or_pat, pat.range)
         }
@@ -719,13 +720,18 @@ fn typecheck_pat<'hir, 'ast>(
     pat_res.pat
 }
 
-fn typecheck_pat_lit(expect: Expectation, lit: ast::Lit) -> PatResult {
-    let lit_res = typecheck_lit(expect, lit);
-    let value = match lit_res.kind {
-        hir::ExprKind::Const { value } => value,
-        _ => unreachable!(),
-    };
-    PatResult::new(hir::Pat::Lit(value), lit_res.ty)
+fn typecheck_pat_lit<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    expr: &ast::Expr<'ast>,
+) -> PatResult<'hir> {
+    let expr_res = typecheck_expr(ctx, expect, expr);
+    let src = ctx.src(expr_res.expr.range);
+
+    match constant::fold_const_expr(ctx, src, expr_res.expr) {
+        Ok(value) => PatResult::new(hir::Pat::Lit(value), expr_res.ty),
+        Err(()) => PatResult::error(),
+    }
 }
 
 fn typecheck_pat_item<'hir, 'ast>(

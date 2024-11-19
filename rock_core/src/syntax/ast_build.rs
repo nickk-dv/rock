@@ -969,8 +969,30 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
     let kind = match pat_cst {
         cst::Pat::Wild(_) => ast::PatKind::Wild,
         cst::Pat::Lit(pat) => {
-            let lit = lit(ctx, pat.lit(ctx.tree).unwrap());
-            ast::PatKind::Lit { lit }
+            let lit_cst = pat.lit(ctx.tree).unwrap();
+            let lit = lit(ctx, lit_cst);
+
+            let lit_expr = ast::Expr {
+                kind: ast::ExprKind::Lit { lit },
+                range: lit_cst.find_range(ctx.tree),
+            };
+            let lit_expr = ctx.arena.alloc(lit_expr);
+
+            let expr = if let Some((op, op_range)) = pat.un_op(ctx.tree) {
+                let un_expr = ast::Expr {
+                    kind: ast::ExprKind::Unary {
+                        op,
+                        op_range,
+                        rhs: lit_expr,
+                    },
+                    range: pat.find_range(ctx.tree),
+                };
+                ctx.arena.alloc(un_expr)
+            } else {
+                lit_expr
+            };
+
+            ast::PatKind::Lit { expr }
         }
         cst::Pat::Item(pat) => {
             let path = path(ctx, pat.path(ctx.tree).unwrap());

@@ -371,7 +371,7 @@ pub struct Pat<'ast> {
 #[derive(Copy, Clone)]
 pub enum PatKind<'ast> {
     Wild,
-    Lit       { lit: Lit },
+    Lit       { expr: &'ast Expr<'ast> },
     Item      { path: &'ast Path<'ast>, bind_list: Option<&'ast BindingList<'ast>> },
     Variant   { name: Name, bind_list: Option<&'ast BindingList<'ast>> },
     Or        { pats: &'ast [Pat<'ast>] },

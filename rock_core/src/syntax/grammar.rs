@@ -1055,6 +1055,18 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             lit(p);
             m.complete(p, SyntaxKind::PAT_LIT)
         }
+        T![-] => {
+            let m = p.start();
+            p.bump(T![-]);
+            if p.at(T![int_lit]) {
+                let ml = p.start();
+                p.bump(T![int_lit]);
+                ml.complete(p, SyntaxKind::LIT_INT);
+            } else {
+                p.error("expected integer literal");
+            }
+            m.complete(p, SyntaxKind::PAT_LIT)
+        }
         T![ident] => {
             let m = p.start();
             path_expr(p);

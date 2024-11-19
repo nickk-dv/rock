@@ -1183,6 +1183,7 @@ impl<'syn> ExprBinary<'syn> {
 impl<'syn> PatWild<'syn> {}
 
 impl<'syn> PatLit<'syn> {
+    token_find_predicate!(un_op, Token::as_un_op, ast::UnOp);
     node_find!(lit, Lit);
 }
 

@@ -1530,11 +1530,18 @@ fn expr_binary<'syn>(fmt: &mut Formatter<'syn, '_>, binary: cst::ExprBinary<'syn
 fn pat<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::Pat<'syn>) {
     match pat {
         cst::Pat::Wild(_) => fmt.write('_'),
-        cst::Pat::Lit(pat) => lit(fmt, pat.lit(fmt.tree).unwrap()),
+        cst::Pat::Lit(pat) => pat_lit(fmt, pat),
         cst::Pat::Item(pat) => pat_item(fmt, pat),
         cst::Pat::Variant(pat) => pat_variant(fmt, pat),
         cst::Pat::Or(pat) => pat_or(fmt, pat),
     }
+}
+
+fn pat_lit(fmt: &mut Formatter, pat: cst::PatLit) {
+    if let Some((un_op, _)) = pat.un_op(fmt.tree) {
+        fmt.write_str(un_op.as_str());
+    }
+    lit(fmt, pat.lit(fmt.tree).unwrap())
 }
 
 fn pat_item<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::PatItem<'syn>) {

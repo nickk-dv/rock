@@ -164,7 +164,7 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Void => codegen_const_void(cg),
         hir::ConstValue::Null => codegen_const_null(cg),
         hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
-        hir::ConstValue::Int { val, int_ty, .. } => codegen_const_int(cg, val, int_ty),
+        hir::ConstValue::Int { val, neg, int_ty } => codegen_const_int(cg, val, neg, int_ty),
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
         hir::ConstValue::String { string_lit } => codegen_const_string(cg, string_lit),
@@ -192,8 +192,14 @@ fn codegen_const_bool(cg: &Codegen, val: bool) -> llvm::Value {
 }
 
 #[inline]
-fn codegen_const_int(cg: &Codegen, val: u64, int_ty: hir::BasicInt) -> llvm::Value {
-    llvm::const_int(cg.basic_type(int_ty.into_basic()), val, int_ty.is_signed())
+fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::BasicInt) -> llvm::Value {
+    let is_signed = int_ty.is_signed();
+    let ext_val = if is_signed && neg {
+        (!val).wrapping_add(1)
+    } else {
+        val
+    };
+    llvm::const_int(cg.basic_type(int_ty.into_basic()), ext_val, is_signed)
 }
 
 #[inline]
