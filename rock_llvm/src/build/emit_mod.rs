@@ -207,15 +207,11 @@ fn codegen_function_values(cg: &mut Codegen) {
 //@reuse param & local ptr value vectors
 fn codegen_function_bodies(cg: &Codegen) {
     for (proc_idx, data) in cg.hir.procs.iter().enumerate() {
-        let block = match data.block {
-            Some(block) => block,
-            None => {
-                if data.attr_set.contains(hir::ProcFlag::Builtin) {
-                    unimplemented!("internal: builtin procedure codegen not implemented");
-                }
-                continue;
-            }
-        };
+        if data.attr_set.contains(hir::ProcFlag::External)
+            && !data.attr_set.contains(hir::ProcFlag::Builtin)
+        {
+            continue;
+        }
 
         let fn_val = cg.procs[proc_idx].0;
         let proc_id = hir::ProcID::new(proc_idx);
@@ -252,16 +248,37 @@ fn codegen_function_bodies(cg: &Codegen) {
             proc_cg.for_bind_ptrs.push(local_ptr);
         }
 
-        let value_id = proc_cg.add_tail_value();
-        emit_stmt::codegen_block(cg, &mut proc_cg, Expect::Value(Some(value_id)), block);
+        if let Some(block) = data.block {
+            let value_id = proc_cg.add_tail_value();
+            emit_stmt::codegen_block(cg, &mut proc_cg, Expect::Value(Some(value_id)), block);
 
-        let value = if let Some(tail) = proc_cg.tail_value(value_id) {
-            Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
-        } else {
-            None
-        };
-        if !cg.insert_bb_terminated() {
-            cg.build.ret(value);
+            let value = if let Some(tail) = proc_cg.tail_value(value_id) {
+                Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
+            } else {
+                None
+            };
+            if !cg.insert_bb_terminated() {
+                cg.build.ret(value);
+            }
+        } else if data.attr_set.contains(hir::ProcFlag::Builtin) {
+            //@hack: generate slice builtins (all are the same)
+            let slice_ty = cg.slice_type();
+            let slice_ptr = cg.build.alloca(slice_ty.as_ty(), "slice");
+            let param_ptr_ptr = proc_cg.param_ptrs[0];
+            let param_len_ptr = proc_cg.param_ptrs[1];
+
+            let slice_ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
+            let param_ptr = cg.build.load(cg.ptr_type(), param_ptr_ptr, "param_ptr");
+            cg.build.store(param_ptr, slice_ptr_ptr);
+
+            let slice_len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
+            let param_len = cg
+                .build
+                .load(cg.ptr_sized_int(), param_len_ptr, "param_len");
+            cg.build.store(param_len, slice_len_ptr);
+
+            let slice_val = cg.build.load(slice_ty.as_ty(), slice_ptr, "slice_val");
+            cg.build.ret(Some(slice_val));
         }
     }
 }
