@@ -821,6 +821,8 @@ fn expr_kind<'ast>(
 
             let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
+            let field_init_range = field_init_list.find_range(ctx.tree);
+
             for field_init_cst in field_init_list.field_inits(ctx.tree) {
                 let name = name(ctx, field_init_cst.name(ctx.tree).unwrap());
 
@@ -850,7 +852,12 @@ fn expr_kind<'ast>(
             }
             let input = ctx.s.field_inits.take(offset, &mut ctx.arena);
 
-            let struct_init = ast::StructInit { path, input };
+            let input_start = field_init_range.start() + 1.into();
+            let struct_init = ast::StructInit {
+                path,
+                input,
+                input_start,
+            };
             let struct_init = ctx.arena.alloc(struct_init);
             ast::ExprKind::StructInit { struct_init }
         }

@@ -1,6 +1,6 @@
 use crate::intern::{LitID, NameID};
 use crate::support::{Arena, AsStr};
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 
 //@breaking change: removed cstring lit state, cstring lit
 // state no longer coresponds with intern pool string lit order
@@ -345,6 +345,7 @@ pub struct MatchArm<'ast> {
 pub struct StructInit<'ast> {
     pub path: Option<&'ast Path<'ast>>,
     pub input: &'ast [FieldInit<'ast>],
+    pub input_start: TextOffset,
 }
 
 #[derive(Copy, Clone)]

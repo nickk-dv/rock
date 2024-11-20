@@ -1437,9 +1437,20 @@ fn typecheck_struct_init<'hir, 'ast>(
     struct_init: &ast::StructInit<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
+    fn error_range(struct_init: &ast::StructInit, expr_range: TextRange) -> TextRange {
+        if struct_init.input.is_empty() {
+            expr_range
+        } else {
+            TextRange::new(expr_range.start(), struct_init.input_start)
+        }
+    }
+
     let struct_id = match struct_init.path {
         Some(path) => check_path::path_resolve_struct(ctx, path),
-        None => infer_struct_type(ctx, expect, ctx.src(expr_range)),
+        None => {
+            let src = ctx.src(error_range(struct_init, expr_range));
+            infer_struct_type(ctx, expect, src)
+        }
     };
     let struct_id = match struct_id {
         Some(found) => found,
@@ -1534,7 +1545,7 @@ fn typecheck_struct_init<'hir, 'ast>(
             }
         }
 
-        let src = ctx.src(expr_range);
+        let src = ctx.src(error_range(struct_init, expr_range));
         let struct_src = SourceRange::new(data.origin_id, data.name.range);
         err::tycheck_missing_field_initializers(&mut ctx.emit, src, struct_src, message);
     }
@@ -2390,6 +2401,7 @@ fn typecheck_loop<'hir, 'ast>(
             cond,
             assign,
         } => {
+            ctx.scope.local.start_block(BlockStatus::None);
             let local_res = typecheck_local(ctx, local);
             let cond_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::BOOL, None), cond);
             let assign = typecheck_assign(ctx, assign);
@@ -2413,6 +2425,10 @@ fn typecheck_loop<'hir, 'ast>(
         loop_.block,
         BlockStatus::Loop,
     );
+
+    if let ast::LoopKind::ForLoop { .. } = loop_.kind {
+        ctx.scope.local.exit_block();
+    }
 
     let loop_ = hir::Loop {
         kind,

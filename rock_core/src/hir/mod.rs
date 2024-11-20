@@ -396,7 +396,6 @@ pub struct MatchArm<'hir> {
     pub block: Block<'hir>,
 }
 
-//@lower pat size
 #[derive(Copy, Clone)]
 pub enum Pat<'hir> {
     Error,
