@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod message;
+mod text_ops;
 
 use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
@@ -375,61 +376,15 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
             };
 
             let file = session.vfs.file_mut(module.file_id());
-
             for change in changes {
-                let range = match change.range {
-                    Some(range) => range,
-                    None => {
-                        file.source = change.text;
-                        file.line_ranges = text::find_line_ranges(&file.source);
-                        continue;
-                    }
-                };
-
-                let start_line = if range.start.line as usize == file.line_ranges.len() {
-                    let last_line = file.line_ranges.last().copied();
-                    let last_end = last_line.unwrap_or(TextRange::zero()).end();
-                    TextRange::new(last_end, last_end)
+                if let Some(range) = change.range {
+                    let range = text_ops::file_range_to_text_range(file, range);
+                    file.source.replace_range(range.as_usize(), &change.text);
+                    file.line_ranges = text::find_line_ranges(&file.source); //@make incremental
                 } else {
-                    file.line_ranges[range.start.line as usize]
-                };
-
-                let start_line_text = &file.source[start_line.as_usize()];
-                let mut start_offset = start_line.start();
-                let mut chars = start_line_text.chars();
-                let mut character_utf16: u32 = 0;
-                while character_utf16 < range.start.character {
-                    if let Some(c) = chars.next() {
-                        start_offset += (c.len_utf8() as u32).into();
-                        character_utf16 += c.len_utf16() as u32;
-                    } else {
-                        break;
-                    }
+                    file.source = change.text;
+                    file.line_ranges = text::find_line_ranges(&file.source);
                 }
-
-                let end_line = if range.end.line as usize == file.line_ranges.len() {
-                    let last_line = file.line_ranges.last().copied();
-                    let last_end = last_line.unwrap_or(TextRange::zero()).end();
-                    TextRange::new(last_end, last_end)
-                } else {
-                    file.line_ranges[range.end.line as usize]
-                };
-                let end_line_text = &file.source[end_line.as_usize()];
-                let mut end_offset = end_line.start();
-                let mut chars = end_line_text.chars();
-                let mut character_utf16: u32 = 0;
-                while character_utf16 < range.end.character {
-                    if let Some(c) = chars.next() {
-                        end_offset += (c.len_utf8() as u32).into();
-                        character_utf16 += c.len_utf16() as u32;
-                    } else {
-                        break;
-                    }
-                }
-
-                let replace = TextRange::new(start_offset, end_offset);
-                file.source.replace_range(replace.as_usize(), &change.text);
-                file.line_ranges = text::find_line_ranges(&file.source); //@make incremental
             }
         }
     }
