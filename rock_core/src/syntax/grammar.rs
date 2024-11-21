@@ -1126,8 +1126,12 @@ fn lit(p: &mut Parser) -> MarkerClosed {
 
 fn name(p: &mut Parser) {
     let m = p.start();
-    p.expect(T![ident]);
-    m.complete(p, SyntaxKind::NAME);
+    if p.eat(T![ident]) {
+        m.complete(p, SyntaxKind::NAME);
+    } else {
+        p.expect(T![ident]);
+        m.complete(p, SyntaxKind::ERROR);
+    }
 }
 
 const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);

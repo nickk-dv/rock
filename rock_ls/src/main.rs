@@ -7,7 +7,9 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
+use rock_core::intern::{InternPool, NameID};
 use rock_core::session::FileData;
+use rock_core::support::Timer;
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
@@ -288,7 +290,10 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             module.set_tree(tree);
             let tree = module.tree_expect();
 
-            let semantic_tokens = semantic_tokens(file, tree);
+            let timer = Timer::start();
+            let semantic_tokens = semantic_tokens(&mut session.intern_name, file, tree);
+            eprintln!("semantic tokens: {}", timer.measure_ms());
+
             eprintln!(
                 "[SEND: Response] SemanticTokens ({})",
                 semantic_tokens.len()
@@ -656,9 +661,14 @@ struct SemanticTokenBuilder<'s_ref> {
     source: &'s_ref str,
     line_ranges: &'s_ref [TextRange],
     semantic_tokens: Vec<lsp::SemanticToken>,
+    scope: ModuleScope,
 }
 
-fn semantic_tokens(file: &FileData, tree: &SyntaxTree) -> Vec<lsp::SemanticToken> {
+fn semantic_tokens(
+    intern_name: &mut InternPool<NameID>,
+    file: &FileData,
+    tree: &SyntaxTree,
+) -> Vec<lsp::SemanticToken> {
     let mut builder = SemanticTokenBuilder {
         curr_line: 0,
         prev_range: None,
@@ -666,14 +676,88 @@ fn semantic_tokens(file: &FileData, tree: &SyntaxTree) -> Vec<lsp::SemanticToken
         line_ranges: file.line_ranges.as_slice(),
         //@temp semantic token count estimate
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
+        scope: ModuleScope {
+            symbols: HashMap::with_capacity(512),
+        },
     };
 
-    semantic_visit_node(&mut builder, tree, tree.root(), None);
+    use rock_core::syntax::ast_layer::{self as cst, AstNode};
+    let root = cst::SourceFile::cast(tree.root()).unwrap();
+
+    for item in root.items(tree) {
+        match item {
+            cst::Item::Proc(item) => {
+                if let Some(name) = item.name(tree) {
+                    let range = name.ident(tree).unwrap();
+                    let name_text = &builder.source[range.as_usize()];
+                    let name_id = intern_name.intern(name_text);
+                    builder.scope.symbols.insert(name_id, SyntaxKind::PROC_ITEM);
+                }
+            }
+            cst::Item::Enum(item) => {
+                if let Some(name) = item.name(tree) {
+                    let range = name.ident(tree).unwrap();
+                    let name_text = &builder.source[range.as_usize()];
+                    let name_id = intern_name.intern(name_text);
+                    builder.scope.symbols.insert(name_id, SyntaxKind::ENUM_ITEM);
+                }
+            }
+            cst::Item::Struct(item) => {
+                if let Some(name) = item.name(tree) {
+                    let range = name.ident(tree).unwrap();
+                    let name_text = &builder.source[range.as_usize()];
+                    let name_id = intern_name.intern(name_text);
+                    builder
+                        .scope
+                        .symbols
+                        .insert(name_id, SyntaxKind::STRUCT_ITEM);
+                }
+            }
+            cst::Item::Const(item) => {
+                if let Some(name) = item.name(tree) {
+                    let range = name.ident(tree).unwrap();
+                    let name_text = &builder.source[range.as_usize()];
+                    let name_id = intern_name.intern(name_text);
+                    builder
+                        .scope
+                        .symbols
+                        .insert(name_id, SyntaxKind::CONST_ITEM);
+                }
+            }
+            cst::Item::Global(item) => {
+                if let Some(name) = item.name(tree) {
+                    let range = name.ident(tree).unwrap();
+                    let name_text = &builder.source[range.as_usize()];
+                    let name_id = intern_name.intern(name_text);
+                    builder
+                        .scope
+                        .symbols
+                        .insert(name_id, SyntaxKind::GLOBAL_ITEM);
+                }
+            }
+            cst::Item::Import(item) => {
+                if let Some(path) = item.import_path(tree) {
+                    if let Some(name) = path.names(tree).last() {
+                        let range = name.ident(tree).unwrap();
+                        let name_text = &builder.source[range.as_usize()];
+                        let name_id = intern_name.intern(name_text);
+                        builder
+                            .scope
+                            .symbols
+                            .insert(name_id, SyntaxKind::SOURCE_FILE); //@"module"
+                    }
+                }
+            }
+        }
+    }
+
+    semantic_visit_node(&mut builder, intern_name, tree, tree.root(), None);
     builder.semantic_tokens
 }
 
 fn semantic_visit_node(
     builder: &mut SemanticTokenBuilder,
+    intern_name: &mut InternPool<NameID>,
     tree: &SyntaxTree,
     node: &Node,
     ident_style: Option<SemanticToken>,
@@ -682,6 +766,59 @@ fn semantic_visit_node(
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
+
+                use rock_core::syntax::ast_layer::{self as cst, AstNode};
+                if let Some(path) = cst::Path::cast(node) {
+                    let mut segments = path.segments(tree);
+
+                    if let Some(segment) = segments.next() {
+                        if let Some(name) = segment.name(tree) {
+                            let range = name.ident(tree).unwrap();
+                            let name_text = &builder.source[range.as_usize()];
+                            let name_id = intern_name.intern(name_text);
+
+                            let mut item_ident_style =
+                                if let Some(&kind) = builder.scope.symbols.get(&name_id) {
+                                    match kind {
+                                        SyntaxKind::SOURCE_FILE => Some(SemanticToken::Namespace),
+                                        SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
+                                        SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
+                                        SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
+                                        SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
+                                        SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
+                                        _ => Some(SemanticToken::Property),
+                                    }
+                                } else {
+                                    None
+                                };
+                            //@hack for Type::Custom
+                            if let Some(SemanticToken::Type) = ident_style {
+                                item_ident_style = ident_style;
+                            }
+                            semantic_visit_node(
+                                builder,
+                                intern_name,
+                                tree,
+                                name.0,
+                                item_ident_style,
+                            );
+                        }
+                        if let Some(poly_args) = segment.poly_args(tree) {
+                            semantic_visit_node(builder, intern_name, tree, poly_args.0, None);
+                        }
+                    }
+
+                    for segment in segments {
+                        semantic_visit_node(
+                            builder,
+                            intern_name,
+                            tree,
+                            segment.0,
+                            Some(ident_style.unwrap_or(SemanticToken::Property)),
+                        );
+                    }
+                    continue;
+                }
 
                 let ident_style = match node.kind {
                     SyntaxKind::ERROR => None,
@@ -794,7 +931,7 @@ fn semantic_visit_node(
                     SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
                 };
 
-                semantic_visit_node(builder, tree, node, ident_style);
+                semantic_visit_node(builder, intern_name, tree, node, ident_style);
             }
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
@@ -912,4 +1049,8 @@ fn semantic_add_token(
         token_type: semantic as u32,
         token_modifiers_bitset: 0,
     });
+}
+
+struct ModuleScope {
+    symbols: HashMap<NameID, SyntaxKind>,
 }
