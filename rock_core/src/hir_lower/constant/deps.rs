@@ -20,6 +20,7 @@ enum ConstDependency {
     ArrayLen(hir::ConstEvalID),
 }
 
+//@set correct poly scopes everywhere paths are resolved
 pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);

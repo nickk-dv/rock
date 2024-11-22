@@ -14,7 +14,7 @@ pub struct Scope<'hir> {
     origin_id: ModuleID,
     pub global: GlobalScope,
     pub local: LocalScope<'hir>,
-    pub poly: Option<hir::PolymorphDefID>,
+    pub poly: PolyScope,
 }
 
 //==================== GLOBAL SCOPE ====================
@@ -95,6 +95,12 @@ pub enum Diverges {
     AlwaysWarned,
 }
 
+//==================== POLY SCOPE ====================
+
+pub struct PolyScope {
+    poly_def: Option<hir::PolymorphDefID>,
+}
+
 //==================== SCOPES IMPL ====================
 
 impl<'hir> Scope<'hir> {
@@ -103,7 +109,7 @@ impl<'hir> Scope<'hir> {
             origin_id: ModuleID::dummy(),
             global: GlobalScope::new(session),
             local: LocalScope::new(),
-            poly: None,
+            poly: PolyScope::new(),
         }
     }
 
@@ -114,6 +120,10 @@ impl<'hir> Scope<'hir> {
     #[inline]
     pub fn set_origin(&mut self, origin_id: ModuleID) {
         self.origin_id = origin_id;
+    }
+    #[inline]
+    pub fn set_poly(&mut self, poly_def: Option<hir::PolymorphDefID>) {
+        self.poly.poly_def = poly_def;
     }
 
     pub fn check_already_defined(
@@ -493,6 +503,31 @@ impl<'hir> LocalScope<'hir> {
     #[inline]
     pub fn diverges_set(&mut self, diverges: Diverges) {
         self.current_block_mut().diverges = diverges;
+    }
+}
+
+impl PolyScope {
+    fn new() -> PolyScope {
+        PolyScope { poly_def: None }
+    }
+
+    pub fn find_poly_param(
+        &self,
+        name_id: NameID,
+        registry: &Registry,
+    ) -> Option<(hir::PolymorphDefID, u32)> {
+        let poly_def = self.poly_def?;
+        let poly_params = match poly_def {
+            hir::PolymorphDefID::Proc(id) => registry.proc_data(id).poly_params,
+            hir::PolymorphDefID::Enum(id) => registry.enum_data(id).poly_params,
+            hir::PolymorphDefID::Struct(id) => registry.struct_data(id).poly_params,
+        }?;
+        for (idx, param) in poly_params.names.iter().enumerate() {
+            if name_id == param.id {
+                return Some((poly_def, idx as u32));
+            }
+        }
+        None
     }
 }
 

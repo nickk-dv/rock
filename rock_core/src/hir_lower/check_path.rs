@@ -16,6 +16,7 @@ enum PathResolvedKind {
     Symbol(SymbolID),
     Variable(VariableID),
     Module(ModuleID),
+    PolyParam(hir::PolymorphDefID, u32),
 }
 
 pub enum ValueID<'ast> {
@@ -36,6 +37,16 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
     if let Some(var_id) = ctx.scope.local.find_variable(name.name.id) {
         return Ok(PathResolved {
             kind: PathResolvedKind::Variable(var_id),
+            at_name: name.name,
+            names: path.segments.split_at(1).1,
+        });
+    }
+
+    if let Some((poly_def, poly_param_idx)) =
+        ctx.scope.poly.find_poly_param(name.name.id, &ctx.registry)
+    {
+        return Ok(PathResolved {
+            kind: PathResolvedKind::PolyParam(poly_def, poly_param_idx),
             at_name: name.name,
             names: path.segments.split_at(1).1,
         });
@@ -117,6 +128,7 @@ pub fn path_resolve_type<'hir>(
 
     let ty = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
+            //@check input poly_args
             SymbolID::Enum(id) => hir::Type::Enum(id, None),
             SymbolID::Struct(id) => hir::Type::Struct(id, None),
             _ => {
@@ -142,6 +154,10 @@ pub fn path_resolve_type<'hir>(
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", "module");
             return hir::Type::Error;
         }
+        //@check input poly_args (not allowed)
+        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+            hir::Type::InferDef(poly_def, poly_param_idx)
+        }
     };
 
     if path_check_unexpected_segment(ctx, path.names, "type").is_err() {
@@ -158,6 +174,7 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
 
     let struct_id = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
+            //@check input poly_args
             SymbolID::Struct(struct_id) => struct_id,
             _ => {
                 let src = ctx.src(path.at_name.range);
@@ -181,6 +198,20 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
             let defined_src = src; //@no src avaiblable, store imported src
             let name = ctx.name(path.at_name.id);
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "module");
+            return None;
+        }
+        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(
+                &mut ctx.emit,
+                src,
+                defined_src,
+                name,
+                "struct",
+                "type parameter",
+            );
             return None;
         }
     };
@@ -209,6 +240,7 @@ pub fn path_resolve_value<'ast>(
                     ValueID::Proc(proc_id)
                 }
             }
+            //@obtain input poly_args from path_resolve
             SymbolID::Enum(enum_id) => {
                 if let Some(next) = path.names.first().copied() {
                     if let Some(variant_id) =
@@ -252,6 +284,20 @@ pub fn path_resolve_value<'ast>(
             let defined_src = src; //@no src avaiblable, store imported src
             let name = ctx.name(path.at_name.id);
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "module");
+            ValueID::None
+        }
+        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+            let src = ctx.src(path.at_name.range);
+            let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
+            let name = ctx.name(path.at_name.id);
+            err::path_not_expected(
+                &mut ctx.emit,
+                src,
+                defined_src,
+                name,
+                "value",
+                "type parameter",
+            );
             ValueID::None
         }
     }

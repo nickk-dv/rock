@@ -27,6 +27,7 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
 
         ctx.scope.set_origin(data.origin_id);
+        ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(proc_id)));
         ctx.scope.local.reset();
         ctx.scope.local.set_proc_context(data.params, expect); //shadowing params still addeded here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
@@ -159,7 +160,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
         hir::Type::InferDef(poly_def_id, poly_param_idx) => {
-            let name = ctx.polymorph_param_name(poly_def_id, poly_param_idx);
+            let name = ctx.poly_param_name(poly_def_id, poly_param_idx);
             ctx.name(name.id).to_string().into()
         }
         hir::Type::Enum(id, poly_types) => {

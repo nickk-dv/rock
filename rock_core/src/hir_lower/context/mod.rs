@@ -42,12 +42,8 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
         self.session.intern_name.get(name_id)
     }
 
-    pub fn polymorph_param_name(
-        &self,
-        poly_def_id: hir::PolymorphDefID,
-        poly_param_idx: u32,
-    ) -> ast::Name {
-        let poly_params = match poly_def_id {
+    pub fn poly_param_name(&self, poly_def: hir::PolymorphDefID, poly_param_idx: u32) -> ast::Name {
+        let poly_params = match poly_def {
             hir::PolymorphDefID::Proc(id) => self.registry.proc_data(id).poly_params.unwrap(),
             hir::PolymorphDefID::Enum(id) => self.registry.enum_data(id).poly_params.unwrap(),
             hir::PolymorphDefID::Struct(id) => self.registry.struct_data(id).poly_params.unwrap(),

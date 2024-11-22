@@ -17,6 +17,8 @@ pub fn process_items(ctx: &mut HirCtx) {
     for id in ctx.registry.struct_ids() {
         process_struct_data(ctx, id)
     }
+
+    ctx.scope.set_poly(None);
     for id in ctx.registry.const_ids() {
         process_const_data(ctx, id)
     }
@@ -27,6 +29,7 @@ pub fn process_items(ctx: &mut HirCtx) {
 
 pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
+    ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
     let item = ctx.registry.proc_item(id);
 
     if let Some(poly_params) = item.poly_params {
@@ -71,6 +74,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
 
 fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
+    ctx.scope.set_poly(Some(hir::PolymorphDefID::Enum(id)));
     let item = ctx.registry.enum_item(id);
 
     if let Some(poly_params) = item.poly_params {
@@ -203,6 +207,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
 
 fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
+    ctx.scope.set_poly(Some(hir::PolymorphDefID::Struct(id)));
     let item = ctx.registry.struct_item(id);
 
     if let Some(poly_params) = item.poly_params {
@@ -305,7 +310,6 @@ pub fn type_resolve<'hir, 'ast>(
         ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, *ref_ty, delayed);
-
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -314,7 +318,6 @@ pub fn type_resolve<'hir, 'ast>(
         }
         ast::TypeKind::MultiReference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, *ref_ty, delayed);
-            //@temp resolve to same hir::Type
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
