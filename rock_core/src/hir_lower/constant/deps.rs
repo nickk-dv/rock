@@ -610,14 +610,14 @@ fn add_type_size_const_dependencies<'hir>(
             return Err(parent_id);
         }
         hir::Type::Enum(id, poly_types) => {
-            if poly_types.is_some() {
+            if !poly_types.is_empty() {
                 eprintln!("unhandled poly_types in enum (add_type_size_const_dependencies)");
                 return Err(parent_id);
             }
             add_enum_size_const_dependency(ctx, tree, parent_id, id)?;
         }
         hir::Type::Struct(id, poly_types) => {
-            if poly_types.is_some() {
+            if !poly_types.is_empty() {
                 eprintln!("unhandled poly_types in struct (add_type_size_const_dependencies)");
                 return Err(parent_id);
             }
@@ -703,7 +703,7 @@ fn add_type_usage_const_dependencies<'hir>(
             return Err(parent_id);
         }
         hir::Type::Enum(id, poly_types) => {
-            if poly_types.is_some() {
+            if !poly_types.is_empty() {
                 eprintln!("unhandled poly_types in enum (add_type_usage_const_dependencies)");
                 return Err(parent_id);
             }
@@ -715,7 +715,7 @@ fn add_type_usage_const_dependencies<'hir>(
             }
         }
         hir::Type::Struct(id, poly_types) => {
-            if poly_types.is_some() {
+            if !poly_types.is_empty() {
                 eprintln!("unhandled poly_types in struct (add_type_usage_const_dependencies)");
                 return Err(parent_id);
             }
@@ -898,7 +898,7 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             if let Some(path) = struct_init.path {
                 if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
                     //@poly_types not handled
-                    let struct_ty = hir::Type::Struct(struct_id, None);
+                    let struct_ty = hir::Type::Struct(struct_id, &[]);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
                 } else {
                     return Err(parent_id);

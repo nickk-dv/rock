@@ -340,7 +340,13 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
             ctx.s.types.add(ty);
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);
-        ast::VariantKind::HasFields(types)
+
+        let field_list = ast::VariantFieldList {
+            types,
+            range: field_list.find_range(ctx.tree),
+        };
+        let field_list = ctx.arena.alloc(field_list);
+        ast::VariantKind::HasFields(field_list)
     } else {
         ast::VariantKind::Default
     };

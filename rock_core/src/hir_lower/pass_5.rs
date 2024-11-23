@@ -58,43 +58,31 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             if id != id2 {
                 return false;
             }
+            //@not stable will always panic
             //@add deep error ty search to return `true`
             //when something errored (preserve false on different id?)
-            //expect same poly shape if 1 is poly
-            if poly_types.is_some() {
-                let types = poly_types.unwrap();
-                let types2 = poly_types2.unwrap();
-                assert_eq!(types.len(), types2.len());
-                for idx in 0..types.len() {
-                    if !type_matches(ctx, types[idx], types2[idx]) {
-                        return false;
-                    }
-                }
-                true
-            } else {
-                true
-            }
+            //assert_eq!(poly_types.len(), poly_types2.len());
+            //for idx in 0..poly_types.len() {
+            //    if !type_matches(ctx, poly_types[idx], poly_types2[idx]) {
+            //        return false;
+            //    }
+            //}
+            true
         }
         (hir::Type::Struct(id, poly_types), hir::Type::Struct(id2, poly_types2)) => {
             if id != id2 {
                 return false;
             }
+            //@not stable will always panic
             //@add deep error ty search to return `true`
             //when something errored (preserve false on different id?)
-            //expect same poly shape if 1 is poly
-            if poly_types.is_some() {
-                let types = poly_types.unwrap();
-                let types2 = poly_types2.unwrap();
-                assert_eq!(types.len(), types2.len());
-                for idx in 0..types.len() {
-                    if !type_matches(ctx, types[idx], types2[idx]) {
-                        return false;
-                    }
-                }
-                true
-            } else {
-                true
-            }
+            //assert_eq!(poly_types.len(), poly_types2.len());
+            //for idx in 0..poly_types.len() {
+            //    if !type_matches(ctx, poly_types[idx], poly_types2[idx]) {
+            //        return false;
+            //    }
+            //}
+            true
         }
         (hir::Type::Reference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             if mutt2 == ast::Mut::Mutable {
@@ -166,7 +154,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Enum(id, poly_types) => {
             let name = ctx.name(ctx.registry.enum_data(id).name.id);
 
-            if let Some(poly_types) = poly_types {
+            if !poly_types.is_empty() {
                 let mut format = String::with_capacity(64);
                 let mut first = false;
                 format.push_str(name);
@@ -189,7 +177,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Struct(id, poly_types) => {
             let name = ctx.name(ctx.registry.struct_data(id).name.id);
 
-            if let Some(poly_types) = poly_types {
+            if !poly_types.is_empty() {
                 let mut format = String::with_capacity(64);
                 let mut first = false;
                 format.push_str(name);
@@ -605,7 +593,7 @@ fn typecheck_match<'hir, 'ast>(
         Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
             let expect_src = ctx.src(on_res.expr.range);
             //@gen types not handled
-            let enum_ty = hir::Type::Enum(enum_id, None);
+            let enum_ty = hir::Type::Enum(enum_id, &[]);
             (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
         }
         Ok(_) => {
@@ -756,7 +744,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id, bind_ids),
                 //@gen types not handled
-                hir::Type::Enum(enum_id, None),
+                hir::Type::Enum(enum_id, &[]),
             )
         }
         ValueID::Const(const_id, fields) => {
@@ -818,7 +806,7 @@ fn typecheck_pat_variant<'hir>(
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id, bind_ids),
         //@gen types not handled
-        hir::Type::Enum(enum_id, None),
+        hir::Type::Enum(enum_id, &[]),
     )
 }
 
@@ -1554,7 +1542,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     let input = ctx.arena.alloc_slice(&field_inits);
     let kind = hir::ExprKind::StructInit { struct_id, input };
     //@ignored poly_types
-    TypeResult::new(hir::Type::Struct(struct_id, None), kind)
+    TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
 }
 
 fn typecheck_array_init<'hir, 'ast>(
@@ -1961,7 +1949,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: &[],
             };
-            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
 
@@ -1984,7 +1972,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: ctx.arena.alloc_slice(&input),
             };
-            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
 
@@ -2021,7 +2009,7 @@ fn typecheck_range<'hir, 'ast>(
                 struct_id,
                 input: ctx.arena.alloc_slice(&input),
             };
-            TypeResult::new(hir::Type::Struct(struct_id, None), kind)
+            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
 
@@ -2528,7 +2516,7 @@ fn typecheck_for<'hir, 'ast>(
                 Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
                     let expect_src = ctx.src(on_res.expr.range);
                     //@ignored poly_types
-                    let enum_ty = hir::Type::Enum(enum_id, None);
+                    let enum_ty = hir::Type::Enum(enum_id, &[]);
                     (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
                 }
                 Ok(_) => {
@@ -3013,9 +3001,13 @@ fn check_variant_input_opt<'hir, 'ast>(
     let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
 
-    if input_count != expected_count {
+    if expected_count == 0 && arg_list.is_some() {
         let src = ctx.src(arg_list_opt_range(arg_list, error_range));
-        let variant_src = SourceRange::new(data.origin_id, variant.name.range);
+        let variant_src = SourceRange::new(origin_id, variant.name.range);
+        err::tycheck_unexpected_variant_arg_list(&mut ctx.emit, src, variant_src);
+    } else if input_count != expected_count {
+        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
+        let variant_src = SourceRange::new(origin_id, variant.name.range);
         err::tycheck_unexpected_variant_arg_count(
             &mut ctx.emit,
             src,
@@ -3023,11 +3015,6 @@ fn check_variant_input_opt<'hir, 'ast>(
             input_count,
             expected_count,
         );
-    } else if expected_count == 0 && arg_list.is_some() {
-        //@implement same check for enum definition
-        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
-        let variant_src = SourceRange::new(data.origin_id, variant.name.range);
-        err::tycheck_unexpected_variant_arg_list(&mut ctx.emit, src, variant_src);
     }
 
     let input = if let Some(arg_list) = arg_list {
@@ -3056,7 +3043,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         input,
     };
     //@ignored poly_types
-    TypeResult::new(hir::Type::Enum(enum_id, None), kind)
+    TypeResult::new(hir::Type::Enum(enum_id, &[]), kind)
 }
 
 fn check_variant_bind_count(
@@ -3072,7 +3059,11 @@ fn check_variant_bind_count(
     let input_count = bind_list.map(|bl| bl.binds.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
 
-    if input_count != expected_count {
+    if expected_count == 0 && bind_list.is_some() {
+        let src = ctx.src(bind_list.unwrap().range);
+        let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
+        err::tycheck_unexpected_variant_bind_list(&mut ctx.emit, src, variant_src);
+    } else if input_count != expected_count {
         let src = ctx.src(bind_list_opt_range(bind_list, default));
         let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
         err::tycheck_unexpected_variant_bind_count(
@@ -3082,10 +3073,6 @@ fn check_variant_bind_count(
             input_count,
             expected_count,
         );
-    } else if expected_count == 0 && bind_list.is_some() {
-        let src = ctx.src(bind_list_opt_range(bind_list, default));
-        let variant_src = SourceRange::new(enum_data.origin_id, variant.name.range);
-        err::tycheck_unexpected_variant_bind_list(&mut ctx.emit, src, variant_src);
     }
 }
 

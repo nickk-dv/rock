@@ -113,13 +113,13 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::Basic(basic) => self.basic_type(basic),
             hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
             hir::Type::Enum(enum_id, poly_types) => {
-                if poly_types.is_some() {
+                if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic enum type")
                 }
                 self.enum_type(enum_id)
             }
             hir::Type::Struct(struct_id, poly_types) => {
-                if poly_types.is_some() {
+                if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic struct type")
                 }
                 self.struct_type(struct_id).as_ty()

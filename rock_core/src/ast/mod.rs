@@ -79,7 +79,13 @@ pub struct Variant<'ast> {
 pub enum VariantKind<'ast> {
     Default,
     Constant(ConstExpr<'ast>),
-    HasFields(&'ast [Type<'ast>]),
+    HasFields(&'ast VariantFieldList<'ast>),
+}
+
+#[derive(Copy, Clone)]
+pub struct VariantFieldList<'ast> {
+    pub types: &'ast [Type<'ast>],
+    pub range: TextRange,
 }
 
 #[derive(Copy, Clone)]
@@ -544,7 +550,7 @@ crate::size_lock!(64, GlobalItem);
 crate::size_lock!(80, ImportItem);
 
 crate::size_lock!(40, Param);
-crate::size_lock!(56, Variant);
+crate::size_lock!(48, Variant);
 crate::size_lock!(56, Field);
 crate::size_lock!(28, ImportSymbol);
 

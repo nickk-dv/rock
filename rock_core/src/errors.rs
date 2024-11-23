@@ -521,6 +521,16 @@ pub fn item_type_param_already_defined(
     emit.error(Error::new(msg, param_src, info));
 }
 
+pub fn item_poly_params_empty(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("polymorphic parameter list is empty, remove it");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn item_variant_fields_empty(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("variant field list is empty, remove it");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn item_enum_non_int_tag_ty(emit: &mut impl ErrorSink, tag_src: SourceRange) {
     let msg = "enum tag type must be an integer";
     emit.error(Error::new(msg, tag_src, None));
@@ -574,6 +584,26 @@ pub fn path_unexpected_poly_args(
     after_kind: &'static str,
 ) {
     let msg = format!("unexpected polymorphic arguments after {after_kind}");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn path_type_unexpected_poly_args(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    name: &str,
+    item_kind: &'static str,
+) {
+    let msg = format!("unexpected polymorphic arguments for {item_kind} `{name}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn path_type_missing_poly_args(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    name: &str,
+    item_kind: &'static str,
+) {
+    let msg = format!("missing polymorphic arguments for {item_kind} `{name}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -938,6 +968,16 @@ pub fn tycheck_unexpected_proc_arg_count(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_unexpected_variant_arg_list(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    variant_src: SourceRange,
+) {
+    let msg = "variant has no fields, remove the argument list";
+    let info = Info::new("variant defined here", variant_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_unexpected_variant_arg_count(
     emit: &mut impl ErrorSink,
     src: SourceRange,
@@ -951,12 +991,12 @@ pub fn tycheck_unexpected_variant_arg_count(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_unexpected_variant_arg_list(
+pub fn tycheck_unexpected_variant_bind_list(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     variant_src: SourceRange,
 ) {
-    let msg = "variant has no fields, remove the argument list";
+    let msg = "variant has no fields, remove the binding list";
     let info = Info::new("variant defined here", variant_src);
     emit.error(Error::new(msg, src, info));
 }
@@ -970,16 +1010,6 @@ pub fn tycheck_unexpected_variant_bind_count(
 ) {
     let plural = if expected_count == 1 { "" } else { "s" };
     let msg = format!("expected {expected_count} binding{plural}, found {input_count}");
-    let info = Info::new("variant defined here", variant_src);
-    emit.error(Error::new(msg, src, info));
-}
-
-pub fn tycheck_unexpected_variant_bind_list(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    variant_src: SourceRange,
-) {
-    let msg = "variant has no fields, remove the binding list";
     let info = Info::new("variant defined here", variant_src);
     emit.error(Error::new(msg, src, info));
 }

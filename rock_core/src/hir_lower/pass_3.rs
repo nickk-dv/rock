@@ -120,12 +120,16 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
                     fields: &[],
                 }
             }
-            //@could be empty field list, error and dont set the `any_has_fields`
-            ast::VariantKind::HasFields(types) => {
+            ast::VariantKind::HasFields(field_list) => {
                 let eval_id = ctx.registry.add_variant_eval();
 
-                let mut fields = Vec::with_capacity(types.len());
-                for ty in types {
+                if field_list.types.is_empty() {
+                    let src = ctx.src(field_list.range);
+                    err::item_variant_fields_empty(&mut ctx.emit, src);
+                }
+
+                let mut fields = Vec::with_capacity(field_list.types.len());
+                for ty in field_list.types {
                     let ty_range = ty.range;
                     let ty = type_resolve(ctx, *ty, true);
                     fields.push(hir::VariantField { ty, ty_range });
@@ -267,6 +271,8 @@ fn process_polymorph_params<'hir>(
     poly_params: &ast::PolymorphParams,
 ) -> Option<&'hir hir::PolymorphParams<'hir>> {
     if poly_params.names.is_empty() {
+        let src = ctx.src(poly_params.range);
+        err::item_poly_params_empty(&mut ctx.emit, src);
         return None;
     }
 
@@ -305,9 +311,10 @@ pub fn type_resolve<'hir, 'ast>(
     ast_ty: ast::Type<'ast>,
     delayed: bool,
 ) -> hir::Type<'hir> {
+    //@delayed means something like "type definition in global scope", rename?
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
-        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path),
+        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, delayed),
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, *ref_ty, delayed);
             if ref_ty.is_error() {

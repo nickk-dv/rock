@@ -50,6 +50,17 @@ mod arena {
             }
         }
 
+        pub fn alloc_slice_with_value<T: Copy>(&mut self, val: T, len: usize) -> &'arena [T] {
+            let offset = self.offset_raw::<T>(len * std::mem::size_of::<T>());
+            unsafe {
+                let write_ptr = offset;
+                for idx in 0..len {
+                    std::ptr::write(write_ptr.add(idx), val);
+                }
+                std::slice::from_raw_parts(offset as *const T, len)
+            }
+        }
+
         pub fn alloc_str(&mut self, val: &str) -> &'arena str {
             let bytes = self.alloc_slice(val.as_bytes());
             unsafe { std::str::from_utf8_unchecked(bytes) }

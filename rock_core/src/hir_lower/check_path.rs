@@ -140,6 +140,7 @@ fn check_unexpected_poly_args(
 pub fn path_resolve_type<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     path: &ast::Path,
+    require_poly: bool,
 ) -> hir::Type<'hir> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
@@ -148,8 +149,30 @@ pub fn path_resolve_type<'hir>(
 
     let ty = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Enum(id) => hir::Type::Enum(id, None),
-            SymbolID::Struct(id) => hir::Type::Struct(id, None),
+            SymbolID::Enum(enum_id) => {
+                let data = ctx.registry.enum_data(enum_id);
+                let poly_types = resolve_type_poly_args(
+                    ctx,
+                    path.at_segment,
+                    data.poly_params,
+                    require_poly,
+                    data.name,
+                    "enum",
+                );
+                hir::Type::Enum(enum_id, poly_types)
+            }
+            SymbolID::Struct(struct_id) => {
+                let data = ctx.registry.struct_data(struct_id);
+                let poly_types = resolve_type_poly_args(
+                    ctx,
+                    path.at_segment,
+                    data.poly_params,
+                    require_poly,
+                    data.name,
+                    "struct",
+                );
+                hir::Type::Struct(struct_id, poly_types)
+            }
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
                 let defined_src = symbol_id.src(&ctx.registry);
@@ -174,26 +197,55 @@ pub fn path_resolve_type<'hir>(
             return hir::Type::Error;
         }
         PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
-            hir::Type::InferDef(poly_def, poly_param_idx)
-        }
-    };
-
-    match ty {
-        hir::Type::InferDef(_, _) => {
             if check_unexpected_poly_args(ctx, path.at_segment, "type parameter").is_err() {
                 return hir::Type::Error;
             }
+            hir::Type::InferDef(poly_def, poly_param_idx)
         }
-        //@full poly args are not always required (not in proc scope)
-        hir::Type::Enum(enum_id, _) => {}
-        hir::Type::Struct(struct_id, _) => {}
-        _ => unreachable!(),
-    }
+    };
 
     if check_unexpected_segments(ctx, path.names, "type").is_err() {
         return hir::Type::Error;
     }
     ty
+}
+
+fn resolve_type_poly_args<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    segment: ast::PathSegment,
+    poly_params: Option<&hir::PolymorphParams>,
+    require_poly: bool,
+    item_name: ast::Name,
+    item_kind: &'static str,
+) -> &'hir [hir::Type<'hir>] {
+    match (poly_params, segment.poly_args) {
+        (None, None) => &[],
+        (None, Some(poly_args)) => {
+            let src = ctx.src(poly_args.range);
+            let name = ctx.name(item_name.id);
+            err::path_type_unexpected_poly_args(&mut ctx.emit, src, name, item_kind);
+            &[]
+        }
+        (Some(poly_params), None) => {
+            if require_poly {
+                let src = ctx.src(segment.name.range);
+                let name = ctx.name(item_name.id);
+                err::path_type_missing_poly_args(&mut ctx.emit, src, name, item_kind);
+                ctx.arena
+                    .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+            } else {
+                //@use Type::Infer when its supported
+                ctx.arena
+                    .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+            }
+        }
+        (Some(poly_params), Some(poly_args)) => {
+            //check inputs
+            //@temp Type::Error
+            ctx.arena
+                .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+        }
+    }
 }
 
 pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::StructID> {
