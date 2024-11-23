@@ -559,12 +559,21 @@ pub fn path_not_expected(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn path_unexpected_segment(
+pub fn path_unexpected_segments(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     after_kind: &'static str,
 ) {
-    let msg = format!("unexpected path segment after {after_kind}");
+    let msg = format!("unexpected path segments after {after_kind}");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn path_unexpected_poly_args(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    after_kind: &'static str,
+) {
+    let msg = format!("unexpected polymorphic arguments after {after_kind}");
     emit.error(Error::new(msg, src, None));
 }
 
