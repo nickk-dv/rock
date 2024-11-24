@@ -137,9 +137,9 @@ fn check_unexpected_poly_args(
     }
 }
 
-pub fn path_resolve_type<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    path: &ast::Path,
+pub fn path_resolve_type<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    path: &ast::Path<'ast>,
     require_poly: bool,
 ) -> hir::Type<'hir> {
     let path = match path_resolve(ctx, path) {
@@ -210,9 +210,9 @@ pub fn path_resolve_type<'hir>(
     ty
 }
 
-fn resolve_type_poly_args<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    segment: ast::PathSegment,
+fn resolve_type_poly_args<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    segment: ast::PathSegment<'ast>,
     poly_params: Option<&hir::PolymorphParams>,
     require_poly: bool,
     item_name: ast::Name,
@@ -240,11 +240,41 @@ fn resolve_type_poly_args<'hir>(
             }
         }
         (Some(poly_params), Some(poly_args)) => {
-            //check inputs
-            //@temp Type::Error
-            ctx.arena
-                .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+            let mut poly_types = Vec::with_capacity(poly_params.names.len());
+
+            let input_count = poly_args.types.len();
+            let expected_count = poly_params.names.len();
+
+            if input_count != expected_count {
+                let src = ctx.src(poly_args_range(poly_args));
+                err::path_unexpected_poly_arg_count(
+                    &mut ctx.emit,
+                    src,
+                    input_count,
+                    expected_count,
+                );
+            }
+
+            for idx in 0..poly_params.names.len() {
+                let ty = if let Some(arg_type) = poly_args.types.get(idx) {
+                    super::pass_3::type_resolve(ctx, *arg_type, require_poly)
+                } else {
+                    hir::Type::Error
+                };
+                poly_types.push(ty);
+            }
+
+            ctx.arena.alloc_slice(&poly_types)
         }
+    }
+}
+
+fn poly_args_range(poly_args: &ast::PolymorphArgs) -> TextRange {
+    if poly_args.types.is_empty() {
+        poly_args.range
+    } else {
+        let end = poly_args.range.end();
+        TextRange::new(end - 1.into(), end)
     }
 }
 

@@ -607,6 +607,17 @@ pub fn path_type_missing_poly_args(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn path_unexpected_poly_arg_count(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    input_count: usize,
+    expected_count: usize,
+) {
+    let plural = if expected_count == 1 { "" } else { "s" };
+    let msg = format!("expected {expected_count} type argument{plural}, found {input_count}");
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== CHECK CONSTANT ====================
 
 pub fn const_cannot_use_expr(emit: &mut impl ErrorSink, src: SourceRange, expr_kind: &'static str) {

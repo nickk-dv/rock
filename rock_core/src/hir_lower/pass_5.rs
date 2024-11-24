@@ -2994,9 +2994,9 @@ fn check_variant_input_opt<'hir, 'ast>(
     arg_list: Option<&ast::ArgumentList<'ast>>,
     error_range: TextRange,
 ) -> TypeResult<'hir> {
-    let data = ctx.registry.enum_data(enum_id);
-    let variant = data.variant(variant_id);
-    let origin_id = data.origin_id;
+    let enum_data = ctx.registry.enum_data(enum_id);
+    let variant = enum_data.variant(variant_id);
+    let origin_id = enum_data.origin_id;
 
     let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();

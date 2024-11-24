@@ -725,20 +725,15 @@ fn sub_expr(p: &mut Parser, min_prec: u32) {
         mc_curr = m.complete(p, SyntaxKind::EXPR_CAST)
     }
 
-    loop {
-        let prec: u32;
-        if let Some(bin_op) = p.peek().as_bin_op() {
-            prec = bin_op.prec();
-            if prec < min_prec {
-                break;
-            }
-            let m = p.start_before(mc_curr);
-            p.bump(p.peek());
-            sub_expr(p, prec + 1);
-            mc_curr = m.complete(p, SyntaxKind::EXPR_BINARY);
-        } else {
-            break;
+    while let Some(bin_op) = p.peek().as_bin_op() {
+        let prec = bin_op.prec();
+        if prec < min_prec {
+            return;
         }
+        let m = p.start_before(mc_curr);
+        p.bump(p.peek());
+        sub_expr(p, prec + 1);
+        mc_curr = m.complete(p, SyntaxKind::EXPR_BINARY);
     }
 }
 
