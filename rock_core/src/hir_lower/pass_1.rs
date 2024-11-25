@@ -2,7 +2,9 @@ use super::attr_check;
 use super::context::scope::{Symbol, SymbolID};
 use super::context::HirCtx;
 use crate::ast;
+use crate::errors as err;
 use crate::hir;
+use crate::text::TextRange;
 
 pub fn populate_scopes(ctx: &mut HirCtx) {
     for module_id in ctx.session.module.ids() {
@@ -179,6 +181,11 @@ fn add_global_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Global
 }
 
 fn add_import_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ImportItem) {
+    if let Some(start) = item.vis_start {
+        let src = ctx.src(TextRange::new(start, start + 3.into()));
+        err::item_import_with_vis(&mut ctx.emit, src);
+    }
+
     let feedback = attr_check::check_attrs_import(ctx, item);
     if feedback.cfg_state.disabled() {
         return;

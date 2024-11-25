@@ -245,7 +245,6 @@ fn codegen_function_values(cg: &mut Codegen) {
     }
 }
 
-//@reuse param & local ptr value vectors
 fn codegen_function_bodies(cg: &mut Codegen) {
     for (proc_idx, data) in cg.hir.procs.iter().enumerate() {
         if data.attr_set.contains(hir::ProcFlag::External)

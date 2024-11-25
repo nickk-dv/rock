@@ -913,7 +913,7 @@ impl<'syn> GlobalItem<'syn> {
 
 impl<'syn> ImportItem<'syn> {
     node_find!(attr_list, AttrList);
-    node_find!(vis, Vis); //@exists but ignored
+    node_find!(vis, Vis);
     node_find!(package, Name);
     node_find!(import_path, ImportPath);
     node_find!(rename, ImportSymbolRename);

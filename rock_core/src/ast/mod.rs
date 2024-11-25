@@ -127,6 +127,7 @@ pub struct GlobalItem<'ast> {
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
     pub attrs: &'ast [Attr<'ast>],
+    pub vis_start: Option<TextOffset>,
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
     pub rename: SymbolRename,
@@ -547,7 +548,7 @@ crate::size_lock!(64, EnumItem);
 crate::size_lock!(56, StructItem);
 crate::size_lock!(64, ConstItem);
 crate::size_lock!(64, GlobalItem);
-crate::size_lock!(80, ImportItem);
+crate::size_lock!(88, ImportItem);
 
 crate::size_lock!(40, Param);
 crate::size_lock!(48, Variant);

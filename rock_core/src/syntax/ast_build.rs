@@ -445,6 +445,9 @@ fn import_item<'ast>(
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
     let attrs = attr_list(ctx, item.attr_list(ctx.tree));
+    let vis_start = item
+        .vis(ctx.tree)
+        .map(|vis| vis.t_pub(ctx.tree).unwrap().start());
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
@@ -468,6 +471,7 @@ fn import_item<'ast>(
 
     let import_item = ast::ImportItem {
         attrs,
+        vis_start,
         package,
         import_path,
         rename,

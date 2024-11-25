@@ -54,7 +54,7 @@ impl TokenList {
         TokenList {
             tokens: Vec::with_capacity(cap),
             token_ranges: Vec::with_capacity(cap),
-            trivias: Vec::new(),
+            trivias: Vec::new(), //@estimate this cap if we always do whitespace
             trivia_ranges: Vec::new(),
             ints: Vec::new(),
             chars: Vec::new(),

@@ -853,6 +853,7 @@ fn import_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ImportItem<'syn>)
     if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
         attr_list(fmt, attr_list_cst);
     }
+    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("import");
     fmt.space();
