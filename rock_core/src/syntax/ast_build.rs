@@ -1,10 +1,9 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
-use crate::errors as err;
+use crate::error::{ErrorBuffer, ErrorSink};
 use crate::intern::{InternPool, NameID};
-use crate::session::{ModuleID, Session};
+use crate::session::Session;
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 use crate::token::{LitCharID, LitFloatID, LitIntID, LitStringID};
@@ -12,7 +11,6 @@ use crate::token::{LitCharID, LitFloatID, LitIntID, LitStringID};
 struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
-    module_id: ModuleID,
     int_id: LitIntID,
     float_id: LitFloatID,
     char_id: LitCharID,
@@ -47,14 +45,12 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
     fn new(
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
-        module_id: ModuleID,
         intern_name: &'src mut InternPool<'s, NameID>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild {
             arena: Arena::new(),
             tree,
-            module_id,
             int_id: LitIntID::new(0),
             float_id: LitFloatID::new(0),
             char_id: LitCharID::new(0),
@@ -130,13 +126,7 @@ pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), E
         let file = session.vfs.file(module.file_id());
         let tree = module.tree_expect();
 
-        let mut ctx = AstBuild::new(
-            &tree,
-            &file.source,
-            module_id,
-            &mut session.intern_name,
-            &mut state,
-        );
+        let mut ctx = AstBuild::new(&tree, &file.source, &mut session.intern_name, &mut state);
         let items = source_file(&mut ctx, tree.source_file());
         let ast = ctx.finish(items);
         session.module.get_mut(module_id).set_ast(ast);
@@ -912,51 +902,14 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Binary(binary) => {
             let (op, op_range) = binary.bin_op(ctx.tree).unwrap();
-            let lhs_cst = binary.lhs(ctx.tree).unwrap();
-            let rhs_cst = binary.rhs(ctx.tree).unwrap();
-            let lhs = expr(ctx, lhs_cst);
-            let rhs = expr(ctx, rhs_cst);
-
-            if !lhs_cst.is_paren() {
-                check_bin_op_prec_conflit(ctx, op, op_range, lhs, rhs);
-            }
+            let lhs = expr(ctx, binary.lhs(ctx.tree).unwrap());
+            let rhs = expr(ctx, binary.rhs(ctx.tree).unwrap());
 
             let bin = ast::BinExpr { lhs, rhs };
             let bin = ctx.arena.alloc(bin);
             ast::ExprKind::Binary { op, op_range, bin }
         }
     }
-}
-
-fn check_bin_op_prec_conflit(
-    ctx: &mut AstBuild,
-    op: ast::BinOp,
-    op_range: TextRange,
-    lhs: &ast::Expr,
-    rhs: &ast::Expr,
-) {
-    let group = match op.prec_conflit() {
-        Some(group) => group,
-        None => return,
-    };
-
-    let lhs_group = match lhs.kind {
-        ast::ExprKind::Binary { op, .. } => match op.prec_conflit() {
-            Some(lhs_group) => lhs_group,
-            None => return,
-        },
-        _ => return,
-    };
-
-    if group != lhs_group {
-        return;
-    }
-
-    let op_src = SourceRange::new(ctx.module_id, op_range);
-    let lhs_src = SourceRange::new(ctx.module_id, lhs.range);
-    let bin_range = TextRange::new(lhs.range.start(), rhs.range.end());
-    let bin_src = SourceRange::new(ctx.module_id, bin_range);
-    err::parse_bin_op_prec_conflit(&mut ctx.s.errors, op_src, lhs_src, bin_src);
 }
 
 fn match_arm_list<'ast>(

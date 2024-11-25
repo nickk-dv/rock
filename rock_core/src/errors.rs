@@ -216,24 +216,6 @@ pub fn lexer_float_exp_missing_digits(emit: &mut impl ErrorSink, src: SourceRang
     emit.error(Error::new(msg, src, None));
 }
 
-//==================== PARSER ====================
-
-pub fn parse_bin_op_prec_conflit(
-    emit: &mut impl ErrorSink,
-    op_src: SourceRange,
-    lhs_src: SourceRange,
-    bin_src: SourceRange,
-) {
-    let msg =
-        "binary operator precedence conflict\nadd parenthesis to specify the order of operations";
-    emit.error(Error::new_info_vec(
-        msg,
-        "",
-        op_src,
-        vec![Info::new_val("", lhs_src), Info::new_val("", bin_src)],
-    ));
-}
-
 //==================== SYNTAX ====================
 
 pub fn syntax_invalid_doc_comment(emit: &mut impl ErrorSink, src: SourceRange) {

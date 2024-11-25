@@ -584,21 +584,4 @@ impl BinOp {
             BinOp::Mul | BinOp::Div | BinOp::Rem => 7,
         }
     }
-
-    pub fn prec_conflit(&self) -> Option<u32> {
-        match self {
-            BinOp::LogicOr => None,
-            BinOp::LogicAnd => None,
-            BinOp::IsEq
-            | BinOp::NotEq
-            | BinOp::Less
-            | BinOp::LessEq
-            | BinOp::Greater
-            | BinOp::GreaterEq => Some(3),
-            BinOp::Add | BinOp::Sub => None,
-            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => Some(5),
-            BinOp::BitShl | BinOp::BitShr => None,
-            BinOp::Mul | BinOp::Div | BinOp::Rem => None,
-        }
-    }
 }
