@@ -321,7 +321,7 @@ pub enum ExprKind<'ast> {
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Range       { range: &'ast Range<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
-    Binary      { op: BinOp, op_range: TextRange, bin: &'ast BinExpr<'ast> },
+    Binary      { op: BinOp, op_start: TextOffset, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
 
 #[derive(Copy, Clone)]
@@ -359,12 +359,6 @@ pub struct StructInit<'ast> {
 pub struct FieldInit<'ast> {
     pub name: Name,
     pub expr: &'ast Expr<'ast>,
-}
-
-#[derive(Copy, Clone)]
-pub struct BinExpr<'ast> {
-    pub lhs: &'ast Expr<'ast>,
-    pub rhs: &'ast Expr<'ast>,
 }
 
 //==================== PAT ====================

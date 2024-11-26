@@ -905,9 +905,12 @@ fn expr_kind<'ast>(
             let lhs = expr(ctx, binary.lhs(ctx.tree).unwrap());
             let rhs = expr(ctx, binary.rhs(ctx.tree).unwrap());
 
-            let bin = ast::BinExpr { lhs, rhs };
-            let bin = ctx.arena.alloc(bin);
-            ast::ExprKind::Binary { op, op_range, bin }
+            ast::ExprKind::Binary {
+                op,
+                op_start: op_range.start(),
+                lhs,
+                rhs,
+            }
         }
     }
 }

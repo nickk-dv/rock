@@ -955,9 +955,9 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
         }
-        ast::ExprKind::Binary { bin, .. } => {
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, bin.lhs)?;
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, bin.rhs)?;
+        ast::ExprKind::Binary { lhs, rhs, .. } => {
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, lhs)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
         }
     }

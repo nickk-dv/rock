@@ -10,7 +10,7 @@ use crate::hir::{self, BasicFloat, BasicInt};
 use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 
 pub fn typecheck_procedures(ctx: &mut HirCtx) {
     for proc_id in ctx.registry.proc_ids() {
@@ -430,9 +430,12 @@ pub fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
-        ast::ExprKind::Binary { op, op_range, bin } => {
-            typecheck_binary(ctx, expect, op, op_range, bin)
-        }
+        ast::ExprKind::Binary {
+            op,
+            op_start,
+            lhs,
+            rhs,
+        } => typecheck_binary(ctx, expect, op, op_start, lhs, rhs),
     };
 
     if !expr_res.ignore {
@@ -2076,16 +2079,20 @@ fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     op: ast::BinOp,
-    op_range: TextRange,
-    bin: &ast::BinExpr<'ast>,
+    op_start: TextOffset,
+    lhs: &ast::Expr<'ast>,
+    rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
+    let op_offset = op.as_str().len() as u32;
+    let op_range = TextRange::new(op_start, op_start + op_offset.into());
+
     let lhs_expect = binary_lhs_expect(ctx, op, op_range, expect);
-    let lhs_res = typecheck_expr(ctx, lhs_expect, bin.lhs);
+    let lhs_res = typecheck_expr(ctx, lhs_expect, lhs);
     let bin_op = binary_op_check(ctx, op, op_range, lhs_res.ty);
 
-    let expect_src = ctx.src(bin.lhs.range);
+    let expect_src = ctx.src(lhs.range);
     let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
-    let rhs_res = typecheck_expr(ctx, rhs_expect, bin.rhs);
+    let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
     let _ = binary_op_check(ctx, op, op_range, rhs_res.ty);
 
     if let Some(bin_op) = bin_op {
