@@ -73,7 +73,6 @@ struct CodegenCache {
     ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
     void_val_type: llvm::TypeStruct,
-    never_val_type: llvm::TypeStruct,
 }
 
 impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
@@ -85,8 +84,8 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         let target = llvm::IRTarget::new(triple);
         let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
-        let build = llvm::IRBuilder::new(&context);
         let cache = CodegenCache::new(&context, &target);
+        let build = llvm::IRBuilder::new(&context, cache.void_val_type);
 
         Codegen {
             target,
@@ -134,23 +133,17 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
 
     pub fn basic_type(&self, basic: ast::BasicType) -> llvm::Type {
         match basic {
-            ast::BasicType::S8 => self.cache.int_8,
-            ast::BasicType::S16 => self.cache.int_16,
-            ast::BasicType::S32 => self.cache.int_32,
-            ast::BasicType::S64 => self.cache.int_64,
-            ast::BasicType::Ssize => self.cache.ptr_sized_int,
-            ast::BasicType::U8 => self.cache.int_8,
-            ast::BasicType::U16 => self.cache.int_16,
-            ast::BasicType::U32 => self.cache.int_32,
-            ast::BasicType::U64 => self.cache.int_64,
-            ast::BasicType::Usize => self.cache.ptr_sized_int,
+            ast::BasicType::S8 | ast::BasicType::U8 => self.cache.int_8,
+            ast::BasicType::S16 | ast::BasicType::U16 => self.cache.int_16,
+            ast::BasicType::S32 | ast::BasicType::U32 => self.cache.int_32,
+            ast::BasicType::S64 | ast::BasicType::U64 => self.cache.int_64,
+            ast::BasicType::Ssize | ast::BasicType::Usize => self.cache.ptr_sized_int,
             ast::BasicType::F32 => self.cache.float_32,
             ast::BasicType::F64 => self.cache.float_64,
             ast::BasicType::Bool => self.cache.int_1,
             ast::BasicType::Char => self.cache.int_32,
             ast::BasicType::Rawptr => self.cache.ptr_type,
-            ast::BasicType::Void => self.cache.void_val_type.as_ty(),
-            ast::BasicType::Never => self.cache.never_val_type.as_ty(),
+            ast::BasicType::Void | ast::BasicType::Never => self.cache.void_val_type.as_ty(),
         }
     }
 
@@ -368,10 +361,8 @@ impl CodegenCache {
 
         let slice_type = context.struct_create_named("rock.slice");
         let void_val_type = context.struct_create_named("rock.void");
-        let never_val_type = context.struct_create_named("rock.never");
         context.struct_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
         context.struct_set_body(void_val_type, &[], false);
-        context.struct_set_body(never_val_type, &[], false);
 
         CodegenCache {
             int_1: context.int_1(),
@@ -386,7 +377,6 @@ impl CodegenCache {
             ptr_sized_int,
             slice_type,
             void_val_type,
-            never_val_type,
         }
     }
 }

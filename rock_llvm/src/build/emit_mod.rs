@@ -226,8 +226,7 @@ fn codegen_function_values(cg: &mut Codegen) {
         };
 
         let return_ty = match data.return_ty {
-            hir::Type::Basic(ast::BasicType::Void) => cg.void_type(),
-            hir::Type::Basic(ast::BasicType::Never) => cg.void_type(),
+            hir::Type::Basic(ast::BasicType::Void | ast::BasicType::Never) => cg.void_type(),
             _ => cg.ty(data.return_ty),
         };
 

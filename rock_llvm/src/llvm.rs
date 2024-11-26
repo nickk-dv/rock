@@ -30,6 +30,7 @@ pub struct IRModule {
 pub struct IRBuilder {
     builder: sys::LLVMBuilderRef,
     cstr_buf: CStrBuffer,
+    rock_void: TypeStruct, // cached for `ret`
 }
 
 struct CStrBuffer(UnsafeCell<String>);
@@ -293,10 +294,11 @@ impl Drop for IRModule {
 }
 
 impl IRBuilder {
-    pub fn new(context: &IRContext) -> IRBuilder {
+    pub fn new(context: &IRContext, rock_void: TypeStruct) -> IRBuilder {
         IRBuilder {
             builder: unsafe { core::LLVMCreateBuilderInContext(context.context) },
             cstr_buf: CStrBuffer::new(),
+            rock_void,
         }
     }
 
@@ -312,7 +314,12 @@ impl IRBuilder {
 
     pub fn ret(&self, val: Option<Value>) {
         if let Some(val) = val {
-            let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
+            // ret `%rock.void` => ret void
+            if typeof_value(val).0 == self.rock_void.0 {
+                let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
+            } else {
+                let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
+            }
         } else {
             let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
         }
@@ -650,6 +657,8 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
         )
     })
 }
+
+#[inline(always)]
 pub fn typeof_value(val: Value) -> Type {
     Type(unsafe { core::LLVMTypeOf(val.0) })
 }
