@@ -124,15 +124,13 @@ impl Parser {
         m.complete(self, SyntaxKind::ERROR)
     }
 
-    //@tweak where error is displayed (currently next or last token)
-    // might display it right after current token with empty range (maybe for some tokens like , ; etc)
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let range = if self.at(Token::Eof) {
-            self.tokens.token_range(self.cursor.dec())
+        let cursor = if self.at(Token::Eof) {
+            self.cursor.dec()
         } else {
-            self.tokens.token_range(self.cursor)
+            self.cursor
         };
-
+        let range = self.tokens.token_range(cursor);
         let src = SourceRange::new(self.module_id, range);
         self.errors.error(Error::new(msg, src, None));
     }

@@ -39,7 +39,7 @@ impl<'src, 's> Lexer<'src, 's> {
         Lexer {
             cursor: 0.into(),
             chars: source.chars().peekable(),
-            tokens: TokenList::new(0), //@no cap estimation
+            tokens: TokenList::new(source.len() / 8),
             buffer: String::with_capacity(64),
             errors: ErrorBuffer::default(),
             source,

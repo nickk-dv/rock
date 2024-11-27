@@ -262,11 +262,8 @@ fn match_cov_char(
     }
 
     if cov.not_covered() {
-        let mut msg = String::from("patterns not covered:\n");
+        let msg = "patterns not covered:\n- `_`";
         let src = ctx.src(match_kw);
-
-        //@for all pat errors check if trailing \n is needed
-        msg.push_str("- `_`\n");
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
@@ -327,11 +324,8 @@ fn match_cov_string(
     }
 
     if cov.not_covered() {
-        let mut msg = String::from("patterns not covered:\n");
+        let msg = "patterns not covered:\n- `_`";
         let src = ctx.src(match_kw);
-
-        //@for all pat errors check if trailing \n is needed
-        msg.push_str("- `_`\n");
         ctx.emit.error(Error::new(msg, src, None));
     }
 }

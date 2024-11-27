@@ -1,6 +1,4 @@
-//! `sys` module provides bindings to LLVM-C api.  
-//! Bindings are based on `llvm_sys 181.0.0` and  
-//! designed to work with `LLVM 18.1.8` release.
+//! bindings based on LLVM 19.1.0 release.
 
 pub type LLVMContextRef = *mut LLVMContext;
 pub type LLVMModuleRef = *mut LLVMModule;

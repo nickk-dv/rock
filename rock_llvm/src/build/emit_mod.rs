@@ -269,7 +269,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
             proc_cg.param_ptrs.push(param_ptr);
 
-            let param_val = fn_val.param_val(param_idx as u32).unwrap();
+            let param_val = fn_val.param_val(param_idx as u32);
             cg.build.store(param_val, param_ptr);
         }
 

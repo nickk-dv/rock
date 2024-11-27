@@ -525,7 +525,10 @@ impl Value {
 
         match ty_kind {
             sys::LLVMTypeKind::LLVMPointerTypeKind => ValuePtr(self.0),
-            _ => unreachable!(), //@panics when trying to get ptr from constant var field
+            _ => panic!(
+                "internal: `Value::into_ptr` type kind `{}` not a pointer",
+                ty_kind as i32
+            ),
         }
     }
     pub fn into_fn(self) -> ValueFn {
@@ -533,10 +536,11 @@ impl Value {
         let ty_kind = unsafe { core::LLVMGetTypeKind(ty.0) };
 
         match ty_kind {
-            sys::LLVMTypeKind::LLVMPointerTypeKind | sys::LLVMTypeKind::LLVMFunctionTypeKind => {
-                ValueFn(self.0)
-            }
-            _ => unreachable!(),
+            sys::LLVMTypeKind::LLVMPointerTypeKind => ValueFn(self.0),
+            _ => panic!(
+                "internal: `Value::into_fn` type kind `{}` not a pointer",
+                ty_kind as i32
+            ),
         }
     }
 }
@@ -556,12 +560,12 @@ impl ValueFn {
     pub fn entry_bb(&self) -> BasicBlock {
         BasicBlock(unsafe { core::LLVMGetEntryBasicBlock(self.0) })
     }
-    pub fn param_val(&self, param_idx: u32) -> Option<Value> {
-        if param_idx < unsafe { core::LLVMCountParams(self.0) } {
-            Some(Value(unsafe { core::LLVMGetParam(self.0, param_idx) }))
-        } else {
-            None
+    pub fn param_val(&self, param_idx: u32) -> Value {
+        let param_count = unsafe { core::LLVMCountParams(self.0) };
+        if param_idx < param_count {
+            return Value(unsafe { core::LLVMGetParam(self.0, param_idx) });
         }
+        panic!("internal: `ValueFn::param_val` out of bounds param `{param_idx} >= {param_count}`");
     }
     pub fn set_call_conv(&self, cc: CallConv) {
         unsafe { core::LLVMSetFunctionCallConv(self.0, cc) };
