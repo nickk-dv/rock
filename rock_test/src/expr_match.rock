@@ -1,0 +1,142 @@
+//#prelude
+import core:panics as _.{assert}
+
+//#entry "match_string_behavior"
+//#expect
+//#!
+pub proc test_match_string_behavior() void {
+    let p = match "rock" {
+        "rock" -> 10,
+        "paper" -> 7,
+        "scissors" -> 3,
+        _ -> 0,
+    };
+    assert(p == 10, "p == 10");
+
+    let p2 = match "paper" {
+        "rock" | "paper" -> 10,
+        "scissors" -> 3,
+        _ -> 0,
+    };
+    assert(p2 == 10, "p2 == 10");
+
+    let p3 = match "other" {
+        "rock" | "paper" -> 10,
+        "scissors" -> 3,
+        _ -> 0,
+    };
+    assert(p3 == 0, "p3 == 0");
+
+    let len = match "foo" {
+        "" -> 0,
+        "a" | "b" -> 1,
+        "ab" | "cd" -> 2,
+        "foo" | "bar" -> 3,
+        _ -> -1,
+    };
+    assert(len == 3, "len == 3");
+}
+
+//#entry(no_run) "match_string_coverage"
+//#expect
+//error: pattern already covered
+//  │
+//6 │         "string" -> {},
+//  │         ^^^^^^^^
+//  └─ src\test.rock:6:9
+//
+//error: pattern already covered
+//   │
+//11 │         "string" -> {},
+//   │         ^^^^^^^^
+//   └─ src\test.rock:11:9
+//
+//error: pattern already covered
+//   │
+//15 │         _ -> {},
+//   │         ^
+//   └─ src\test.rock:15:9
+//
+//error: pattern already covered
+//   │
+//19 │         "string" | "string" -> {},
+//   │                    ^^^^^^^^
+//   └─ src\test.rock:19:20
+//
+//error: pattern already covered
+//   │
+//23 │         _ | "string" -> {},
+//   │             ^^^^^^^^
+//   └─ src\test.rock:23:13
+//
+//error: pattern already covered
+//   │
+//26 │         _ | _ -> {},
+//   │             ^
+//   └─ src\test.rock:26:13
+//
+//#!
+pub proc test_match_string_coverage() void {
+    let v = "";
+    //coverage basic
+    match v {
+        "string" -> {},
+        "string" -> {},
+        _ -> {},
+    }
+    match v {
+        _ -> {},
+        "string" -> {},
+    }
+    match v {
+        _ -> {},
+        _ -> {},
+    }
+    //coverage in or pat
+    match v {
+        "string" | "string" -> {},
+        _ -> {},
+    }
+    match v {
+        _ | "string" -> {},
+    }
+    match v {
+        _ | _ -> {},
+    }
+}
+
+//#entry(no_run) "match_string_exhaust"
+//#expect
+//error: patterns not covered:
+//- `_`
+//  │
+//3 │     match v {
+//  │     ^^^^^
+//  └─ src\test.rock:3:5
+//
+//error: patterns not covered:
+//- `_`
+//  │
+//6 │     match v {
+//  │     ^^^^^
+//  └─ src\test.rock:6:5
+//
+//error: patterns not covered:
+//- `_`
+//   │
+//10 │     match v {}
+//   │     ^^^^^
+//   └─ src\test.rock:10:5
+//
+//#!
+pub proc test_match_string_exhaust() void {
+    let v = "";
+    match v {
+        "string" -> {},
+    }
+    match v {
+        "other" -> {},
+        "string" -> {},
+    }
+    match v {}
+}
