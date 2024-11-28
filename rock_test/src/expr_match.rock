@@ -1,17 +1,212 @@
 //#prelude
 import core:panics as _.{assert}
 
+//#entry "match_bool_behavior"
+//#expect
+//#!
+pub proc test_match_bool_behavior() void {
+    // discard
+    let p0 = match true {
+        _ -> -1,
+    };
+    let p1 = match false {
+        _ -> -1,
+    };
+    assert(p0 == -1, "p0 == -1");
+    assert(p1 == -1, "p1 == -1");
+
+    // single
+    let p2 = match true {
+        true -> 1,
+        _ -> -1,
+    };
+    let p3 = match false {
+        false -> 0,
+        _ -> -1,
+    };
+    assert(p2 == 1, "p2 == 1");
+    assert(p3 == 0, "p3 == 0");
+
+    // or pattern
+    let p4 = match true {
+        true | false -> 2,
+    };
+    let p5 = match false {
+        true | false -> 2,
+    };
+    assert(p4 == 2, "p4 == 2");
+    assert(p5 == 2, "p5 == 2");
+
+    // multiple
+    let p6 = match true {
+        true -> 1,
+        false -> 0,
+    };
+    let p7 = match false {
+        true -> 1,
+        false -> 0,
+    };
+    assert(p6 == 1, "p6 == 1");
+    assert(p7 == 0, "p7 == 0");
+}
+
+//#entry(no_run) "match_bool_coverage"
+//#expect
+//error: pattern already covered
+//  │
+//6 │         true -> {},
+//  │         ^^^^
+//  └─ src\test.rock:6:9
+//
+//error: pattern already covered
+//   │
+//11 │         false -> {},
+//   │         ^^^^^
+//   └─ src\test.rock:11:9
+//
+//error: pattern already covered
+//   │
+//16 │         true -> {},
+//   │         ^^^^
+//   └─ src\test.rock:16:9
+//
+//error: pattern already covered
+//   │
+//17 │         false -> {},
+//   │         ^^^^^
+//   └─ src\test.rock:17:9
+//
+//error: pattern already covered
+//   │
+//21 │         _ -> {},
+//   │         ^
+//   └─ src\test.rock:21:9
+//
+//error: pattern already covered
+//   │
+//25 │         true | true -> {},
+//   │                ^^^^
+//   └─ src\test.rock:25:16
+//
+//error: pattern already covered
+//   │
+//29 │         false | false -> {},
+//   │                 ^^^^^
+//   └─ src\test.rock:29:17
+//
+//error: pattern already covered
+//   │
+//33 │         _ | true -> {},
+//   │             ^^^^
+//   └─ src\test.rock:33:13
+//
+//error: pattern already covered
+//   │
+//36 │         _ | false -> {},
+//   │             ^^^^^
+//   └─ src\test.rock:36:13
+//
+//error: pattern already covered
+//   │
+//39 │         _ | _ -> {},
+//   │             ^
+//   └─ src\test.rock:39:13
+//
+//#!
+pub proc test_match_bool_coverage() void {
+    let v = true;
+    // normal
+    match v {
+        true -> {},
+        true -> {},
+        _ -> {},
+    }
+    match v {
+        false -> {},
+        false -> {},
+        _ -> {},
+    }
+    match v {
+        _ -> {},
+        true -> {},
+        false -> {},
+    }
+    match v {
+        _ -> {},
+        _ -> {},
+    }
+    // or pattern
+    match v {
+        true | true -> {},
+        _ -> {},
+    }
+    match v {
+        false | false -> {},
+        _ -> {},
+    }
+    match v {
+        _ | true -> {},
+    }
+    match v {
+        _ | false -> {},
+    }
+    match v {
+        _ | _ -> {},
+    }
+}
+
+//#entry "match_bool_exhaust"
+//#expect
+//error: patterns not covered:
+//- `false`
+//  │
+//3 │     match v {
+//  │     ^^^^^
+//  └─ src\test.rock:3:5
+//
+//error: patterns not covered:
+//- `true`
+//  │
+//6 │     match v {
+//  │     ^^^^^
+//  └─ src\test.rock:6:5
+//
+//error: patterns not covered:
+//- `true`
+//- `false`
+//  │
+//9 │     match v {}
+//  │     ^^^^^
+//  └─ src\test.rock:9:5
+//
+//#!
+pub proc test_match_bool_exhaust() void {
+    let v = true;
+    match v {
+        true -> {},
+    }
+    match v {
+        false -> {},
+    }
+    match v {}
+}
+
 //#entry "match_string_behavior"
 //#expect
 //#!
 pub proc test_match_string_behavior() void {
-    let p = match "rock" {
+    let p0 = match "rock" {
+        _ -> 0,
+    };
+    assert(p0 == 0, "p0 == 0");
+
+    let p1 = match "rock" {
         "rock" -> 10,
         "paper" -> 7,
         "scissors" -> 3,
         _ -> 0,
     };
-    assert(p == 10, "p == 10");
+    assert(p1 == 10, "p1 == 10");
 
     let p2 = match "paper" {
         "rock" | "paper" -> 10,
@@ -27,11 +222,11 @@ pub proc test_match_string_behavior() void {
     };
     assert(p3 == 0, "p3 == 0");
 
-    let len = match "foo" {
+    let len = match "baz" {
         "" -> 0,
         "a" | "b" -> 1,
-        "ab" | "cd" -> 2,
-        "foo" | "bar" -> 3,
+        "ab" | "cd" | "fg" -> 2,
+        "foo" | "bar" | "baz" | "zap" -> 3,
         _ -> -1,
     };
     assert(len == 3, "len == 3");
@@ -78,7 +273,7 @@ pub proc test_match_string_behavior() void {
 //#!
 pub proc test_match_string_coverage() void {
     let v = "";
-    //coverage basic
+    // normal
     match v {
         "string" -> {},
         "string" -> {},
@@ -92,7 +287,7 @@ pub proc test_match_string_coverage() void {
         _ -> {},
         _ -> {},
     }
-    //coverage in or pat
+    // or pattern
     match v {
         "string" | "string" -> {},
         _ -> {},

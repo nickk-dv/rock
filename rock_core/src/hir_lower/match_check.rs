@@ -193,8 +193,6 @@ fn match_cov_bool(
     let not_covered = cov.not_covered();
     if !not_covered.is_empty() {
         let mut msg = String::from("patterns not covered:\n");
-        let src = ctx.src(match_kw);
-
         for &value in not_covered {
             if value {
                 msg.push_str("- `true`\n");
@@ -202,6 +200,8 @@ fn match_cov_bool(
                 msg.push_str("- `false`\n");
             }
         }
+        msg.pop();
+        let src = ctx.src(match_kw);
         ctx.emit.error(Error::new(msg, src, None));
     }
 }
