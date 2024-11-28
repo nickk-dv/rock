@@ -56,61 +56,61 @@ pub proc test_match_bool_behavior() void {
 //  │
 //6 │         true -> {},
 //  │         ^^^^
-//  └─ src\test.rock:6:9
+//  └─ src/test.rock:6:9
 //
 //error: pattern already covered
 //   │
 //11 │         false -> {},
 //   │         ^^^^^
-//   └─ src\test.rock:11:9
+//   └─ src/test.rock:11:9
 //
 //error: pattern already covered
 //   │
 //16 │         true -> {},
 //   │         ^^^^
-//   └─ src\test.rock:16:9
+//   └─ src/test.rock:16:9
 //
 //error: pattern already covered
 //   │
 //17 │         false -> {},
 //   │         ^^^^^
-//   └─ src\test.rock:17:9
+//   └─ src/test.rock:17:9
 //
 //error: pattern already covered
 //   │
 //21 │         _ -> {},
 //   │         ^
-//   └─ src\test.rock:21:9
+//   └─ src/test.rock:21:9
 //
 //error: pattern already covered
 //   │
 //25 │         true | true -> {},
 //   │                ^^^^
-//   └─ src\test.rock:25:16
+//   └─ src/test.rock:25:16
 //
 //error: pattern already covered
 //   │
 //29 │         false | false -> {},
 //   │                 ^^^^^
-//   └─ src\test.rock:29:17
+//   └─ src/test.rock:29:17
 //
 //error: pattern already covered
 //   │
 //33 │         _ | true -> {},
 //   │             ^^^^
-//   └─ src\test.rock:33:13
+//   └─ src/test.rock:33:13
 //
 //error: pattern already covered
 //   │
 //36 │         _ | false -> {},
 //   │             ^^^^^
-//   └─ src\test.rock:36:13
+//   └─ src/test.rock:36:13
 //
 //error: pattern already covered
 //   │
 //39 │         _ | _ -> {},
 //   │             ^
-//   └─ src\test.rock:39:13
+//   └─ src/test.rock:39:13
 //
 //#!
 pub proc test_match_bool_coverage() void {
@@ -162,14 +162,14 @@ pub proc test_match_bool_coverage() void {
 //  │
 //3 │     match v {
 //  │     ^^^^^
-//  └─ src\test.rock:3:5
+//  └─ src/test.rock:3:5
 //
 //error: patterns not covered:
 //- `true`
 //  │
 //6 │     match v {
 //  │     ^^^^^
-//  └─ src\test.rock:6:5
+//  └─ src/test.rock:6:5
 //
 //error: patterns not covered:
 //- `true`
@@ -177,7 +177,7 @@ pub proc test_match_bool_coverage() void {
 //  │
 //9 │     match v {}
 //  │     ^^^^^
-//  └─ src\test.rock:9:5
+//  └─ src/test.rock:9:5
 //
 //#!
 pub proc test_match_bool_exhaust() void {
@@ -238,37 +238,37 @@ pub proc test_match_string_behavior() void {
 //  │
 //6 │         "string" -> {},
 //  │         ^^^^^^^^
-//  └─ src\test.rock:6:9
+//  └─ src/test.rock:6:9
 //
 //error: pattern already covered
 //   │
 //11 │         "string" -> {},
 //   │         ^^^^^^^^
-//   └─ src\test.rock:11:9
+//   └─ src/test.rock:11:9
 //
 //error: pattern already covered
 //   │
 //15 │         _ -> {},
 //   │         ^
-//   └─ src\test.rock:15:9
+//   └─ src/test.rock:15:9
 //
 //error: pattern already covered
 //   │
 //19 │         "string" | "string" -> {},
 //   │                    ^^^^^^^^
-//   └─ src\test.rock:19:20
+//   └─ src/test.rock:19:20
 //
 //error: pattern already covered
 //   │
 //23 │         _ | "string" -> {},
 //   │             ^^^^^^^^
-//   └─ src\test.rock:23:13
+//   └─ src/test.rock:23:13
 //
 //error: pattern already covered
 //   │
 //26 │         _ | _ -> {},
 //   │             ^
-//   └─ src\test.rock:26:13
+//   └─ src/test.rock:26:13
 //
 //#!
 pub proc test_match_string_coverage() void {
@@ -307,21 +307,21 @@ pub proc test_match_string_coverage() void {
 //  │
 //3 │     match v {
 //  │     ^^^^^
-//  └─ src\test.rock:3:5
+//  └─ src/test.rock:3:5
 //
 //error: patterns not covered:
 //- `_`
 //  │
 //6 │     match v {
 //  │     ^^^^^
-//  └─ src\test.rock:6:5
+//  └─ src/test.rock:6:5
 //
 //error: patterns not covered:
 //- `_`
 //   │
 //10 │     match v {}
 //   │     ^^^^^
-//   └─ src\test.rock:10:5
+//   └─ src/test.rock:10:5
 //
 //#!
 pub proc test_match_string_exhaust() void {

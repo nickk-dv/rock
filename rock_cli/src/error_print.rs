@@ -196,6 +196,13 @@ fn print_context(
     let r = state.style.err.reset;
     let box_char = if last { '└' } else { '├' };
 
+    //@required for tests to be uniform, allocates
+    // long-term switch to custom utf8 pathbuf wrapper
+    #[cfg(target_os = "windows")]
+    let path_display = fmt.path.to_string_lossy().replace('\\', "/");
+    #[cfg(not(target_os = "windows"))]
+    let path_display = fmt.path.to_string_lossy();
+
     let _ = writeln!(
         handle,
         r#"{line_pad} {c}│
@@ -204,7 +211,7 @@ fn print_context(
 {line_pad} {c}{box_char}─ {}:{:?}{r}"#,
         fmt.line_num,
         severity_color(&state.style, fmt.severity),
-        fmt.path.to_string_lossy(),
+        path_display,
         fmt.location,
     );
 }
