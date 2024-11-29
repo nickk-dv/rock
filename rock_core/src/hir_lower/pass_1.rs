@@ -136,6 +136,7 @@ fn add_const_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ConstIt
 
     let origin_id = ctx.scope.origin();
     let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
+
     let data = hir::ConstData {
         origin_id,
         vis: item.vis,
@@ -164,7 +165,14 @@ fn add_global_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Global
     }
 
     let origin_id = ctx.scope.origin();
-    let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
+    let init = match item.init {
+        ast::GlobalInit::Init(value) => {
+            let eval_id = ctx.registry.add_const_eval(value, origin_id);
+            hir::GlobalInit::Init(eval_id)
+        }
+        ast::GlobalInit::Zeroed => hir::GlobalInit::Zeroed,
+    };
+
     let data = hir::GlobalData {
         origin_id,
         attr_set: feedback.attr_set,
@@ -172,7 +180,7 @@ fn add_global_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Global
         mutt: item.mutt,
         name: item.name,
         ty: hir::Type::Error,
-        value: eval_id,
+        init,
     };
 
     let global_id = ctx.registry.add_global(item, data);

@@ -322,7 +322,9 @@ fn global_item(p: &mut Parser, m: Marker) {
     p.expect(T![:]);
     ty(p);
     p.expect(T![=]);
-    expr(p);
+    if !p.eat(T![zeroed]) {
+        expr(p);
+    }
     p.expect(T![;]);
     m.complete(p, SyntaxKind::GLOBAL_ITEM);
 }

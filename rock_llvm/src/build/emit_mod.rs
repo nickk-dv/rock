@@ -161,7 +161,12 @@ fn codegen_consts(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     for data in cg.hir.globals.iter() {
         let global_ty = cg.ty(data.ty);
-        let global_val = emit_expr::codegen_const(cg, cg.hir.const_eval_value(data.value));
+        let global_val = match data.init {
+            hir::GlobalInit::Init(eval_id) => {
+                emit_expr::codegen_const(cg, cg.hir.const_eval_value(eval_id))
+            }
+            hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
+        };
 
         let module_origin = cg.session.module.get(data.origin_id);
         let package_origin = cg.session.graph.package(module_origin.origin());

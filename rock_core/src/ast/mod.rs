@@ -121,7 +121,13 @@ pub struct GlobalItem<'ast> {
     pub mutt: Mut,
     pub name: Name,
     pub ty: Type<'ast>,
-    pub value: ConstExpr<'ast>,
+    pub init: GlobalInit<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum GlobalInit<'ast> {
+    Init(ConstExpr<'ast>),
+    Zeroed,
 }
 
 #[derive(Copy, Clone)]

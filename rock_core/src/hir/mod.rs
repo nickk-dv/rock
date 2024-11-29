@@ -111,7 +111,13 @@ pub struct GlobalData<'hir> {
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
-    pub value: ConstEvalID,
+    pub init: GlobalInit,
+}
+
+#[derive(Copy, Clone)]
+pub enum GlobalInit {
+    Init(ConstEvalID),
+    Zeroed,
 }
 
 pub struct ImportData {

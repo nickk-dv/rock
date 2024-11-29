@@ -174,7 +174,11 @@ pub fn resolve_const_dependencies<'hir>(ctx: &mut HirCtx) {
 
     for id in ctx.registry.global_ids() {
         let data = ctx.registry.global_data(id);
-        let (eval, origin_id) = *ctx.registry.const_eval(data.value);
+        let eval_id = match data.init {
+            hir::GlobalInit::Init(eval_id) => eval_id,
+            hir::GlobalInit::Zeroed => continue,
+        };
+        let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
@@ -460,7 +464,10 @@ fn const_dependencies_mark_error_up_to_root<'hir>(
             }
             ConstDependency::Global(id) => {
                 let data = ctx.registry.global_data(id);
-                let eval_id = data.value;
+                let eval_id = match data.init {
+                    hir::GlobalInit::Init(eval_id) => eval_id,
+                    hir::GlobalInit::Zeroed => unreachable!(),
+                };
                 let (eval, _) = ctx.registry.const_eval_mut(eval_id);
                 *eval = hir::ConstEval::ResolvedError;
             }
@@ -1074,7 +1081,11 @@ fn resolve_const_dependency_tree<'hir>(
 
                 let expect_src = SourceRange::new(data.origin_id, item.ty.range);
                 let expect = Expectation::HasType(data.ty, Some(expect_src));
-                resolve_and_update_const_eval(ctx, data.value, expect);
+                let eval_id = match data.init {
+                    hir::GlobalInit::Init(eval_id) => eval_id,
+                    hir::GlobalInit::Zeroed => unreachable!(),
+                };
+                resolve_and_update_const_eval(ctx, eval_id, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
                 let expect = Expectation::HasType(hir::Type::USIZE, None);

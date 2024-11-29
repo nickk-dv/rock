@@ -398,13 +398,8 @@ fn const_item<'ast>(
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
-    let const_item = ast::ConstItem {
-        attrs,
-        vis,
-        name,
-        ty,
-        value,
-    };
+    #[rustfmt::skip]
+    let const_item = ast::ConstItem { attrs, vis, name, ty, value };
     ctx.arena.alloc(const_item)
 }
 
@@ -417,16 +412,16 @@ fn global_item<'ast>(
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.t_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
-    let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
-    let global_item = ast::GlobalItem {
-        attrs,
-        vis,
-        name,
-        mutt,
-        ty,
-        value,
+    let init = if let Some(value) = item.value(ctx.tree) {
+        let value = ast::ConstExpr(expr(ctx, value));
+        ast::GlobalInit::Init(value)
+    } else {
+        ast::GlobalInit::Zeroed
     };
+
+    #[rustfmt::skip]
+    let global_item = ast::GlobalItem { attrs, vis, name, mutt, ty, init };
     ctx.arena.alloc(global_item)
 }
 

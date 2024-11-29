@@ -903,6 +903,7 @@ impl<'syn> GlobalItem<'syn> {
     node_find!(name, Name);
     node_find!(ty, Type);
     node_find!(value, Expr);
+    token_find!(t_zeroed, T![zeroed]);
 }
 
 impl<'syn> ImportItem<'syn> {

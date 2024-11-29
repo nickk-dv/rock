@@ -844,7 +844,12 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>)
     fmt.space();
     fmt.write('=');
     fmt.space();
-    expr(fmt, item.value(fmt.tree).unwrap());
+
+    if item.t_zeroed(fmt.tree).is_some() {
+        fmt.write_str("zeroed");
+    } else {
+        expr(fmt, item.value(fmt.tree).unwrap());
+    }
     fmt.write(';');
 }
 
