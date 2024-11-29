@@ -48,6 +48,16 @@ pub fn cmd_option_duplicate(emit: &mut impl ErrorSink, opt: &str) {
     emit.error(Error::message(msg));
 }
 
+pub fn cmd_cannot_build_lib_package() -> Error {
+    let msg = format!("cannot `build` a library package, use `check` instead");
+    Error::message(msg)
+}
+
+pub fn cmd_cannot_run_lib_package() -> Error {
+    let msg = format!("cannot `run` a library package, use `check` instead");
+    Error::message(msg)
+}
+
 //==================== SESSION ====================
 
 pub fn session_pkg_not_found(path: &PathBuf) -> Error {

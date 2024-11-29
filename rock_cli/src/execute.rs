@@ -3,6 +3,7 @@ use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
 use rock_core::error::{Error, ErrorWarningBuffer};
+use rock_core::errors as err;
 use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
@@ -158,6 +159,10 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
+    let root_manifest = session.graph.package(session.root_id).manifest();
+    if root_manifest.package.kind == PackageKind::Lib {
+        return Err(err::cmd_cannot_build_lib_package());
+    }
     if let Err(errw) = build_impl(&mut session, data) {
         error_print::print_errors_warnings(Some(&session), errw);
     }
@@ -190,6 +195,10 @@ fn run(data: CommandRun) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
+    let root_manifest = session.graph.package(session.root_id).manifest();
+    if root_manifest.package.kind == PackageKind::Lib {
+        return Err(err::cmd_cannot_run_lib_package());
+    }
     if let Err(errw) = run_impl(&mut session, data) {
         error_print::print_errors_warnings(Some(&session), errw);
     }
