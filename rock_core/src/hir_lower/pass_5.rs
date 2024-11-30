@@ -3416,9 +3416,17 @@ fn binary_op_check(
                 | BasicTypeKind::Bool
                 | BasicTypeKind::Char
                 | BasicTypeKind::Rawptr => Some(hir::BinOp::IsEq_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::NotEq_Float),
+                BasicTypeKind::Float => Some(hir::BinOp::IsEq_Float),
                 _ => None,
             },
+            hir::Type::Enum(enum_id, _) => {
+                let enum_data = ctx.registry.enum_data(enum_id);
+                if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+                    None
+                } else {
+                    Some(hir::BinOp::IsEq_Int)
+                }
+            }
             _ => None,
         },
         ast::BinOp::NotEq => match lhs_ty {
@@ -3431,6 +3439,14 @@ fn binary_op_check(
                 BasicTypeKind::Float => Some(hir::BinOp::NotEq_Float),
                 _ => None,
             },
+            hir::Type::Enum(enum_id, _) => {
+                let enum_data = ctx.registry.enum_data(enum_id);
+                if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+                    None
+                } else {
+                    Some(hir::BinOp::NotEq_Int)
+                }
+            }
             _ => None,
         },
         ast::BinOp::Less => match lhs_ty {
@@ -3485,6 +3501,7 @@ fn binary_op_check(
         },
     };
 
+    //@have specific error for enums with fields?
     if bin_op.is_none() {
         let src = ctx.src(op_range);
         let lhs_ty = type_format(ctx, lhs_ty);
