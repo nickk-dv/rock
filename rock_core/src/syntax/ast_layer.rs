@@ -410,7 +410,7 @@ ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
 ast_node_impl!(TypeMultiReference, SyntaxKind::TYPE_MULTI_REFERENCE);
 ast_node_impl!(TypeProcedure, SyntaxKind::TYPE_PROCEDURE);
-ast_node_impl!(ParamTypeList, SyntaxKind::PARAM_TYPE_LIST);
+ast_node_impl!(ProcTypeParamList, SyntaxKind::PROC_TYPE_PARAM_LIST);
 ast_node_impl!(TypeArraySlice, SyntaxKind::TYPE_ARRAY_SLICE);
 ast_node_impl!(TypeArrayStatic, SyntaxKind::TYPE_ARRAY_STATIC);
 
@@ -954,12 +954,12 @@ impl<'syn> TypeMultiReference<'syn> {
 }
 
 impl<'syn> TypeProcedure<'syn> {
-    node_find!(type_list, ParamTypeList);
+    node_find!(param_list, ProcTypeParamList);
     node_find!(return_ty, Type);
 }
 
-impl<'syn> ParamTypeList<'syn> {
-    node_iter!(types, Type);
+impl<'syn> ProcTypeParamList<'syn> {
+    node_iter!(params, Param);
     token_find_rev!(t_dotdot, T![..]);
 }
 

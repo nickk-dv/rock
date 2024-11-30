@@ -1007,19 +1007,19 @@ fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn
     fmt.write('(');
 
     let mut first = true;
-    let param_type_list = proc_ty.type_list(fmt.tree).unwrap();
+    let param_list = proc_ty.param_list(fmt.tree).unwrap();
 
-    for param_ty in param_type_list.types(fmt.tree) {
+    for param_cst in param_list.params(fmt.tree) {
         if !first {
             fmt.write(',');
             fmt.space();
         }
         first = false;
-        ty(fmt, param_ty);
+        param(fmt, param_cst);
     }
 
-    if param_type_list.t_dotdot(fmt.tree).is_some() {
-        if param_type_list.types(fmt.tree).next().is_some() {
+    if param_list.t_dotdot(fmt.tree).is_some() {
+        if param_list.params(fmt.tree).next().is_some() {
             fmt.write(',');
             fmt.space();
         }

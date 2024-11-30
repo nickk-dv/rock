@@ -854,7 +854,7 @@ fn semantic_visit_node(
                     SyntaxKind::TYPE_REFERENCE => None,
                     SyntaxKind::TYPE_MULTI_REFERENCE => None,
                     SyntaxKind::TYPE_PROCEDURE => None,
-                    SyntaxKind::PARAM_TYPE_LIST => None,
+                    SyntaxKind::PROC_TYPE_PARAM_LIST => None,
                     SyntaxKind::TYPE_ARRAY_SLICE => None,
                     SyntaxKind::TYPE_ARRAY_STATIC => None,
 

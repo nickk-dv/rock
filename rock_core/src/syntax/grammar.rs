@@ -458,34 +458,41 @@ fn type_proc(p: &mut Parser) {
     let m = p.start();
     p.bump(T![proc]);
     if p.at(T!['(']) {
-        param_type_list(p);
+        proc_type_param_list(p);
     } else {
-        p.error_recover("expected parameter type list", RECOVER_PARAM_TYPE_LIST);
+        p.error_recover("expected parameter list", RECOVER_PROC_TYPE_PARAM_LIST);
     }
     ty(p);
     m.complete(p, SyntaxKind::TYPE_PROCEDURE);
 }
 
-const RECOVER_PARAM_TYPE_LIST: TokenSet = FIRST_ITEM.combine(FIRST_TYPE);
+const RECOVER_PROC_TYPE_PARAM_LIST: TokenSet = FIRST_ITEM
+    .combine(FIRST_TYPE)
+    .combine(TokenSet::new(&[T![')']]));
 
-fn param_type_list(p: &mut Parser) {
+fn proc_type_param_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at_set(FIRST_TYPE) {
+        if p.at(T![ident]) {
+            let m = p.start();
+            name(p);
+            p.expect(T![:]);
             ty(p);
+            m.complete(p, SyntaxKind::PARAM);
+
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
         } else if p.eat(T![..]) {
             break;
         } else {
-            p.error_recover("expected parameter type", RECOVER_PARAM_TYPE_LIST);
+            p.error_recover("expected parameter", RECOVER_PROC_TYPE_PARAM_LIST);
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::PARAM_TYPE_LIST);
+    m.complete(p, SyntaxKind::PROC_TYPE_PARAM_LIST);
 }
 
 fn type_at_bracket(p: &mut Parser) {

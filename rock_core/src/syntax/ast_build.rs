@@ -513,14 +513,14 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
         }
         cst::Type::Procedure(proc_ty) => {
             let offset = ctx.s.types.start();
-            let type_list = proc_ty.type_list(ctx.tree).unwrap();
-            for ty_cst in type_list.types(ctx.tree) {
-                let ty = ty(ctx, ty_cst);
+            let param_list = proc_ty.param_list(ctx.tree).unwrap();
+            for param in param_list.params(ctx.tree) {
+                let ty = ty(ctx, param.ty(ctx.tree).unwrap());
                 ctx.s.types.add(ty);
             }
             let param_types = ctx.s.types.take(offset, &mut ctx.arena);
 
-            let is_variadic = type_list.t_dotdot(ctx.tree).is_some();
+            let is_variadic = param_list.t_dotdot(ctx.tree).is_some();
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
             let return_ty = ty(ctx, return_ty);
 
