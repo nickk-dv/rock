@@ -1102,22 +1102,22 @@ fn resolve_and_update_const_eval<'hir>(
 ) {
     let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
-    //@reset any possible blocks / locals
-    // currently blocks or stmts are not supported in constants
-    // so this is in theory not required
-    ctx.scope.set_origin(origin_id);
-    ctx.scope.local.reset();
-
     match eval {
         hir::ConstEval::Unresolved(expr) => {
+            //@reset any possible blocks / locals
+            // currently blocks or stmts are not supported in constants
+            // so this is in theory not required
+            ctx.scope.set_origin(origin_id);
+            ctx.scope.local.reset();
+
             let value_res = resolve_const_expr(ctx, expect, expr);
             let value_res = value_res.map(|v| ctx.const_intern.intern(v));
             let (eval, _) = ctx.registry.const_eval_mut(eval_id);
             *eval = hir::Eval::from_res(value_res);
         }
-        _ => unreachable!(
-            "internal: resolve_and_update_const_eval() called on already resolved eval"
-        ),
+        // ignore resolution calls on already resolved
+        hir::ConstEval::Resolved(_) => {}
+        hir::ConstEval::ResolvedError => {}
     };
 }
 
