@@ -856,13 +856,13 @@ pub fn tycheck_cannot_index_on_ty(emit: &mut impl ErrorSink, src: SourceRange, t
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cast_non_primitive(
+pub fn tycheck_cast_invalid(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     from_ty: &str,
     into_ty: &str,
 ) {
-    let msg = format!("non primitive cast from `{from_ty}` into `{into_ty}`");
+    let msg = format!("cannot cast from `{from_ty}` into `{into_ty}`");
     emit.error(Error::new(msg, src, None));
 }
 

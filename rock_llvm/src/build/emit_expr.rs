@@ -631,6 +631,7 @@ fn codegen_cast<'c>(
     match kind {
         hir::CastKind::Error => unreachable!(),
         hir::CastKind::NoOp => val,
+        hir::CastKind::NoOpUnchecked => val,
         hir::CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
         hir::CastKind::IntS_Sign_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
         hir::CastKind::IntU_Zero_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),

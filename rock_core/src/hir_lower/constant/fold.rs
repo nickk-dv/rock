@@ -215,6 +215,7 @@ fn fold_cast<'hir>(
     match kind {
         hir::CastKind::Error => unreachable!(),
         hir::CastKind::NoOp => Ok(target),
+        hir::CastKind::NoOpUnchecked => Ok(target),
         hir::CastKind::Int_Trunc
         | hir::CastKind::IntS_Sign_Extend
         | hir::CastKind::IntU_Zero_Extend => {

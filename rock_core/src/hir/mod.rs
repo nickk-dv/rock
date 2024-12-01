@@ -483,6 +483,7 @@ pub enum SliceRangeEnd<'hir> {
 pub enum CastKind {
     Error,
     NoOp,
+    NoOpUnchecked,
     Int_Trunc,
     IntS_Sign_Extend,
     IntU_Zero_Extend,
