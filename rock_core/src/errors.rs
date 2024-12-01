@@ -898,6 +898,17 @@ pub fn tycheck_missing_field_initializers(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_field_init_out_of_order(
+    emit: &mut impl WarningSink,
+    src: SourceRange,
+    init_name: &str,
+    expect_name: &str,
+) {
+    let msg =
+        format!("field `{init_name}` initialized out of order, expected `{expect_name}` first");
+    emit.warning(Warning::new(msg, src, None));
+}
+
 pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
     let msg = format!("cannot dereference value of type `{ty_fmt}`");
     emit.error(Error::new(msg, src, None));

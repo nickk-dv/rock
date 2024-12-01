@@ -1496,7 +1496,10 @@ fn typecheck_struct_init<'hir, 'ast>(
     field_status.resize_with(field_count, || FieldStatus::None);
     let mut init_count: usize = 0;
 
-    for input in struct_init.input {
+    let error_count = ctx.emit.error_count();
+    let mut out_of_order_init = None;
+
+    for (idx, input) in struct_init.input.iter().enumerate() {
         let field_id = match scope::check_find_struct_field(ctx, struct_id, input.name) {
             Some(found) => found,
             None => {
@@ -1504,6 +1507,10 @@ fn typecheck_struct_init<'hir, 'ast>(
                 continue;
             }
         };
+
+        if idx != field_id.index() && out_of_order_init.is_none() {
+            out_of_order_init = Some(idx)
+        }
 
         let data = ctx.registry.struct_data(struct_id);
         let field = data.field(field_id);
@@ -1569,6 +1576,17 @@ fn typecheck_struct_init<'hir, 'ast>(
         let src = ctx.src(error_range(struct_init, expr_range));
         let struct_src = SourceRange::new(data.origin_id, data.name.range);
         err::tycheck_missing_field_initializers(&mut ctx.emit, src, struct_src, message);
+    } else if !ctx.emit.did_error(error_count) {
+        if let Some(idx) = out_of_order_init {
+            let data = ctx.registry.struct_data(struct_id);
+            let field_init = struct_init.input[idx];
+            let field_id = hir::FieldID::new(idx);
+
+            let src = ctx.src(field_init.name.range);
+            let init_name = ctx.name(field_init.name.id);
+            let expect_name = ctx.name(data.field(field_id).name.id);
+            err::tycheck_field_init_out_of_order(&mut ctx.emit, src, init_name, expect_name)
+        }
     }
 
     let input = ctx.arena.alloc_slice(&field_inits);
@@ -1639,9 +1657,11 @@ fn typecheck_array_init<'hir, 'ast>(
         let array_init = ctx.arena.alloc(array_init);
         let kind = hir::ExprKind::ArrayInit { array_init };
         TypeResult::new(hir::Type::ArrayStatic(array_ty), kind)
-    } else {
+    } else if input.is_empty() {
         let src = ctx.src(expr_range);
         err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
+        TypeResult::error()
+    } else {
         TypeResult::error()
     }
 }
