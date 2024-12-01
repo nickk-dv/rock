@@ -1142,6 +1142,8 @@ impl BasicTypeKind {
     }
 }
 
+//@explicit cast: &T -> [&]T not allowed only implicit one
+// possibly allow explicit one aswell if T matches
 fn typecheck_cast<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     target: &ast::Expr<'ast>,
@@ -1172,6 +1174,17 @@ fn typecheck_cast<'hir, 'ast>(
                     return TypeResult::error();
                 }
             }
+        }
+        // rawptr -> &T, [&]T, proc()T
+        (hir::Type::Basic(ast::BasicType::Rawptr), hir::Type::Reference(_, _))
+        | (hir::Type::Basic(ast::BasicType::Rawptr), hir::Type::MultiReference(_, _))
+        | (hir::Type::Basic(ast::BasicType::Rawptr), hir::Type::Procedure(_)) => {
+            let kind = hir::ExprKind::Cast {
+                target: target_res.expr,
+                into: ctx.arena.alloc(into),
+                kind: CastKind::NoOp,
+            };
+            return TypeResult::new(into, kind);
         }
         _ => {}
     }
@@ -1247,6 +1260,7 @@ fn typecheck_cast<'hir, 'ast>(
         }
         (hir::Type::Reference(_, _), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
         (hir::Type::MultiReference(_, _), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
+        (hir::Type::Procedure(_), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
         _ => CastKind::Error,
     };
 
