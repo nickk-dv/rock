@@ -274,12 +274,6 @@ pub enum Expectation<'hir> {
     HasType(hir::Type<'hir>, Option<SourceRange>),
 }
 
-impl<'hir> Expectation<'hir> {
-    fn is_none(&self) -> bool {
-        matches!(self, Expectation::None)
-    }
-}
-
 pub fn type_expectation_check(
     ctx: &mut HirCtx,
     from_range: TextRange,
@@ -618,7 +612,7 @@ fn typecheck_match<'hir, 'ast>(
             let expect_src = ctx.src(on_res.expr.range);
             (Expectation::HasType(on_res.ty, Some(expect_src)), None)
         }
-        Err(_) => (Expectation::None, None),
+        Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
     };
 
     let mut arms = Vec::with_capacity(match_.arms.len());
@@ -629,7 +623,7 @@ fn typecheck_match<'hir, 'ast>(
         type_unify_control_flow(&mut match_type, expr_res.ty);
         ctx.scope.local.exit_block();
 
-        if expect.is_none() {
+        if matches!(expect, Expectation::None) {
             if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
                 let expect_src = ctx.src(arm.expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
@@ -751,13 +745,13 @@ fn typecheck_pat_item<'hir, 'ast>(
 ) -> PatResult<'hir> {
     match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
-            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
+            check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             PatResult::error()
         }
         ValueID::Enum(enum_id, variant_id) => {
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
             let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
-            let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut, in_or_pat);
+            let bind_ids = check_variant_bind_list(ctx, bind_list, variant, ref_mut, in_or_pat);
 
             PatResult::new(
                 hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -774,7 +768,7 @@ fn typecheck_pat_item<'hir, 'ast>(
                 let src = ctx.src(bind_list.range);
                 err::tycheck_pat_const_with_bindings(&mut ctx.emit, src);
             }
-            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
+            check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             let data = ctx.registry.const_data(const_id);
             PatResult::new(hir::Pat::Const(const_id), data.ty)
         }
@@ -786,7 +780,7 @@ fn typecheck_pat_item<'hir, 'ast>(
         | ValueID::ForBind(_, _) => {
             let src = ctx.src(pat_range);
             err::tycheck_pat_runtime_value(&mut ctx.emit, src);
-            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
+            check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             PatResult::new(hir::Pat::Error, hir::Type::Error)
         }
     }
@@ -805,21 +799,21 @@ fn typecheck_pat_variant<'hir>(
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
-            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
+            check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             return PatResult::error();
         }
     };
     let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
         None => {
-            add_variant_local_binds(ctx, bind_list, None, None, in_or_pat);
+            check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             return PatResult::error();
         }
     };
 
     check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
     let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
-    let bind_ids = add_variant_local_binds(ctx, bind_list, variant, ref_mut, in_or_pat);
+    let bind_ids = check_variant_bind_list(ctx, bind_list, variant, ref_mut, in_or_pat);
 
     PatResult::new(
         hir::Pat::Variant(enum_id, variant_id, bind_ids),
@@ -1339,7 +1333,7 @@ fn typecheck_item<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let (item_res, fields) = match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
-            default_check_arg_list_opt(ctx, args_list);
+            args_list.map(|al| default_check_arg_list(ctx, al));
             return TypeResult::error();
         }
         ValueID::Proc(proc_id) => {
@@ -1440,14 +1434,14 @@ fn typecheck_variant<'hir, 'ast>(
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
-            default_check_arg_list_opt(ctx, args_list);
+            args_list.map(|al| default_check_arg_list(ctx, al));
             return TypeResult::error();
         }
     };
     let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
         None => {
-            default_check_arg_list_opt(ctx, args_list);
+            args_list.map(|al| default_check_arg_list(ctx, al));
             return TypeResult::error();
         }
     };
@@ -1479,7 +1473,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     let struct_id = match struct_id {
         Some(found) => found,
         None => {
-            default_check_field_init(ctx, struct_init.input);
+            default_check_field_init_list(ctx, struct_init.input);
             return TypeResult::error();
         }
     };
@@ -1506,7 +1500,11 @@ fn typecheck_struct_init<'hir, 'ast>(
         let field_id = match scope::check_find_struct_field(ctx, struct_id, input.name) {
             Some(found) => found,
             None => {
-                let _ = typecheck_expr(ctx, Expectation::None, input.expr);
+                let _ = typecheck_expr(
+                    ctx,
+                    Expectation::HasType(hir::Type::Error, None),
+                    input.expr,
+                );
                 continue;
             }
         };
@@ -1607,6 +1605,7 @@ fn typecheck_array_init<'hir, 'ast>(
     let mut expect = match expect {
         Expectation::None => Expectation::None,
         Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+            hir::Type::Error => Expectation::HasType(hir::Type::Error, None),
             hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, expect_src),
             _ => Expectation::None,
         },
@@ -1624,14 +1623,14 @@ fn typecheck_array_init<'hir, 'ast>(
 
         // stop expecting when errored
         if did_error {
-            expect = Expectation::None;
+            expect = Expectation::None; //@expect error type?
         }
         // elem_ty is first non-error type
         if elem_ty.is_none() && !expr_res.ty.is_error() {
             elem_ty = Some(expr_res.ty);
 
             // update expect with first non-error type
-            if expect.is_none() && !did_error {
+            if matches!(expect, Expectation::None) && !did_error {
                 let expect_src = ctx.src(expr.range);
                 expect = Expectation::HasType(expr_res.ty, Some(expect_src));
             }
@@ -1678,6 +1677,7 @@ fn typecheck_array_repeat<'hir, 'ast>(
     expect = match expect {
         Expectation::None => Expectation::None,
         Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+            hir::Type::Error => Expectation::HasType(hir::Type::Error, None),
             hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, expect_src),
             _ => Expectation::None,
         },
@@ -1746,7 +1746,7 @@ fn typecheck_address<'hir, 'ast>(
     let addr_res = check_expr_addressability(ctx, rhs_res.expr);
     let src = ctx.src(expr_range);
 
-    match addr_res.addr_base {
+    match addr_res.base {
         AddrBase::Unknown => {}
         AddrBase::SliceField => {
             err::tycheck_cannot_ref_slice_field(&mut ctx.emit, src);
@@ -1792,7 +1792,7 @@ fn typecheck_address<'hir, 'ast>(
 }
 
 struct AddrResult {
-    addr_base: AddrBase,
+    base: AddrBase,
     constraint: AddrConstraint,
 }
 
@@ -1830,7 +1830,8 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
 
     loop {
         chain_level += 1;
-        let addr_base = match expr.kind {
+        let base = match expr.kind {
+            // addr_base: simple
             hir::ExprKind::Error => AddrBase::Unknown,
             hir::ExprKind::Const { value } => match value {
                 hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmut,
@@ -1842,6 +1843,47 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::If { .. } => AddrBase::Temporary,
             hir::ExprKind::Block { .. } => AddrBase::Temporary,
             hir::ExprKind::Match { .. } => AddrBase::Temporary,
+            hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
+            hir::ExprKind::Cast { .. } => AddrBase::Temporary,
+            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
+            hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,
+            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::Address { .. } => AddrBase::Temporary,
+            hir::ExprKind::Unary { .. } => AddrBase::Temporary,
+            hir::ExprKind::Binary { .. } => AddrBase::Temporary,
+            // addr_base: variable
+            hir::ExprKind::ParamVar { param_id } => {
+                let param = ctx.scope.local.param(param_id);
+                let var_src = ctx.src(param.name.range);
+                AddrBase::Variable(param.mutt, var_src)
+            }
+            hir::ExprKind::LocalVar { local_id } => {
+                let local = ctx.scope.local.local(local_id);
+                let var_src = ctx.src(local.name.range);
+                AddrBase::Variable(local.mutt, var_src)
+            }
+            hir::ExprKind::LocalBind { local_bind_id } => {
+                let local_bind = ctx.scope.local.bind(local_bind_id);
+                let var_src = ctx.src(local_bind.name.range);
+                AddrBase::Variable(local_bind.mutt, var_src)
+            }
+            hir::ExprKind::ForBind { for_bind_id } => {
+                let for_bind = ctx.scope.local.for_bind(for_bind_id);
+                let var_src = ctx.src(for_bind.name.range);
+                AddrBase::Variable(for_bind.mutt, var_src)
+            }
+            hir::ExprKind::ConstVar { const_id } => {
+                let const_data = ctx.registry.const_data(const_id);
+                AddrBase::Constant(const_data.src())
+            }
+            hir::ExprKind::GlobalVar { global_id } => {
+                let global_data = ctx.registry.global_data(global_id);
+                AddrBase::Variable(global_data.mutt, global_data.src())
+            }
+            // access chains before addr_base
             hir::ExprKind::StructField { target, access } => {
                 if chain_level == 1 && access.deref == Some(ast::Mut::Mutable) {
                     constraint = AddrConstraint::AllowMut
@@ -1853,7 +1895,6 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = target;
                 continue;
             }
-            hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Index { target, access } => {
                 if let Some(array_chain_level) = array_chain {
                     if constraint.is_none() && array_chain_level + 1 == chain_level {
@@ -1915,41 +1956,6 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = target;
                 continue;
             }
-            hir::ExprKind::Cast { .. } => AddrBase::Temporary,
-            hir::ExprKind::ParamVar { param_id } => {
-                let param = ctx.scope.local.param(param_id);
-                let var_src = ctx.src(param.name.range);
-                AddrBase::Variable(param.mutt, var_src)
-            }
-            hir::ExprKind::LocalVar { local_id } => {
-                let local = ctx.scope.local.local(local_id);
-                let var_src = ctx.src(local.name.range);
-                AddrBase::Variable(local.mutt, var_src)
-            }
-            hir::ExprKind::LocalBind { local_bind_id } => {
-                let local_bind = ctx.scope.local.bind(local_bind_id);
-                let var_src = ctx.src(local_bind.name.range);
-                AddrBase::Variable(local_bind.mutt, var_src)
-            }
-            hir::ExprKind::ForBind { for_bind_id } => {
-                let for_bind = ctx.scope.local.for_bind(for_bind_id);
-                let var_src = ctx.src(for_bind.name.range);
-                AddrBase::Variable(for_bind.mutt, var_src)
-            }
-            hir::ExprKind::ConstVar { const_id } => {
-                let const_data = ctx.registry.const_data(const_id);
-                AddrBase::Constant(const_data.src())
-            }
-            hir::ExprKind::GlobalVar { global_id } => {
-                let global_data = ctx.registry.global_data(global_id);
-                AddrBase::Variable(global_data.mutt, global_data.src())
-            }
-            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
-            hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,
-            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::Deref { rhs, mutt, .. } => {
                 if chain_level == 1 && mutt == ast::Mut::Mutable {
                     constraint = AddrConstraint::AllowMut
@@ -1961,15 +1967,9 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = rhs;
                 continue;
             }
-            hir::ExprKind::Address { .. } => AddrBase::Temporary,
-            hir::ExprKind::Unary { .. } => AddrBase::Temporary,
-            hir::ExprKind::Binary { .. } => AddrBase::Temporary,
         };
 
-        return AddrResult {
-            addr_base,
-            constraint,
-        };
+        return AddrResult { base, constraint };
     }
 }
 
@@ -2582,7 +2582,7 @@ fn typecheck_for<'hir, 'ast>(
                     let expect_src = ctx.src(on_res.expr.range);
                     (Expectation::HasType(on_res.ty, Some(expect_src)), None)
                 }
-                Err(_) => (Expectation::None, None),
+                Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
@@ -2696,7 +2696,7 @@ fn typecheck_assign<'hir, 'ast>(
     let lhs_src = ctx.src(assign.lhs.range);
     let addr_res = check_expr_addressability(ctx, lhs_res.expr);
 
-    match addr_res.addr_base {
+    match addr_res.base {
         AddrBase::Unknown => {}
         AddrBase::SliceField => {
             err::tycheck_cannot_assign_slice_field(&mut ctx.emit, lhs_src);
@@ -2807,7 +2807,6 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
 
 fn infer_int_type(expect: Expectation) -> BasicInt {
     const DEFAULT_INT_TYPE: BasicInt = BasicInt::S32;
-
     match expect {
         Expectation::None => DEFAULT_INT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
@@ -2819,7 +2818,6 @@ fn infer_int_type(expect: Expectation) -> BasicInt {
 
 fn infer_float_type(expect: Expectation) -> BasicFloat {
     const DEFAULT_FLOAT_TYPE: BasicFloat = BasicFloat::F64;
-
     match expect {
         Expectation::None => DEFAULT_FLOAT_TYPE,
         Expectation::HasType(expect_ty, _) => match expect_ty {
@@ -2881,24 +2879,20 @@ fn default_check_arg_list<'ast>(
     arg_list: &ast::ArgumentList<'ast>,
 ) {
     for &expr in arg_list.exprs.iter() {
-        let _ = typecheck_expr(ctx, Expectation::None, expr);
+        let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
     }
 }
 
-fn default_check_arg_list_opt<'ast>(
+fn default_check_field_init_list<'ast>(
     ctx: &mut HirCtx<'_, 'ast, '_>,
-    arg_list: Option<&ast::ArgumentList<'ast>>,
+    input: &[ast::FieldInit<'ast>],
 ) {
-    if let Some(arg_list) = arg_list {
-        for &expr in arg_list.exprs.iter() {
-            let _ = typecheck_expr(ctx, Expectation::None, expr);
-        }
-    }
-}
-
-fn default_check_field_init<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, input: &[ast::FieldInit<'ast>]) {
     for field in input.iter() {
-        let _ = typecheck_expr(ctx, Expectation::None, field.expr);
+        let _ = typecheck_expr(
+            ctx,
+            Expectation::HasType(hir::Type::Error, None),
+            field.expr,
+        );
     }
 }
 
@@ -2959,7 +2953,7 @@ fn check_call_direct<'hir, 'ast>(
                 let expect_src = SourceRange::new(data.origin_id, param.ty_range);
                 Expectation::HasType(param.ty, Some(expect_src))
             }
-            None => Expectation::None,
+            None => Expectation::HasType(hir::Type::Error, None),
         };
         let expr_res = typecheck_expr(ctx, expect, expr);
         values.push(expr_res.expr);
@@ -3002,7 +2996,7 @@ fn check_call_indirect<'hir, 'ast>(
     for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {
         let expect = match proc_ty.param_types.get(idx) {
             Some(param_ty) => Expectation::HasType(*param_ty, None),
-            None => Expectation::None,
+            None => Expectation::HasType(hir::Type::Error, None),
         };
         let expr_res = typecheck_expr(ctx, expect, expr);
         values.push(expr_res.expr);
@@ -3085,7 +3079,7 @@ fn check_variant_input_opt<'hir, 'ast>(
                     let expect_src = SourceRange::new(origin_id, field.ty_range);
                     Expectation::HasType(field.ty, Some(expect_src))
                 }
-                None => Expectation::None,
+                None => Expectation::HasType(hir::Type::Error, None),
             };
             let expr_res = typecheck_expr(ctx, expect, expr);
             values.push(expr_res.expr);
@@ -3136,7 +3130,7 @@ fn check_variant_bind_count(
     }
 }
 
-fn add_variant_local_binds<'hir>(
+fn check_variant_bind_list<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     bind_list: Option<&ast::BindingList>,
     variant: Option<&hir::Variant<'hir>>,
