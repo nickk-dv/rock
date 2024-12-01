@@ -52,6 +52,7 @@ fn add_proc_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ProcItem
         locals: &[],
         local_binds: &[],
         for_binds: &[],
+        was_used: false,
     };
 
     let proc_id = ctx.registry.add_proc(item, data);
@@ -83,6 +84,7 @@ fn add_enum_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::EnumItem
         variants: &[],
         tag_ty: hir::Eval::Unresolved(()),
         layout: hir::Eval::Unresolved(()),
+        was_used: false,
     };
 
     let enum_id = ctx.registry.add_enum(item, data);
@@ -113,6 +115,7 @@ fn add_struct_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Struct
         poly_params: None,
         fields: &[],
         layout: hir::Eval::Unresolved(()),
+        was_used: false,
     };
 
     let struct_id = ctx.registry.add_struct(item, data);
@@ -143,6 +146,7 @@ fn add_const_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ConstIt
         name: item.name,
         ty: hir::Type::Error,
         value: eval_id,
+        was_used: false,
     };
 
     let const_id = ctx.registry.add_const(item, data);
@@ -181,6 +185,7 @@ fn add_global_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Global
         name: item.name,
         ty: hir::Type::Error,
         init,
+        was_used: false,
     };
 
     let global_id = ctx.registry.add_global(item, data);

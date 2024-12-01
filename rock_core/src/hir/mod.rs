@@ -38,6 +38,7 @@ pub struct ProcData<'hir> {
     pub locals: &'hir [Local<'hir>],
     pub local_binds: &'hir [LocalBind<'hir>],
     pub for_binds: &'hir [ForBind<'hir>],
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -57,6 +58,7 @@ pub struct EnumData<'hir> {
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -86,6 +88,7 @@ pub struct StructData<'hir> {
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -102,6 +105,7 @@ pub struct ConstData<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
+    pub was_used: bool,
 }
 
 pub struct GlobalData<'hir> {
@@ -112,6 +116,7 @@ pub struct GlobalData<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub init: GlobalInit,
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -278,6 +283,7 @@ pub struct Local<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub init: LocalInit<'hir>,
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -496,6 +502,7 @@ pub struct LocalBind<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub field_id: Option<VariantFieldID>,
+    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]

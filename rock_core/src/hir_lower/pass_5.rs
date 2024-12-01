@@ -42,6 +42,21 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
         data.locals = locals;
         data.local_binds = binds;
         data.for_binds = for_binds;
+
+        for local in locals {
+            if !local.was_used {
+                let src = ctx.src(local.name.range);
+                let name = ctx.name(local.name.id);
+                err::scope_unused_variable(&mut ctx.emit, src, name);
+            }
+        }
+        for bind in binds {
+            if !bind.was_used {
+                let src = ctx.src(bind.name.range);
+                let name = ctx.name(bind.name.id);
+                err::scope_unused_binding(&mut ctx.emit, src, name);
+            }
+        }
     }
 }
 
@@ -2635,6 +2650,7 @@ fn typecheck_local<'hir, 'ast>(
                 name,
                 ty,
                 init,
+                was_used: false,
             };
             let local_id = ctx.scope.local.add_local(local);
             LocalResult::Local(local_id)
@@ -3170,6 +3186,7 @@ fn add_variant_local_binds<'hir>(
             name,
             ty,
             field_id,
+            was_used: false,
         };
         let bind_id = ctx.scope.local.add_bind(local_bind);
         bind_ids.push(bind_id);

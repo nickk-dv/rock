@@ -23,6 +23,6 @@ pub fn check<'hir, 'ast, 's_ref>(
     pass_3::process_items(&mut ctx);
     constant::resolve_const_dependencies(&mut ctx);
     pass_5::typecheck_procedures(&mut ctx);
-    pass_6::check_entry_point(&mut ctx);
+    pass_6::finalize_checks(&mut ctx);
     ctx.finish()
 }

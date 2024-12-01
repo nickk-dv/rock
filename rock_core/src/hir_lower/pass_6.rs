@@ -4,9 +4,14 @@ use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;
-use crate::session::ModuleOrDirectory;
+use crate::session::{ModuleID, ModuleOrDirectory};
 
-pub fn check_entry_point(ctx: &mut HirCtx) {
+pub fn finalize_checks(ctx: &mut HirCtx) {
+    check_entry_point(ctx);
+    check_unused_items(ctx);
+}
+
+fn check_entry_point(ctx: &mut HirCtx) {
     let root_package = ctx.session.graph.package(ctx.session.root_id);
     if root_package.manifest().package.kind != PackageKind::Bin {
         return;
@@ -64,4 +69,83 @@ fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::Proc
         let ret_src = ctx.src(item.return_ty.range);
         err::entry_main_wrong_return_ty(&mut ctx.emit, ret_src);
     }
+}
+
+fn check_unused_items(ctx: &mut HirCtx) {
+    for proc_id in ctx.registry.proc_ids() {
+        let data = ctx.registry.proc_data(proc_id);
+        if data.was_used || data.attr_set.contains(hir::ProcFlag::Main) {
+            continue;
+        }
+        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+            continue;
+        }
+        if !data.was_used {
+            let name = ctx.name(data.name.id);
+            err::scope_unused_procedure(&mut ctx.emit, data.src(), name);
+        }
+    }
+
+    for enum_id in ctx.registry.enum_ids() {
+        let data = ctx.registry.enum_data(enum_id);
+        if data.was_used {
+            continue;
+        }
+        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+            continue;
+        }
+        if !data.was_used {
+            let name = ctx.name(data.name.id);
+            err::scope_unused_enum(&mut ctx.emit, data.src(), name);
+        }
+    }
+
+    for struct_id in ctx.registry.struct_ids() {
+        let data = ctx.registry.struct_data(struct_id);
+        if data.was_used {
+            continue;
+        }
+        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+            continue;
+        }
+        if !data.was_used {
+            let name = ctx.name(data.name.id);
+            err::scope_unused_struct(&mut ctx.emit, data.src(), name);
+        }
+    }
+
+    for const_id in ctx.registry.const_ids() {
+        let data = ctx.registry.const_data(const_id);
+        if data.was_used {
+            continue;
+        }
+        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+            continue;
+        }
+        if !data.was_used {
+            let name = ctx.name(data.name.id);
+            err::scope_unused_const(&mut ctx.emit, data.src(), name);
+        }
+    }
+
+    for global_id in ctx.registry.global_ids() {
+        let data = ctx.registry.global_data(global_id);
+        if data.was_used {
+            continue;
+        }
+        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+            continue;
+        }
+        if !data.was_used {
+            let name = ctx.name(data.name.id);
+            err::scope_unused_global(&mut ctx.emit, data.src(), name);
+        }
+    }
+}
+
+#[inline(always)]
+fn module_is_library(ctx: &HirCtx, origin_id: ModuleID) -> bool {
+    let module = ctx.session.module.get(origin_id);
+    let package = ctx.session.graph.package(module.origin());
+    package.manifest().package.kind == PackageKind::Lib
 }

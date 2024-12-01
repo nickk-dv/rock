@@ -127,7 +127,7 @@ impl<'hir> Scope<'hir> {
     }
 
     pub fn check_already_defined(
-        &self,
+        &mut self,
         name: ast::Name,
         session: &Session,
         registry: &Registry,
@@ -157,12 +157,12 @@ impl<'hir> Scope<'hir> {
     }
 
     fn check_already_defined_local(
-        &self,
+        &mut self,
         name: ast::Name,
         session: &Session,
         emit: &mut ErrorWarningBuffer,
     ) -> Result<(), ()> {
-        let existing = match self.local.find_variable(name.id) {
+        let existing = match self.local.find_variable(name.id, false) {
             Some(var_id) => var_id,
             None => return Ok(()),
         };
@@ -423,7 +423,7 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[must_use]
-    pub fn find_variable(&self, name_id: NameID) -> Option<VariableID> {
+    pub fn find_variable(&mut self, name_id: NameID, set_usage_flag: bool) -> Option<VariableID> {
         for (idx, param) in self.params.iter().enumerate() {
             if name_id == param.name.id {
                 let param_id = hir::ParamID::new(idx);
@@ -431,12 +431,20 @@ impl<'hir> LocalScope<'hir> {
             }
         }
         for local_id in self.locals_in_scope.iter().copied() {
-            if name_id == self.local(local_id).name.id {
+            let local = &mut self.locals[local_id.index()];
+            if name_id == local.name.id {
+                if set_usage_flag {
+                    local.was_used = true;
+                }
                 return Some(VariableID::Local(local_id));
             }
         }
         for bind_id in self.binds_in_scope.iter().copied() {
-            if name_id == self.bind(bind_id).name.id {
+            let bind = &mut self.binds[bind_id.index()];
+            if name_id == bind.name.id {
+                if set_usage_flag {
+                    bind.was_used = true;
+                }
                 return Some(VariableID::Bind(bind_id));
             }
         }

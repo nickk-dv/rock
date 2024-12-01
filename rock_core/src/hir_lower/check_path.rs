@@ -34,14 +34,15 @@ pub enum ValueID<'ast> {
 fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
     let segment_0 = path.segments.get(0).copied().expect("non empty path");
 
-    // <variable> | <poly_def> | <symbol> | <module>
-    if let Some(var_id) = ctx.scope.local.find_variable(segment_0.name.id) {
+    // <variable> | <poly_param> | <symbol> | <module>
+    if let Some(var_id) = ctx.scope.local.find_variable(segment_0.name.id, true) {
         return Ok(PathResolved {
             kind: PathResolvedKind::Variable(var_id),
             at_segment: segment_0,
             names: path.segments.split_at(1).1,
         });
     }
+    //@rename the `poly_def` to poly_param everywhere
     if let Some((poly_def, poly_param_idx)) = ctx
         .scope
         .poly
@@ -146,6 +147,9 @@ pub fn path_resolve_type<'hir, 'ast>(
         Ok(path) => path,
         Err(()) => return hir::Type::Error,
     };
+    if let PathResolvedKind::Symbol(symbol_id) = path.kind {
+        set_symbol_usage_flag(ctx, symbol_id);
+    }
 
     let ty = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
@@ -283,6 +287,9 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
         Ok(path) => path,
         Err(()) => return None,
     };
+    if let PathResolvedKind::Symbol(symbol_id) = path.kind {
+        set_symbol_usage_flag(ctx, symbol_id);
+    }
 
     let struct_id = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
@@ -342,6 +349,9 @@ pub fn path_resolve_value<'ast>(
         Ok(path) => path,
         Err(()) => return ValueID::None,
     };
+    if let PathResolvedKind::Symbol(symbol_id) = path.kind {
+        set_symbol_usage_flag(ctx, symbol_id);
+    }
 
     match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
@@ -412,5 +422,17 @@ pub fn path_resolve_value<'ast>(
             );
             ValueID::None
         }
+    }
+}
+
+// `was_used` are set regardless of path resolve being valid.
+// finding a symbol acts like a `usage` even in invalid context.
+fn set_symbol_usage_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
+    match symbol_id {
+        SymbolID::Proc(id) => ctx.registry.proc_data_mut(id).was_used = true,
+        SymbolID::Enum(id) => ctx.registry.enum_data_mut(id).was_used = true,
+        SymbolID::Struct(id) => ctx.registry.struct_data_mut(id).was_used = true,
+        SymbolID::Const(id) => ctx.registry.const_data_mut(id).was_used = true,
+        SymbolID::Global(id) => ctx.registry.global_data_mut(id).was_used = true,
     }
 }

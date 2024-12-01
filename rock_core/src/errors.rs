@@ -302,6 +302,41 @@ pub fn scope_struct_field_not_found(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn scope_unused_procedure(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused procedure `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_enum(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused enum `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_struct(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused struct `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_const(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused constant `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_global(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused global `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_variable(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused variable `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn scope_unused_binding(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
+    let msg = format!("unused binding `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
 //==================== CHECK ATTRIBUTE ====================
 
 pub fn attr_unknown(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
