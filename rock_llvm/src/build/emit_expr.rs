@@ -136,10 +136,10 @@ fn codegen_expr<'c>(
             cg, proc_cg, expect, enum_id, variant_id, input,
         )),
         hir::ExprKind::CallDirect { proc_id, input } => {
-            codegen_call_direct(cg, proc_cg, proc_id, input)
+            codegen_call_direct(cg, proc_cg, expect, proc_id, input)
         }
         hir::ExprKind::CallIndirect { target, indirect } => {
-            codegen_call_indirect(cg, proc_cg, target, indirect)
+            codegen_call_indirect(cg, proc_cg, expect, target, indirect)
         }
         hir::ExprKind::StructInit { struct_id, input } => {
             codegen_struct_init(cg, proc_cg, expect, struct_id, input)
@@ -791,6 +791,7 @@ fn codegen_variant<'c>(
 fn codegen_call_direct<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
 ) -> Option<llvm::Value> {
@@ -801,12 +802,23 @@ fn codegen_call_direct<'c>(
     }
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];
-    cg.build.call(fn_ty, fn_val, &input_values, "call_val")
+    let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "call_val")?;
+
+    match expect {
+        Expect::Pointer => {
+            let ty = llvm::typeof_value(ret_val);
+            let ptr = cg.entry_alloca(proc_cg, ty, "call_val_ptr");
+            cg.build.store(ret_val, ptr);
+            Some(ptr.as_val())
+        }
+        _ => Some(ret_val),
+    }
 }
 
 fn codegen_call_indirect<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
+    expect: Expect,
     target: &hir::Expr<'c>,
     indirect: &hir::CallIndirect<'c>,
 ) -> Option<llvm::Value> {
@@ -819,7 +831,17 @@ fn codegen_call_indirect<'c>(
     }
 
     let fn_ty = cg.proc_type(indirect.proc_ty);
-    cg.build.call(fn_ty, fn_val, &input_values, "call_ival")
+    let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "icall_val")?;
+
+    match expect {
+        Expect::Pointer => {
+            let ty = llvm::typeof_value(ret_val);
+            let ptr = cg.entry_alloca(proc_cg, ty, "icall_val_ptr");
+            cg.build.store(ret_val, ptr);
+            Some(ptr.as_val())
+        }
+        _ => Some(ret_val),
+    }
 }
 
 fn codegen_struct_init<'c>(

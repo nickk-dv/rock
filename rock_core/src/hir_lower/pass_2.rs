@@ -1,3 +1,4 @@
+use super::check_path;
 use super::context::scope::{Symbol, SymbolOrModule};
 use super::context::HirCtx;
 use crate::ast;
@@ -127,7 +128,10 @@ fn import_symbol(
         .check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let symbol = match kind {
-        SymbolOrModule::Symbol(symbol_id) => Symbol::Imported(symbol_id, alias.range),
+        SymbolOrModule::Symbol(symbol_id) => {
+            check_path::set_symbol_usage_flag(ctx, symbol_id);
+            Symbol::Imported(symbol_id, alias.range)
+        }
         SymbolOrModule::Module(module_id) => Symbol::ImportedModule(module_id, alias.range),
     };
     ctx.scope.global.add_symbol(origin_id, alias.id, symbol);

@@ -427,7 +427,7 @@ pub fn path_resolve_value<'ast>(
 
 // `was_used` are set regardless of path resolve being valid.
 // finding a symbol acts like a `usage` even in invalid context.
-fn set_symbol_usage_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
+pub fn set_symbol_usage_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
     match symbol_id {
         SymbolID::Proc(id) => ctx.registry.proc_data_mut(id).was_used = true,
         SymbolID::Enum(id) => ctx.registry.enum_data_mut(id).was_used = true,
