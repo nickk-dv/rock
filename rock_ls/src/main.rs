@@ -15,7 +15,6 @@ use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
-use std::process::id;
 
 fn main() {
     if !check_args() {

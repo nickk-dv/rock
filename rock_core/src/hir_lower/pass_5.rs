@@ -1814,8 +1814,11 @@ enum AddrConstraint {
 }
 
 impl AddrConstraint {
-    fn is_none(&self) -> bool {
-        matches!(self, AddrConstraint::None)
+    #[inline]
+    fn set(&mut self, new: AddrConstraint) {
+        if matches!(self, AddrConstraint::None) {
+            *self = new;
+        }
     }
 }
 
@@ -1825,11 +1828,8 @@ impl AddrConstraint {
 fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     let mut expr = expr;
     let mut constraint = AddrConstraint::None;
-    let mut chain_level = 0;
-    let mut array_chain = None;
 
     loop {
-        chain_level += 1;
         let base = match expr.kind {
             // addr_base: simple
             hir::ExprKind::Error => AddrBase::Unknown,
@@ -1857,23 +1857,23 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             // addr_base: variable
             hir::ExprKind::ParamVar { param_id } => {
                 let param = ctx.scope.local.param(param_id);
-                let var_src = ctx.src(param.name.range);
-                AddrBase::Variable(param.mutt, var_src)
+                let src = ctx.src(param.name.range);
+                AddrBase::Variable(param.mutt, src)
             }
             hir::ExprKind::LocalVar { local_id } => {
                 let local = ctx.scope.local.local(local_id);
-                let var_src = ctx.src(local.name.range);
-                AddrBase::Variable(local.mutt, var_src)
+                let src = ctx.src(local.name.range);
+                AddrBase::Variable(local.mutt, src)
             }
             hir::ExprKind::LocalBind { local_bind_id } => {
                 let local_bind = ctx.scope.local.bind(local_bind_id);
-                let var_src = ctx.src(local_bind.name.range);
-                AddrBase::Variable(local_bind.mutt, var_src)
+                let src = ctx.src(local_bind.name.range);
+                AddrBase::Variable(local_bind.mutt, src)
             }
             hir::ExprKind::ForBind { for_bind_id } => {
                 let for_bind = ctx.scope.local.for_bind(for_bind_id);
-                let var_src = ctx.src(for_bind.name.range);
-                AddrBase::Variable(for_bind.mutt, var_src)
+                let src = ctx.src(for_bind.name.range);
+                AddrBase::Variable(for_bind.mutt, src)
             }
             hir::ExprKind::ConstVar { const_id } => {
                 let const_data = ctx.registry.const_data(const_id);
@@ -1885,84 +1885,51 @@ fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             }
             // access chains before addr_base
             hir::ExprKind::StructField { target, access } => {
-                if chain_level == 1 && access.deref == Some(ast::Mut::Mutable) {
-                    constraint = AddrConstraint::AllowMut
-                }
-                if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = ctx.src(expr.range);
-                    constraint = AddrConstraint::ImmutRef(deref_src)
+                match access.deref {
+                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
+                    Some(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
+                    }
+                    None => {}
                 }
                 expr = target;
                 continue;
             }
             hir::ExprKind::Index { target, access } => {
-                if let Some(array_chain_level) = array_chain {
-                    if constraint.is_none() && array_chain_level + 1 == chain_level {
-                        match access.kind {
-                            hir::IndexKind::Array(_) => {
-                                if access.deref == Some(ast::Mut::Mutable) {
-                                    constraint = AddrConstraint::AllowMut;
-                                    array_chain = None;
-                                } else {
-                                    array_chain = Some(chain_level);
-                                }
-                            }
-                            _ => array_chain = None,
-                        }
+                match access.deref {
+                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
+                    Some(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
                     }
+                    None => {}
                 }
-                if chain_level == 1 {
-                    match access.kind {
-                        hir::IndexKind::Multi(ast::Mut::Mutable) => {
-                            constraint = AddrConstraint::AllowMut
-                        }
-                        hir::IndexKind::Slice(ast::Mut::Mutable) => {
-                            constraint = AddrConstraint::AllowMut
-                        }
-                        hir::IndexKind::Array(_) => {
-                            if access.deref == Some(ast::Mut::Mutable) {
-                                constraint = AddrConstraint::AllowMut
-                            } else {
-                                array_chain = Some(chain_level);
-                            }
-                        }
-                        _ => {}
+                match access.kind {
+                    hir::IndexKind::Multi(ast::Mut::Mutable) => {
+                        constraint.set(AddrConstraint::AllowMut)
                     }
-                }
-                if constraint.is_none() {
-                    if matches!(access.kind, hir::IndexKind::Slice(ast::Mut::Immutable)) {
-                        let slice_src = ctx.src(expr.range);
-                        constraint = AddrConstraint::ImmutSlice(slice_src);
-                    } else if matches!(access.kind, hir::IndexKind::Multi(ast::Mut::Immutable)) {
-                        let multi_src = ctx.src(expr.range);
-                        constraint = AddrConstraint::ImmutMulti(multi_src);
-                    } else if access.deref == Some(ast::Mut::Immutable) {
-                        let deref_src = ctx.src(expr.range);
-                        constraint = AddrConstraint::ImmutRef(deref_src);
+                    hir::IndexKind::Slice(ast::Mut::Mutable) => {
+                        constraint.set(AddrConstraint::AllowMut)
                     }
+                    hir::IndexKind::Multi(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutMulti(ctx.src(expr.range)))
+                    }
+                    hir::IndexKind::Slice(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutSlice(ctx.src(expr.range)))
+                    }
+                    hir::IndexKind::Array(_) => {}
                 }
                 expr = target;
                 continue;
             }
-            hir::ExprKind::Slice { target, access } => {
-                //@semantics not finished for slice expression
-                if chain_level == 1 && access.deref == Some(ast::Mut::Mutable) {
-                    constraint = AddrConstraint::AllowMut
-                }
-                if constraint.is_none() && access.deref == Some(ast::Mut::Immutable) {
-                    let deref_src = ctx.src(expr.range);
-                    constraint = AddrConstraint::ImmutRef(deref_src)
-                }
-                expr = target;
-                continue;
+            hir::ExprKind::Slice { .. } => {
+                unimplemented!("slice expression addressability");
             }
             hir::ExprKind::Deref { rhs, mutt, .. } => {
-                if chain_level == 1 && mutt == ast::Mut::Mutable {
-                    constraint = AddrConstraint::AllowMut
-                }
-                if constraint.is_none() && mutt == ast::Mut::Immutable {
-                    let deref_src = ctx.src(expr.range);
-                    constraint = AddrConstraint::ImmutRef(deref_src)
+                match mutt {
+                    ast::Mut::Mutable => constraint.set(AddrConstraint::AllowMut),
+                    ast::Mut::Immutable => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
+                    }
                 }
                 expr = rhs;
                 continue;
