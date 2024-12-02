@@ -252,6 +252,7 @@ pub struct ForElem<'hir> {
     pub index_id: ForBindID,
     pub deref: bool,
     pub by_pointer: bool,
+    pub reverse: bool,
     pub elem_ty: Type<'hir>,
     pub kind: ForElemKind,
     pub expr: &'hir Expr<'hir>,

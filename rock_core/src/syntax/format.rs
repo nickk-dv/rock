@@ -1168,6 +1168,10 @@ fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
         fmt.space();
         fmt.write_str("in");
         fmt.space();
+        if header.t_rev(fmt.tree).is_some() {
+            fmt.write_str("<<");
+            fmt.space();
+        }
         expr(fmt, header.expr(fmt.tree).unwrap());
     } else if let Some(header) = stmt.header_pat(fmt.tree) {
         fmt.space();

@@ -1024,6 +1024,7 @@ impl<'syn> ForHeaderElem<'syn> {
     token_find!(t_mut, T![mut]);
     node_before_token!(value, Name, T![,]);
     node_after_token!(index, Name, T![,]);
+    token_find!(t_rev, T![<<]);
     node_find!(expr, Expr);
 }
 

@@ -257,6 +257,7 @@ pub struct ForHeaderElem<'ast> {
     pub ref_mut: Option<Mut>,
     pub value: Name,
     pub index: Option<Name>,
+    pub reverse: bool,
     pub expr: &'ast Expr<'ast>,
 }
 

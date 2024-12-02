@@ -172,7 +172,7 @@ fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_
             let value_ptr = proc_cg.for_bind_ptrs[for_elem.value_id.index()];
             let index_ptr = proc_cg.for_bind_ptrs[for_elem.index_id.index()];
 
-            // evaluate iteration ptr & reset index to 0
+            // evaluate value being iterated on
             let iter_ptr = emit_expr::codegen_expr_pointer(cg, proc_cg, for_elem.expr);
             let iter_ptr = if for_elem.deref {
                 cg.build
@@ -181,29 +181,72 @@ fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_
             } else {
                 iter_ptr
             };
-            cg.build.store(cg.const_usize(0), index_ptr);
+
+            // set initial loop counter
+            if for_elem.reverse {
+                let index_init = match for_elem.kind {
+                    hir::ForElemKind::Slice => {
+                        let slice_ty = cg.slice_type();
+                        let slice_len_ptr =
+                            cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
+                        cg.build
+                            .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+                    }
+                    hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
+                };
+                cg.build.store(index_init, index_ptr);
+            } else {
+                cg.build.store(cg.const_usize(0), index_ptr);
+            }
 
             cg.build.br(entry_bb);
             cg.build.position_at_end(entry_bb);
 
-            // evaluate loop condition
+            // condition: evaluate loop index
             let index_val = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
-            let collection_len = match for_elem.kind {
-                hir::ForElemKind::Slice => {
-                    let slice_ty = cg.slice_type();
-                    let slice_len_ptr = cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
-                    cg.build
-                        .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
-                }
-                hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
+
+            // condition: evaluate loop condition
+            let cond = if for_elem.reverse {
+                emit_expr::codegen_binary_op(
+                    cg,
+                    hir::BinOp::NotEq_Int,
+                    index_val,
+                    cg.const_usize_zero(),
+                )
+            } else {
+                //@perf: loading the slice len on every iteration!
+                // it could be changed if its mutated during the loop, but...
+                let collection_len = match for_elem.kind {
+                    hir::ForElemKind::Slice => {
+                        let slice_ty = cg.slice_type();
+                        let slice_len_ptr =
+                            cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
+                        cg.build
+                            .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+                    }
+                    hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
+                };
+                emit_expr::codegen_binary_op(cg, hir::BinOp::Less_IntU, index_val, collection_len)
             };
-            let cond =
-                emit_expr::codegen_binary_op(cg, hir::BinOp::Less_IntU, index_val, collection_len);
 
             cg.build.cond_br(cond, body_bb, exit_bb);
             cg.build.position_at_end(body_bb);
 
-            // get iteration value ptr (@no bounds check)
+            let index_val = if for_elem.reverse {
+                let index = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
+                let index_sub = emit_expr::codegen_binary_op(
+                    cg,
+                    hir::BinOp::Sub_Int,
+                    index,
+                    cg.const_usize_one(),
+                );
+                cg.build.store(index_sub, index_ptr);
+                index_sub
+            } else {
+                index_val
+            };
+
+            // get iteration value ptr (@no bounds check(not needed probably))
             let elem_ty = cg.ty(for_elem.elem_ty);
             let elem_ptr = match for_elem.kind {
                 hir::ForElemKind::Slice => {
@@ -236,16 +279,19 @@ fn codegen_for<'c>(cg: &Codegen<'c, '_, '_>, proc_cg: &mut ProcCodegen<'c>, for_
 
             codegen_block(cg, proc_cg, Expect::Value(None), for_.block);
 
-            // increment index
+            // post block operation
             if !cg.insert_bb_terminated() {
-                let index_val = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
-                let index_inc = emit_expr::codegen_binary_op(
-                    cg,
-                    hir::BinOp::Add_Int,
-                    index_val,
-                    cg.const_usize_one(),
-                );
-                cg.build.store(index_inc, index_ptr);
+                if !for_elem.reverse {
+                    //@this load could be skipped, by using value from the condition as lhs operand
+                    let index_val = cg.build.load(cg.ptr_sized_int(), index_ptr, "index_val");
+                    let index_inc = emit_expr::codegen_binary_op(
+                        cg,
+                        hir::BinOp::Add_Int,
+                        index_val,
+                        cg.const_usize_one(),
+                    );
+                    cg.build.store(index_inc, index_ptr);
+                }
                 cg.build.br(entry_bb);
             }
         }

@@ -2333,6 +2333,7 @@ fn typecheck_for<'hir, 'ast>(
                 index_id,
                 deref: collection.deref.is_some(),
                 by_pointer: header.ref_mut.is_some(),
+                reverse: header.reverse,
                 elem_ty: collection.elem_ty,
                 kind: elem_kind,
                 expr: expr_res.expr,

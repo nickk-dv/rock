@@ -644,12 +644,14 @@ fn stmt_for<'ast>(
         };
         let value = name(ctx, header.value(ctx.tree).unwrap());
         let index = header.index(ctx.tree).map(|n| name(ctx, n));
+        let reverse = header.t_rev(ctx.tree).is_some();
         let expr = expr(ctx, header.expr(ctx.tree).unwrap());
 
         let header = ast::ForHeaderElem {
             ref_mut,
             value,
             index,
+            reverse,
             expr,
         };
         ast::ForHeader::Elem(ctx.arena.alloc(header))

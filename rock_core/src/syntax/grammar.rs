@@ -636,6 +636,7 @@ fn stmt_for(p: &mut Parser) {
                 name(p);
             }
             p.expect(T![in]);
+            p.eat(T![<<]);
             expr(p);
             mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
         }
@@ -647,6 +648,7 @@ fn stmt_for(p: &mut Parser) {
                     name(p);
                 }
                 p.expect(T![in]);
+                p.eat(T![<<]);
                 expr(p);
                 mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
             } else {
