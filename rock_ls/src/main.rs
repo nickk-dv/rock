@@ -15,6 +15,7 @@ use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
+use std::process::id;
 
 fn main() {
     if !check_args() {
@@ -105,6 +106,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
                     },
                     legend: lsp::SemanticTokensLegend {
                         token_types: vec![
+                            //@needs to corespond to `SemanticToken` in rock_core::token
                             lsp::SemanticTokenType::NAMESPACE,
                             lsp::SemanticTokenType::TYPE,
                             lsp::SemanticTokenType::PARAMETER,
@@ -116,6 +118,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
                             lsp::SemanticTokenType::COMMENT,
                             lsp::SemanticTokenType::NUMBER,
                             lsp::SemanticTokenType::STRING,
+                            lsp::SemanticTokenType::OPERATOR,
                         ],
                         token_modifiers: vec![],
                     },
@@ -933,69 +936,19 @@ fn semantic_visit_node(
 
                 semantic_visit_node(builder, intern_name, tree, node, ident_style);
             }
+            //@color void differently (type vs void literal, number color?)
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
-
-                //@color void differently (type vs void literal, number color?)
-                let semantic = match token {
-                    Token::Eof => continue,
-                    Token::Ident => match ident_style {
-                        Some(semantic) => semantic,
-                        None => continue,
-                    },
-                    Token::IntLit | Token::FloatLit => SemanticToken::Number,
-                    Token::CharLit | Token::StringLit => SemanticToken::String,
-                    Token::KwPub
-                    | Token::KwProc
-                    | Token::KwEnum
-                    | Token::KwStruct
-                    | Token::KwConst
-                    | Token::KwGlobal
-                    | Token::KwImport
-                    | Token::KwBreak
-                    | Token::KwContinue
-                    | Token::KwReturn
-                    | Token::KwDefer
-                    | Token::KwFor
-                    | Token::KwFor2
-                    | Token::KwIn
-                    | Token::KwLet
-                    | Token::KwMut
-                    | Token::KwZeroed
-                    | Token::KwUndefined => SemanticToken::Keyword,
-                    Token::KwNull | Token::KwTrue | Token::KwFalse => SemanticToken::Number,
-                    Token::KwIf | Token::KwElse | Token::KwMatch => SemanticToken::Keyword,
-                    Token::KwDiscard => SemanticToken::Property,
-                    Token::KwAs | Token::KwSizeof => SemanticToken::Keyword,
-                    Token::KwS8
-                    | Token::KwS16
-                    | Token::KwS32
-                    | Token::KwS64
-                    | Token::KwSsize
-                    | Token::KwU8
-                    | Token::KwU16
-                    | Token::KwU32
-                    | Token::KwU64
-                    | Token::KwUsize
-                    | Token::KwF32
-                    | Token::KwF64
-                    | Token::KwBool
-                    | Token::KwChar
-                    | Token::KwRawptr
-                    | Token::KwVoid
-                    | Token::KwNever => SemanticToken::Type,
-                    _ => continue,
-                };
-
-                semantic_add_token(builder, semantic, range);
+                if let Some(semantic) = semantic_token_style(token, ident_style) {
+                    semantic_token_add(builder, semantic, range);
+                }
             }
             NodeOrToken::Trivia(id) => {
                 let (trivia, range) = tree.tokens().trivia_and_range(id);
-
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
-                        semantic_add_token(builder, SemanticToken::Comment, range)
+                        semantic_token_add(builder, SemanticToken::Comment, range)
                     }
                 };
             }
@@ -1007,7 +960,7 @@ fn str_char_len_utf16(string: &str) -> u32 {
     string.chars().map(|c| c.len_utf16() as u32).sum()
 }
 
-fn semantic_add_token(
+fn semantic_token_add(
     builder: &mut SemanticTokenBuilder,
     semantic: SemanticToken,
     range: TextRange,
@@ -1053,4 +1006,39 @@ fn semantic_add_token(
 
 struct ModuleScope {
     symbols: HashMap<NameID, SyntaxKind>,
+}
+
+fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Option<SemanticToken> {
+    use rock_core::T;
+    #[rustfmt::skip]
+    let semantic = match token {
+        T![eof] => return None,
+        T![ident] => return ident_style,
+        T![int_lit] | T![float_lit] => SemanticToken::Number,
+        T![char_lit] | T![string_lit] => SemanticToken::String,
+
+        T![pub] | T![proc] | T![enum] | T![struct] |
+        T![const] | T![global] | T![import] | T![break] |
+        T![continue] | T![return] | T![defer] | T![for] | T![for2] |
+        T![in] | T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
+
+        T![null] | T![true] | T![false] => SemanticToken::Number,
+        T![if] | T![else] | T![match] | T![as] | T![sizeof] => SemanticToken::Keyword,
+        T![_] => SemanticToken::Parameter,
+
+        T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
+        T![u8] | T![u16] | T![u32] | T![u64] | T![usize] | 
+        T![f32] | T![f64] | T![bool] | T![char] |
+        T![rawptr] | T![void] | T![never] => SemanticToken::Type,
+
+        T![.] | T![,] | T![:] | T![;] | T![#] |
+        T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,
+
+        T![..] | T![->] | T!["..<"] | T!["..="] | T![~] | T![!] |
+        T![+] | T![-] | T![*] | T![/] | T![%] | T![&] | T![|] | T![^] | T![<<] | T![>>] |
+        T![==] | T![!=] | T![<] | T![<=] | T![>] | T![>=] | T![&&] | T![||] |
+        T![=] | T![+=] | T![-=] | T![*=] | T![/=] | T![%=] | 
+        T![&=] | T![|=] | T![^=] | T![<<=] | T![>>=] => SemanticToken::Operator,
+    };
+    Some(semantic)
 }

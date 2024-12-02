@@ -33,7 +33,6 @@ pub enum Trivia {
     ModComment,
 }
 
-#[repr(u32)]
 #[derive(Copy, Clone)]
 pub enum SemanticToken {
     Namespace,
@@ -47,6 +46,7 @@ pub enum SemanticToken {
     Comment,
     Number,
     String,
+    Operator,
 }
 
 impl TokenList {
@@ -176,6 +176,7 @@ macro_rules! token_gen {
         $(BASIC[$basic_ty:expr])?
     )+
     } => {
+        #[macro_export]
         macro_rules! T {
             $( [$token] => [Token::$name]; )+
         }
@@ -316,9 +317,9 @@ token_gen! {
     [if]       | "if"       | KwIf       | KW.
     [else]     | "else"     | KwElse     | KW.
     [match]    | "match"    | KwMatch    | KW.
-    [_]        | "_"        | KwDiscard  | KW.
     [as]       | "as"       | KwAs       | KW.
     [sizeof]   | "sizeof"   | KwSizeof   | KW.
+    [_]        | "_"        | KwDiscard  | KW.
 
     // keyword basic types
     [s8]       | "s8"       | KwS8       | KW. BASIC[BasicType::S8]
