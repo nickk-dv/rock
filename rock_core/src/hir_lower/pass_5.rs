@@ -1743,201 +1743,13 @@ fn typecheck_address<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
-    let addr_res = check_expr_addressability(ctx, rhs_res.expr);
-    let src = ctx.src(expr_range);
-
-    match addr_res.base {
-        AddrBase::Unknown => {}
-        AddrBase::SliceField => {
-            err::tycheck_cannot_ref_slice_field(&mut ctx.emit, src);
-        }
-        AddrBase::Temporary => {
-            err::tycheck_cannot_ref_temporary(&mut ctx.emit, src);
-        }
-        AddrBase::TemporaryImmut => {
-            if mutt == ast::Mut::Mutable {
-                err::tycheck_cannot_ref_temporary_immut(&mut ctx.emit, src);
-            }
-        }
-        AddrBase::Constant(const_src) => {
-            err::tycheck_cannot_ref_constant(&mut ctx.emit, src, const_src)
-        }
-        AddrBase::Variable(var_mutt, var_src) => {
-            if mutt == ast::Mut::Mutable {
-                match addr_res.constraint {
-                    AddrConstraint::None => {
-                        if var_mutt == ast::Mut::Immutable {
-                            err::tycheck_cannot_ref_var_immut(&mut ctx.emit, src, var_src);
-                        }
-                    }
-                    AddrConstraint::AllowMut => {}
-                    AddrConstraint::ImmutRef(deref_src) => {
-                        err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
-                    }
-                    AddrConstraint::ImmutMulti(multi_src) => {
-                        err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
-                    }
-                    AddrConstraint::ImmutSlice(slice_src) => {
-                        err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src, slice_src);
-                    }
-                }
-            }
-        }
-    }
+    let addr_res = resolve_expr_addressability(ctx, rhs_res.expr);
+    check_address_addressability(ctx, mutt, &addr_res, expr_range);
 
     let ref_ty = ctx.arena.alloc(rhs_res.ty);
     let ref_ty = hir::Type::Reference(mutt, ref_ty);
     let kind = hir::ExprKind::Address { rhs: rhs_res.expr };
     TypeResult::new(ref_ty, kind)
-}
-
-struct AddrResult {
-    base: AddrBase,
-    constraint: AddrConstraint,
-}
-
-enum AddrBase {
-    Unknown,
-    SliceField,
-    Temporary,
-    TemporaryImmut,
-    Constant(SourceRange),
-    Variable(ast::Mut, SourceRange),
-}
-
-enum AddrConstraint {
-    None,
-    AllowMut,
-    ImmutRef(SourceRange),
-    ImmutMulti(SourceRange),
-    ImmutSlice(SourceRange),
-}
-
-impl AddrConstraint {
-    #[inline]
-    fn set(&mut self, new: AddrConstraint) {
-        if matches!(self, AddrConstraint::None) {
-            *self = new;
-        }
-    }
-}
-
-//@for index access store brackets range?
-// unclear which access is the issue since entire index expr range is used
-// same bracket range is needed for typecheck_index errors + backend maybe
-fn check_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
-    let mut expr = expr;
-    let mut constraint = AddrConstraint::None;
-
-    loop {
-        let base = match expr.kind {
-            // addr_base: simple
-            hir::ExprKind::Error => AddrBase::Unknown,
-            hir::ExprKind::Const { value } => match value {
-                hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::Array { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
-                _ => AddrBase::Temporary,
-            },
-            hir::ExprKind::If { .. } => AddrBase::Temporary,
-            hir::ExprKind::Block { .. } => AddrBase::Temporary,
-            hir::ExprKind::Match { .. } => AddrBase::Temporary,
-            hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
-            hir::ExprKind::Cast { .. } => AddrBase::Temporary,
-            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
-            hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,
-            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
-            hir::ExprKind::Address { .. } => AddrBase::Temporary,
-            hir::ExprKind::Unary { .. } => AddrBase::Temporary,
-            hir::ExprKind::Binary { .. } => AddrBase::Temporary,
-            // addr_base: variable
-            hir::ExprKind::ParamVar { param_id } => {
-                let param = ctx.scope.local.param(param_id);
-                let src = ctx.src(param.name.range);
-                AddrBase::Variable(param.mutt, src)
-            }
-            hir::ExprKind::LocalVar { local_id } => {
-                let local = ctx.scope.local.local(local_id);
-                let src = ctx.src(local.name.range);
-                AddrBase::Variable(local.mutt, src)
-            }
-            hir::ExprKind::LocalBind { local_bind_id } => {
-                let local_bind = ctx.scope.local.bind(local_bind_id);
-                let src = ctx.src(local_bind.name.range);
-                AddrBase::Variable(local_bind.mutt, src)
-            }
-            hir::ExprKind::ForBind { for_bind_id } => {
-                let for_bind = ctx.scope.local.for_bind(for_bind_id);
-                let src = ctx.src(for_bind.name.range);
-                AddrBase::Variable(for_bind.mutt, src)
-            }
-            hir::ExprKind::ConstVar { const_id } => {
-                let const_data = ctx.registry.const_data(const_id);
-                AddrBase::Constant(const_data.src())
-            }
-            hir::ExprKind::GlobalVar { global_id } => {
-                let global_data = ctx.registry.global_data(global_id);
-                AddrBase::Variable(global_data.mutt, global_data.src())
-            }
-            // access chains before addr_base
-            hir::ExprKind::StructField { target, access } => {
-                match access.deref {
-                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
-                    Some(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
-                    None => {}
-                }
-                expr = target;
-                continue;
-            }
-            hir::ExprKind::Index { target, access } => {
-                match access.deref {
-                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
-                    Some(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
-                    None => {}
-                }
-                match access.kind {
-                    hir::IndexKind::Multi(ast::Mut::Mutable) => {
-                        constraint.set(AddrConstraint::AllowMut)
-                    }
-                    hir::IndexKind::Slice(ast::Mut::Mutable) => {
-                        constraint.set(AddrConstraint::AllowMut)
-                    }
-                    hir::IndexKind::Multi(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutMulti(ctx.src(expr.range)))
-                    }
-                    hir::IndexKind::Slice(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutSlice(ctx.src(expr.range)))
-                    }
-                    hir::IndexKind::Array(_) => {}
-                }
-                expr = target;
-                continue;
-            }
-            hir::ExprKind::Slice { .. } => {
-                unimplemented!("slice expression addressability");
-            }
-            hir::ExprKind::Deref { rhs, mutt, .. } => {
-                match mutt {
-                    ast::Mut::Mutable => constraint.set(AddrConstraint::AllowMut),
-                    ast::Mut::Immutable => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
-                }
-                expr = rhs;
-                continue;
-            }
-        };
-
-        return AddrResult { base, constraint };
-    }
 }
 
 fn typecheck_range<'hir, 'ast>(
@@ -2660,38 +2472,8 @@ fn typecheck_assign<'hir, 'ast>(
     assign: &ast::Assign<'ast>,
 ) -> &'hir hir::Assign<'hir> {
     let lhs_res = typecheck_expr(ctx, Expectation::None, assign.lhs);
-    let lhs_src = ctx.src(assign.lhs.range);
-    let addr_res = check_expr_addressability(ctx, lhs_res.expr);
-
-    match addr_res.base {
-        AddrBase::Unknown => {}
-        AddrBase::SliceField => {
-            err::tycheck_cannot_assign_slice_field(&mut ctx.emit, lhs_src);
-        }
-        AddrBase::Temporary | AddrBase::TemporaryImmut => {
-            err::tycheck_cannot_assign_temporary(&mut ctx.emit, lhs_src)
-        }
-        AddrBase::Constant(const_src) => {
-            err::tycheck_cannot_assign_constant(&mut ctx.emit, lhs_src, const_src);
-        }
-        AddrBase::Variable(var_mutt, var_src) => match addr_res.constraint {
-            AddrConstraint::None => {
-                if var_mutt == ast::Mut::Immutable {
-                    err::tycheck_cannot_assign_var_immut(&mut ctx.emit, lhs_src, var_src);
-                }
-            }
-            AddrConstraint::AllowMut => {}
-            AddrConstraint::ImmutRef(deref_src) => {
-                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, lhs_src, deref_src);
-            }
-            AddrConstraint::ImmutMulti(multi_src) => {
-                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, lhs_src, multi_src);
-            }
-            AddrConstraint::ImmutSlice(slice_src) => {
-                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, lhs_src, slice_src);
-            }
-        },
-    }
+    let addr_res = resolve_expr_addressability(ctx, lhs_res.expr);
+    check_assign_addressability(ctx, &addr_res, assign.lhs.range);
 
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
@@ -2700,7 +2482,7 @@ fn typecheck_assign<'hir, 'ast>(
             .unwrap_or(hir::AssignOp::Assign),
     };
 
-    let rhs_expect = Expectation::HasType(lhs_res.ty, Some(lhs_src));
+    let rhs_expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));
     let rhs_res = typecheck_expr(ctx, rhs_expect, assign.rhs);
 
     let assign = hir::Assign {
@@ -3179,7 +2961,7 @@ fn check_variant_bind_list<'hir>(
     ctx.arena.alloc_slice(&bind_ids)
 }
 
-//==================== UNARY EXPR ====================
+//==================== OPERATOR ====================
 
 fn unary_rhs_expect<'hir>(
     ctx: &HirCtx,
@@ -3246,8 +3028,6 @@ fn unary_op_check(
     }
     un_op
 }
-
-//==================== BINARY EXPR ====================
 
 fn binary_lhs_expect<'hir>(
     ctx: &HirCtx,
@@ -3523,4 +3303,239 @@ fn binary_op_check(
         err::tycheck_bin_op_cannot_apply(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
     }
     bin_op
+}
+
+//==================== ADDRESSABILITY ====================
+// Addressability allows us to check whether expression
+// can be addressed (in <address> expr or <assign> stmt).
+// The mutability rules and constraints are also checked here.
+
+struct AddrResult {
+    base: AddrBase,
+    constraint: AddrConstraint,
+}
+
+enum AddrBase {
+    Unknown,
+    SliceField,
+    Temporary,
+    TemporaryImmut,
+    Constant(SourceRange),
+    Variable(ast::Mut, SourceRange),
+}
+
+enum AddrConstraint {
+    None,
+    AllowMut,
+    ImmutRef(SourceRange),
+    ImmutMulti(SourceRange),
+    ImmutSlice(SourceRange),
+}
+
+impl AddrConstraint {
+    #[inline]
+    fn set(&mut self, new: AddrConstraint) {
+        if matches!(self, AddrConstraint::None) {
+            *self = new;
+        }
+    }
+}
+
+//@for index access store brackets range?
+// unclear which access is the issue since entire index expr range is used
+// same bracket range is needed for typecheck_index errors + backend maybe
+fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
+    let mut expr = expr;
+    let mut constraint = AddrConstraint::None;
+
+    loop {
+        let base = match expr.kind {
+            // addr_base: simple
+            hir::ExprKind::Error => AddrBase::Unknown,
+            hir::ExprKind::Const { value } => match value {
+                hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::Array { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
+                _ => AddrBase::Temporary,
+            },
+            hir::ExprKind::If { .. } => AddrBase::Temporary,
+            hir::ExprKind::Block { .. } => AddrBase::Temporary,
+            hir::ExprKind::Match { .. } => AddrBase::Temporary,
+            hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
+            hir::ExprKind::Cast { .. } => AddrBase::Temporary,
+            hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
+            hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,
+            hir::ExprKind::StructInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayInit { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
+            hir::ExprKind::Address { .. } => AddrBase::Temporary,
+            hir::ExprKind::Unary { .. } => AddrBase::Temporary,
+            hir::ExprKind::Binary { .. } => AddrBase::Temporary,
+            // addr_base: variable
+            hir::ExprKind::ParamVar { param_id } => {
+                let param = ctx.scope.local.param(param_id);
+                let src = ctx.src(param.name.range);
+                AddrBase::Variable(param.mutt, src)
+            }
+            hir::ExprKind::LocalVar { local_id } => {
+                let local = ctx.scope.local.local(local_id);
+                let src = ctx.src(local.name.range);
+                AddrBase::Variable(local.mutt, src)
+            }
+            hir::ExprKind::LocalBind { local_bind_id } => {
+                let local_bind = ctx.scope.local.bind(local_bind_id);
+                let src = ctx.src(local_bind.name.range);
+                AddrBase::Variable(local_bind.mutt, src)
+            }
+            hir::ExprKind::ForBind { for_bind_id } => {
+                let for_bind = ctx.scope.local.for_bind(for_bind_id);
+                let src = ctx.src(for_bind.name.range);
+                AddrBase::Variable(for_bind.mutt, src)
+            }
+            hir::ExprKind::ConstVar { const_id } => {
+                let const_data = ctx.registry.const_data(const_id);
+                AddrBase::Constant(const_data.src())
+            }
+            hir::ExprKind::GlobalVar { global_id } => {
+                let global_data = ctx.registry.global_data(global_id);
+                AddrBase::Variable(global_data.mutt, global_data.src())
+            }
+            // access chains before addr_base
+            hir::ExprKind::StructField { target, access } => {
+                match access.deref {
+                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
+                    Some(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
+                    }
+                    None => {}
+                }
+                expr = target;
+                continue;
+            }
+            hir::ExprKind::Index { target, access } => {
+                match access.deref {
+                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
+                    Some(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
+                    }
+                    None => {}
+                }
+                match access.kind {
+                    hir::IndexKind::Multi(ast::Mut::Mutable) => {
+                        constraint.set(AddrConstraint::AllowMut)
+                    }
+                    hir::IndexKind::Slice(ast::Mut::Mutable) => {
+                        constraint.set(AddrConstraint::AllowMut)
+                    }
+                    hir::IndexKind::Multi(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutMulti(ctx.src(expr.range)))
+                    }
+                    hir::IndexKind::Slice(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutSlice(ctx.src(expr.range)))
+                    }
+                    hir::IndexKind::Array(_) => {}
+                }
+                expr = target;
+                continue;
+            }
+            hir::ExprKind::Slice { .. } => {
+                unimplemented!("slice expression addressability");
+            }
+            hir::ExprKind::Deref { rhs, mutt, .. } => {
+                match mutt {
+                    ast::Mut::Mutable => constraint.set(AddrConstraint::AllowMut),
+                    ast::Mut::Immutable => {
+                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
+                    }
+                }
+                expr = rhs;
+                continue;
+            }
+        };
+
+        return AddrResult { base, constraint };
+    }
+}
+
+fn check_address_addressability(
+    ctx: &mut HirCtx,
+    mutt: ast::Mut,
+    addr_res: &AddrResult,
+    expr_range: TextRange,
+) {
+    let src = ctx.src(expr_range);
+    match addr_res.base {
+        AddrBase::Unknown => {}
+        AddrBase::SliceField => {
+            err::tycheck_cannot_ref_slice_field(&mut ctx.emit, src);
+        }
+        AddrBase::Temporary => {
+            err::tycheck_cannot_ref_temporary(&mut ctx.emit, src);
+        }
+        AddrBase::TemporaryImmut => {
+            if mutt == ast::Mut::Mutable {
+                err::tycheck_cannot_ref_temporary_immut(&mut ctx.emit, src);
+            }
+        }
+        AddrBase::Constant(const_src) => {
+            err::tycheck_cannot_ref_constant(&mut ctx.emit, src, const_src)
+        }
+        AddrBase::Variable(var_mutt, var_src) => {
+            if mutt == ast::Mut::Immutable {
+                return;
+            }
+            match addr_res.constraint {
+                AddrConstraint::None => {
+                    if var_mutt == ast::Mut::Immutable {
+                        err::tycheck_cannot_ref_var_immut(&mut ctx.emit, src, var_src);
+                    }
+                }
+                AddrConstraint::AllowMut => {}
+                AddrConstraint::ImmutRef(deref_src) => {
+                    err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
+                }
+                AddrConstraint::ImmutMulti(multi_src) => {
+                    err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
+                }
+                AddrConstraint::ImmutSlice(slice_src) => {
+                    err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src, slice_src);
+                }
+            }
+        }
+    }
+}
+
+fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_range: TextRange) {
+    let src = ctx.src(expr_range);
+    match addr_res.base {
+        AddrBase::Unknown => {}
+        AddrBase::SliceField => {
+            err::tycheck_cannot_assign_slice_field(&mut ctx.emit, src);
+        }
+        AddrBase::Temporary | AddrBase::TemporaryImmut => {
+            err::tycheck_cannot_assign_temporary(&mut ctx.emit, src)
+        }
+        AddrBase::Constant(const_src) => {
+            err::tycheck_cannot_assign_constant(&mut ctx.emit, src, const_src);
+        }
+        AddrBase::Variable(var_mutt, var_src) => match addr_res.constraint {
+            AddrConstraint::None => {
+                if var_mutt == ast::Mut::Immutable {
+                    err::tycheck_cannot_assign_var_immut(&mut ctx.emit, src, var_src);
+                }
+            }
+            AddrConstraint::AllowMut => {}
+            AddrConstraint::ImmutRef(deref_src) => {
+                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, src, deref_src);
+            }
+            AddrConstraint::ImmutMulti(multi_src) => {
+                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
+            }
+            AddrConstraint::ImmutSlice(slice_src) => {
+                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, src, slice_src);
+            }
+        },
+    }
 }

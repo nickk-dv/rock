@@ -1068,7 +1068,29 @@ pub fn tycheck_unexpected_variant_bind_count(
     emit.error(Error::new(msg, src, info));
 }
 
-//==================== TYPECHECK ADDRESS ====================
+//==================== TYPECHECK OPERATOR ====================
+
+pub fn tycheck_un_op_cannot_apply(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    rhs_ty_fmt: &str,
+) {
+    let msg = format!("cannot apply unary operator `{op}` on value of type `{rhs_ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_bin_op_cannot_apply(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    lhs_ty_fmt: &str,
+) {
+    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty_fmt}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+//==================== TYPECHECK ADDRESSABILITY ====================
 
 pub fn tycheck_cannot_ref_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot get reference to a slice field";
@@ -1193,28 +1215,6 @@ pub fn tycheck_cannot_assign_val_behind_slice(
     let msg = "cannot assign to a value behind an immutable slice";
     let info = Info::new("immutable slice accessed here", slice_src);
     emit.error(Error::new(msg, src, info));
-}
-
-//==================== TYPECHECK OTHER ====================
-
-pub fn tycheck_un_op_cannot_apply(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    op: &'static str,
-    rhs_ty_fmt: &str,
-) {
-    let msg = format!("cannot apply unary operator `{op}` on value of type `{rhs_ty_fmt}`");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_bin_op_cannot_apply(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    op: &'static str,
-    lhs_ty_fmt: &str,
-) {
-    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty_fmt}`");
-    emit.error(Error::new(msg, src, None));
 }
 
 //==================== ENTRY POINT ====================
