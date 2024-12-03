@@ -211,31 +211,12 @@ pub enum StmtKind<'ast> {
     Continue,
     Return(Option<&'ast Expr<'ast>>),
     Defer(&'ast Block<'ast>),
-    Loop(&'ast Loop<'ast>),
     For(&'ast For<'ast>),
     Local(&'ast Local<'ast>),
     Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
     ExprTail(&'ast Expr<'ast>),
     AttrStmt(&'ast AttrStmt<'ast>),
-}
-
-#[derive(Copy, Clone)]
-pub struct Loop<'ast> {
-    pub kind: LoopKind<'ast>,
-    pub block: Block<'ast>,
-}
-
-#[rustfmt::skip]
-#[derive(Copy, Clone)]
-pub enum LoopKind<'ast> {
-    Loop,
-    While { cond: &'ast Expr<'ast> },
-    ForLoop {
-        local: &'ast Local<'ast>,
-        cond: &'ast Expr<'ast>,
-        assign: &'ast Assign<'ast>,
-    },
 }
 
 #[derive(Copy, Clone)]

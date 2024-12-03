@@ -198,38 +198,12 @@ pub enum Stmt<'hir> {
     Continue,
     Return(Option<&'hir Expr<'hir>>),
     Defer(&'hir Block<'hir>),
-    Loop(&'hir Loop<'hir>),
     For(&'hir For<'hir>),
     Local(LocalID),
     Discard(Option<&'hir Expr<'hir>>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
-}
-
-#[derive(Copy, Clone)]
-pub struct Loop<'hir> {
-    pub kind: LoopKind<'hir>,
-    pub block: Block<'hir>,
-}
-
-#[rustfmt::skip]
-#[derive(Copy, Clone)]
-pub enum LoopKind<'hir> {
-    Loop,
-    While { cond: &'hir Expr<'hir> },
-    ForLoop {
-        bind: ForLoopBind<'hir>,
-        cond: &'hir Expr<'hir>,
-        assign: &'hir Assign<'hir>,
-    },
-}
-
-#[derive(Copy, Clone)]
-pub enum ForLoopBind<'hir> {
-    Error,
-    Local(LocalID),
-    Discard(Option<&'hir Expr<'hir>>),
 }
 
 #[derive(Copy, Clone)]

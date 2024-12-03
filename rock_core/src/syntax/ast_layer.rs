@@ -419,9 +419,6 @@ ast_node_impl!(StmtBreak, SyntaxKind::STMT_BREAK);
 ast_node_impl!(StmtContinue, SyntaxKind::STMT_CONTINUE);
 ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
 ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
-ast_node_impl!(StmtLoop, SyntaxKind::STMT_LOOP);
-ast_node_impl!(LoopWhileHeader, SyntaxKind::LOOP_WHILE_HEADER);
-ast_node_impl!(LoopCLikeHeader, SyntaxKind::LOOP_CLIKE_HEADER);
 ast_node_impl!(StmtFor, SyntaxKind::STMT_FOR);
 ast_node_impl!(ForHeaderCond, SyntaxKind::FOR_HEADER_COND);
 ast_node_impl!(ForHeaderElem, SyntaxKind::FOR_HEADER_ELEM);
@@ -565,7 +562,6 @@ pub enum Stmt<'syn> {
     Continue(StmtContinue<'syn>),
     Return(StmtReturn<'syn>),
     Defer(StmtDefer<'syn>),
-    Loop(StmtLoop<'syn>),
     For(StmtFor<'syn>),
     Local(StmtLocal<'syn>),
     Assign(StmtAssign<'syn>),
@@ -581,7 +577,6 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             SyntaxKind::STMT_CONTINUE => Some(Stmt::Continue(StmtContinue(node))),
             SyntaxKind::STMT_RETURN => Some(Stmt::Return(StmtReturn(node))),
             SyntaxKind::STMT_DEFER => Some(Stmt::Defer(StmtDefer(node))),
-            SyntaxKind::STMT_LOOP => Some(Stmt::Loop(StmtLoop(node))),
             SyntaxKind::STMT_FOR => Some(Stmt::For(StmtFor(node))),
             SyntaxKind::STMT_LOCAL => Some(Stmt::Local(StmtLocal(node))),
             SyntaxKind::STMT_ASSIGN => Some(Stmt::Assign(StmtAssign(node))),
@@ -597,7 +592,6 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             Stmt::Continue(stmt) => stmt.find_range(tree),
             Stmt::Return(stmt) => stmt.find_range(tree),
             Stmt::Defer(stmt) => stmt.find_range(tree),
-            Stmt::Loop(stmt) => stmt.find_range(tree),
             Stmt::For(stmt) => stmt.find_range(tree),
             Stmt::Local(stmt) => stmt.find_range(tree),
             Stmt::Assign(stmt) => stmt.find_range(tree),
@@ -990,22 +984,6 @@ impl<'syn> StmtReturn<'syn> {
 impl<'syn> StmtDefer<'syn> {
     node_find!(block, Block);
     node_find!(stmt, Stmt);
-}
-
-impl<'syn> StmtLoop<'syn> {
-    node_find!(while_header, LoopWhileHeader);
-    node_find!(clike_header, LoopCLikeHeader);
-    node_find!(block, Block);
-}
-
-impl<'syn> LoopWhileHeader<'syn> {
-    node_find!(cond, Expr);
-}
-
-impl<'syn> LoopCLikeHeader<'syn> {
-    node_find!(local, StmtLocal);
-    node_find!(cond, Expr);
-    node_find!(assign, StmtAssign);
 }
 
 impl<'syn> StmtFor<'syn> {

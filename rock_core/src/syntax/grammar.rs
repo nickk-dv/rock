@@ -543,8 +543,7 @@ fn stmt(p: &mut Parser) {
         T![continue] => stmt_continue(p),
         T![return] => stmt_return(p),
         T![defer] => stmt_defer(p),
-        T![for] => stmt_loop(p),
-        T![for2] => stmt_for(p),
+        T![for] => stmt_for(p),
         T![let] => stmt_local(p),
         T![#] => stmt_attr_stmt(p),
         _ => stmt_assign_or_expr_semi(p),
@@ -587,43 +586,9 @@ fn stmt_defer(p: &mut Parser) {
     m.complete(p, SyntaxKind::STMT_DEFER);
 }
 
-fn stmt_loop(p: &mut Parser) {
-    let m = p.start();
-    p.bump(T![for]);
-
-    match p.peek() {
-        T!['{'] => {}
-        T![let] => {
-            let mh = p.start();
-            stmt_local(p);
-            expr(p);
-            p.expect(T![;]);
-
-            let ma = p.start();
-            expr(p);
-            if p.peek().as_assign_op().is_some() {
-                p.bump(p.peek());
-                expr(p);
-            } else {
-                p.error("expected assignment operator");
-            }
-            ma.complete(p, SyntaxKind::STMT_ASSIGN);
-            mh.complete(p, SyntaxKind::LOOP_CLIKE_HEADER);
-        }
-        _ => {
-            let mh = p.start();
-            expr(p);
-            mh.complete(p, SyntaxKind::LOOP_WHILE_HEADER);
-        }
-    }
-
-    block_expect(p);
-    m.complete(p, SyntaxKind::STMT_LOOP);
-}
-
 fn stmt_for(p: &mut Parser) {
     let m = p.start();
-    p.bump(T![for2]);
+    p.bump(T![for]);
 
     match p.peek() {
         T!['{'] => {}

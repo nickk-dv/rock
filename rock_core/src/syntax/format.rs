@@ -1081,7 +1081,6 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
         cst::Stmt::Continue(_) => stmt_continue(fmt),
         cst::Stmt::Return(stmt) => stmt_return(fmt, stmt),
         cst::Stmt::Defer(stmt) => stmt_defer(fmt, stmt),
-        cst::Stmt::Loop(stmt) => stmt_loop(fmt, stmt),
         cst::Stmt::For(stmt) => stmt_for(fmt, stmt),
         cst::Stmt::Local(stmt) => stmt_local(fmt, stmt),
         cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
@@ -1121,31 +1120,8 @@ fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) 
     }
 }
 
-fn stmt_loop<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLoop<'syn>) {
-    fmt.write_str("for");
-
-    if let Some(header) = stmt.while_header(fmt.tree) {
-        fmt.space();
-        expr(fmt, header.cond(fmt.tree).unwrap());
-        fmt.space();
-    } else if let Some(header) = stmt.clike_header(fmt.tree) {
-        fmt.space();
-        stmt_local(fmt, header.local(fmt.tree).unwrap());
-        fmt.space();
-        expr(fmt, header.cond(fmt.tree).unwrap());
-        fmt.write(';');
-        fmt.space();
-        stmt_assign(fmt, header.assign(fmt.tree).unwrap(), false);
-        fmt.space();
-    } else {
-        fmt.space();
-    }
-
-    block(fmt, stmt.block(fmt.tree).unwrap(), false);
-}
-
 fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
-    fmt.write_str("for2");
+    fmt.write_str("for");
 
     if let Some(header) = stmt.header_cond(fmt.tree) {
         fmt.space();

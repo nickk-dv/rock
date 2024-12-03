@@ -303,7 +303,6 @@ token_gen! {
     [return]   | "return"   | KwReturn   | KW.
     [defer]    | "defer"    | KwDefer    | KW.
     [for]      | "for"      | KwFor      | KW.
-    [for2]     | "for2"     | KwFor2     | KW.
     [in]       | "in"       | KwIn       | KW.
     [let]      | "let"      | KwLet      | KW.
     [mut]      | "mut"      | KwMut      | KW.

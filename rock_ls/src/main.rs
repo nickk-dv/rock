@@ -865,9 +865,6 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_CONTINUE => None,
                     SyntaxKind::STMT_RETURN => None,
                     SyntaxKind::STMT_DEFER => None,
-                    SyntaxKind::STMT_LOOP => None,
-                    SyntaxKind::LOOP_WHILE_HEADER => None,
-                    SyntaxKind::LOOP_CLIKE_HEADER => None,
                     SyntaxKind::STMT_FOR => None,
                     SyntaxKind::FOR_HEADER_COND => None,
                     SyntaxKind::FOR_HEADER_ELEM => Some(SemanticToken::Variable),
@@ -1018,7 +1015,7 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
 
         T![pub] | T![proc] | T![enum] | T![struct] |
         T![const] | T![global] | T![import] | T![break] |
-        T![continue] | T![return] | T![defer] | T![for] | T![for2] |
+        T![continue] | T![return] | T![defer] | T![for] |
         T![in] | T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
 
         T![null] | T![true] | T![false] => SemanticToken::Number,

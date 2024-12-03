@@ -1997,13 +1997,9 @@ fn typecheck_block<'hir, 'ast>(
                     continue;
                 }
             }
-            ast::StmtKind::Loop(loop_) => {
-                //@can diverge (inf loop, return, panic)
-                check_stmt_diverges(ctx, false, stmt.range);
-                hir::Stmt::Loop(typecheck_loop(ctx, loop_))
-            }
             ast::StmtKind::For(for_) => {
                 if let Some(for_) = typecheck_for(ctx, for_) {
+                    //@can diverge (inf loop, return, panic)
                     check_stmt_diverges(ctx, false, stmt.range);
                     hir::Stmt::For(for_)
                 } else {
@@ -2208,60 +2204,6 @@ fn typecheck_defer<'hir, 'ast>(
     } else {
         None
     }
-}
-
-fn typecheck_loop<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    loop_: &ast::Loop<'ast>,
-) -> &'hir hir::Loop<'hir> {
-    let kind = match loop_.kind {
-        ast::LoopKind::Loop => hir::LoopKind::Loop,
-        ast::LoopKind::While { cond } => {
-            let cond_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::BOOL, None), cond);
-
-            hir::LoopKind::While {
-                cond: cond_res.expr,
-            }
-        }
-        ast::LoopKind::ForLoop {
-            local,
-            cond,
-            assign,
-        } => {
-            ctx.scope.local.start_block(BlockStatus::None);
-            let local_res = typecheck_local(ctx, local);
-            let cond_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::BOOL, None), cond);
-            let assign = typecheck_assign(ctx, assign);
-
-            let bind = match local_res {
-                LocalResult::Error => hir::ForLoopBind::Error,
-                LocalResult::Local(local_id) => hir::ForLoopBind::Local(local_id),
-                LocalResult::Discard(value) => hir::ForLoopBind::Discard(value),
-            };
-            hir::LoopKind::ForLoop {
-                bind,
-                cond: cond_res.expr,
-                assign,
-            }
-        }
-    };
-
-    let block_res = typecheck_block(
-        ctx,
-        Expectation::HasType(hir::Type::VOID, None),
-        loop_.block,
-        BlockStatus::Loop,
-    );
-
-    if let ast::LoopKind::ForLoop { .. } = loop_.kind {
-        ctx.scope.local.exit_block();
-    }
-
-    let loop_ = hir::Loop {
-        kind,
-        block: block_res.block,
-    };
-    ctx.arena.alloc(loop_)
 }
 
 fn typecheck_for<'hir, 'ast>(

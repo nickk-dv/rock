@@ -561,7 +561,6 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
             ast::StmtKind::Return(expr)
         }
         cst::Stmt::Defer(defer) => ast::StmtKind::Defer(stmt_defer(ctx, defer)),
-        cst::Stmt::Loop(loop_) => ast::StmtKind::Loop(stmt_loop(ctx, loop_)),
         cst::Stmt::For(for_) => ast::StmtKind::For(stmt_for(ctx, for_)),
         cst::Stmt::Local(local) => ast::StmtKind::Local(stmt_local(ctx, local)),
         cst::Stmt::Assign(assign) => ast::StmtKind::Assign(stmt_assign(ctx, assign)),
@@ -602,31 +601,6 @@ fn stmt_defer<'ast>(
         };
         ctx.arena.alloc(block)
     }
-}
-
-fn stmt_loop<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    loop_: cst::StmtLoop,
-) -> &'ast ast::Loop<'ast> {
-    let kind = if let Some(while_header) = loop_.while_header(ctx.tree) {
-        let cond = expr(ctx, while_header.cond(ctx.tree).unwrap());
-        ast::LoopKind::While { cond }
-    } else if let Some(clike_header) = loop_.clike_header(ctx.tree) {
-        let local = stmt_local(ctx, clike_header.local(ctx.tree).unwrap());
-        let cond = expr(ctx, clike_header.cond(ctx.tree).unwrap());
-        let assign = stmt_assign(ctx, clike_header.assign(ctx.tree).unwrap());
-        ast::LoopKind::ForLoop {
-            local,
-            cond,
-            assign,
-        }
-    } else {
-        ast::LoopKind::Loop
-    };
-
-    let block = block(ctx, loop_.block(ctx.tree).unwrap());
-    let loop_ = ast::Loop { kind, block };
-    ctx.arena.alloc(loop_)
 }
 
 fn stmt_for<'ast>(

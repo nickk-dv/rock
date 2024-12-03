@@ -31,7 +31,6 @@ fn codegen_stmt<'c>(
         hir::Stmt::Continue => codegen_continue(cg, proc_cg),
         hir::Stmt::Return(expr) => codegen_return(cg, proc_cg, expr),
         hir::Stmt::Defer(block) => proc_cg.add_defer_block(*block),
-        hir::Stmt::Loop(loop_) => codegen_loop(cg, proc_cg, loop_),
         hir::Stmt::For(for_) => codegen_for(cg, proc_cg, for_),
         hir::Stmt::Local(local_id) => codegen_local(cg, proc_cg, local_id),
         hir::Stmt::Discard(value) => codegen_discard(cg, proc_cg, value),
@@ -86,59 +85,6 @@ fn codegen_defer_blocks<'c>(
     }
     let exit_bb = cg.append_bb(proc_cg, "defer_exit");
     cg.build.br(exit_bb);
-    cg.build.position_at_end(exit_bb);
-}
-
-fn codegen_loop<'c>(
-    cg: &Codegen<'c, '_, '_>,
-    proc_cg: &mut ProcCodegen<'c>,
-    loop_: &hir::Loop<'c>,
-) {
-    let entry_bb = cg.append_bb(proc_cg, "loop_entry");
-    let body_bb = cg.append_bb(proc_cg, "loop_body");
-    let exit_bb = cg.append_bb(proc_cg, "loop_exit");
-    proc_cg.set_next_loop_info(exit_bb, entry_bb);
-
-    match loop_.kind {
-        hir::LoopKind::Loop => {
-            cg.build.br(entry_bb);
-            cg.build.position_at_end(entry_bb);
-            cg.build.br(body_bb);
-
-            cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
-            cg.build_br_no_term(entry_bb);
-        }
-        hir::LoopKind::While { cond } => {
-            cg.build.br(entry_bb);
-            cg.build.position_at_end(entry_bb);
-            let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
-            cg.build.cond_br(cond, body_bb, exit_bb);
-
-            cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
-            cg.build_br_no_term(entry_bb);
-        }
-        hir::LoopKind::ForLoop { bind, cond, assign } => {
-            match bind {
-                hir::ForLoopBind::Error => unreachable!(),
-                hir::ForLoopBind::Local(local_id) => codegen_local(cg, proc_cg, local_id),
-                hir::ForLoopBind::Discard(value) => codegen_discard(cg, proc_cg, value),
-            }
-            cg.build.br(entry_bb);
-            cg.build.position_at_end(entry_bb);
-            let cond = emit_expr::codegen_expr_value(cg, proc_cg, cond);
-            cg.build.cond_br(cond, body_bb, exit_bb);
-
-            cg.build.position_at_end(body_bb);
-            codegen_block(cg, proc_cg, Expect::Value(None), loop_.block);
-            if !cg.insert_bb_terminated() {
-                codegen_assign(cg, proc_cg, assign);
-            }
-            cg.build_br_no_term(entry_bb);
-        }
-    }
-
     cg.build.position_at_end(exit_bb);
 }
 
