@@ -444,19 +444,7 @@ fn pat_cov_enum<'hir>(
     }
 }
 
-enum PatCovError {
-    CoverFull,
-    CoverPartial,
-}
-
-//@refactor to not use this trait
-// each match has slightly different fn signatures
-trait PatCoverage<T> {
-    fn reset(&mut self);
-    fn cover(&mut self, new_value: T) -> Result<(), PatCovError>;
-    fn cover_wild(&mut self) -> Result<(), PatCovError>;
-    fn not_covered(&mut self) -> &[T];
-}
+///==================== PATTERN COV STATE ====================
 
 struct PatCov {
     cov_int: PatCovInt<i128>,
@@ -488,6 +476,13 @@ struct PatCovEnum {
     not_covered: Vec<hir::VariantID>,
 }
 
+enum PatCovError {
+    CoverFull,
+    CoverPartial,
+}
+
+///==================== PATTERN COV IMPL ====================
+
 impl PatCov {
     fn new() -> PatCov {
         PatCov {
@@ -508,9 +503,7 @@ impl PatCovBool {
             not_covered: Vec::with_capacity(2),
         }
     }
-}
 
-impl PatCoverage<bool> for PatCovBool {
     fn reset(&mut self) {
         self.cov_true = false;
         self.cov_false = false;
