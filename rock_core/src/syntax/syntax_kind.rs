@@ -10,6 +10,7 @@ pub enum SyntaxKind {
     ATTR_PARAM_LIST,
     ATTR_PARAM,
     VISIBILITY,
+    DIRECTIVE,
 
     PROC_ITEM,
     PARAM_LIST,

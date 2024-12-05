@@ -11,6 +11,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         ctx.scope.set_origin(module_id);
         let module = ctx.session.module.get(module_id);
         let items = module.ast_expect().items;
+        //@track vis, Vis is now a Hir only concept.
 
         for item in items.iter().copied() {
             match item {
@@ -20,6 +21,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
                 ast::Item::Const(item) => add_const_item(ctx, item),
                 ast::Item::Global(item) => add_global_item(ctx, item),
                 ast::Item::Import(item) => add_import_item(ctx, item),
+                ast::Item::Directive(item) => {} //@global directives
             }
         }
     }

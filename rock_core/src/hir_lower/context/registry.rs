@@ -51,6 +51,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
                     ast::Item::Const(_) => const_count += 1,
                     ast::Item::Global(_) => global_count += 1,
                     ast::Item::Import(_) => import_count += 1,
+                    ast::Item::Directive(_) => {}
                 }
             }
         }

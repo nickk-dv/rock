@@ -2,9 +2,6 @@ use crate::intern::{LitID, NameID};
 use crate::support::{Arena, AsStr};
 use crate::text::{TextOffset, TextRange};
 
-//@breaking change: removed cstring lit state, cstring lit
-// state no longer coresponds with intern pool string lit order
-// will always generate zero terminated strings (minor memory waste)
 pub struct Ast<'ast> {
     pub arena: Arena<'ast>,
     pub items: &'ast [Item<'ast>],
@@ -18,6 +15,7 @@ pub enum Item<'ast> {
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
     Import(&'ast ImportItem<'ast>),
+    Directive(&'ast Directive<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -151,6 +149,33 @@ pub enum SymbolRename {
     None,
     Alias(Name),
     Discard(TextRange),
+}
+
+pub struct Directive<'ast> {
+    pub kind: DirectiveKind<'ast>,
+    pub range: TextRange,
+}
+
+pub struct DirectiveParam {
+    pub name: Name,
+    pub value: LitID,
+    pub value_start: TextOffset,
+}
+
+pub enum DirectiveKind<'ast> {
+    Unknown,
+    ScopePublic,
+    ScopePrivate,
+    ScopePackage,
+    Config(&'ast [DirectiveParam]),
+    ConfigAny(&'ast [DirectiveParam]),
+    ConfigNot(&'ast [DirectiveParam]),
+    Inline,
+    Builtin,
+    Private,
+    CallerLocation,
+    SizeOf(&'ast Type<'ast>),
+    AlignOf(&'ast Type<'ast>),
 }
 
 //==================== TYPE ====================
