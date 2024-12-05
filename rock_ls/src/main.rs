@@ -832,7 +832,13 @@ fn semantic_visit_node(
                     SyntaxKind::ATTR_PARAM_LIST => None,
                     SyntaxKind::ATTR_PARAM => Some(SemanticToken::Variable),
                     SyntaxKind::VISIBILITY => None,
-                    SyntaxKind::DIRECTIVE => None, //@change color for it and #
+
+                    SyntaxKind::DIRECTIVE_LIST => None,
+                    SyntaxKind::DIRECTIVE_SIMPLE => None,
+                    SyntaxKind::DIRECTIVE_WITH_TYPE => None,
+                    SyntaxKind::DIRECTIVE_WITH_PARAMS => None,
+                    SyntaxKind::DIRECTIVE_PARAM_LIST => None,
+                    SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
 
                     SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
                     SyntaxKind::PARAM_LIST => None,

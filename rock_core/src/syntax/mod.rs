@@ -21,7 +21,7 @@ pub fn parse_tree<'syn>(
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
     let (tokens, lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
 
-    let mut parser = Parser::new(tokens, module_id);
+    let mut parser = Parser::new(tokens, module_id, source);
     grammar::source_file(&mut parser);
     let (tokens, events, mut parse_errors) = parser.finish();
 
@@ -41,7 +41,7 @@ pub fn parse_tree_complete<'syn>(
 ) -> Result<SyntaxTree<'syn>, ErrorBuffer> {
     let (tokens, mut lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
 
-    let mut parser = Parser::new(tokens, module_id);
+    let mut parser = Parser::new(tokens, module_id, source);
     grammar::source_file(&mut parser);
     let (tokens, events, parse_errors) = parser.finish();
 

@@ -4,13 +4,14 @@ use crate::session::ModuleID;
 use crate::token::{Token, TokenID, TokenList, TokenSet};
 use std::cell::Cell;
 
-pub struct Parser {
+pub struct Parser<'src> {
     cursor: TokenID,
     tokens: TokenList,
     events: Vec<Event>,
     errors: ErrorBuffer,
     steps: Cell<u32>,
     module_id: ModuleID,
+    source: &'src str,
 }
 
 #[derive(Copy, Clone)]
@@ -33,8 +34,8 @@ pub struct MarkerClosed {
     event_idx: u32,
 }
 
-impl Parser {
-    pub fn new(tokens: TokenList, module_id: ModuleID) -> Parser {
+impl<'src> Parser<'src> {
+    pub fn new(tokens: TokenList, module_id: ModuleID, source: &'src str) -> Parser {
         Parser {
             cursor: TokenID::new(0),
             tokens,
@@ -42,6 +43,7 @@ impl Parser {
             errors: ErrorBuffer::default(),
             steps: Cell::new(0),
             module_id,
+            source,
         }
     }
 
@@ -117,6 +119,8 @@ impl Parser {
         recovery: TokenSet,
     ) -> MarkerClosed {
         self.error(msg);
+        //@only when not recoving make Error node?
+        // so that it has at least 1 member, test.
         let m = self.start();
         if !self.at_set(recovery) {
             self.do_bump_any();
@@ -142,6 +146,11 @@ impl Parser {
         while !self.at_set(token_set) && !self.at(Token::Eof) {
             self.do_bump_any();
         }
+    }
+
+    pub fn token_string(&mut self) -> &str {
+        let range = self.tokens.token_range(self.cursor);
+        &self.source[range.as_usize()]
     }
 
     #[must_use]

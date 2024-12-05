@@ -90,6 +90,86 @@ fn attr_param_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::ATTR_PARAM_LIST);
 }
 
+fn directive_list(p: &mut Parser) -> MarkerClosed {
+    let m = p.start();
+    directive(p);
+    while p.at(T![#]) {
+        directive(p);
+    }
+    m.complete(p, SyntaxKind::DIRECTIVE_LIST)
+}
+
+fn directive(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![#]);
+
+    let mut global_directive = false;
+    let kind = if p.at(T![ident]) {
+        match p.token_string() {
+            "scope_public" | "scope_private" | "scope_package" => {
+                global_directive = true;
+                SyntaxKind::DIRECTIVE_SIMPLE
+            }
+            "size_of" | "align_of" => SyntaxKind::DIRECTIVE_WITH_TYPE,
+            "config" | "config_any" | "config_not" => SyntaxKind::DIRECTIVE_WITH_PARAMS,
+            _ => SyntaxKind::DIRECTIVE_SIMPLE,
+        }
+    } else {
+        SyntaxKind::DIRECTIVE_SIMPLE
+    };
+    name(p);
+
+    match kind {
+        SyntaxKind::DIRECTIVE_WITH_TYPE => {
+            p.expect(T!['(']);
+            ty(p);
+            p.expect(T![')']);
+        }
+        SyntaxKind::DIRECTIVE_WITH_PARAMS => {
+            if p.at(T!['(']) {
+                directive_param_list(p);
+            } else {
+                p.error_recover(
+                    "expected directive parameter list",
+                    RECOVER_DIRECTIVE_PARAM_LIST,
+                );
+            }
+        }
+        _ => {}
+    }
+    m.complete(p, kind);
+}
+
+fn directive_param_list(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T!['(']);
+    while !p.at(T![')']) && !p.at(T![eof]) {
+        if p.at(T![ident]) {
+            directive_param(p);
+            if !p.at(T![')']) {
+                p.expect(T![,]);
+            }
+        } else {
+            p.error_recover("expected directive parameter", RECOVER_DIRECTIVE_PARAM);
+            break;
+        }
+    }
+    p.expect(T![')']);
+    m.complete(p, SyntaxKind::DIRECTIVE_PARAM_LIST);
+}
+
+fn directive_param(p: &mut Parser) {
+    let m = p.start();
+    name_bump(p);
+    p.expect(T![=]);
+    if p.at(T![string_lit]) {
+        let m = p.start();
+        p.bump(T![string_lit]);
+        m.complete(p, SyntaxKind::LIT_STRING);
+    }
+    m.complete(p, SyntaxKind::DIRECTIVE_PARAM);
+}
+
 fn attr_param(p: &mut Parser) {
     let m = p.start();
     name(p);
@@ -117,6 +197,10 @@ const FIRST_ITEM: TokenSet = TokenSet::new(&[
     T![global],
     T![import],
 ]);
+
+//@add FIRST_EXPR FIRST_STMT `;` for these (can be anywhere)
+const RECOVER_DIRECTIVE_PARAM_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_DIRECTIVE_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')']]));
 
 const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
 const RECOVER_ATTR_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')'], T![']']]));
@@ -217,7 +301,7 @@ const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
 
 fn variant(p: &mut Parser) {
     let m = if p.at(T![#]) {
-        let mc = attr_list(p);
+        let mc = directive_list(p);
         p.start_before(mc)
     } else {
         p.start()
@@ -289,7 +373,7 @@ fn field_list(p: &mut Parser) {
 
 fn field(p: &mut Parser) {
     let m = if p.at(T![#]) {
-        let mc = attr_list(p);
+        let mc = directive_list(p);
         p.start_before(mc)
     } else {
         p.start()
@@ -1103,6 +1187,12 @@ fn name(p: &mut Parser) {
         p.expect(T![ident]);
         m.complete(p, SyntaxKind::ERROR);
     }
+}
+
+fn name_bump(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![ident]);
+    m.complete(p, SyntaxKind::NAME);
 }
 
 const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);

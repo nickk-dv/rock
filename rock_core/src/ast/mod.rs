@@ -164,18 +164,18 @@ pub struct DirectiveParam {
 
 pub enum DirectiveKind<'ast> {
     Unknown,
-    ScopePublic,
-    ScopePrivate,
-    ScopePackage,
-    Config(&'ast [DirectiveParam]),
-    ConfigAny(&'ast [DirectiveParam]),
-    ConfigNot(&'ast [DirectiveParam]),
     Inline,
     Builtin,
     Private,
+    ScopePublic,
+    ScopePrivate,
+    ScopePackage,
     CallerLocation,
     SizeOf(&'ast Type<'ast>),
     AlignOf(&'ast Type<'ast>),
+    Config(&'ast [DirectiveParam]),
+    ConfigAny(&'ast [DirectiveParam]),
+    ConfigNot(&'ast [DirectiveParam]),
 }
 
 //==================== TYPE ====================

@@ -407,6 +407,13 @@ ast_node_impl!(AttrParamList, SyntaxKind::ATTR_PARAM_LIST);
 ast_node_impl!(AttrParam, SyntaxKind::ATTR_PARAM);
 ast_node_impl!(Vis, SyntaxKind::VISIBILITY);
 
+ast_node_impl!(DirectiveList, SyntaxKind::DIRECTIVE_LIST);
+ast_node_impl!(DirectiveSimple, SyntaxKind::DIRECTIVE_SIMPLE);
+ast_node_impl!(DirectiveWithType, SyntaxKind::DIRECTIVE_WITH_TYPE);
+ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
+ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
+ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
+
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
 ast_node_impl!(ParamList, SyntaxKind::PARAM_LIST);
 ast_node_impl!(Param, SyntaxKind::PARAM);
@@ -502,6 +509,33 @@ ast_node_impl!(Path, SyntaxKind::PATH);
 ast_node_impl!(PathSegment, SyntaxKind::PATH_SEGMENT);
 ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
 ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
+
+#[derive(Copy, Clone)]
+pub enum Directive<'syn> {
+    Simple(DirectiveSimple<'syn>),
+    WithType(DirectiveWithType<'syn>),
+    WithParams(DirectiveWithParams<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Directive<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Directive<'syn>> {
+        match node.kind {
+            SyntaxKind::DIRECTIVE_SIMPLE => Some(Directive::Simple(DirectiveSimple(node))),
+            SyntaxKind::DIRECTIVE_WITH_TYPE => Some(Directive::WithType(DirectiveWithType(node))),
+            SyntaxKind::DIRECTIVE_WITH_PARAMS => {
+                Some(Directive::WithParams(DirectiveWithParams(node)))
+            }
+            _ => None,
+        }
+    }
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Directive::Simple(dir) => dir.find_range(tree),
+            Directive::WithType(dir) => dir.find_range(tree),
+            Directive::WithParams(dir) => dir.find_range(tree),
+        }
+    }
+}
 
 #[derive(Copy, Clone)]
 pub enum Item<'syn> {
@@ -816,6 +850,28 @@ impl<'syn> SourceFile<'syn> {
     node_iter!(items, Item);
 }
 
+impl<'syn> DirectiveList<'syn> {
+    node_iter!(directives, Directive);
+}
+impl<'syn> DirectiveSimple<'syn> {
+    node_find!(name, Name);
+}
+impl<'syn> DirectiveWithType<'syn> {
+    node_find!(name, Name);
+    node_find!(ty, Type);
+}
+impl<'syn> DirectiveWithParams<'syn> {
+    node_find!(name, Name);
+    node_find!(param_list, DirectiveParamList);
+}
+impl<'syn> DirectiveParamList<'syn> {
+    node_iter!(params, DirectiveParam);
+}
+impl<'syn> DirectiveParam<'syn> {
+    node_find!(name, Name);
+    node_find!(value, LitString);
+}
+
 impl<'syn> AttrList<'syn> {
     node_iter!(attrs, Attr);
 }
@@ -873,7 +929,7 @@ impl<'syn> VariantList<'syn> {
 }
 
 impl<'syn> Variant<'syn> {
-    node_find!(attr_list, AttrList);
+    node_find!(directive_list, DirectiveList);
     node_find!(name, Name);
     node_find!(value, Expr);
     node_find!(field_list, VariantFieldList);
@@ -896,7 +952,7 @@ impl<'syn> FieldList<'syn> {
 }
 
 impl<'syn> Field<'syn> {
-    node_find!(attr_list, AttrList);
+    node_find!(directive_list, DirectiveList);
     node_find!(vis, Vis);
     node_find!(name, Name);
     node_find!(ty, Type);
