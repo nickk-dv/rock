@@ -227,7 +227,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
             let (tree, errors) =
-                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
             let _ = errors.collect();
 
             let module = session.module.get_mut(module_id);
@@ -285,7 +285,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
             let (tree, errors) =
-                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
             let _ = errors.collect();
 
             let module = session.module.get_mut(module_id);
@@ -330,7 +330,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
             let (tree, errors) =
-                syntax::parse_tree(&file.source, &mut session.intern_lit, module_id, true);
+                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
             let _ = errors.collect();
 
             let module = session.module.get_mut(module_id);

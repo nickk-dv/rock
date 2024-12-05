@@ -516,10 +516,6 @@ impl CfgState {
         !self.0
     }
     #[inline]
-    pub fn enabled(self) -> bool {
-        self.0
-    }
-    #[inline]
     fn combine(&mut self, state: CfgState) {
         self.0 = self.0 && state.0;
     }

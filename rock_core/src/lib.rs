@@ -8,6 +8,7 @@ pub mod fs_env;
 pub mod hir;
 pub mod hir_lower;
 pub mod intern;
+#[allow(unsafe_code)]
 mod lexer;
 pub mod package;
 pub mod session;

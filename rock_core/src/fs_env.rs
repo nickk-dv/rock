@@ -1,5 +1,5 @@
 use crate::error::Error;
-use std::path::PathBuf;
+use std::{io::Read, path::Path, path::PathBuf};
 
 pub fn current_exe_path() -> Result<PathBuf, Error> {
     let mut current_exe = std::env::current_exe().map_err(|io_error| {
@@ -69,6 +69,25 @@ pub fn dir_entry_validate(
 
 pub fn file_read_to_string(path: &PathBuf) -> Result<String, Error> {
     std::fs::read_to_string(path).map_err(|io_error| {
+        Error::message(format!(
+            "failed to read file: `{}`\nreason: {}",
+            path.to_string_lossy(),
+            io_error
+        ))
+    })
+}
+
+pub fn file_read_to_string_sentinel(path: &PathBuf) -> Result<String, Error> {
+    fn inner(path: &Path) -> std::io::Result<String> {
+        let mut file = std::fs::File::open(path)?;
+        let size = file.metadata().map(|m| m.len() as usize).ok();
+        let mut string = String::new();
+        string.try_reserve_exact(size.unwrap_or(0) + 2)?;
+        file.read_to_string(&mut string)?;
+        string.push_str("\0\0");
+        Ok(string)
+    }
+    inner(path.as_ref()).map_err(|io_error| {
         Error::message(format!(
             "failed to read file: `{}`\nreason: {}",
             path.to_string_lossy(),

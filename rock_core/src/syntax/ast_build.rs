@@ -6,15 +6,10 @@ use crate::intern::{InternPool, NameID};
 use crate::session::Session;
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
-use crate::token::{LitCharID, LitFloatID, LitIntID, LitStringID};
 
 struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
-    int_id: LitIntID,
-    float_id: LitFloatID,
-    char_id: LitCharID,
-    string_id: LitStringID,
     source: &'src str,
     intern_name: &'src mut InternPool<'s, NameID>,
     s: &'state mut AstBuildState<'ast>,
@@ -51,10 +46,6 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
         AstBuild {
             arena: Arena::new(),
             tree,
-            int_id: LitIntID::new(0),
-            float_id: LitFloatID::new(0),
-            char_id: LitCharID::new(0),
-            string_id: LitStringID::new(0),
             source,
             intern_name,
             s: state,
@@ -103,9 +94,9 @@ pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), E
 
         let tree_result = super::parse_tree_complete(
             &file.source,
-            &mut session.intern_lit,
             module_id,
             with_trivia,
+            &mut session.intern_lit,
         );
         match tree_result {
             Ok(tree) => {
@@ -207,10 +198,9 @@ fn attr_param_list<'ast>(
 fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let value = match param.value(ctx.tree) {
-        Some(cst_string) => {
-            //@only using id, these literals are included in codegen (wrong)
-            let range = cst_string.find_range(ctx.tree);
-            let value = string_lit(ctx).id;
+        Some(lit) => {
+            let value = string_lit(ctx, lit).id;
+            let range = lit.find_range(ctx.tree);
             Some((value, range))
         }
         None => None,
@@ -970,32 +960,29 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
             let (val, _) = lit.value(ctx.tree).unwrap();
             ast::Lit::Bool(val)
         }
-        cst::Lit::Int(_) => {
-            let val = ctx.tree.tokens().int(ctx.int_id);
-            ctx.int_id = ctx.int_id.inc();
+        cst::Lit::Int(lit) => {
+            let token_id = lit.t_int_lit_id(ctx.tree).unwrap();
+            let val = ctx.tree.tokens().int(token_id);
             ast::Lit::Int(val)
         }
-        cst::Lit::Float(_) => {
-            let val = ctx.tree.tokens().float(ctx.float_id);
-            ctx.float_id = ctx.float_id.inc();
+        cst::Lit::Float(lit) => {
+            let token_id = lit.t_float_lit_id(ctx.tree).unwrap();
+            let val = ctx.tree.tokens().float(token_id);
             ast::Lit::Float(val)
         }
-        cst::Lit::Char(_) => {
-            let val = ctx.tree.tokens().char(ctx.char_id);
-            ctx.char_id = ctx.char_id.inc();
+        cst::Lit::Char(lit) => {
+            let token_id = lit.t_char_lit_id(ctx.tree).unwrap();
+            let val = ctx.tree.tokens().char(token_id);
             ast::Lit::Char(val)
         }
-        cst::Lit::String(_) => {
-            let string_lit = string_lit(ctx);
-            ast::Lit::String(string_lit)
-        }
+        cst::Lit::String(lit) => ast::Lit::String(string_lit(ctx, lit)),
     }
 }
 
 //@separated due to being used for attr param value
-fn string_lit(ctx: &mut AstBuild) -> ast::StringLit {
-    let (id, c_string) = ctx.tree.tokens().string(ctx.string_id);
-    ctx.string_id = ctx.string_id.inc();
+fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> ast::StringLit {
+    let token_id = lit.t_string_lit_id(ctx.tree).unwrap();
+    let (id, c_string) = ctx.tree.tokens().string(token_id);
     ast::StringLit { id, c_string }
 }
 

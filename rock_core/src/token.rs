@@ -1,28 +1,162 @@
 use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
 use crate::intern::LitID;
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 
 crate::define_id!(pub TokenID);
 crate::define_id!(pub TriviaID);
-crate::define_id!(pub LitIntID);
-crate::define_id!(pub LitFloatID);
-crate::define_id!(pub LitCharID);
-crate::define_id!(pub LitStringID);
 
+// `token_data` encoding:
+// [normal]  TextOffset(start)
+// [special] token_encode index
+//
+// `token_encode` encoding:
+// [ident]      TextRange
+// [int_lit]    TextRange + u64
+// [float_lit]  TextRange + f64
+// [char_lit]   TextRange + char + pad(4)
+// [string_lit] TextRange + StringLit
 pub struct TokenList {
     tokens: Vec<Token>,
-    token_ranges: Vec<TextRange>,
+    token_data: Vec<u32>,
+    token_encode: Vec<u64>,
     trivias: Vec<Trivia>,
     trivia_ranges: Vec<TextRange>,
-    ints: Vec<u64>,
-    floats: Vec<f64>,
-    chars: Vec<char>,
-    strings: Vec<(LitID, bool)>,
 }
 
-#[derive(Clone, Copy)]
-pub struct TokenSet {
-    mask: u128,
+macro_rules! transmute {
+    ($value:expr) => {
+        #[allow(unsafe_code)]
+        unsafe {
+            std::mem::transmute($value)
+        }
+    };
+}
+
+impl TokenList {
+    pub fn new(source: &str) -> TokenList {
+        TokenList {
+            tokens: Vec::with_capacity(source.len() / 8),
+            token_data: Vec::with_capacity(source.len() / 8),
+            token_encode: Vec::with_capacity(source.len() / 16), //@find best ratio
+            trivias: Vec::new(),
+            trivia_ranges: Vec::new(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn token_count(&self) -> usize {
+        self.tokens.len()
+    }
+    #[inline(always)]
+    pub fn token(&self, id: TokenID) -> Token {
+        self.tokens[id.index()]
+    }
+    #[inline(always)]
+    pub fn token_and_range(&self, id: TokenID) -> (Token, TextRange) {
+        (self.tokens[id.index()], self.token_range(id))
+    }
+    pub fn token_range(&self, id: TokenID) -> TextRange {
+        let token = self.tokens[id.index()];
+        match token {
+            T![ident] | T![int_lit] | T![float_lit] | T![char_lit] | T![string_lit] => {
+                let index = self.token_data[id.index()];
+                let encode = self.token_encode[index as usize];
+                transmute!(encode)
+            }
+            _ => {
+                let start = self.token_data[id.index()];
+                let len = NORMAL_TOKEN_LEN[token as usize];
+                TextRange::new(start.into(), (start + len as u32).into())
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub fn trivia_count(&self) -> usize {
+        self.trivias.len()
+    }
+    #[inline(always)]
+    pub fn trivia(&self, id: TriviaID) -> Trivia {
+        self.trivias[id.index()]
+    }
+    #[inline(always)]
+    pub fn trivia_range(&self, id: TriviaID) -> TextRange {
+        self.trivia_ranges[id.index()]
+    }
+    #[inline(always)]
+    pub fn trivia_and_range(&self, id: TriviaID) -> (Trivia, TextRange) {
+        (self.trivias[id.index()], self.trivia_ranges[id.index()])
+    }
+
+    #[inline(always)]
+    pub fn int(&self, id: TokenID) -> u64 {
+        let index = self.token_data[id.index()];
+        let encode = self.token_encode[index as usize + 1];
+        encode
+    }
+    #[inline(always)]
+    pub fn float(&self, id: TokenID) -> f64 {
+        let index = self.token_data[id.index()];
+        let encode = self.token_encode[index as usize + 1];
+        transmute!(encode)
+    }
+    #[inline(always)]
+    pub fn char(&self, id: TokenID) -> char {
+        let index = self.token_data[id.index()];
+        let encode = self.token_encode[index as usize + 1];
+        transmute!(encode as u32)
+    }
+    #[inline(always)]
+    pub fn string(&self, id: TokenID) -> (LitID, bool) {
+        let index = self.token_data[id.index()];
+        let encode = self.token_encode[index as usize + 1];
+        transmute!(encode)
+    }
+
+    #[inline(always)]
+    pub fn add_token(&mut self, token: Token, start: TextOffset) {
+        self.tokens.push(token);
+        self.token_data.push(start.into());
+    }
+    #[inline(always)]
+    pub fn add_ident(&mut self, range: TextRange) {
+        self.tokens.push(Token::Ident);
+        self.token_data.push(self.token_encode.len() as u32);
+        self.token_encode.push(transmute!(range));
+    }
+    #[inline(always)]
+    pub fn add_int(&mut self, int: u64, range: TextRange) {
+        self.tokens.push(Token::IntLit);
+        self.token_data.push(self.token_encode.len() as u32);
+        self.token_encode.push(transmute!(range));
+        self.token_encode.push(int);
+    }
+    #[inline(always)]
+    pub fn add_float(&mut self, float: f64, range: TextRange) {
+        self.tokens.push(Token::FloatLit);
+        self.token_data.push(self.token_encode.len() as u32);
+        self.token_encode.push(transmute!(range));
+        self.token_encode.push(transmute!(float));
+    }
+    #[inline(always)]
+    pub fn add_char(&mut self, ch: char, range: TextRange) {
+        self.tokens.push(Token::CharLit);
+        self.token_data.push(self.token_encode.len() as u32);
+        self.token_encode.push(transmute!(range));
+        self.token_encode.push(ch as u64);
+    }
+    #[inline(always)]
+    pub fn add_string(&mut self, id: LitID, c_string: bool, range: TextRange) {
+        self.tokens.push(Token::StringLit);
+        self.token_data.push(self.token_encode.len() as u32);
+        self.token_encode.push(transmute!(range));
+        self.token_encode.push(transmute!((id, c_string)));
+    }
+    #[inline(always)]
+    pub fn add_trivia(&mut self, trivia: Trivia, range: TextRange) {
+        self.trivias.push(trivia);
+        self.trivia_ranges.push(range);
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -49,84 +183,9 @@ pub enum SemanticToken {
     Operator,
 }
 
-impl TokenList {
-    pub fn new(cap: usize) -> TokenList {
-        TokenList {
-            tokens: Vec::with_capacity(cap),
-            token_ranges: Vec::with_capacity(cap),
-            trivias: Vec::new(), //@estimate this cap if we always do whitespace
-            trivia_ranges: Vec::new(),
-            ints: Vec::new(),
-            chars: Vec::new(),
-            floats: Vec::new(),
-            strings: Vec::new(),
-        }
-    }
-
-    pub fn token(&self, id: TokenID) -> Token {
-        self.tokens[id.index()]
-    }
-    pub fn token_range(&self, id: TokenID) -> TextRange {
-        self.token_ranges[id.index()]
-    }
-    pub fn token_and_range(&self, id: TokenID) -> (Token, TextRange) {
-        (self.tokens[id.index()], self.token_ranges[id.index()])
-    }
-    pub fn token_count(&self) -> usize {
-        self.tokens.len()
-    }
-
-    pub fn trivia(&self, id: TriviaID) -> Trivia {
-        self.trivias[id.index()]
-    }
-    pub fn trivia_range(&self, id: TriviaID) -> TextRange {
-        self.trivia_ranges[id.index()]
-    }
-    pub fn trivia_and_range(&self, id: TriviaID) -> (Trivia, TextRange) {
-        (self.trivias[id.index()], self.trivia_ranges[id.index()])
-    }
-    pub fn trivia_count(&self) -> usize {
-        self.trivias.len()
-    }
-
-    pub fn int(&self, id: LitIntID) -> u64 {
-        self.ints[id.index()]
-    }
-    pub fn float(&self, id: LitFloatID) -> f64 {
-        self.floats[id.index()]
-    }
-    pub fn char(&self, id: LitCharID) -> char {
-        self.chars[id.index()]
-    }
-    pub fn string(&self, id: LitStringID) -> (LitID, bool) {
-        self.strings[id.index()]
-    }
-
-    pub fn add_token(&mut self, token: Token, range: TextRange) {
-        self.tokens.push(token);
-        self.token_ranges.push(range);
-    }
-    pub fn add_trivia(&mut self, trivia: Trivia, range: TextRange) {
-        self.trivias.push(trivia);
-        self.trivia_ranges.push(range);
-    }
-
-    pub fn add_int(&mut self, int: u64, range: TextRange) {
-        self.add_token(Token::IntLit, range);
-        self.ints.push(int);
-    }
-    pub fn add_float(&mut self, float: f64, range: TextRange) {
-        self.add_token(Token::FloatLit, range);
-        self.floats.push(float);
-    }
-    pub fn add_char(&mut self, ch: char, range: TextRange) {
-        self.add_token(Token::CharLit, range);
-        self.chars.push(ch);
-    }
-    pub fn add_string(&mut self, id: LitID, c_string: bool, range: TextRange) {
-        self.add_token(Token::StringLit, range);
-        self.strings.push((id, c_string));
-    }
+#[derive(Clone, Copy)]
+pub struct TokenSet {
+    mask: u128,
 }
 
 impl TokenSet {
@@ -169,17 +228,35 @@ macro_rules! token_gen {
     {
     $(
         [$token:tt] | $string:literal | $name:ident |
-        $(KW $mark:tt)?
-        $(BIN[$bin_op:expr])?
         $(UN[$un_op:expr])?
+        $(BIN[$bin_op:expr])?
         $(ASSIGN[$assign_op:expr])?
         $(BASIC[$basic_ty:expr])?
+        $(BOOL[$value:expr])?
     )+
     } => {
+        /// `T` macro allowes to supply a token,  
+        /// instead of using verbose token names.
         #[macro_export]
         macro_rules! T {
             $( [$token] => [Token::$name]; )+
         }
+
+        /// lenght in bytes of `normal` tokens,  
+        /// `special` tokens will have lenght of 0.
+        const NORMAL_TOKEN_LEN: [u8; 95] = {
+            let mut token_len: [u8; 95] =  [
+                $($string.len() as u8,)+
+            ];
+            token_len[T![eof] as usize] = 0;
+            token_len[T![ident] as usize] = 0;
+            token_len[T![int_lit] as usize] = 0;
+            token_len[T![float_lit] as usize] = 0;
+            token_len[T![char_lit] as usize] = 0;
+            token_len[T![string_lit] as usize] = 0;
+            token_len
+        };
+
         #[derive(Copy, Clone, PartialEq)]
         pub enum Token {
             $( $name, )+
@@ -188,12 +265,6 @@ macro_rules! token_gen {
             pub const fn as_str(self) -> &'static str {
                 match self {
                     $( Token::$name => $string, )+
-                }
-            }
-            pub fn as_keyword(ident: &str) -> Option<Token> {
-                match ident {
-                    $( $string => token_gen_arms!(@KW_RES $name $(KW $mark)?), )+
-                    _ => None,
                 }
             }
             pub const fn as_un_op(self) -> Option<UnOp> {
@@ -216,22 +287,27 @@ macro_rules! token_gen {
                     $( Token::$name => token_gen_arms!(@BASIC_RES $(BASIC[$basic_ty])?), )+
                 }
             }
+            pub const fn as_bool(self) -> Option<bool> {
+                match self {
+                    $( Token::$name => token_gen_arms!(@BOOL_RES $(BOOL[$value])?), )+
+                }
+            }
         }
     };
 }
 
 #[rustfmt::skip]
 macro_rules! token_gen_arms {
-    (@KW_RES $name:ident)                 => { None };
     (@UN_RES)                             => { None };
-    (@BIN_RES)                            => { None };
-    (@ASSIGN_RES)                         => { None };
-    (@BASIC_RES)                          => { None };
-    (@KW_RES $name:ident KW $mark:tt)     => { Some(Token::$name) };
     (@UN_RES UN[$un_op:expr])             => { Some($un_op) };
+    (@BIN_RES)                            => { None };
     (@BIN_RES BIN[$bin_op:expr])          => { Some($bin_op) };
+    (@ASSIGN_RES)                         => { None };
     (@ASSIGN_RES ASSIGN[$assign_op:expr]) => { Some($assign_op) };
+    (@BASIC_RES)                          => { None };
     (@BASIC_RES BASIC[$basic_ty:expr])    => { Some($basic_ty) };
+    (@BOOL_RES)                           => { None };
+    (@BOOL_RES BOOL[$value:expr])         => { Some($value) };
 }
 
 #[rustfmt::skip]
@@ -241,6 +317,12 @@ macro_rules! token_from_char {
         $ch:literal => $to:expr
     )+
     } => {
+        pub const TOKEN_BYTE_TO_SINGLE: [Token; 128] = {
+            let mut table = [Token::Eof; 128];
+            $(table[$ch as usize] = $to;)+
+            table
+        };
+
         impl Token {
             pub const fn from_char(c: char) -> Option<Token> {
                 match c {
@@ -263,22 +345,22 @@ macro_rules! token_glue_extend {
     )+
     } => {
         impl Token {
-            pub const fn $name(c: char, token: Token) -> Option<Token> {
+            #[inline(always)]
+            pub const fn $name(c: u8, token: Token) -> Token {
                 match c {
                     $(
                         $ch => match token {
-                            $( $from => Some($to), )+
-                            _ => None,
+                            $( $from => $to, )+
+                            _ => token,
                         },
                     )+
-                    _ => None,
+                    _ => token,
                 }
             }
         }
     };
 }
 
-#[rustfmt::skip]
 token_gen! {
     // special tokens
     [eof]           | "end of file"    | Eof          |
@@ -289,55 +371,55 @@ token_gen! {
     [string_lit]    | "string literal" | StringLit    |
 
     // keyword items
-    [pub]      | "pub"      | KwPub      | KW.
-    [proc]     | "proc"     | KwProc     | KW.
-    [enum]     | "enum"     | KwEnum     | KW.
-    [struct]   | "struct"   | KwStruct   | KW.
-    [const]    | "const"    | KwConst    | KW.
-    [global]   | "global"   | KwGlobal   | KW.
-    [import]   | "import"   | KwImport   | KW.
+    [pub]      | "pub"      | KwPub      |
+    [proc]     | "proc"     | KwProc     |
+    [enum]     | "enum"     | KwEnum     |
+    [struct]   | "struct"   | KwStruct   |
+    [const]    | "const"    | KwConst    |
+    [global]   | "global"   | KwGlobal   |
+    [import]   | "import"   | KwImport   |
 
     // keyword statements
-    [break]    | "break"    | KwBreak    | KW.
-    [continue] | "continue" | KwContinue | KW.
-    [return]   | "return"   | KwReturn   | KW.
-    [defer]    | "defer"    | KwDefer    | KW.
-    [for]      | "for"      | KwFor      | KW.
-    [in]       | "in"       | KwIn       | KW.
-    [let]      | "let"      | KwLet      | KW.
-    [mut]      | "mut"      | KwMut      | KW.
-    [zeroed]   | "zeroed"   | KwZeroed   | KW.
-    [undefined]| "undefined"| KwUndefined| KW.
+    [break]    | "break"    | KwBreak    |
+    [continue] | "continue" | KwContinue |
+    [return]   | "return"   | KwReturn   |
+    [defer]    | "defer"    | KwDefer    |
+    [for]      | "for"      | KwFor      |
+    [in]       | "in"       | KwIn       |
+    [let]      | "let"      | KwLet      |
+    [mut]      | "mut"      | KwMut      |
+    [zeroed]   | "zeroed"   | KwZeroed   |
+    [undefined]| "undefined"| KwUndefined|
 
     // keyword expressions
-    [null]     | "null"     | KwNull     | KW.
-    [true]     | "true"     | KwTrue     | KW.
-    [false]    | "false"    | KwFalse    | KW.
-    [if]       | "if"       | KwIf       | KW.
-    [else]     | "else"     | KwElse     | KW.
-    [match]    | "match"    | KwMatch    | KW.
-    [as]       | "as"       | KwAs       | KW.
-    [sizeof]   | "sizeof"   | KwSizeof   | KW.
-    [_]        | "_"        | KwDiscard  | KW.
+    [null]     | "null"     | KwNull     |
+    [true]     | "true"     | KwTrue     | BOOL[true]
+    [false]    | "false"    | KwFalse    | BOOL[false]
+    [if]       | "if"       | KwIf       |
+    [else]     | "else"     | KwElse     |
+    [match]    | "match"    | KwMatch    |
+    [as]       | "as"       | KwAs       |
+    [sizeof]   | "sizeof"   | KwSizeof   |
+    [_]        | "_"        | KwDiscard  |
 
     // keyword basic types
-    [s8]       | "s8"       | KwS8       | KW. BASIC[BasicType::S8]
-    [s16]      | "s16"      | KwS16      | KW. BASIC[BasicType::S16]
-    [s32]      | "s32"      | KwS32      | KW. BASIC[BasicType::S32]
-    [s64]      | "s64"      | KwS64      | KW. BASIC[BasicType::S64]
-    [ssize]    | "ssize"    | KwSsize    | KW. BASIC[BasicType::Ssize]
-    [u8]       | "u8"       | KwU8       | KW. BASIC[BasicType::U8]
-    [u16]      | "u16"      | KwU16      | KW. BASIC[BasicType::U16]
-    [u32]      | "u32"      | KwU32      | KW. BASIC[BasicType::U32]
-    [u64]      | "u64"      | KwU64      | KW. BASIC[BasicType::U64]
-    [usize]    | "usize"    | KwUsize    | KW. BASIC[BasicType::Usize]
-    [f32]      | "f32"      | KwF32      | KW. BASIC[BasicType::F32]
-    [f64]      | "f64"      | KwF64      | KW. BASIC[BasicType::F64]
-    [bool]     | "bool"     | KwBool     | KW. BASIC[BasicType::Bool]
-    [char]     | "char"     | KwChar     | KW. BASIC[BasicType::Char]
-    [rawptr]   | "rawptr"   | KwRawptr   | KW. BASIC[BasicType::Rawptr]
-    [void]     | "void"     | KwVoid     | KW. BASIC[BasicType::Void]
-    [never]    | "never"    | KwNever    | KW. BASIC[BasicType::Never]
+    [s8]       | "s8"       | KwS8       | BASIC[BasicType::S8]
+    [s16]      | "s16"      | KwS16      | BASIC[BasicType::S16]
+    [s32]      | "s32"      | KwS32      | BASIC[BasicType::S32]
+    [s64]      | "s64"      | KwS64      | BASIC[BasicType::S64]
+    [ssize]    | "ssize"    | KwSsize    | BASIC[BasicType::Ssize]
+    [u8]       | "u8"       | KwU8       | BASIC[BasicType::U8]
+    [u16]      | "u16"      | KwU16      | BASIC[BasicType::U16]
+    [u32]      | "u32"      | KwU32      | BASIC[BasicType::U32]
+    [u64]      | "u64"      | KwU64      | BASIC[BasicType::U64]
+    [usize]    | "usize"    | KwUsize    | BASIC[BasicType::Usize]
+    [f32]      | "f32"      | KwF32      | BASIC[BasicType::F32]
+    [f64]      | "f64"      | KwF64      | BASIC[BasicType::F64]
+    [bool]     | "bool"     | KwBool     | BASIC[BasicType::Bool]
+    [char]     | "char"     | KwChar     | BASIC[BasicType::Char]
+    [rawptr]   | "rawptr"   | KwRawptr   | BASIC[BasicType::Rawptr]
+    [void]     | "void"     | KwVoid     | BASIC[BasicType::Void]
+    [never]    | "never"    | KwNever    | BASIC[BasicType::Never]
 
     // single punctuation
     [.]      | "."      | Dot          |
@@ -356,7 +438,7 @@ token_gen! {
     [..]     | ".."     | DotDot       |
     [->]     | "->"     | ArrowThin    |
 
-    // triple punctuation 
+    // triple punctuation
     ["..<"]  | "..<"    | Range        |
     ["..="]  | "..="    | RangeInc     |
 
@@ -366,7 +448,7 @@ token_gen! {
 
     // bin op tokens
     [+]      | "+"      | Plus         | BIN[BinOp::Add]
-    [-]      | "-"      | Minus        | BIN[BinOp::Sub] UN[UnOp::Neg]
+    [-]      | "-"      | Minus        | UN[UnOp::Neg] BIN[BinOp::Sub]
     [*]      | "*"      | Star         | BIN[BinOp::Mul]
     [/]      | "/"      | ForwSlash    | BIN[BinOp::Div]
     [%]      | "%"      | Percent      | BIN[BinOp::Rem]
@@ -398,7 +480,6 @@ token_gen! {
     [>>=]    | ">>="    | AssignShr    | ASSIGN[AssignOp::Bin(BinOp::BitShr)]
 }
 
-#[rustfmt::skip]
 token_from_char! {
     '.' => T![.]
     ',' => T![,]
@@ -429,15 +510,14 @@ token_from_char! {
     '=' => T![=]
 }
 
-#[rustfmt::skip]
 token_glue_extend! {
     fn glue_double,
-    (T![.] => T![..]) if '.'
+    (T![.] => T![..]) if b'.'
     (T![-] => T![->])
-    (T![>] => T![>>]) if '>'
-    (T![<] => T![<<]) if '<'
-    (T![&] => T![&&]) if '&'
-    (T![|] => T![||]) if '|'
+    (T![>] => T![>>]) if b'>'
+    (T![<] => T![<<]) if b'<'
+    (T![&] => T![&&]) if b'&'
+    (T![|] => T![||]) if b'|'
 
     (T![+] => T![+=])
     (T![-] => T![-=])
@@ -450,26 +530,15 @@ token_glue_extend! {
     (T![=] => T![==])
     (T![!] => T![!=])
     (T![<] => T![<=])
-    (T![>] => T![>=]) if '='
+    (T![>] => T![>=]) if b'='
 }
 
-#[rustfmt::skip]
 token_glue_extend! {
     fn glue_triple,
-    (T![..] => T!["..<"]) if '<'
+    (T![..] => T!["..<"]) if b'<'
     (T![..] => T!["..="])
     (T![<<] => T![<<=])
-    (T![>>] => T![>>=]) if '='
+    (T![>>] => T![>>=]) if b'='
 }
 
 pub(crate) use T;
-
-impl Token {
-    pub fn as_bool(self) -> Option<bool> {
-        match self {
-            T![true] => Some(true),
-            T![false] => Some(false),
-            _ => None,
-        }
-    }
-}

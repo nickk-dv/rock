@@ -15,11 +15,11 @@ use syntax_tree::SyntaxTree;
 
 pub fn parse_tree<'syn>(
     source: &str,
-    intern_lit: &mut InternPool<'_, LitID>,
     module_id: ModuleID,
     with_trivia: bool,
+    intern_lit: &mut InternPool<'_, LitID>,
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
-    let (tokens, lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
+    let (tokens, lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);
@@ -35,11 +35,11 @@ pub fn parse_tree<'syn>(
 
 pub fn parse_tree_complete<'syn>(
     source: &str,
-    intern_lit: &mut InternPool<'_, LitID>,
     module_id: ModuleID,
     with_trivia: bool,
+    intern_lit: &mut InternPool<'_, LitID>,
 ) -> Result<SyntaxTree<'syn>, ErrorBuffer> {
-    let (tokens, mut lex_errors) = lexer::lex(source, intern_lit, module_id, with_trivia);
+    let (tokens, mut lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id);
     grammar::source_file(&mut parser);

@@ -227,7 +227,8 @@ fn test() {
 
     let text = "foo\nbaz";
     let mut intern_lit = InternPool::new(0);
-    let (tokens, _) = lexer::lex(text, &mut intern_lit, ModuleID::dummy(), false);
+    let (tokens, errors) = lexer::lex(text, ModuleID::dummy(), false, &mut intern_lit);
+    errors.collect();
 
     let line_ranges = find_line_ranges(text);
     let foo_range = TextRange::new(0.into(), 3.into());

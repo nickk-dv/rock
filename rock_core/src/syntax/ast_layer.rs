@@ -2,7 +2,7 @@ use super::syntax_kind::SyntaxKind;
 use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use crate::ast;
 use crate::text::TextRange;
-use crate::token::{Token, T};
+use crate::token::{Token, TokenID, T};
 use std::marker::PhantomData;
 
 pub trait AstNode<'syn> {
@@ -231,6 +231,18 @@ impl<'syn> Node<'syn> {
         None
     }
 
+    fn token_find_id(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TokenID> {
+        for not in self.content.iter().copied() {
+            if let NodeOrToken::Token(id) = not {
+                let token = tree.tokens().token(id);
+                if token == find {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
     fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         let start;
         let end;
@@ -373,6 +385,14 @@ macro_rules! token_find_predicate {
     ($fn_name:ident, $predicate:expr, $pred_ty:ty) => {
         pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<($pred_ty, TextRange)> {
             self.0.token_find_predicate(tree, $predicate)
+        }
+    };
+}
+
+macro_rules! token_find_id {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TokenID> {
+            self.0.token_find_id(tree, $find_token)
         }
     };
 }
@@ -1185,13 +1205,21 @@ impl<'syn> LitBool<'syn> {
     token_find_predicate!(value, Token::as_bool, bool);
 }
 
-impl<'syn> LitInt<'syn> {}
+impl<'syn> LitInt<'syn> {
+    token_find_id!(t_int_lit_id, T![int_lit]);
+}
 
-impl<'syn> LitFloat<'syn> {}
+impl<'syn> LitFloat<'syn> {
+    token_find_id!(t_float_lit_id, T![float_lit]);
+}
 
-impl<'syn> LitChar<'syn> {}
+impl<'syn> LitChar<'syn> {
+    token_find_id!(t_char_lit_id, T![char_lit]);
+}
 
-impl<'syn> LitString<'syn> {}
+impl<'syn> LitString<'syn> {
+    token_find_id!(t_string_lit_id, T![string_lit]);
+}
 
 //==================== RANGE ====================
 

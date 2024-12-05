@@ -364,7 +364,7 @@ fn process_module(
     let filename = fs_env::filename_stem(&path)?;
     let name_id = session.intern_name.intern(filename);
 
-    let source = fs_env::file_read_to_string(path)?;
+    let source = fs_env::file_read_to_string_sentinel(path)?;
     let file_id = session.vfs.open(path, source);
 
     #[rustfmt::skip]
