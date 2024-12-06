@@ -77,7 +77,7 @@ fn check_unused_items(ctx: &mut HirCtx) {
         if data.was_used || data.attr_set.contains(hir::ProcFlag::Main) {
             continue;
         }
-        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
             continue;
         }
         if !data.was_used {
@@ -91,7 +91,7 @@ fn check_unused_items(ctx: &mut HirCtx) {
         if data.was_used {
             continue;
         }
-        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
             continue;
         }
         if !data.was_used {
@@ -105,7 +105,7 @@ fn check_unused_items(ctx: &mut HirCtx) {
         if data.was_used {
             continue;
         }
-        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
             continue;
         }
         if !data.was_used {
@@ -119,7 +119,7 @@ fn check_unused_items(ctx: &mut HirCtx) {
         if data.was_used {
             continue;
         }
-        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
             continue;
         }
         if !data.was_used {
@@ -133,7 +133,7 @@ fn check_unused_items(ctx: &mut HirCtx) {
         if data.was_used {
             continue;
         }
-        if data.vis == ast::Vis::Public && module_is_library(ctx, data.origin_id) {
+        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
             continue;
         }
         if !data.was_used {

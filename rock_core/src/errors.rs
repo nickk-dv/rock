@@ -504,11 +504,6 @@ pub fn import_name_discard_redundant(emit: &mut impl WarningSink, src: SourceRan
 
 //==================== CHECK ITEM ====================
 
-pub fn item_import_with_vis(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("imports cannot be `pub`, remove it");
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn item_param_already_defined(
     emit: &mut impl ErrorSink,
     param_src: SourceRange,

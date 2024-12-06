@@ -242,8 +242,8 @@ impl GlobalScope {
 
                 let vis = symbol_id.vis(registry);
                 return match vis {
-                    ast::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
-                    ast::Vis::Private => {
+                    hir::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
+                    hir::Vis::Private => {
                         let name_src = SourceRange::new(origin_id, name.range);
                         let defined_src = symbol_id.src(registry);
                         let name = session.intern_name.get(name.id);
@@ -560,7 +560,7 @@ impl SymbolID {
         }
     }
 
-    fn vis(self, registry: &Registry) -> ast::Vis {
+    fn vis(self, registry: &Registry) -> hir::Vis {
         match self {
             SymbolID::Proc(id) => registry.proc_data(id).vis,
             SymbolID::Enum(id) => registry.enum_data(id).vis,

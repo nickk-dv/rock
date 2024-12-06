@@ -18,12 +18,12 @@ struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
 struct AstBuildState<'ast> {
     errors: ErrorBuffer,
     items: TempBuffer<ast::Item<'ast>>,
-    attrs: TempBuffer<ast::Attr<'ast>>,
-    attr_params: TempBuffer<ast::AttrParam>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
     import_symbols: TempBuffer<ast::ImportSymbol>,
+    directives: TempBuffer<ast::Directive<'ast>>,
+    directive_params: TempBuffer<ast::DirectiveParam>,
     types: TempBuffer<ast::Type<'ast>>,
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
@@ -65,12 +65,12 @@ impl<'ast> AstBuildState<'ast> {
         AstBuildState {
             errors: ErrorBuffer::default(),
             items: TempBuffer::new(128),
-            attrs: TempBuffer::new(32),
-            attr_params: TempBuffer::new(32),
             params: TempBuffer::new(32),
             variants: TempBuffer::new(32),
             fields: TempBuffer::new(32),
             import_symbols: TempBuffer::new(32),
+            directives: TempBuffer::new(32),
+            directive_params: TempBuffer::new(32),
             types: TempBuffer::new(32),
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
@@ -145,76 +145,12 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
         cst::Item::Const(item) => ast::Item::Const(const_item(ctx, item)),
         cst::Item::Global(item) => ast::Item::Global(global_item(ctx, item)),
         cst::Item::Import(item) => ast::Item::Import(import_item(ctx, item)),
+        cst::Item::Directive(item) => {
+            let directives = directive_list(ctx, Some(item));
+            ast::Item::Directive(ctx.arena.alloc(directives))
+        }
     };
     ctx.s.items.add(item);
-}
-
-fn attr_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    attr_list: Option<cst::AttrList>,
-) -> &'ast [ast::Attr<'ast>] {
-    if let Some(attr_list) = attr_list {
-        let offset = ctx.s.attrs.start();
-        for attr_cst in attr_list.attrs(ctx.tree) {
-            let attr = attribute(ctx, attr_cst);
-            ctx.s.attrs.add(attr);
-        }
-        ctx.s.attrs.take(offset, &mut ctx.arena)
-    } else {
-        &[]
-    }
-}
-
-fn attribute<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, attr: cst::Attr) -> ast::Attr<'ast> {
-    let range = attr.find_range(ctx.tree);
-    let name = name(ctx, attr.name(ctx.tree).unwrap());
-    let params = attr_param_list(ctx, attr.param_list(ctx.tree));
-
-    ast::Attr {
-        name,
-        params,
-        range,
-    }
-}
-
-fn attr_param_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    param_list: Option<cst::AttrParamList>,
-) -> Option<(&'ast [ast::AttrParam], TextRange)> {
-    if let Some(param_list) = param_list {
-        let offset = ctx.s.attr_params.start();
-        for param_cst in param_list.params(ctx.tree) {
-            let param = attr_param(ctx, param_cst);
-            ctx.s.attr_params.add(param);
-        }
-        let params = ctx.s.attr_params.take(offset, &mut ctx.arena);
-        Some((params, param_list.find_range(ctx.tree)))
-    } else {
-        None
-    }
-}
-
-//@allowing and ignoring c_string
-fn attr_param(ctx: &mut AstBuild, param: cst::AttrParam) -> ast::AttrParam {
-    let name = name(ctx, param.name(ctx.tree).unwrap());
-    let value = match param.value(ctx.tree) {
-        Some(lit) => {
-            let value = string_lit(ctx, lit).id;
-            let range = lit.find_range(ctx.tree);
-            Some((value, range))
-        }
-        None => None,
-    };
-    ast::AttrParam { name, value }
-}
-
-#[inline]
-fn vis(vis: Option<cst::Vis>) -> ast::Vis {
-    if vis.is_some() {
-        ast::Vis::Public
-    } else {
-        ast::Vis::Private
-    }
 }
 
 #[inline]
@@ -230,8 +166,7 @@ fn proc_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.vis(ctx.tree));
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -249,8 +184,7 @@ fn proc_item<'ast>(
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
     let proc_item = ast::ProcItem {
-        attrs,
-        vis,
+        attrs: &[],
         name,
         poly_params,
         params,
@@ -274,8 +208,7 @@ fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.vis(ctx.tree));
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -296,8 +229,7 @@ fn enum_item<'ast>(
     let variants = ctx.s.variants.take(offset, &mut ctx.arena);
 
     let enum_item = ast::EnumItem {
-        attrs,
-        vis,
+        attrs: &[],
         name,
         poly_params,
         tag_ty,
@@ -339,8 +271,7 @@ fn struct_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.vis(ctx.tree));
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -354,8 +285,7 @@ fn struct_item<'ast>(
     let fields = ctx.s.fields.take(offset, &mut ctx.arena);
 
     let struct_item = ast::StructItem {
-        attrs,
-        vis,
+        attrs: &[],
         name,
         poly_params,
         fields,
@@ -364,14 +294,12 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
-    let attrs = &[]; //@ attr_list(ctx, field.attr_list(ctx.tree));
-    let vis = vis(field.vis(ctx.tree));
+    let directives = directive_list(ctx, field.directive_list(ctx.tree));
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
     let field = ast::Field {
-        attrs,
-        vis,
+        attrs: &[],
         name,
         ty,
     };
@@ -382,14 +310,13 @@ fn const_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.vis(ctx.tree));
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     #[rustfmt::skip]
-    let const_item = ast::ConstItem { attrs, vis, name, ty, value };
+    let const_item = ast::ConstItem { attrs: &[], name, ty, value };
     ctx.arena.alloc(const_item)
 }
 
@@ -397,8 +324,7 @@ fn global_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis = vis(item.vis(ctx.tree));
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.t_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
@@ -411,7 +337,7 @@ fn global_item<'ast>(
     };
 
     #[rustfmt::skip]
-    let global_item = ast::GlobalItem { attrs, vis, name, mutt, ty, init };
+    let global_item = ast::GlobalItem { attrs: &[], name, mutt, ty, init };
     ctx.arena.alloc(global_item)
 }
 
@@ -419,10 +345,7 @@ fn import_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
-    let attrs = attr_list(ctx, item.attr_list(ctx.tree));
-    let vis_start = item
-        .vis(ctx.tree)
-        .map(|vis| vis.t_pub(ctx.tree).unwrap().start());
+    let directives = directive_list(ctx, item.directive_list(ctx.tree));
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
@@ -445,8 +368,7 @@ fn import_item<'ast>(
     };
 
     let import_item = ast::ImportItem {
-        attrs,
-        vis_start,
+        attrs: &[],
         package,
         import_path,
         rename,
@@ -476,6 +398,96 @@ fn import_symbol_rename(
         }
     } else {
         ast::SymbolRename::None
+    }
+}
+
+fn directive_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    directive_list: Option<cst::DirectiveList>,
+) -> &'ast [ast::Directive<'ast>] {
+    if let Some(directive_list) = directive_list {
+        let offset = ctx.s.directives.start();
+        for directive_cst in directive_list.directives(ctx.tree) {
+            let directive = directive(ctx, directive_cst);
+            ctx.s.directives.add(directive);
+        }
+        ctx.s.directives.take(offset, &mut ctx.arena)
+    } else {
+        &[]
+    }
+}
+
+//@do not need to have "name" node in the syntax tree
+// identifier is enough, find the ident token, instead of interning names
+fn directive<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    directive: cst::Directive,
+) -> ast::Directive<'ast> {
+    let kind = match directive {
+        cst::Directive::Simple(dir) => {
+            let name = name(ctx, dir.name(ctx.tree).unwrap());
+            match ctx.intern_name.get(name.id) {
+                "inline" => ast::DirectiveKind::Inline,
+                "builtin" => ast::DirectiveKind::Builtin,
+                "package" => ast::DirectiveKind::Package,
+                "private" => ast::DirectiveKind::Private,
+                "scope_public" => ast::DirectiveKind::ScopePublic,
+                "scope_package" => ast::DirectiveKind::ScopePackage,
+                "scope_private" => ast::DirectiveKind::ScopePrivate,
+                "caller_location" => ast::DirectiveKind::CallerLocation,
+                _ => ast::DirectiveKind::Unknown,
+            }
+        }
+        cst::Directive::WithType(dir) => {
+            let name = name(ctx, dir.name(ctx.tree).unwrap());
+            let ty = ty(ctx, dir.ty(ctx.tree).unwrap());
+            let ty = ctx.arena.alloc(ty);
+            match ctx.intern_name.get(name.id) {
+                "size_of" => ast::DirectiveKind::SizeOf(ty),
+                "align_of" => ast::DirectiveKind::SizeOf(ty),
+                _ => unreachable!(),
+            }
+        }
+        cst::Directive::WithParams(dir) => {
+            let name = name(ctx, dir.name(ctx.tree).unwrap());
+            let params = directive_param_list(ctx, dir.param_list(ctx.tree).unwrap());
+            match ctx.intern_name.get(name.id) {
+                "config" => ast::DirectiveKind::Config(params),
+                "config_any" => ast::DirectiveKind::ConfigAny(params),
+                "config_not" => ast::DirectiveKind::ConfigNot(params),
+                _ => unreachable!(),
+            }
+        }
+    };
+
+    ast::Directive {
+        kind,
+        range: directive.find_range(ctx.tree),
+    }
+}
+
+fn directive_param_list<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    param_list: cst::DirectiveParamList,
+) -> &'ast [ast::DirectiveParam] {
+    let offset = ctx.s.directive_params.start();
+    for param_cst in param_list.params(ctx.tree) {
+        let param = directive_param(ctx, param_cst);
+        ctx.s.directive_params.add(param);
+    }
+    ctx.s.directive_params.take(offset, &mut ctx.arena)
+}
+
+fn directive_param(ctx: &mut AstBuild, param: cst::DirectiveParam) -> ast::DirectiveParam {
+    let name = name(ctx, param.name(ctx.tree).unwrap());
+    let lit_string = param.value(ctx.tree).unwrap();
+    let value = string_lit(ctx, lit_string).id;
+    let value_range = lit_string.find_range(ctx.tree);
+
+    ast::DirectiveParam {
+        name,
+        value,
+        value_range,
     }
 }
 
@@ -562,11 +574,12 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
             let expr = expr(ctx, tail.expr(ctx.tree).unwrap());
             ast::StmtKind::ExprTail(expr)
         }
-        cst::Stmt::AttrStmt(attr) => {
-            let attrs = attr_list(ctx, Some(attr.attr_list(ctx.tree).unwrap()));
+        cst::Stmt::WithDirective(attr) => {
+            let directives = directive_list(ctx, attr.directive_list(ctx.tree));
             let stmt = stmt(ctx, attr.stmt(ctx.tree).unwrap());
 
-            let attr = ast::AttrStmt { attrs, stmt };
+            //@change all the way, naming etc.
+            let attr = ast::AttrStmt { attrs: &[], stmt };
             let attr = ctx.arena.alloc(attr);
             ast::StmtKind::AttrStmt(attr)
         }

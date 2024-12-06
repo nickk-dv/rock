@@ -401,19 +401,6 @@ macro_rules! token_find_id {
 
 ast_node_impl!(SourceFile, SyntaxKind::SOURCE_FILE);
 
-ast_node_impl!(AttrList, SyntaxKind::ATTR_LIST);
-ast_node_impl!(Attr, SyntaxKind::ATTR);
-ast_node_impl!(AttrParamList, SyntaxKind::ATTR_PARAM_LIST);
-ast_node_impl!(AttrParam, SyntaxKind::ATTR_PARAM);
-ast_node_impl!(Vis, SyntaxKind::VISIBILITY);
-
-ast_node_impl!(DirectiveList, SyntaxKind::DIRECTIVE_LIST);
-ast_node_impl!(DirectiveSimple, SyntaxKind::DIRECTIVE_SIMPLE);
-ast_node_impl!(DirectiveWithType, SyntaxKind::DIRECTIVE_WITH_TYPE);
-ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
-ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
-ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
-
 ast_node_impl!(ProcItem, SyntaxKind::PROC_ITEM);
 ast_node_impl!(ParamList, SyntaxKind::PARAM_LIST);
 ast_node_impl!(Param, SyntaxKind::PARAM);
@@ -431,6 +418,13 @@ ast_node_impl!(ImportPath, SyntaxKind::IMPORT_PATH);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
 ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
+
+ast_node_impl!(DirectiveList, SyntaxKind::DIRECTIVE_LIST);
+ast_node_impl!(DirectiveSimple, SyntaxKind::DIRECTIVE_SIMPLE);
+ast_node_impl!(DirectiveWithType, SyntaxKind::DIRECTIVE_WITH_TYPE);
+ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
+ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
+ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
 
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
@@ -454,7 +448,7 @@ ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
 ast_node_impl!(StmtExprSemi, SyntaxKind::STMT_EXPR_SEMI);
 ast_node_impl!(StmtExprTail, SyntaxKind::STMT_EXPR_TAIL);
-ast_node_impl!(StmtAttrStmt, SyntaxKind::STMT_ATTR_STMT);
+ast_node_impl!(StmtWithDirective, SyntaxKind::STMT_WITH_DIRECTIVE);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
@@ -545,6 +539,7 @@ pub enum Item<'syn> {
     Const(ConstItem<'syn>),
     Global(GlobalItem<'syn>),
     Import(ImportItem<'syn>),
+    Directive(DirectiveList<'syn>),
 }
 
 impl<'syn> AstNode<'syn> for Item<'syn> {
@@ -556,6 +551,7 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             SyntaxKind::CONST_ITEM => Some(Item::Const(ConstItem(node))),
             SyntaxKind::GLOBAL_ITEM => Some(Item::Global(GlobalItem(node))),
             SyntaxKind::IMPORT_ITEM => Some(Item::Import(ImportItem(node))),
+            SyntaxKind::DIRECTIVE_LIST => Some(Item::Directive(DirectiveList(node))),
             _ => None,
         }
     }
@@ -567,6 +563,7 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             Item::Const(item) => item.find_range(tree),
             Item::Global(item) => item.find_range(tree),
             Item::Import(item) => item.find_range(tree),
+            Item::Directive(item) => item.find_range(tree),
         }
     }
 }
@@ -621,7 +618,7 @@ pub enum Stmt<'syn> {
     Assign(StmtAssign<'syn>),
     ExprSemi(StmtExprSemi<'syn>),
     ExprTail(StmtExprTail<'syn>),
-    AttrStmt(StmtAttrStmt<'syn>),
+    WithDirective(StmtWithDirective<'syn>),
 }
 
 impl<'syn> AstNode<'syn> for Stmt<'syn> {
@@ -636,7 +633,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             SyntaxKind::STMT_ASSIGN => Some(Stmt::Assign(StmtAssign(node))),
             SyntaxKind::STMT_EXPR_SEMI => Some(Stmt::ExprSemi(StmtExprSemi(node))),
             SyntaxKind::STMT_EXPR_TAIL => Some(Stmt::ExprTail(StmtExprTail(node))),
-            SyntaxKind::STMT_ATTR_STMT => Some(Stmt::AttrStmt(StmtAttrStmt(node))),
+            SyntaxKind::STMT_WITH_DIRECTIVE => Some(Stmt::WithDirective(StmtWithDirective(node))),
             _ => None,
         }
     }
@@ -651,7 +648,7 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             Stmt::Assign(stmt) => stmt.find_range(tree),
             Stmt::ExprSemi(stmt) => stmt.find_range(tree),
             Stmt::ExprTail(stmt) => stmt.find_range(tree),
-            Stmt::AttrStmt(stmt) => stmt.find_range(tree),
+            Stmt::WithDirective(stmt) => stmt.find_range(tree),
         }
     }
 }
@@ -850,6 +847,99 @@ impl<'syn> SourceFile<'syn> {
     node_iter!(items, Item);
 }
 
+impl<'syn> ProcItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(poly_params, PolymorphParams);
+    node_find!(param_list, ParamList);
+    node_find!(return_ty, Type);
+    node_find!(block, Block);
+}
+impl<'syn> ParamList<'syn> {
+    node_iter!(params, Param);
+    token_find_rev!(t_dotdot, T![..]);
+}
+impl<'syn> Param<'syn> {
+    token_find!(t_mut, T![mut]);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+}
+
+impl<'syn> EnumItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(poly_params, PolymorphParams);
+    token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
+    node_find!(variant_list, VariantList);
+}
+impl<'syn> VariantList<'syn> {
+    node_iter!(variants, Variant);
+}
+impl<'syn> Variant<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(value, Expr);
+    node_find!(field_list, VariantFieldList);
+}
+impl<'syn> VariantFieldList<'syn> {
+    node_iter!(fields, Type);
+}
+
+impl<'syn> StructItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(poly_params, PolymorphParams);
+    node_find!(field_list, FieldList);
+}
+impl<'syn> FieldList<'syn> {
+    node_iter!(fields, Field);
+}
+impl<'syn> Field<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+}
+
+impl<'syn> ConstItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+    node_find!(value, Expr);
+}
+
+impl<'syn> GlobalItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    token_find!(t_mut, T![mut]);
+    node_find!(name, Name);
+    node_find!(ty, Type);
+    node_find!(value, Expr);
+    token_find!(t_zeroed, T![zeroed]);
+}
+
+impl<'syn> ImportItem<'syn> {
+    node_find!(directive_list, DirectiveList);
+    node_find!(package, Name);
+    node_find!(import_path, ImportPath);
+    node_find!(rename, ImportSymbolRename);
+    node_find!(import_symbol_list, ImportSymbolList);
+}
+impl<'syn> ImportPath<'syn> {
+    node_iter!(names, Name);
+}
+impl<'syn> ImportSymbolList<'syn> {
+    node_iter!(import_symbols, ImportSymbol);
+}
+impl<'syn> ImportSymbol<'syn> {
+    node_find!(name, Name);
+    node_find!(rename, ImportSymbolRename);
+}
+impl<'syn> ImportSymbolRename<'syn> {
+    node_find!(alias, Name);
+    token_find!(t_discard, T![_]);
+}
+
+//==================== DIRECTIVE ====================
+
 impl<'syn> DirectiveList<'syn> {
     node_iter!(directives, Directive);
 }
@@ -870,137 +960,6 @@ impl<'syn> DirectiveParamList<'syn> {
 impl<'syn> DirectiveParam<'syn> {
     node_find!(name, Name);
     node_find!(value, LitString);
-}
-
-impl<'syn> AttrList<'syn> {
-    node_iter!(attrs, Attr);
-}
-
-impl<'syn> Attr<'syn> {
-    node_find!(name, Name);
-    node_find!(param_list, AttrParamList);
-}
-
-impl<'syn> AttrParamList<'syn> {
-    node_iter!(params, AttrParam);
-}
-
-impl<'syn> AttrParam<'syn> {
-    node_find!(name, Name);
-    node_find!(value, LitString);
-}
-
-impl<'syn> Vis<'syn> {
-    token_find!(t_pub, T![pub]);
-}
-
-impl<'syn> ProcItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
-    node_find!(param_list, ParamList);
-    node_find!(return_ty, Type);
-    node_find!(block, Block);
-}
-
-impl<'syn> ParamList<'syn> {
-    node_iter!(params, Param);
-    token_find_rev!(t_dotdot, T![..]);
-}
-
-impl<'syn> Param<'syn> {
-    token_find!(t_mut, T![mut]);
-    node_find!(name, Name);
-    node_find!(ty, Type);
-}
-
-impl<'syn> EnumItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
-    token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
-    node_find!(variant_list, VariantList);
-}
-
-impl<'syn> VariantList<'syn> {
-    node_iter!(variants, Variant);
-}
-
-impl<'syn> Variant<'syn> {
-    node_find!(directive_list, DirectiveList);
-    node_find!(name, Name);
-    node_find!(value, Expr);
-    node_find!(field_list, VariantFieldList);
-}
-
-impl<'syn> VariantFieldList<'syn> {
-    node_iter!(fields, Type);
-}
-
-impl<'syn> StructItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
-    node_find!(field_list, FieldList);
-}
-
-impl<'syn> FieldList<'syn> {
-    node_iter!(fields, Field);
-}
-
-impl<'syn> Field<'syn> {
-    node_find!(directive_list, DirectiveList);
-    node_find!(vis, Vis);
-    node_find!(name, Name);
-    node_find!(ty, Type);
-}
-
-impl<'syn> ConstItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    node_find!(name, Name);
-    node_find!(ty, Type);
-    node_find!(value, Expr);
-}
-
-impl<'syn> GlobalItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    token_find!(t_mut, T![mut]);
-    node_find!(name, Name);
-    node_find!(ty, Type);
-    node_find!(value, Expr);
-    token_find!(t_zeroed, T![zeroed]);
-}
-
-impl<'syn> ImportItem<'syn> {
-    node_find!(attr_list, AttrList);
-    node_find!(vis, Vis);
-    node_find!(package, Name);
-    node_find!(import_path, ImportPath);
-    node_find!(rename, ImportSymbolRename);
-    node_find!(import_symbol_list, ImportSymbolList);
-}
-
-impl<'syn> ImportPath<'syn> {
-    node_iter!(names, Name);
-}
-
-impl<'syn> ImportSymbolList<'syn> {
-    node_iter!(import_symbols, ImportSymbol);
-}
-
-impl<'syn> ImportSymbol<'syn> {
-    node_find!(name, Name);
-    node_find!(rename, ImportSymbolRename);
-}
-
-impl<'syn> ImportSymbolRename<'syn> {
-    node_find!(alias, Name);
-    token_find!(t_discard, T![_]);
 }
 
 //==================== TYPE ====================
@@ -1110,8 +1069,8 @@ impl<'syn> StmtExprTail<'syn> {
     node_find!(expr, Expr);
 }
 
-impl<'syn> StmtAttrStmt<'syn> {
-    node_find!(attr_list, AttrList);
+impl<'syn> StmtWithDirective<'syn> {
+    node_find!(directive_list, DirectiveList);
     node_find!(stmt, Stmt);
 }
 

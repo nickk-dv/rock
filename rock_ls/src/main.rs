@@ -750,6 +750,7 @@ fn semantic_tokens(
                     }
                 }
             }
+            cst::Item::Directive(_) => {}
         }
     }
 
@@ -827,19 +828,6 @@ fn semantic_visit_node(
                     SyntaxKind::TOMBSTONE => None,
                     SyntaxKind::SOURCE_FILE => None,
 
-                    SyntaxKind::ATTR_LIST => None,
-                    SyntaxKind::ATTR => Some(SemanticToken::Variable),
-                    SyntaxKind::ATTR_PARAM_LIST => None,
-                    SyntaxKind::ATTR_PARAM => Some(SemanticToken::Variable),
-                    SyntaxKind::VISIBILITY => None,
-
-                    SyntaxKind::DIRECTIVE_LIST => None,
-                    SyntaxKind::DIRECTIVE_SIMPLE => None,
-                    SyntaxKind::DIRECTIVE_WITH_TYPE => None,
-                    SyntaxKind::DIRECTIVE_WITH_PARAMS => None,
-                    SyntaxKind::DIRECTIVE_PARAM_LIST => None,
-                    SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
-
                     SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
                     SyntaxKind::PARAM_LIST => None,
                     SyntaxKind::PARAM => Some(SemanticToken::Parameter),
@@ -857,6 +845,13 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL_LIST => None,
                     SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Type), //default to type
                     SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Type), //default to type
+
+                    SyntaxKind::DIRECTIVE_LIST => None,
+                    SyntaxKind::DIRECTIVE_SIMPLE => None,
+                    SyntaxKind::DIRECTIVE_WITH_TYPE => None,
+                    SyntaxKind::DIRECTIVE_WITH_PARAMS => None,
+                    SyntaxKind::DIRECTIVE_PARAM_LIST => None,
+                    SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
 
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
@@ -880,7 +875,7 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_ASSIGN => None,
                     SyntaxKind::STMT_EXPR_SEMI => None,
                     SyntaxKind::STMT_EXPR_TAIL => None,
-                    SyntaxKind::STMT_ATTR_STMT => None,
+                    SyntaxKind::STMT_WITH_DIRECTIVE => None,
 
                     SyntaxKind::EXPR_PAREN => None,
                     SyntaxKind::EXPR_IF => None,
@@ -1020,10 +1015,10 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![int_lit] | T![float_lit] => SemanticToken::Number,
         T![char_lit] | T![string_lit] => SemanticToken::String,
 
-        T![pub] | T![proc] | T![enum] | T![struct] |
-        T![const] | T![global] | T![import] | T![break] |
-        T![continue] | T![return] | T![defer] | T![for] |
-        T![in] | T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
+        T![proc] | T![enum] | T![struct] | T![const] |
+        T![global] | T![import] | T![break] | T![continue] |
+        T![return] | T![defer] | T![for] | T![in] |
+        T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
 
         T![null] | T![true] | T![false] => SemanticToken::Number,
         T![if] | T![else] | T![match] | T![as] | T![sizeof] => SemanticToken::Keyword,

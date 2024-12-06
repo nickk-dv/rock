@@ -516,152 +516,6 @@ fn source_file<'syn>(fmt: &mut Formatter<'syn, '_>, source_file: cst::SourceFile
     interleaved_node_list::<cst::Item>(fmt, source_file.0);
 }
 
-fn directive_list<'syn>(fmt: &mut Formatter<'syn, '_>, directive_list: cst::DirectiveList<'syn>) {
-    for directive_cst in directive_list.directives(fmt.tree) {
-        fmt.tab_depth();
-        directive(fmt, directive_cst);
-        fmt.new_line();
-    }
-}
-
-fn directive<'syn>(fmt: &mut Formatter<'syn, '_>, directive: cst::Directive<'syn>) {
-    fmt.write('#');
-    match directive {
-        cst::Directive::Simple(dir) => {
-            name(fmt, dir.name(fmt.tree).unwrap());
-        }
-        cst::Directive::WithType(dir) => {
-            name(fmt, dir.name(fmt.tree).unwrap());
-            ty(fmt, dir.ty(fmt.tree).unwrap());
-        }
-        cst::Directive::WithParams(dir) => {
-            name(fmt, dir.name(fmt.tree).unwrap());
-            directive_param_list(fmt, dir.param_list(fmt.tree).unwrap());
-        }
-    }
-}
-
-fn directive_param_list<'syn>(
-    fmt: &mut Formatter<'syn, '_>,
-    param_list: cst::DirectiveParamList<'syn>,
-) {
-    if param_list.params(fmt.tree).next().is_none() {
-        fmt.write('(');
-        fmt.write(')');
-        return;
-    }
-
-    fmt.write('(');
-    let wrap = fmt.wrap_line_break_based(param_list.params(fmt.tree));
-    if wrap {
-        fmt.new_line();
-    }
-
-    let mut first = true;
-    for param in param_list.params(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            if wrap {
-                fmt.new_line();
-            } else {
-                fmt.space();
-            }
-        }
-        if wrap {
-            fmt.tab_single();
-        }
-        first = false;
-        directive_param(fmt, param);
-    }
-
-    if wrap {
-        fmt.write(',');
-        fmt.new_line();
-    }
-    fmt.write(')');
-}
-
-fn directive_param(fmt: &mut Formatter, param: cst::DirectiveParam) {
-    name(fmt, param.name(fmt.tree).unwrap());
-    fmt.space();
-    fmt.write('=');
-    fmt.space();
-    let lit_string = param.value(fmt.tree).unwrap();
-    fmt.write_range(lit_string.find_range(fmt.tree));
-}
-
-fn attr_list<'syn>(fmt: &mut Formatter<'syn, '_>, attr_list: cst::AttrList<'syn>) {
-    for attr_cst in attr_list.attrs(fmt.tree) {
-        fmt.tab_depth();
-        attr(fmt, attr_cst);
-        fmt.new_line();
-    }
-}
-
-fn attr<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::Attr<'syn>) {
-    fmt.write('#');
-    fmt.write('[');
-    name(fmt, attr.name(fmt.tree).unwrap());
-    if let Some(param_list) = attr.param_list(fmt.tree) {
-        attr_param_list(fmt, param_list);
-    }
-    fmt.write(']');
-}
-
-fn attr_param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::AttrParamList<'syn>) {
-    if param_list.params(fmt.tree).next().is_none() {
-        fmt.write('(');
-        fmt.write(')');
-        return;
-    }
-
-    fmt.write('(');
-    let wrap = fmt.wrap_line_break_based(param_list.params(fmt.tree));
-    if wrap {
-        fmt.new_line();
-    }
-
-    let mut first = true;
-    for param in param_list.params(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            if wrap {
-                fmt.new_line();
-            } else {
-                fmt.space();
-            }
-        }
-        if wrap {
-            fmt.tab_single();
-        }
-        first = false;
-        attr_param(fmt, param);
-    }
-
-    if wrap {
-        fmt.write(',');
-        fmt.new_line();
-    }
-    fmt.write(')');
-}
-
-fn attr_param(fmt: &mut Formatter, param: cst::AttrParam) {
-    name(fmt, param.name(fmt.tree).unwrap());
-    if let Some(value) = param.value(fmt.tree) {
-        fmt.space();
-        fmt.write('=');
-        fmt.space();
-        fmt.write_range(value.find_range(fmt.tree));
-    }
-}
-
-fn vis(fmt: &mut Formatter, vis: Option<cst::Vis>) {
-    if vis.is_some() {
-        fmt.write_str("pub");
-        fmt.space();
-    }
-}
-
 fn item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::Item<'syn>) {
     match item {
         cst::Item::Proc(item) => proc_item(fmt, item),
@@ -670,16 +524,16 @@ fn item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::Item<'syn>) {
         cst::Item::Const(item) => const_item(fmt, item),
         cst::Item::Global(item) => global_item(fmt, item),
         cst::Item::Import(item) => import_item(fmt, item),
+        cst::Item::Directive(item) => directive_list(fmt, item, false),
     }
 }
 
 fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::BLOCK]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("proc");
     fmt.space();
@@ -763,10 +617,9 @@ fn param<'syn>(fmt: &mut Formatter<'syn, '_>, param: cst::Param<'syn>) {
 fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::VARIANT_LIST]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("enum");
     fmt.space();
@@ -801,7 +654,7 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
 fn variant<'syn>(fmt: &mut Formatter<'syn, '_>, variant: cst::Variant<'syn>) {
     trivia_lift(fmt, variant.0, SyntaxSet::empty());
     if let Some(directive_list_cst) = variant.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst);
+        directive_list(fmt, directive_list_cst, true);
     }
     fmt.tab_depth();
 
@@ -835,10 +688,9 @@ fn variant_field_list<'syn>(
 fn struct_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::StructItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::FIELD_LIST]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("struct");
     fmt.space();
@@ -868,11 +720,10 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
 fn field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::Field<'syn>) {
     trivia_lift(fmt, field.0, SyntaxSet::empty());
     if let Some(directive_list_cst) = field.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst);
+        directive_list(fmt, directive_list_cst, true);
     }
     fmt.tab_depth();
 
-    vis(fmt, field.vis(fmt.tree));
     name(fmt, field.name(fmt.tree).unwrap());
     fmt.write(':');
     fmt.space();
@@ -882,10 +733,9 @@ fn field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::Field<'syn>) {
 
 fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("const");
     fmt.space();
@@ -902,10 +752,9 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
 
 fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("global");
     fmt.space();
@@ -931,10 +780,9 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>)
 
 fn import_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ImportItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(attr_list_cst) = item.attr_list(fmt.tree) {
-        attr_list(fmt, attr_list_cst);
+    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
+        directive_list(fmt, directive_list_cst, true);
     }
-    vis(fmt, item.vis(fmt.tree));
 
     fmt.write_str("import");
     fmt.space();
@@ -1030,6 +878,95 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
     } else {
         fmt.write('_');
     }
+}
+
+//==================== DIRECTIVE ====================
+
+fn directive_list<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    directive_list: cst::DirectiveList<'syn>,
+    new_line: bool,
+) {
+    let mut first = true;
+    for directive_cst in directive_list.directives(fmt.tree) {
+        if !first {
+            fmt.new_line();
+        }
+        first = false;
+        fmt.tab_depth();
+        directive(fmt, directive_cst);
+    }
+    if new_line {
+        fmt.new_line();
+    }
+}
+
+fn directive<'syn>(fmt: &mut Formatter<'syn, '_>, directive: cst::Directive<'syn>) {
+    fmt.write('#');
+    match directive {
+        cst::Directive::Simple(dir) => {
+            name(fmt, dir.name(fmt.tree).unwrap());
+        }
+        cst::Directive::WithType(dir) => {
+            name(fmt, dir.name(fmt.tree).unwrap());
+            fmt.write('(');
+            ty(fmt, dir.ty(fmt.tree).unwrap());
+            fmt.write(')');
+        }
+        cst::Directive::WithParams(dir) => {
+            name(fmt, dir.name(fmt.tree).unwrap());
+            directive_param_list(fmt, dir.param_list(fmt.tree).unwrap());
+        }
+    }
+}
+
+fn directive_param_list<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    param_list: cst::DirectiveParamList<'syn>,
+) {
+    if param_list.params(fmt.tree).next().is_none() {
+        fmt.write('(');
+        fmt.write(')');
+        return;
+    }
+
+    fmt.write('(');
+    let wrap = fmt.wrap_line_break_based(param_list.params(fmt.tree));
+    if wrap {
+        fmt.new_line();
+    }
+
+    let mut first = true;
+    for param in param_list.params(fmt.tree) {
+        if !first {
+            fmt.write(',');
+            if wrap {
+                fmt.new_line();
+            } else {
+                fmt.space();
+            }
+        }
+        if wrap {
+            fmt.tab_single();
+        }
+        first = false;
+        directive_param(fmt, param);
+    }
+
+    if wrap {
+        fmt.write(',');
+        fmt.new_line();
+    }
+    fmt.write(')');
+}
+
+fn directive_param(fmt: &mut Formatter, param: cst::DirectiveParam) {
+    name(fmt, param.name(fmt.tree).unwrap());
+    fmt.space();
+    fmt.write('=');
+    fmt.space();
+    let lit_string = param.value(fmt.tree).unwrap();
+    fmt.write_range(lit_string.find_range(fmt.tree));
 }
 
 //==================== TYPE ====================
@@ -1148,7 +1085,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
 fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
     if tab {
         match stmt {
-            cst::Stmt::AttrStmt(_) => {}
+            cst::Stmt::WithDirective(_) => {}
             _ => fmt.tab_depth(),
         }
     }
@@ -1162,7 +1099,7 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
         cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
         cst::Stmt::ExprSemi(stmt) => stmt_expr_semi(fmt, stmt),
         cst::Stmt::ExprTail(stmt) => stmt_expr_tail(fmt, stmt),
-        cst::Stmt::AttrStmt(stmt) => stmt_attr_stmt(fmt, stmt),
+        cst::Stmt::WithDirective(stmt) => stmt_with_directive(fmt, stmt),
     }
 }
 
@@ -1296,9 +1233,12 @@ fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprTail<'
     expr(fmt, stmt.expr(fmt.tree).unwrap());
 }
 
-fn stmt_attr_stmt<'syn>(fmt: &mut Formatter<'syn, '_>, attr: cst::StmtAttrStmt<'syn>) {
-    attr_list(fmt, attr.attr_list(fmt.tree).unwrap());
-    stmt(fmt, attr.stmt(fmt.tree).unwrap(), true);
+fn stmt_with_directive<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    stmt_dir: cst::StmtWithDirective<'syn>,
+) {
+    directive_list(fmt, stmt_dir.directive_list(fmt.tree).unwrap(), true);
+    stmt(fmt, stmt_dir.stmt(fmt.tree).unwrap(), true);
 }
 
 //==================== EXPR ====================

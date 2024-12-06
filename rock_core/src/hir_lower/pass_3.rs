@@ -237,7 +237,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
         }
 
         let field = hir::Field {
-            vis: field.vis,
+            vis: hir::Vis::Public, //@fixme: based on struct data vis and overides from directives
             name: field.name,
             ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,

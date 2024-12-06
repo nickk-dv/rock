@@ -97,15 +97,10 @@ impl<'src> Parser<'src> {
     }
 
     fn do_bump(&mut self) {
-        self.cursor = self.cursor.inc();
+        debug_assert!(self.at(Token::Eof));
         self.steps.set(0);
+        self.cursor = self.cursor.inc();
         self.events.push(Event::Token);
-    }
-
-    fn do_bump_any(&mut self) {
-        if self.peek() != Token::Eof {
-            self.do_bump();
-        }
     }
 
     fn step_bump(&self) {
@@ -121,9 +116,10 @@ impl<'src> Parser<'src> {
         self.error(msg);
         //@only when not recoving make Error node?
         // so that it has at least 1 member, test.
+        // some nodes expect marker, error is required to be created
         let m = self.start();
-        if !self.at_set(recovery) {
-            self.do_bump_any();
+        if !self.at_set(recovery) && !self.at(Token::Eof) {
+            self.do_bump();
         }
         m.complete(self, SyntaxKind::ERROR)
     }
@@ -144,11 +140,11 @@ impl<'src> Parser<'src> {
             return;
         }
         while !self.at_set(token_set) && !self.at(Token::Eof) {
-            self.do_bump_any();
+            self.do_bump();
         }
     }
 
-    pub fn token_string(&mut self) -> &str {
+    pub fn current_token_string(&mut self) -> &str {
         let range = self.tokens.token_range(self.cursor);
         &self.source[range.as_usize()]
     }

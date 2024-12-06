@@ -29,7 +29,7 @@ pub struct ConstInternPool<'hir> {
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<ProcFlag>,
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub params: &'hir [Param<'hir>],
@@ -52,7 +52,7 @@ pub struct Param<'hir> {
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<EnumFlag>,
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub variants: &'hir [Variant<'hir>],
@@ -83,7 +83,7 @@ pub struct VariantField<'hir> {
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<StructFlag>,
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub fields: &'hir [Field<'hir>],
@@ -93,7 +93,7 @@ pub struct StructData<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct Field<'hir> {
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub ty_range: TextRange,
@@ -101,7 +101,7 @@ pub struct Field<'hir> {
 
 pub struct ConstData<'hir> {
     pub origin_id: ModuleID,
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
@@ -111,7 +111,7 @@ pub struct ConstData<'hir> {
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
     pub attr_set: BitSet<GlobalFlag>,
-    pub vis: ast::Vis,
+    pub vis: Vis,
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
@@ -504,6 +504,12 @@ pub struct ArrayRepeat<'hir> {
     pub elem_ty: Type<'hir>,
     pub value: &'hir Expr<'hir>,
     pub len: u64,
+}
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum Vis {
+    Public,
+    Private,
 }
 
 #[derive(Copy, Clone)]

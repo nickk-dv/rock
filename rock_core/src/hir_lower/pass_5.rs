@@ -934,7 +934,7 @@ fn check_field_from_struct<'hir>(
         let data = ctx.registry.struct_data(struct_id);
         let field = data.field(field_id);
 
-        if ctx.scope.origin() != data.origin_id && field.vis == ast::Vis::Private {
+        if ctx.scope.origin() != data.origin_id && field.vis == hir::Vis::Private {
             let src = ctx.src(name.range);
             let field_name = ctx.name(name.id);
             let field_src = SourceRange::new(data.origin_id, field.name.range);
@@ -1526,7 +1526,7 @@ fn typecheck_struct_init<'hir, 'ast>(
             let field_name = ctx.name(input.name.id);
             err::tycheck_field_already_initialized(&mut ctx.emit, src, prev_src, field_name);
         } else {
-            if ctx.scope.origin() != struct_origin_id && field.vis == ast::Vis::Private {
+            if ctx.scope.origin() != struct_origin_id && field.vis == hir::Vis::Private {
                 let src = ctx.src(input.name.range);
                 let field_name = ctx.name(input.name.id);
                 let field_src = SourceRange::new(struct_origin_id, field.name.range);
