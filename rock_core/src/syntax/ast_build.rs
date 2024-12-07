@@ -184,7 +184,7 @@ fn proc_item<'ast>(
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
     let proc_item = ast::ProcItem {
-        attrs: &[],
+        directives,
         name,
         poly_params,
         params,

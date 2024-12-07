@@ -353,9 +353,9 @@ pub fn attr_param_value_unknown(
     emit: &mut impl ErrorSink,
     value_src: SourceRange,
     param_name: &str,
-    value: &str,
+    param_value: &str,
 ) {
-    let msg = format!("attribute parameter `{param_name}` value `{value}` is unknown");
+    let msg = format!("attribute parameter `{param_name}` value `{param_value}` is unknown");
     emit.error(Error::new(msg, value_src, None));
 }
 

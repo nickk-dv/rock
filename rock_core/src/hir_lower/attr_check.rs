@@ -68,7 +68,8 @@ pub fn check_attrs_proc<'ast>(ctx: &mut HirCtx, item: &ast::ProcItem) -> AttrFee
         err::attr_proc_variadic_zero_params(&mut ctx.emit, proc_src);
     }
 
-    for attr in item.attrs {
+    let attrs = &[]; //@temp
+    for attr in attrs {
         let resolved = match resolve_attr(ctx, attr) {
             Ok(resolved) => resolved,
             Err(()) => continue,

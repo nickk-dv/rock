@@ -33,7 +33,7 @@ pub struct AttrParam {
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub params: &'ast [Param<'ast>],

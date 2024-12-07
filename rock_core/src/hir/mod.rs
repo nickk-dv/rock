@@ -637,18 +637,20 @@ crate::size_lock!(16, ConstValue);
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum ProcFlag {
+        // directives
+        Inline "inline",
+        Builtin "builtin",
+        // compile-time flags
         External "external",
         Variadic "variadic",
-        Main "main",
-        Builtin "builtin",
-        Inline "inline",
+        Main "main", //@rename to entry point
     }
 }
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum EnumFlag {
-        ReprC "repr_c",
+        ReprC "repr_c", //@remove
         WithFields "with fields",
         WithTagType "with tag type",
     }
@@ -657,7 +659,7 @@ crate::enum_as_str! {
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum StructFlag {
-        ReprC "repr_c",
+        ReprC "repr_c",//@remove
     }
 }
 
