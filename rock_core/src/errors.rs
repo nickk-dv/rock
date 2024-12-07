@@ -337,84 +337,59 @@ pub fn scope_unused_binding(emit: &mut impl WarningSink, src: SourceRange, name:
     emit.warning(Warning::new(msg, src, None));
 }
 
-//==================== CHECK ATTRIBUTE ====================
+//==================== CHECK DIRECTIVE & FLAG ====================
 
-pub fn attr_unknown(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
-    let msg = format!("attribute `{attr_name}` is unknown");
-    emit.error(Error::new(msg, attr_src, None));
+pub fn directive_unknown(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
+    let msg = format!("directive `#{name}` is unknown");
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn attr_param_unknown(emit: &mut impl ErrorSink, param_src: SourceRange, param_name: &str) {
-    let msg = format!("attribute parameter `{param_name}` is unknown");
+pub fn directive_duplicate(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
+    let msg = format!("duplicate directive `#{name}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn directive_param_unknown(
+    emit: &mut impl ErrorSink,
+    param_src: SourceRange,
+    param_name: &str,
+) {
+    let msg = format!("directive parameter `{param_name}` is unknown");
     emit.error(Error::new(msg, param_src, None));
 }
 
-pub fn attr_param_value_unknown(
+pub fn directive_param_value_unknown(
     emit: &mut impl ErrorSink,
     value_src: SourceRange,
     param_name: &str,
     param_value: &str,
 ) {
-    let msg = format!("attribute parameter `{param_name}` value `{param_value}` is unknown");
+    let msg = format!("directive parameter `{param_name}` value `{param_value}` is unknown");
     emit.error(Error::new(msg, value_src, None));
 }
 
-pub fn attr_param_value_required(
-    emit: &mut impl ErrorSink,
-    param_src: SourceRange,
-    param_name: &str,
-) {
-    let msg = format!("attribute parameter `{param_name}` requires an assigned string value");
-    emit.error(Error::new(msg, param_src, None));
-}
-
-pub fn attr_param_list_unexpected(
-    emit: &mut impl ErrorSink,
-    list_src: SourceRange,
-    attr_name: &str,
-) {
-    let msg = format!("attribute `{attr_name}` expects no parameters");
-    emit.error(Error::new(msg, list_src, None));
-}
-
-pub fn attr_param_list_required(
+pub fn directive_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
-    attr_name: &str,
-    exists: bool,
+    name: &str,
+    item_kinds: &'static str,
 ) {
-    let non_empty = if exists { "non-empty " } else { "" };
-    let msg = format!("attribute `{attr_name}` requires {non_empty}parameter list");
+    let msg = format!("directive `#{name}` cannot be applied to {item_kinds}",);
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn attr_duplicate(emit: &mut impl ErrorSink, attr_src: SourceRange, attr_name: &str) {
-    let msg = format!("duplicate attribute `{attr_name}`");
-    emit.error(Error::new(msg, attr_src, None));
-}
-
-pub fn attr_cannot_apply(
+pub fn directive_not_compatible(
     emit: &mut impl ErrorSink,
-    attr_src: SourceRange,
-    attr_name: &str,
-    item_kinds: &'static str,
-) {
-    let msg = format!("attribute `{attr_name}` cannot be applied to {item_kinds}",);
-    emit.error(Error::new(msg, attr_src, None));
-}
-
-pub fn attr_not_compatible(
-    emit: &mut impl ErrorSink,
-    attr_src: SourceRange,
-    attr_name: &str,
+    src: SourceRange,
+    name: &str,
     old_flag: &str,
     item_kinds: &'static str,
 ) {
-    let msg = format!("attribute `{attr_name}` cannot be applied to `{old_flag}` {item_kinds}",);
-    emit.error(Error::new(msg, attr_src, None));
+    let msg = format!("directive `#{name}` cannot be applied to `{old_flag}` {item_kinds}",);
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn attr_flag_not_compatible(
+pub fn flag_not_compatible(
     emit: &mut impl ErrorSink,
     item_src: SourceRange,
     new_flag: &str,
@@ -425,17 +400,17 @@ pub fn attr_flag_not_compatible(
     emit.error(Error::new(msg, item_src, None));
 }
 
-pub fn attr_proc_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+pub fn flag_proc_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
     let msg = "`variadic` procedures must be `external`";
     emit.error(Error::new(msg, proc_src, None));
 }
 
-pub fn attr_proc_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+pub fn flag_proc_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: SourceRange) {
     let msg = "`variadic` procedures must have at least one parameter";
     emit.error(Error::new(msg, proc_src, None));
 }
 
-pub fn attr_proc_builtin_with_block(
+pub fn flag_proc_builtin_with_block(
     emit: &mut impl ErrorSink,
     proc_src: SourceRange,
     block_src: SourceRange,

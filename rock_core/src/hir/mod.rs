@@ -28,7 +28,7 @@ pub struct ConstInternPool<'hir> {
 
 pub struct ProcData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet<ProcFlag>,
+    pub flag_set: BitSet<ProcFlag>,
     pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
@@ -38,7 +38,6 @@ pub struct ProcData<'hir> {
     pub locals: &'hir [Local<'hir>],
     pub local_binds: &'hir [LocalBind<'hir>],
     pub for_binds: &'hir [ForBind<'hir>],
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -51,14 +50,13 @@ pub struct Param<'hir> {
 
 pub struct EnumData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet<EnumFlag>,
+    pub flag_set: BitSet<EnumFlag>,
     pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -82,13 +80,12 @@ pub struct VariantField<'hir> {
 
 pub struct StructData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet<StructFlag>,
+    pub flag_set: BitSet<StructFlag>,
     pub vis: Vis,
     pub name: ast::Name,
     pub poly_params: Option<&'hir PolymorphParams<'hir>>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -101,22 +98,21 @@ pub struct Field<'hir> {
 
 pub struct ConstData<'hir> {
     pub origin_id: ModuleID,
+    pub flag_set: BitSet<ConstFlag>,
     pub vis: Vis,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub value: ConstEvalID,
-    pub was_used: bool,
 }
 
 pub struct GlobalData<'hir> {
     pub origin_id: ModuleID,
-    pub attr_set: BitSet<GlobalFlag>,
+    pub flag_set: BitSet<GlobalFlag>,
     pub vis: Vis,
     pub mutt: ast::Mut,
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub init: GlobalInit,
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -641,32 +637,35 @@ crate::enum_as_str! {
         Inline "inline",
         Builtin "builtin",
         // compile-time flags
+        WasUsed "was used",
         External "external",
         Variadic "variadic",
-        Main "main", //@rename to entry point
+        EntryPoint "entry point",
     }
 }
-
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum EnumFlag {
-        ReprC "repr_c", //@remove
+        WasUsed "was used",
         WithFields "with fields",
-        WithTagType "with tag type",
     }
 }
-
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum StructFlag {
-        ReprC "repr_c",//@remove
+        WasUsed "was used",
     }
 }
-
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum ConstFlag {
+        WasUsed "was used",
+    }
+}
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum GlobalFlag {
-        ThreadLocal "threadlocal",
+        WasUsed "was used",
     }
 }
 
@@ -685,6 +684,11 @@ impl Into<u32> for StructFlag {
         self as u32
     }
 }
+impl Into<u32> for ConstFlag {
+    fn into(self) -> u32 {
+        self as u32
+    }
+}
 impl Into<u32> for GlobalFlag {
     fn into(self) -> u32 {
         self as u32
@@ -695,56 +699,40 @@ pub trait ItemFlag
 where
     Self: PartialEq,
 {
-    fn compatible(self, other: Self) -> bool;
+    fn not_compatible(self, other: Self) -> bool;
 }
 
 impl ItemFlag for ProcFlag {
-    fn compatible(self, other: ProcFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
+    fn not_compatible(self, other: ProcFlag) -> bool {
+        use ProcFlag::*;
         match self {
-            ProcFlag::External => matches!(other, ProcFlag::Variadic | ProcFlag::Inline),
-            ProcFlag::Variadic => matches!(other, ProcFlag::External | ProcFlag::Inline),
-            ProcFlag::Main => false,
-            ProcFlag::Builtin => matches!(other, ProcFlag::External | ProcFlag::Inline),
-            ProcFlag::Inline => !matches!(other, ProcFlag::Main),
+            Inline => false,
+            Builtin => matches!(other, Variadic | EntryPoint),
+            WasUsed => false,
+            External => matches!(other, EntryPoint),
+            Variadic => matches!(other, Builtin | EntryPoint),
+            EntryPoint => matches!(other, Builtin | External | Variadic),
         }
     }
 }
-
 impl ItemFlag for EnumFlag {
-    fn compatible(self, other: EnumFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            EnumFlag::ReprC => false,
-            EnumFlag::WithFields => matches!(other, EnumFlag::WithTagType),
-            EnumFlag::WithTagType => matches!(other, EnumFlag::WithFields),
-        }
+    fn not_compatible(self, _: EnumFlag) -> bool {
+        false
     }
 }
-
 impl ItemFlag for StructFlag {
-    fn compatible(self, other: StructFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            StructFlag::ReprC => false,
-        }
+    fn not_compatible(self, _: StructFlag) -> bool {
+        false
     }
 }
-
+impl ItemFlag for ConstFlag {
+    fn not_compatible(self, _: ConstFlag) -> bool {
+        false
+    }
+}
 impl ItemFlag for GlobalFlag {
-    fn compatible(self, other: GlobalFlag) -> bool {
-        if self == other {
-            unreachable!()
-        }
-        match self {
-            GlobalFlag::ThreadLocal => false,
-        }
+    fn not_compatible(self, _: GlobalFlag) -> bool {
+        false
     }
 }
 

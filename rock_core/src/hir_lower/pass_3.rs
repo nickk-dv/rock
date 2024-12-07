@@ -1,4 +1,4 @@
-use super::attr_check;
+use super::check_directive;
 use super::check_path;
 use super::constant;
 use super::context::HirCtx;
@@ -86,8 +86,8 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     let mut any_constant = false;
 
     for variant in item.variants.iter() {
-        let feedback = attr_check::check_attrs_enum_variant(ctx, variant.attrs);
-        if feedback.cfg_state.disabled() {
+        let config = check_directive::check_expect_config(ctx, variant.directives, "variants");
+        if config.disabled() {
             continue;
         }
 
@@ -149,8 +149,6 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     let data = ctx.registry.enum_data(id);
     let mut tag_ty = hir::Eval::Unresolved(());
 
-    // enum tag type gets a priority since in attr_check
-    // repr_c cannot be applied if `with tag type` was set
     if let Some(tag) = item.tag_ty {
         if let Some(int_ty) = hir::BasicInt::from_basic(tag.basic) {
             tag_ty = hir::Eval::Resolved(int_ty);
@@ -159,8 +157,6 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
             err::item_enum_non_int_tag_ty(&mut ctx.emit, tag_src);
             tag_ty = hir::Eval::ResolvedError;
         }
-    } else if data.attr_set.contains(hir::EnumFlag::ReprC) {
-        tag_ty = hir::Eval::Resolved(hir::BasicInt::S32);
     }
 
     // when `tag_ty` is unknown and all fields are non constant:
@@ -222,8 +218,8 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
     let mut unique = Vec::<hir::Field>::new();
 
     for field in item.fields.iter() {
-        let feedback = attr_check::check_attrs_struct_field(ctx, field.attrs);
-        if feedback.cfg_state.disabled() {
+        let config = check_directive::check_expect_config(ctx, field.directives, "fields");
+        if config.disabled() {
             continue;
         }
 

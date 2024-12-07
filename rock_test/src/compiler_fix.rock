@@ -5,7 +5,7 @@
 //#!
 // range check happens before unary op
 // preventing integer from being a valid negative value
-pub proc test_fold_wrong_int_range_check() void {
+proc test_fold_wrong_int_range_check() void {
     let v: s64 = 0;
     match v {
         -9223372036854775808 -> {},

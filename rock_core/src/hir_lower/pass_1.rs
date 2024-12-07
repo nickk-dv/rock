@@ -1,8 +1,9 @@
-use super::attr_check;
+use super::check_directive;
 use super::context::scope::{Symbol, SymbolID};
 use super::context::HirCtx;
 use crate::ast;
 use crate::hir;
+use crate::support::BitSet;
 
 pub fn populate_scopes(ctx: &mut HirCtx) {
     for module_id in ctx.session.module.ids() {
@@ -41,8 +42,8 @@ fn add_proc_item<'ast>(
     item: &'ast ast::ProcItem,
     scope_vis: hir::Vis,
 ) {
-    let mut feedback = attr_check::check_attrs_proc(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let (config, flag_set) = check_directive::check_proc_directives(ctx, item);
+    if config.disabled() {
         return;
     }
 
@@ -54,16 +55,10 @@ fn add_proc_item<'ast>(
         return;
     }
 
-    //@fixme: hack: #buitin doesnt get set (directives not complete)
-    let name = ctx.name(item.name.id);
-    if matches!(name, "from_raw_parts" | "from_raw_parts_mut") {
-        feedback.attr_set.set(hir::ProcFlag::Builtin);
-    }
-
     let origin_id = ctx.scope.origin();
     let data = hir::ProcData {
         origin_id,
-        attr_set: feedback.attr_set,
+        flag_set,
         vis: scope_vis,
         name: item.name,
         poly_params: None,
@@ -73,7 +68,6 @@ fn add_proc_item<'ast>(
         locals: &[],
         local_binds: &[],
         for_binds: &[],
-        was_used: false,
     };
 
     let proc_id = ctx.registry.add_proc(item, data);
@@ -86,8 +80,8 @@ fn add_enum_item<'ast>(
     item: &'ast ast::EnumItem,
     scope_vis: hir::Vis,
 ) {
-    let feedback = attr_check::check_attrs_enum(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let (config, flag_set) = check_directive::check_enum_directives(ctx, item);
+    if config.disabled() {
         return;
     }
 
@@ -102,14 +96,13 @@ fn add_enum_item<'ast>(
     let origin_id = ctx.scope.origin();
     let data = hir::EnumData {
         origin_id,
-        attr_set: feedback.attr_set,
+        flag_set,
         vis: scope_vis,
         name: item.name,
         poly_params: None,
         variants: &[],
         tag_ty: hir::Eval::Unresolved(()),
         layout: hir::Eval::Unresolved(()),
-        was_used: false,
     };
 
     let enum_id = ctx.registry.add_enum(item, data);
@@ -122,8 +115,8 @@ fn add_struct_item<'ast>(
     item: &'ast ast::StructItem,
     scope_vis: hir::Vis,
 ) {
-    let feedback = attr_check::check_attrs_struct(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let config = check_directive::check_expect_config(ctx, item.directives, "structs");
+    if config.disabled() {
         return;
     }
 
@@ -138,13 +131,12 @@ fn add_struct_item<'ast>(
     let origin_id = ctx.scope.origin();
     let data = hir::StructData {
         origin_id,
-        attr_set: feedback.attr_set,
+        flag_set: BitSet::empty(),
         vis: scope_vis,
         name: item.name,
         poly_params: None,
         fields: &[],
         layout: hir::Eval::Unresolved(()),
-        was_used: false,
     };
 
     let struct_id = ctx.registry.add_struct(item, data);
@@ -157,8 +149,8 @@ fn add_const_item<'ast>(
     item: &'ast ast::ConstItem,
     scope_vis: hir::Vis,
 ) {
-    let feedback = attr_check::check_attrs_const(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let config = check_directive::check_expect_config(ctx, item.directives, "constants");
+    if config.disabled() {
         return;
     }
 
@@ -175,11 +167,11 @@ fn add_const_item<'ast>(
 
     let data = hir::ConstData {
         origin_id,
+        flag_set: BitSet::empty(),
         vis: scope_vis,
         name: item.name,
         ty: hir::Type::Error,
         value: eval_id,
-        was_used: false,
     };
 
     let const_id = ctx.registry.add_const(item, data);
@@ -192,8 +184,8 @@ fn add_global_item<'ast>(
     item: &'ast ast::GlobalItem,
     scope_vis: hir::Vis,
 ) {
-    let feedback = attr_check::check_attrs_global(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let config = check_directive::check_expect_config(ctx, item.directives, "globals");
+    if config.disabled() {
         return;
     }
 
@@ -216,13 +208,12 @@ fn add_global_item<'ast>(
 
     let data = hir::GlobalData {
         origin_id,
-        attr_set: feedback.attr_set,
+        flag_set: BitSet::empty(),
         vis: scope_vis,
         mutt: item.mutt,
         name: item.name,
         ty: hir::Type::Error,
         init,
-        was_used: false,
     };
 
     let global_id = ctx.registry.add_global(item, data);
@@ -231,8 +222,8 @@ fn add_global_item<'ast>(
 }
 
 fn add_import_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ImportItem) {
-    let feedback = attr_check::check_attrs_import(ctx, item);
-    if feedback.cfg_state.disabled() {
+    let config = check_directive::check_expect_config(ctx, item.directives, "imports");
+    if config.disabled() {
         return;
     }
 

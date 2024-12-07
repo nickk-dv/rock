@@ -229,7 +229,7 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
     let enum_data = cg.hir.enum_data(variant.enum_id);
     let hir_variant = enum_data.variant(variant.variant_id);
 
-    if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
         unimplemented!("constant variant with fields");
     }
 
@@ -755,7 +755,7 @@ fn codegen_variant<'c>(
     };
     let tag_value = codegen_const(cg, tag_value);
 
-    if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
         let enum_ty = cg.enum_type(enum_id);
         let enum_ptr = cg.entry_alloca(proc_cg, enum_ty, "enum_init");
         cg.build.store(tag_value, enum_ptr);

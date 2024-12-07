@@ -19,19 +19,6 @@ pub enum Item<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Attr<'ast> {
-    pub name: Name,
-    pub params: Option<(&'ast [AttrParam], TextRange)>,
-    pub range: TextRange,
-}
-
-#[derive(Copy, Clone)]
-pub struct AttrParam {
-    pub name: Name,
-    pub value: Option<(LitID, TextRange)>,
-}
-
-#[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
     pub directives: &'ast [Directive<'ast>],
     pub name: Name,
@@ -51,7 +38,7 @@ pub struct Param<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct EnumItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub tag_ty: Option<&'ast EnumTagType>,
@@ -66,7 +53,7 @@ pub struct EnumTagType {
 
 #[derive(Copy, Clone)]
 pub struct Variant<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub kind: VariantKind<'ast>,
 }
@@ -86,7 +73,7 @@ pub struct VariantFieldList<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub fields: &'ast [Field<'ast>],
@@ -94,14 +81,14 @@ pub struct StructItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Field<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ConstItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub name: Name,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
@@ -109,7 +96,7 @@ pub struct ConstItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub mutt: Mut,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -124,7 +111,7 @@ pub enum GlobalInit<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+    pub directives: &'ast [Directive<'ast>],
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
     pub rename: SymbolRename,
@@ -161,7 +148,7 @@ pub struct DirectiveParam {
 
 #[derive(Copy, Clone)]
 pub enum DirectiveKind<'ast> {
-    Unknown,
+    Unknown(Name),
     Inline,
     Builtin,
     Package,
@@ -240,7 +227,7 @@ pub enum StmtKind<'ast> {
     Assign(&'ast Assign<'ast>),
     ExprSemi(&'ast Expr<'ast>),
     ExprTail(&'ast Expr<'ast>),
-    AttrStmt(&'ast AttrStmt<'ast>), //@change naming etc
+    WithDirective(&'ast StmtWithDirective<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -295,8 +282,8 @@ pub struct Assign<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub struct AttrStmt<'ast> {
-    pub attrs: &'ast [Attr<'ast>],
+pub struct StmtWithDirective<'ast> {
+    pub directives: &'ast [Directive<'ast>],
     pub stmt: Stmt<'ast>,
 }
 
@@ -540,9 +527,6 @@ pub enum AssignOp {
 //==================== SIZE LOCK ====================
 
 crate::size_lock!(16, Item);
-crate::size_lock!(48, Attr);
-crate::size_lock!(28, AttrParam);
-
 crate::size_lock!(104, ProcItem);
 crate::size_lock!(64, EnumItem);
 crate::size_lock!(56, StructItem);
@@ -582,6 +566,27 @@ impl BinOp {
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => 5,
             BinOp::BitShl | BinOp::BitShr => 6,
             BinOp::Mul | BinOp::Div | BinOp::Rem => 7,
+        }
+    }
+}
+
+impl<'ast> DirectiveKind<'ast> {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DirectiveKind::Unknown(_) => "unknown",
+            DirectiveKind::Inline => "inline",
+            DirectiveKind::Builtin => "builtin",
+            DirectiveKind::Package => "package",
+            DirectiveKind::Private => "private",
+            DirectiveKind::ScopePublic => "scope_public",
+            DirectiveKind::ScopePackage => "scope_package",
+            DirectiveKind::ScopePrivate => "scope_private",
+            DirectiveKind::CallerLocation => "caller_location",
+            DirectiveKind::SizeOf(_) => "size_of",
+            DirectiveKind::AlignOf(_) => "align_of",
+            DirectiveKind::Config(_) => "config",
+            DirectiveKind::ConfigAny(_) => "config_any",
+            DirectiveKind::ConfigNot(_) => "config_not",
         }
     }
 }

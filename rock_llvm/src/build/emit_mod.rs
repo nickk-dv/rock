@@ -47,7 +47,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
         let enum_data = cg.hir.enum_data(enum_id);
 
-        let enum_ty = if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+        let enum_ty = if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
             let layout = enum_data.layout.resolved_unwrap();
             //@bad api, forced to create hir::ArrayStatic
             let array_ty = hir::ArrayStatic {
@@ -112,7 +112,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
         let enum_data = cg.hir.enum_data(enum_id);
 
-        if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+        if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
             let mut variant_types = Vec::with_capacity(enum_data.variants.len());
             let enum_name = cg.session.intern_name.get(enum_data.name.id);
 
@@ -184,7 +184,7 @@ fn codegen_globals(cg: &mut Codegen) {
             global_val,
             data.mutt == ast::Mut::Immutable,
             false,
-            data.attr_set.contains(hir::GlobalFlag::ThreadLocal),
+            false,
             llvm::Linkage::LLVMInternalLinkage,
         );
         cg.globals.push(global);
@@ -201,12 +201,12 @@ fn codegen_function_values(cg: &mut Codegen) {
         }
 
         //builtin takes precedence over external flag
-        let is_external = data.attr_set.contains(hir::ProcFlag::External)
-            && !data.attr_set.contains(hir::ProcFlag::Builtin);
-        let is_variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
-        let is_main = data.attr_set.contains(hir::ProcFlag::Main);
+        let is_external = data.flag_set.contains(hir::ProcFlag::External)
+            && !data.flag_set.contains(hir::ProcFlag::Builtin);
+        let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
+        let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
 
-        let name = if is_external || is_main {
+        let name = if is_external || is_entry {
             cg.session.intern_name.get(data.name.id)
         } else {
             let module_origin = cg.session.module.get(data.origin_id);
@@ -224,7 +224,7 @@ fn codegen_function_values(cg: &mut Codegen) {
             cg.string_buf.as_str()
         };
 
-        let linkage = if is_external || is_main {
+        let linkage = if is_external || is_entry {
             llvm::Linkage::LLVMExternalLinkage
         } else {
             llvm::Linkage::LLVMInternalLinkage
@@ -240,7 +240,7 @@ fn codegen_function_values(cg: &mut Codegen) {
         let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
 
-        if is_external || is_main {
+        if is_external || is_entry {
             fn_val.set_call_conv(llvm::CallConv::LLVMCCallConv);
         } else {
             fn_val.set_call_conv(llvm::CallConv::LLVMFastCallConv);
@@ -251,8 +251,8 @@ fn codegen_function_values(cg: &mut Codegen) {
 
 fn codegen_function_bodies(cg: &mut Codegen) {
     for (proc_idx, data) in cg.hir.procs.iter().enumerate() {
-        if data.attr_set.contains(hir::ProcFlag::External)
-            && !data.attr_set.contains(hir::ProcFlag::Builtin)
+        if data.flag_set.contains(hir::ProcFlag::External)
+            && !data.flag_set.contains(hir::ProcFlag::Builtin)
         {
             continue;
         }
@@ -326,7 +326,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             if !cg.insert_bb_terminated() {
                 cg.build.ret(value);
             }
-        } else if data.attr_set.contains(hir::ProcFlag::Builtin) {
+        } else if data.flag_set.contains(hir::ProcFlag::Builtin) {
             //@hack: generate slice builtins (all are the same)
             let slice_ty = cg.slice_type();
             let slice_ptr = cg.build.alloca(slice_ty.as_ty(), "slice");

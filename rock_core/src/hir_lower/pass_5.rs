@@ -1,4 +1,4 @@
-use super::attr_check;
+use super::check_directive;
 use super::check_path::{self, ValueID};
 use super::constant;
 use super::context::scope::{self, BlockStatus, Diverges};
@@ -1284,7 +1284,7 @@ fn cast_enum_into_basic(ctx: &HirCtx, from: hir::EnumID, into: BasicType) -> hir
     let enum_data = ctx.registry.enum_data(from);
     let into_kind = BasicTypeKind::new(into);
 
-    if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
         return CastKind::Error;
     }
 
@@ -1348,7 +1348,7 @@ fn typecheck_item<'hir, 'ast>(
                 }
                 let proc_ty = hir::ProcType {
                     param_types: ctx.arena.alloc_slice(&param_types),
-                    is_variadic: data.attr_set.contains(hir::ProcFlag::Variadic),
+                    is_variadic: data.flag_set.contains(hir::ProcFlag::Variadic),
                     return_ty: data.return_ty,
                 };
 
@@ -1953,12 +1953,13 @@ fn typecheck_block<'hir, 'ast>(
 
     for stmt in block.stmts.iter().copied() {
         let stmt = match stmt.kind {
-            ast::StmtKind::AttrStmt(attr) => {
-                let feedback = attr_check::check_attrs_stmt(ctx, attr.attrs);
-                if feedback.cfg_state.disabled() {
+            ast::StmtKind::WithDirective(dir) => {
+                let config =
+                    check_directive::check_expect_config(ctx, dir.directives, "statements");
+                if config.disabled() {
                     continue;
                 }
-                attr.stmt
+                dir.stmt
             }
             _ => stmt,
         };
@@ -2055,7 +2056,7 @@ fn typecheck_block<'hir, 'ast>(
                 }
                 stmt_res
             }
-            ast::StmtKind::AttrStmt(_) => unreachable!(),
+            ast::StmtKind::WithDirective(_) => unreachable!(),
         };
 
         match ctx.scope.local.diverges() {
@@ -2634,7 +2635,7 @@ fn check_call_direct<'hir, 'ast>(
 
     let proc_src = Some(data.src());
     let expected_count = data.params.len();
-    let is_variadic = data.attr_set.contains(hir::ProcFlag::Variadic);
+    let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
 
     let mut values = Vec::with_capacity(expected_count);
@@ -3159,7 +3160,7 @@ fn binary_op_check(
             },
             hir::Type::Enum(enum_id, _) => {
                 let enum_data = ctx.registry.enum_data(enum_id);
-                if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+                if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
                     None
                 } else {
                     Some(hir::BinOp::IsEq_Int)
@@ -3179,7 +3180,7 @@ fn binary_op_check(
             },
             hir::Type::Enum(enum_id, _) => {
                 let enum_data = ctx.registry.enum_data(enum_id);
-                if enum_data.attr_set.contains(hir::EnumFlag::WithFields) {
+                if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
                     None
                 } else {
                     Some(hir::BinOp::NotEq_Int)

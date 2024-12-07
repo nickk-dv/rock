@@ -15,7 +15,7 @@
 //  └─ src/test.rock:3:5
 //
 //#!
-pub proc test_cannot_ref_slice_field(slice: []u8) void {
+proc test_cannot_ref_slice_field(slice: []u8) void {
     &slice.ptr;
     &mut slice.len;
 }
@@ -125,7 +125,7 @@ pub proc test_cannot_ref_slice_field(slice: []u8) void {
 //   └─ src/test.rock:32:5
 //
 //#!
-pub proc test_cannot_ref_temporary(v: s32) void {
+proc test_cannot_ref_temporary(v: s32) void {
     &void; // const void
     &null; // const null
     &true; // const bool
@@ -173,6 +173,6 @@ pub proc test_cannot_ref_temporary(v: s32) void {
 //
 //#!
 const CONSTANT: s32 = 10;
-pub proc test_cannot_ref_const() void {
+proc test_cannot_ref_const() void {
     &CONSTANT;
 }

@@ -6,7 +6,7 @@ import core:fmt;
 //#expect(no_new_line)
 //x < 100
 //#!
-pub proc test_expr_if_condition() void {
+proc test_expr_if_condition() void {
     let x = 0;
     if x < 100 {
         fmt.print_string("x < 100");
@@ -16,7 +16,7 @@ pub proc test_expr_if_condition() void {
 //#entry "expr_if_yield_value"
 //#expect
 //#!
-pub proc test_expr_if_yield_value() void {
+proc test_expr_if_yield_value() void {
     let x = if true {
         1
     } else {
@@ -53,7 +53,7 @@ pub proc test_expr_if_yield_value() void {
 //#entry "expr_if_yield_nested"
 //#expect
 //#!
-pub proc test_expr_if_yield_nested() void {
+proc test_expr_if_yield_nested() void {
     let cond_a = false;
     let cond_b = true;
 

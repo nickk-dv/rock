@@ -427,12 +427,13 @@ pub fn path_resolve_value<'ast>(
 
 // `was_used` are set regardless of path resolve being valid.
 // finding a symbol acts like a `usage` even in invalid context.
+#[rustfmt::skip]
 pub fn set_symbol_usage_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
     match symbol_id {
-        SymbolID::Proc(id) => ctx.registry.proc_data_mut(id).was_used = true,
-        SymbolID::Enum(id) => ctx.registry.enum_data_mut(id).was_used = true,
-        SymbolID::Struct(id) => ctx.registry.struct_data_mut(id).was_used = true,
-        SymbolID::Const(id) => ctx.registry.const_data_mut(id).was_used = true,
-        SymbolID::Global(id) => ctx.registry.global_data_mut(id).was_used = true,
+        SymbolID::Proc(id) => ctx.registry.proc_data_mut(id).flag_set.set(hir::ProcFlag::WasUsed),
+        SymbolID::Enum(id) => ctx.registry.enum_data_mut(id).flag_set.set(hir::EnumFlag::WasUsed),
+        SymbolID::Struct(id) => ctx.registry.struct_data_mut(id).flag_set.set(hir::StructFlag::WasUsed),
+        SymbolID::Const(id) => ctx.registry.const_data_mut(id).flag_set.set(hir::ConstFlag::WasUsed),
+        SymbolID::Global(id) => ctx.registry.global_data_mut(id).flag_set.set(hir::GlobalFlag::WasUsed),
     }
 }

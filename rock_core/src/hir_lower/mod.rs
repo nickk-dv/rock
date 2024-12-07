@@ -1,4 +1,3 @@
-mod attr_check;
 mod check_directive;
 mod check_path;
 mod constant;

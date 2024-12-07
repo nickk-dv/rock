@@ -229,7 +229,7 @@ fn enum_item<'ast>(
     let variants = ctx.s.variants.take(offset, &mut ctx.arena);
 
     let enum_item = ast::EnumItem {
-        attrs: &[],
+        directives,
         name,
         poly_params,
         tag_ty,
@@ -239,7 +239,7 @@ fn enum_item<'ast>(
 }
 
 fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
-    let attrs = &[]; //@ attr_list(ctx, variant.attr_list(ctx.tree));
+    let directives = directive_list(ctx, variant.directive_list(ctx.tree));
     let name = name(ctx, variant.name(ctx.tree).unwrap());
 
     let kind = if let Some(value) = variant.value(ctx.tree) {
@@ -263,7 +263,11 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         ast::VariantKind::Default
     };
 
-    let variant = ast::Variant { attrs, name, kind };
+    let variant = ast::Variant {
+        directives,
+        name,
+        kind,
+    };
     ctx.s.variants.add(variant);
 }
 
@@ -285,7 +289,7 @@ fn struct_item<'ast>(
     let fields = ctx.s.fields.take(offset, &mut ctx.arena);
 
     let struct_item = ast::StructItem {
-        attrs: &[],
+        directives,
         name,
         poly_params,
         fields,
@@ -299,7 +303,7 @@ fn field(ctx: &mut AstBuild, field: cst::Field) {
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
     let field = ast::Field {
-        attrs: &[],
+        directives,
         name,
         ty,
     };
@@ -316,7 +320,7 @@ fn const_item<'ast>(
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     #[rustfmt::skip]
-    let const_item = ast::ConstItem { attrs: &[], name, ty, value };
+    let const_item = ast::ConstItem { directives, name, ty, value };
     ctx.arena.alloc(const_item)
 }
 
@@ -337,7 +341,7 @@ fn global_item<'ast>(
     };
 
     #[rustfmt::skip]
-    let global_item = ast::GlobalItem { attrs: &[], name, mutt, ty, init };
+    let global_item = ast::GlobalItem { directives, name, mutt, ty, init };
     ctx.arena.alloc(global_item)
 }
 
@@ -368,7 +372,7 @@ fn import_item<'ast>(
     };
 
     let import_item = ast::ImportItem {
-        attrs: &[],
+        directives,
         package,
         import_path,
         rename,
@@ -435,7 +439,7 @@ fn directive<'ast>(
                 "scope_package" => ast::DirectiveKind::ScopePackage,
                 "scope_private" => ast::DirectiveKind::ScopePrivate,
                 "caller_location" => ast::DirectiveKind::CallerLocation,
-                _ => ast::DirectiveKind::Unknown,
+                _ => ast::DirectiveKind::Unknown(name),
             }
         }
         cst::Directive::WithType(dir) => {
@@ -578,10 +582,9 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
             let directives = directive_list(ctx, attr.directive_list(ctx.tree));
             let stmt = stmt(ctx, attr.stmt(ctx.tree).unwrap());
 
-            //@change all the way, naming etc.
-            let attr = ast::AttrStmt { attrs: &[], stmt };
-            let attr = ctx.arena.alloc(attr);
-            ast::StmtKind::AttrStmt(attr)
+            let stmt = ast::StmtWithDirective { directives, stmt };
+            let stmt = ctx.arena.alloc(stmt);
+            ast::StmtKind::WithDirective(stmt)
         }
     };
 

@@ -4,7 +4,7 @@ import core:panics as _.{assert}
 //#entry "match_bool_behavior"
 //#expect
 //#!
-pub proc test_match_bool_behavior() void {
+proc test_match_bool_behavior() void {
     // discard
     let p0 = match true {
         _ -> -1,
@@ -113,7 +113,7 @@ pub proc test_match_bool_behavior() void {
 //   └─ src/test.rock:39:13
 //
 //#!
-pub proc test_match_bool_coverage() void {
+proc test_match_bool_coverage() void {
     let v = true;
     // normal
     match v {
@@ -180,7 +180,7 @@ pub proc test_match_bool_coverage() void {
 //  └─ src/test.rock:9:5
 //
 //#!
-pub proc test_match_bool_exhaust() void {
+proc test_match_bool_exhaust() void {
     let v = true;
     match v {
         true -> {},
@@ -194,7 +194,7 @@ pub proc test_match_bool_exhaust() void {
 //#entry "match_string_behavior"
 //#expect
 //#!
-pub proc test_match_string_behavior() void {
+proc test_match_string_behavior() void {
     let p0 = match "rock" {
         _ -> 0,
     };
@@ -271,7 +271,7 @@ pub proc test_match_string_behavior() void {
 //   └─ src/test.rock:26:13
 //
 //#!
-pub proc test_match_string_coverage() void {
+proc test_match_string_coverage() void {
     let v = "";
     // normal
     match v {
@@ -324,7 +324,7 @@ pub proc test_match_string_coverage() void {
 //   └─ src/test.rock:10:5
 //
 //#!
-pub proc test_match_string_exhaust() void {
+proc test_match_string_exhaust() void {
     let v = "";
     match v {
         "string" -> {},
