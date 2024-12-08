@@ -40,7 +40,7 @@ pub fn check_proc_directives(
     }
 
     for directive in item.directives {
-        if try_check_unknown_directive(ctx, directive) {
+        if try_check_error_directive(ctx, directive) {
             continue;
         }
         if try_check_config_directive(ctx, &mut config, directive) {
@@ -91,7 +91,7 @@ pub fn check_enum_directives(
     }
 
     for directive in item.directives {
-        if try_check_unknown_directive(ctx, directive) {
+        if try_check_error_directive(ctx, directive) {
             continue;
         }
         if try_check_config_directive(ctx, &mut config, directive) {
@@ -112,7 +112,7 @@ pub fn check_expect_config(
     let mut config = ConfigState(true);
 
     for directive in directives {
-        if try_check_unknown_directive(ctx, directive) {
+        if try_check_error_directive(ctx, directive) {
             continue;
         }
         if try_check_config_directive(ctx, &mut config, directive) {
@@ -125,9 +125,9 @@ pub fn check_expect_config(
     config
 }
 
-fn try_check_unknown_directive(ctx: &mut HirCtx, directive: &ast::Directive) -> bool {
+fn try_check_error_directive(ctx: &mut HirCtx, directive: &ast::Directive) -> bool {
     match directive.kind {
-        DirectiveKind::Unknown(name) => {
+        DirectiveKind::Error(name) => {
             let src = ctx.src(directive.range);
             let name = ctx.name(name.id);
             err::directive_unknown(&mut ctx.emit, src, name);

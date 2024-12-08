@@ -148,11 +148,9 @@ pub struct DirectiveParam {
 
 #[derive(Copy, Clone)]
 pub enum DirectiveKind<'ast> {
-    Unknown(Name),
+    Error(Name),
     Inline,
     Builtin,
-    Package,
-    Private,
     ScopePublic,
     ScopePackage,
     ScopePrivate,
@@ -573,11 +571,9 @@ impl BinOp {
 impl<'ast> DirectiveKind<'ast> {
     pub fn as_str(&self) -> &'static str {
         match self {
-            DirectiveKind::Unknown(_) => "unknown",
+            DirectiveKind::Error(_) => "<error>",
             DirectiveKind::Inline => "inline",
             DirectiveKind::Builtin => "builtin",
-            DirectiveKind::Package => "package",
-            DirectiveKind::Private => "private",
             DirectiveKind::ScopePublic => "scope_public",
             DirectiveKind::ScopePackage => "scope_package",
             DirectiveKind::ScopePrivate => "scope_private",
