@@ -24,21 +24,15 @@ pub fn codegen_module<'c, 's, 's_ref>(
     (cg.target, cg.module)
 }
 
+//@NOTE(8.12.24) currently always null terminate, no "used as cstring" tracking in the compiler.
 fn codegen_string_lits(cg: &mut Codegen) {
-    for (idx, &string) in cg.session.intern_lit.get_all().iter().enumerate() {
-        let c_string = true; //@always gen cstrings, optional c_string state were temp removed
-        let str_val = llvm::const_string(&cg.context, string, c_string);
-        let str_ty = llvm::typeof_value(str_val);
+    for string in cg.session.intern_lit.get_all().iter().copied() {
+        let string_val = llvm::const_string(&cg.context, string, true);
+        let string_ty = llvm::typeof_value(string_val);
 
-        let global = cg.module.add_global(
-            str_ty,
-            "rock.string",
-            str_val,
-            true,
-            true,
-            false,
-            llvm::Linkage::LLVMInternalLinkage,
-        );
+        let global = cg
+            .module
+            .add_global("rock.string", string_val, string_ty, true, true);
         cg.string_lits.push(global);
     }
 }
@@ -168,24 +162,21 @@ fn codegen_globals(cg: &mut Codegen) {
             hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
         };
 
-        let module_origin = cg.session.module.get(data.origin_id);
-        let package_origin = cg.session.graph.package(module_origin.origin());
-        let package_name = cg.session.intern_name.get(package_origin.name());
+        let module = cg.session.module.get(data.origin_id);
+        let package = cg.session.graph.package(module.origin());
+        let package_name = cg.session.intern_name.get(package.name());
         let struct_name = cg.session.intern_name.get(data.name.id);
-
         cg.string_buf.clear();
         cg.string_buf.push_str(package_name);
         cg.string_buf.push(':');
         cg.string_buf.push_str(struct_name);
 
         let global = cg.module.add_global(
-            global_ty,
             &cg.string_buf,
             global_val,
+            global_ty,
             data.mutt == ast::Mut::Immutable,
             false,
-            false,
-            llvm::Linkage::LLVMInternalLinkage,
         );
         cg.globals.push(global);
     }

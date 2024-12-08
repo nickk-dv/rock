@@ -103,6 +103,7 @@ fn fold_slice_field<'hir>(
 
     match target {
         hir::ConstValue::String { string_lit } => match access.field {
+            //@cannot be constant folded directly, handle it somehow.
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
                 if !string_lit.c_string {

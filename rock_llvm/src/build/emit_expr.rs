@@ -88,7 +88,7 @@ fn codegen_expr<'c>(
 ) -> Option<llvm::Value> {
     match expr.kind {
         hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => Some(codegen_const_in_proc(cg, proc_cg, expect, value)),
+        hir::ExprKind::Const { value } => Some(codegen_const_expr(cg, proc_cg, expect, value)),
         hir::ExprKind::If { if_ } => {
             codegen_if(cg, proc_cg, expect, if_);
             None
@@ -156,6 +156,25 @@ fn codegen_expr<'c>(
         hir::ExprKind::Address { rhs } => Some(codegen_address(cg, proc_cg, rhs)),
         hir::ExprKind::Unary { op, rhs } => Some(codegen_unary(cg, proc_cg, op, rhs)),
         hir::ExprKind::Binary { op, lhs, rhs } => Some(codegen_binary(cg, proc_cg, op, lhs, rhs)),
+    }
+}
+
+fn codegen_const_expr(
+    cg: &Codegen,
+    proc_cg: &mut ProcCodegen,
+    expect: Expect,
+    value: hir::ConstValue,
+) -> llvm::Value {
+    let value = codegen_const(cg, value);
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => value,
+        Expect::Pointer => {
+            //@NOTE(8.12.24) testing if this ever happens in real code
+            unreachable!("codegen_const_expr expected pointer!");
+            let temp_ptr = cg.entry_alloca(proc_cg, llvm::typeof_value(value), "temp_const");
+            cg.build.store(value, temp_ptr);
+            temp_ptr.as_val()
+        }
     }
 }
 
@@ -261,6 +280,7 @@ fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
     let elem_ty = if let Some(val) = values.get(0) {
         llvm::typeof_value(*val)
     } else {
+        //@FIX(8.12.24) empty array type not available, causes llvm type errors.
         cg.void_val_type().as_ty()
     };
     llvm::const_array(elem_ty, &values)
@@ -274,26 +294,10 @@ fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u6
     let elem_ty = if let Some(val) = values.get(0) {
         llvm::typeof_value(*val)
     } else {
+        //@FIX(8.12.24) empty array type not available, causes llvm type errors.
         cg.void_val_type().as_ty()
     };
     llvm::const_array(elem_ty, &values)
-}
-
-fn codegen_const_in_proc(
-    cg: &Codegen,
-    proc_cg: &mut ProcCodegen,
-    expect: Expect,
-    value: hir::ConstValue,
-) -> llvm::Value {
-    let value = codegen_const(cg, value);
-    match expect {
-        Expect::Value(_) | Expect::Store(_) => value,
-        Expect::Pointer => {
-            let temp_ptr = cg.entry_alloca(proc_cg, llvm::typeof_value(value), "temp_const");
-            cg.build.store(value, temp_ptr);
-            temp_ptr.as_val()
-        }
-    }
 }
 
 fn codegen_if<'c>(

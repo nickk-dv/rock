@@ -238,27 +238,25 @@ impl IRModule {
     #[must_use]
     pub fn add_global(
         &self,
-        ty: Type,
         name: &str,
-        const_val: Value,
+        value: Value,
+        global_ty: Type,
         constant: bool,
         unnamed_addr: bool,
-        thread_local: bool,
-        linkage: Linkage,
     ) -> ValueGlobal {
         let name = self.cstr_buf.cstr(name);
-        let global_val = unsafe { core::LLVMAddGlobal(self.module, ty.0, name) };
+        let global_val = unsafe { core::LLVMAddGlobal(self.module, global_ty.0, name) };
         let unnamed_addr = if unnamed_addr {
             sys::LLVMUnnamedAddr::LLVMGlobalUnnamedAddr
         } else {
             sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr
         };
-
-        unsafe { core::LLVMSetInitializer(global_val, const_val.0) };
-        unsafe { core::LLVMSetGlobalConstant(global_val, constant as i32) };
-        unsafe { core::LLVMSetUnnamedAddress(global_val, unnamed_addr) };
-        unsafe { core::LLVMSetThreadLocal(global_val, thread_local as i32) };
-        unsafe { core::LLVMSetLinkage(global_val, linkage) };
+        unsafe {
+            core::LLVMSetInitializer(global_val, value.0);
+            core::LLVMSetGlobalConstant(global_val, constant as i32);
+            core::LLVMSetUnnamedAddress(global_val, unnamed_addr);
+            core::LLVMSetLinkage(global_val, Linkage::LLVMInternalLinkage);
+        }
         ValueGlobal(global_val)
     }
 
