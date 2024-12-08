@@ -235,8 +235,6 @@ fn codegen_function_values(cg: &mut Codegen) {
             _ => cg.ty(data.return_ty),
         };
 
-        //@add noreturn attribute on `never` returning functions
-        //- inline hint when #[inline] is present
         let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
 
@@ -245,6 +243,13 @@ fn codegen_function_values(cg: &mut Codegen) {
         } else {
             fn_val.set_call_conv(llvm::CallConv::LLVMFastCallConv);
         }
+        if data.flag_set.contains(hir::ProcFlag::Inline) {
+            fn_val.set_attr(cg.attr_cache.inlinehint);
+        }
+        if data.return_ty.is_never() {
+            fn_val.set_attr(cg.attr_cache.noreturn);
+        }
+
         cg.procs.push((fn_val, fn_ty));
     }
 }

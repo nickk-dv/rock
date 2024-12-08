@@ -788,6 +788,7 @@ fn codegen_variant<'c>(
     }
 }
 
+//@set correct calling conv
 fn codegen_call_direct<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,
@@ -815,6 +816,9 @@ fn codegen_call_direct<'c>(
     }
 }
 
+//@set correct calling conv,
+// add calling conv to proc pointer type?
+// need to support #ccall directive specifically for proc pointer type
 fn codegen_call_indirect<'c>(
     cg: &Codegen<'c, '_, '_>,
     proc_cg: &mut ProcCodegen<'c>,

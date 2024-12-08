@@ -37,6 +37,10 @@ struct CStrBuffer(UnsafeCell<String>);
 
 #[derive(Copy, Clone)]
 pub struct BasicBlock(sys::LLVMBasicBlockRef);
+#[derive(Copy, Clone)]
+pub struct AttributeKindID(u32);
+#[derive(Copy, Clone)]
+pub struct Attribute(sys::LLVMAttributeRef);
 
 #[derive(Copy, Clone)]
 pub struct Value(sys::LLVMValueRef);
@@ -143,6 +147,18 @@ impl IRContext {
         }
     }
 
+    pub fn attr_kind_id(&self, name: &str) -> AttributeKindID {
+        unsafe {
+            AttributeKindID(core::LLVMGetEnumAttributeKindForName(
+                self.cstr_buf.cstr(name),
+                name.len(),
+            ))
+        }
+    }
+    pub fn attr_create(&self, kind_id: AttributeKindID) -> Attribute {
+        unsafe { Attribute(core::LLVMCreateEnumAttribute(self.context, kind_id.0, 0)) }
+    }
+
     pub fn int_1(&self) -> Type {
         Type(unsafe { core::LLVMInt1TypeInContext(self.context) })
     }
@@ -194,7 +210,6 @@ impl IRContext {
             )
         })
     }
-
     pub fn append_bb(&self, fn_val: ValueFn, name: &str) -> BasicBlock {
         BasicBlock(unsafe {
             core::LLVMAppendBasicBlockInContext(self.context, fn_val.0, self.cstr_buf.cstr(name))
@@ -569,6 +584,11 @@ impl ValueFn {
     }
     pub fn set_call_conv(&self, cc: CallConv) {
         unsafe { core::LLVMSetFunctionCallConv(self.0, cc) };
+    }
+    pub fn set_attr(self, attr: Attribute) {
+        unsafe {
+            core::LLVMAddAttributeAtIndex(self.0, sys::LLVM_ATTR_FUNCTION_INDEX, attr.0);
+        }
     }
 }
 

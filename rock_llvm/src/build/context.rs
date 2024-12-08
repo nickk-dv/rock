@@ -20,6 +20,7 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub session: &'s_ref Session<'s>,
     pub string_buf: String,
     cache: CodegenCache,
+    pub attr_cache: CodegenAttrCache,
 }
 
 pub struct ProcCodegen<'c> {
@@ -75,6 +76,11 @@ struct CodegenCache {
     void_val_type: llvm::TypeStruct,
 }
 
+pub struct CodegenAttrCache {
+    pub inlinehint: llvm::Attribute,
+    pub noreturn: llvm::Attribute,
+}
+
 impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn new(
         hir: hir::Hir<'c>,
@@ -85,6 +91,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let cache = CodegenCache::new(&context, &target);
+        let attr_cache = CodegenAttrCache::new(&context);
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
 
         Codegen {
@@ -103,6 +110,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             session,
             string_buf: String::with_capacity(256),
             cache,
+            attr_cache,
         }
     }
 
@@ -358,7 +366,6 @@ impl CodegenCache {
     fn new(context: &llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
         let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
-
         let slice_type = context.struct_create_named("rock.slice");
         let void_val_type = context.struct_create_named("rock.void");
         context.struct_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
@@ -377,6 +384,15 @@ impl CodegenCache {
             ptr_sized_int,
             slice_type,
             void_val_type,
+        }
+    }
+}
+
+impl CodegenAttrCache {
+    fn new(context: &llvm::IRContext) -> CodegenAttrCache {
+        CodegenAttrCache {
+            inlinehint: context.attr_create(context.attr_kind_id("inlinehint")),
+            noreturn: context.attr_create(context.attr_kind_id("noreturn")),
         }
     }
 }
