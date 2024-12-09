@@ -13,15 +13,15 @@ mod arena {
 
     pub struct Arena<'arena> {
         offset: usize,
-        block: Block,
-        full_blocks: Vec<Block>,
+        block: Block<'arena>,
         phantom: PhantomData<&'arena ()>,
     }
 
     #[derive(Copy, Clone)]
-    struct Block {
+    struct Block<'arena> {
         data: *mut u8,
         layout: alloc::Layout,
+        prev: Option<&'arena Block<'arena>>,
     }
 
     impl<'arena> Arena<'arena> {
@@ -29,7 +29,6 @@ mod arena {
             Arena {
                 offset: 0,
                 block: Block::alloc(PAGE_SIZE),
-                full_blocks: Vec::new(),
                 phantom: PhantomData,
             }
         }
@@ -81,29 +80,34 @@ mod arena {
         }
 
         fn grow(&mut self, size: usize) {
-            self.offset = 0;
-            self.full_blocks.push(self.block);
+            let prev = self.block;
             let block_size = (self.block.layout.size() * 2).min(MAX_PAGE_SIZE).max(size);
+            self.offset = 0;
             self.block = Block::alloc(block_size);
+            self.block.prev = Some(self.alloc(prev));
         }
 
-        pub fn mem_usage(&self) -> usize {
-            let full_bytes: usize = self
-                .full_blocks
-                .iter()
-                .map(|block| block.layout.size())
-                .sum();
-            full_bytes + self.offset
+        pub fn mem_usage(&self) -> (usize, usize) {
+            let mut total = 0;
+            let mut current = Some(self.block);
+            while let Some(block) = current {
+                total += block.layout.size();
+                current = block.prev.copied();
+            }
+            (total - self.block.layout.size() + self.offset, total)
         }
     }
 
-    impl Block {
-        fn alloc(size: usize) -> Block {
+    impl<'arena> Block<'arena> {
+        fn alloc(size: usize) -> Block<'arena> {
             let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
             let data = unsafe { alloc::alloc(layout) };
-            Block { data, layout }
+            Block {
+                data,
+                layout,
+                prev: None,
+            }
         }
-
         fn dealloc(&self) {
             unsafe { alloc::dealloc(self.data, self.layout) }
         }
@@ -111,10 +115,11 @@ mod arena {
 
     impl<'arena> Drop for Arena<'arena> {
         fn drop(&mut self) {
-            for block in &self.full_blocks {
+            let mut current = Some(self.block);
+            while let Some(block) = current {
+                current = block.prev.copied();
                 block.dealloc();
             }
-            self.block.dealloc();
         }
     }
 }
