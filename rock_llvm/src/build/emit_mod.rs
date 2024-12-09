@@ -190,6 +190,9 @@ fn codegen_function_values(cg: &mut Codegen) {
         for param in data.params {
             param_types.push(cg.ty(param.ty));
         }
+        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
+            param_types.push(cg.location_ty.as_ty());
+        }
 
         //builtin takes precedence over external flag
         let is_external = data.flag_set.contains(hir::ProcFlag::External)
@@ -268,6 +271,16 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let param_ty = cg.ty(param.ty);
             let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
+            proc_cg.param_ptrs.push(param_ptr);
+
+            let param_val = fn_val.param_val(param_idx as u32);
+            cg.build.store(param_val, param_ptr);
+        }
+
+        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
+            let param_idx = data.params.len();
+            let param_ty = cg.location_ty.as_ty();
+            let param_ptr = cg.build.alloca(param_ty, "caller_location");
             proc_cg.param_ptrs.push(param_ptr);
 
             let param_val = fn_val.param_val(param_idx as u32);

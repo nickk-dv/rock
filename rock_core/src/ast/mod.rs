@@ -309,6 +309,7 @@ pub enum ExprKind<'ast> {
     Call        { target: &'ast Expr<'ast>, args_list: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
     Sizeof      { ty: &'ast Type<'ast> },
+    Directive   { directive: &'ast Directive<'ast> },
     Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },

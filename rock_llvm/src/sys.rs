@@ -373,7 +373,8 @@ pub mod core {
             len: u64,
         ) -> LLVMValueRef;
 
-        pub fn LLVMConstStruct(
+        pub fn LLVMConstStructInContext(
+            ctx: LLVMContextRef,
             const_vals: *mut LLVMValueRef,
             count: c_uint,
             packed: LLVMBool,

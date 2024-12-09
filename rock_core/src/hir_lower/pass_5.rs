@@ -29,7 +29,9 @@ fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
         ctx.scope.set_origin(data.origin_id);
         ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(proc_id)));
         ctx.scope.local.reset();
-        ctx.scope.local.set_proc_context(data.params, expect); //shadowing params still addeded here
+        ctx.scope
+            .local
+            .set_proc_context(Some(proc_id), data.params, expect); //shadowing params still added here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
 
         let (locals, binds, for_binds) = ctx.scope.local.finish_proc_context();
@@ -422,6 +424,7 @@ pub fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
+        ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {
             typecheck_variant(ctx, expect, name, args_list, expr.range)
@@ -1325,6 +1328,40 @@ fn typecheck_sizeof<'hir, 'ast>(
     TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
 }
 
+fn typecheck_directive<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    directive: &ast::Directive<'ast>,
+) -> TypeResult<'hir> {
+    match directive.kind {
+        ast::DirectiveKind::CallerLocation => {
+            let (struct_id, _) = match core_find_struct(ctx, "panics", "Location") {
+                Some(value) => value,
+                None => {
+                    let msg = format!("failed to locate struct `Location` in `core:panics`");
+                    let src = ctx.src(directive.range);
+                    ctx.emit.error(Error::new(msg, src, None));
+                    return TypeResult::error();
+                }
+            };
+
+            let proc_id = ctx.scope.local.proc_id().unwrap();
+            let proc_data = ctx.registry.proc_data_mut(proc_id);
+            proc_data.flag_set.set(hir::ProcFlag::CallerLocation);
+
+            TypeResult::new(
+                hir::Type::Struct(struct_id, &[]),
+                hir::ExprKind::CallerLocation { struct_id },
+            )
+        }
+        _ => {
+            let msg = format!("unimplemented directive used`");
+            let src = ctx.src(directive.range);
+            ctx.emit.error(Error::new(msg, src, None));
+            TypeResult::error()
+        }
+    }
+}
+
 fn typecheck_item<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
@@ -1858,7 +1895,7 @@ fn typecheck_range<'hir, 'ast>(
 }
 
 fn core_find_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &HirCtx<'hir, '_, '_>,
     module_name: &'static str,
     struct_name: &'static str,
 ) -> Option<(hir::StructID, ModuleID)> {
@@ -2466,6 +2503,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),
         hir::ExprKind::Slice { .. } => UnusedExpr::Yes("slice value"),
         hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
+        hir::ExprKind::CallerLocation { .. } => UnusedExpr::Yes("caller location"),
         hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
         hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
         hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local binding value"),
@@ -3308,6 +3346,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Match { .. } => AddrBase::Temporary,
             hir::ExprKind::SliceField { .. } => AddrBase::SliceField,
             hir::ExprKind::Cast { .. } => AddrBase::Temporary,
+            hir::ExprKind::CallerLocation { .. } => AddrBase::Temporary,
             hir::ExprKind::Variant { .. } => AddrBase::TemporaryImmut,
             hir::ExprKind::CallDirect { .. } => AddrBase::Temporary,
             hir::ExprKind::CallIndirect { .. } => AddrBase::Temporary,

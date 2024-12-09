@@ -781,6 +781,11 @@ fn expr_kind<'ast>(
             let ty = ctx.arena.alloc(ty);
             ast::ExprKind::Sizeof { ty }
         }
+        cst::Expr::Directive(dir) => {
+            let directive = directive(ctx, dir);
+            let directive = ctx.arena.alloc(directive);
+            ast::ExprKind::Directive { directive }
+        }
         cst::Expr::Item(item) => {
             let path = path(ctx, item.path(ctx.tree).unwrap());
             let args_list = item.args_list(ctx.tree).map(|al| args_list(ctx, al));

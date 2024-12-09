@@ -291,6 +291,7 @@ pub enum ExprKind<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
+    CallerLocation { struct_id: StructID },
     ParamVar     { param_id: ParamID },
     LocalVar     { local_id: LocalID },
     LocalBind    { local_bind_id: LocalBindID },
@@ -641,6 +642,7 @@ crate::enum_as_str! {
         External "external",
         Variadic "variadic",
         EntryPoint "entry point",
+        CallerLocation "caller location",
     }
 }
 crate::enum_as_str! {
@@ -712,6 +714,7 @@ impl ItemFlag for ProcFlag {
             External => matches!(other, EntryPoint),
             Variadic => matches!(other, Builtin | EntryPoint),
             EntryPoint => matches!(other, Builtin | External | Variadic),
+            CallerLocation => false,
         }
     }
 }

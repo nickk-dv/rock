@@ -1256,6 +1256,7 @@ fn expr<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::Expr<'syn>) {
         cst::Expr::Call(expr) => expr_call(fmt, expr),
         cst::Expr::Cast(expr) => expr_cast(fmt, expr),
         cst::Expr::Sizeof(expr) => expr_sizeof(fmt, expr),
+        cst::Expr::Directive(dir) => directive(fmt, dir),
         cst::Expr::Item(expr) => expr_item(fmt, expr),
         cst::Expr::Variant(expr) => expr_variant(fmt, expr),
         cst::Expr::StructInit(expr) => expr_struct_init(fmt, expr),

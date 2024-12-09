@@ -356,7 +356,7 @@ fn directive_list_item(p: &mut Parser) -> (MarkerClosed, bool) {
     let m = p.start();
     let mut scope = false;
     while p.at(T![#]) {
-        scope = directive(p);
+        scope = directive(p).1;
         if scope {
             break;
         }
@@ -364,7 +364,7 @@ fn directive_list_item(p: &mut Parser) -> (MarkerClosed, bool) {
     (m.complete(p, SyntaxKind::DIRECTIVE_LIST), scope)
 }
 
-fn directive(p: &mut Parser) -> bool {
+fn directive(p: &mut Parser) -> (MarkerClosed, bool) {
     let m = p.start();
     p.bump(T![#]);
 
@@ -402,8 +402,7 @@ fn directive(p: &mut Parser) -> bool {
         }
         _ => {}
     }
-    m.complete(p, kind);
-    scope
+    (m.complete(p, kind), scope)
 }
 
 fn directive_param_list(p: &mut Parser) {
@@ -778,6 +777,7 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T!['{'] => block(p),
         T![match] => expr_match(p),
         T![sizeof] => expr_sizeof(p),
+        T![#] => directive(p).0,
         T![ident] => expr_item_or_struct_init(p),
         T![.] => expr_variant_or_struct_init(p),
         T!['['] => expr_array_init_or_repeat(p),

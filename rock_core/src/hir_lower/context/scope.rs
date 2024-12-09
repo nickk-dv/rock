@@ -53,6 +53,7 @@ pub enum SymbolOrModule {
 //==================== LOCAL SCOPE ====================
 
 pub struct LocalScope<'hir> {
+    proc_id: Option<hir::ProcID>,
     params: &'hir [hir::Param<'hir>],
     return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
@@ -316,6 +317,7 @@ impl GlobalScope {
 impl<'hir> LocalScope<'hir> {
     fn new() -> LocalScope<'hir> {
         LocalScope {
+            proc_id: None,
             params: &[],
             return_expect: Expectation::None,
             blocks: Vec::with_capacity(64),
@@ -329,6 +331,7 @@ impl<'hir> LocalScope<'hir> {
     }
 
     pub fn reset(&mut self) {
+        self.proc_id = None;
         self.params = &[];
         self.return_expect = Expectation::None;
         self.blocks.clear();
@@ -342,9 +345,11 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn set_proc_context(
         &mut self,
+        proc_id: Option<hir::ProcID>,
         params: &'hir [hir::Param<'hir>],
         return_expect: Expectation<'hir>,
     ) {
+        self.proc_id = proc_id;
         self.params = params;
         self.return_expect = return_expect;
     }
@@ -359,6 +364,9 @@ impl<'hir> LocalScope<'hir> {
         (&self.locals, &self.binds, &self.for_binds)
     }
 
+    pub fn proc_id(&self) -> Option<hir::ProcID> {
+        self.proc_id
+    }
     pub fn return_expect(&self) -> Expectation<'hir> {
         self.return_expect
     }

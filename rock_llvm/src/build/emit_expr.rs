@@ -3,6 +3,7 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
+use rock_core::text::{self, TextRange};
 
 pub fn codegen_expr_value<'c>(
     cg: &Codegen<'c, '_, '_>,
@@ -114,6 +115,7 @@ fn codegen_expr<'c>(
         hir::ExprKind::Cast { target, into, kind } => {
             Some(codegen_cast(cg, proc_cg, target, into, kind))
         }
+        hir::ExprKind::CallerLocation { .. } => Some(codegen_caller_location(cg, proc_cg, expect)),
         hir::ExprKind::ParamVar { param_id } => {
             Some(codegen_param_var(cg, proc_cg, expect, param_id))
         }
@@ -136,7 +138,7 @@ fn codegen_expr<'c>(
             cg, proc_cg, expect, enum_id, variant_id, input,
         )),
         hir::ExprKind::CallDirect { proc_id, input } => {
-            codegen_call_direct(cg, proc_cg, expect, proc_id, input)
+            codegen_call_direct(cg, proc_cg, expect, proc_id, input, expr.range)
         }
         hir::ExprKind::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, proc_cg, expect, target, indirect)
@@ -650,6 +652,18 @@ fn codegen_cast<'c>(
     }
 }
 
+fn codegen_caller_location(cg: &Codegen, proc_cg: &ProcCodegen, expect: Expect) -> llvm::Value {
+    let param_ptr = proc_cg.param_ptrs.last().copied().unwrap();
+
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => {
+            cg.build
+                .load(cg.location_ty.as_ty(), param_ptr, "caller_location_val")
+        }
+        Expect::Pointer => param_ptr.as_val(),
+    }
+}
+
 fn codegen_param_var(
     cg: &Codegen,
     proc_cg: &ProcCodegen,
@@ -799,11 +813,47 @@ fn codegen_call_direct<'c>(
     expect: Expect,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
+    expr_range: TextRange,
 ) -> Option<llvm::Value> {
     let mut input_values = Vec::with_capacity(input.len());
     for &expr in input {
         let value = codegen_expr_value(cg, proc_cg, expr);
         input_values.push(value);
+    }
+
+    let proc_data = cg.hir.proc_data(proc_id);
+    if proc_data.flag_set.contains(hir::ProcFlag::CallerLocation) {
+        let call_origin_id = cg.hir.proc_data(proc_cg.proc_id).origin_id;
+        let call_origin = cg.session.module.get(call_origin_id);
+        let call_file = cg.session.vfs.file(call_origin.file_id());
+        let location = text::find_text_location(
+            &call_file.source,
+            expr_range.start(),
+            &call_file.line_ranges,
+        );
+        let line = llvm::const_int(
+            cg.basic_type(ast::BasicType::U32),
+            location.line() as u64,
+            false,
+        );
+        let col = llvm::const_int(
+            cg.basic_type(ast::BasicType::U32),
+            location.col() as u64,
+            false,
+        );
+
+        let path = call_file.path().to_str().unwrap();
+        let string_val = llvm::const_string(&cg.context, path, true);
+        let string_ty = llvm::typeof_value(string_val);
+        let global = cg
+            .module
+            .add_global("rock.string.path", string_val, string_ty, true, true);
+
+        let slice_len = cg.const_usize(path.len() as u64);
+        let string_slice =
+            llvm::const_struct_named(cg.slice_type(), &[global.as_ptr().as_val(), slice_len]);
+        let location = llvm::const_struct_inline(&cg.context, &[line, col, string_slice], false);
+        input_values.push(location);
     }
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];

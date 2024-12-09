@@ -644,9 +644,10 @@ pub fn const_array(elem_ty: Type, const_vals: &[Value]) -> Value {
         )
     })
 }
-pub fn const_struct_inline(const_vals: &[Value], packed: bool) -> Value {
+pub fn const_struct_inline(ctx: &IRContext, const_vals: &[Value], packed: bool) -> Value {
     Value(unsafe {
-        core::LLVMConstStruct(
+        core::LLVMConstStructInContext(
+            ctx.context,
             const_vals.as_ptr() as *mut sys::LLVMValueRef,
             const_vals.len() as u32,
             packed as i32,

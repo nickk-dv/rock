@@ -806,6 +806,10 @@ fn add_expr_const_dependencies<'hir, 'ast>(
             add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
             Ok(())
         }
+        ast::ExprKind::Directive { .. } => {
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "directive");
+            Err(parent_id)
+        }
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path) {
                 ValueID::None => Err(parent_id),
