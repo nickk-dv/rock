@@ -531,8 +531,8 @@ fn item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::Item<'syn>) {
 fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::BLOCK]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("proc");
@@ -617,8 +617,8 @@ fn param<'syn>(fmt: &mut Formatter<'syn, '_>, param: cst::Param<'syn>) {
 fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::VARIANT_LIST]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("enum");
@@ -653,8 +653,8 @@ fn variant_list<'syn>(fmt: &mut Formatter<'syn, '_>, variant_list: cst::VariantL
 
 fn variant<'syn>(fmt: &mut Formatter<'syn, '_>, variant: cst::Variant<'syn>) {
     trivia_lift(fmt, variant.0, SyntaxSet::empty());
-    if let Some(directive_list_cst) = variant.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = variant.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
     fmt.tab_depth();
 
@@ -688,8 +688,8 @@ fn variant_field_list<'syn>(
 fn struct_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::StructItem<'syn>) {
     const HALT: SyntaxSet = SyntaxSet::new(&[SyntaxKind::FIELD_LIST]);
     trivia_lift(fmt, item.0, HALT);
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("struct");
@@ -719,8 +719,8 @@ fn field_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_list: cst::FieldList<'s
 
 fn field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::Field<'syn>) {
     trivia_lift(fmt, field.0, SyntaxSet::empty());
-    if let Some(directive_list_cst) = field.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = field.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
     fmt.tab_depth();
 
@@ -733,8 +733,8 @@ fn field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::Field<'syn>) {
 
 fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("const");
@@ -752,8 +752,8 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
 
 fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("global");
@@ -780,8 +780,8 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>)
 
 fn import_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ImportItem<'syn>) {
     trivia_lift(fmt, item.0, SyntaxSet::empty());
-    if let Some(directive_list_cst) = item.directive_list(fmt.tree) {
-        directive_list(fmt, directive_list_cst, true);
+    if let Some(dir_list) = item.dir_list(fmt.tree) {
+        directive_list(fmt, dir_list, true);
     }
 
     fmt.write_str("import");
@@ -884,11 +884,11 @@ fn import_symbol_rename(fmt: &mut Formatter, rename: cst::ImportSymbolRename) {
 
 fn directive_list<'syn>(
     fmt: &mut Formatter<'syn, '_>,
-    directive_list: cst::DirectiveList<'syn>,
+    dir_list: cst::DirectiveList<'syn>,
     new_line: bool,
 ) {
     let mut first = true;
-    for directive_cst in directive_list.directives(fmt.tree) {
+    for directive_cst in dir_list.directives(fmt.tree) {
         if !first {
             fmt.new_line();
         }
@@ -1237,7 +1237,7 @@ fn stmt_with_directive<'syn>(
     fmt: &mut Formatter<'syn, '_>,
     stmt_dir: cst::StmtWithDirective<'syn>,
 ) {
-    directive_list(fmt, stmt_dir.directive_list(fmt.tree).unwrap(), true);
+    directive_list(fmt, stmt_dir.dir_list(fmt.tree).unwrap(), true);
     stmt(fmt, stmt_dir.stmt(fmt.tree).unwrap(), true);
 }
 

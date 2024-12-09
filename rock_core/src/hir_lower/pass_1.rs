@@ -23,7 +23,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
                 ast::Item::Directive(item) => {
                     //@check all invalid ones (up to the last one)
                     //@warn redudant scope visibility changes
-                    let scope = item.last().unwrap();
+                    let scope = item.directives.last().unwrap();
                     let new_vis = match scope.kind {
                         ast::DirectiveKind::ScopePublic => hir::Vis::Public,
                         ast::DirectiveKind::ScopePackage => hir::Vis::Public, //@introduce `package` vis
@@ -115,7 +115,7 @@ fn add_struct_item<'ast>(
     item: &'ast ast::StructItem,
     scope_vis: hir::Vis,
 ) {
-    let config = check_directive::check_expect_config(ctx, item.directives, "structs");
+    let config = check_directive::check_expect_config(ctx, item.dir_list, "structs");
     if config.disabled() {
         return;
     }
@@ -149,7 +149,7 @@ fn add_const_item<'ast>(
     item: &'ast ast::ConstItem,
     scope_vis: hir::Vis,
 ) {
-    let config = check_directive::check_expect_config(ctx, item.directives, "constants");
+    let config = check_directive::check_expect_config(ctx, item.dir_list, "constants");
     if config.disabled() {
         return;
     }
@@ -184,7 +184,7 @@ fn add_global_item<'ast>(
     item: &'ast ast::GlobalItem,
     scope_vis: hir::Vis,
 ) {
-    let config = check_directive::check_expect_config(ctx, item.directives, "globals");
+    let config = check_directive::check_expect_config(ctx, item.dir_list, "globals");
     if config.disabled() {
         return;
     }
@@ -222,7 +222,7 @@ fn add_global_item<'ast>(
 }
 
 fn add_import_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::ImportItem) {
-    let config = check_directive::check_expect_config(ctx, item.directives, "imports");
+    let config = check_directive::check_expect_config(ctx, item.dir_list, "imports");
     if config.disabled() {
         return;
     }

@@ -39,7 +39,13 @@ pub fn check_proc_directives(
         err::flag_proc_variadic_zero_params(&mut ctx.emit, proc_src);
     }
 
-    for directive in item.directives {
+    let directives = if let Some(dir_list) = item.dir_list {
+        dir_list.directives
+    } else {
+        return (config, flag_set);
+    };
+
+    for directive in directives {
         if try_check_error_directive(ctx, directive) {
             continue;
         }
@@ -90,7 +96,13 @@ pub fn check_enum_directives(
         }
     }
 
-    for directive in item.directives {
+    let directives = if let Some(dir_list) = item.dir_list {
+        dir_list.directives
+    } else {
+        return (config, flag_set);
+    };
+
+    for directive in directives {
         if try_check_error_directive(ctx, directive) {
             continue;
         }
@@ -106,10 +118,16 @@ pub fn check_enum_directives(
 
 pub fn check_expect_config(
     ctx: &mut HirCtx,
-    directives: &[ast::Directive],
+    dir_list: Option<&ast::DirectiveList>,
     item_kinds: &'static str,
 ) -> ConfigState {
     let mut config = ConfigState(true);
+
+    let directives = if let Some(dir_list) = dir_list {
+        dir_list.directives
+    } else {
+        return config;
+    };
 
     for directive in directives {
         if try_check_error_directive(ctx, directive) {

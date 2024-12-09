@@ -15,12 +15,12 @@ pub enum Item<'ast> {
     Const(&'ast ConstItem<'ast>),
     Global(&'ast GlobalItem<'ast>),
     Import(&'ast ImportItem<'ast>),
-    Directive(&'ast &'ast [Directive<'ast>]),
+    Directive(&'ast DirectiveList<'ast>),
 }
 
 #[derive(Copy, Clone)]
 pub struct ProcItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub params: &'ast [Param<'ast>],
@@ -38,7 +38,7 @@ pub struct Param<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct EnumItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub tag_ty: Option<&'ast EnumTagType>,
@@ -53,7 +53,7 @@ pub struct EnumTagType {
 
 #[derive(Copy, Clone)]
 pub struct Variant<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub kind: VariantKind<'ast>,
 }
@@ -73,7 +73,7 @@ pub struct VariantFieldList<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StructItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub fields: &'ast [Field<'ast>],
@@ -81,14 +81,14 @@ pub struct StructItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Field<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub ty: Type<'ast>,
 }
 
 #[derive(Copy, Clone)]
 pub struct ConstItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub ty: Type<'ast>,
     pub value: ConstExpr<'ast>,
@@ -96,7 +96,7 @@ pub struct ConstItem<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct GlobalItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub mutt: Mut,
     pub name: Name,
     pub ty: Type<'ast>,
@@ -111,7 +111,7 @@ pub enum GlobalInit<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ImportItem<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub package: Option<Name>,
     pub import_path: &'ast [Name],
     pub rename: SymbolRename,
@@ -132,6 +132,11 @@ pub enum SymbolRename {
 }
 
 //==================== DIRECTIVE ====================
+
+#[derive(Copy, Clone)]
+pub struct DirectiveList<'ast> {
+    pub directives: &'ast [Directive<'ast>],
+}
 
 #[derive(Copy, Clone)]
 pub struct Directive<'ast> {
@@ -281,7 +286,7 @@ pub struct Assign<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct StmtWithDirective<'ast> {
-    pub directives: &'ast [Directive<'ast>],
+    pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub stmt: Stmt<'ast>,
 }
 
@@ -526,16 +531,16 @@ pub enum AssignOp {
 //==================== SIZE LOCK ====================
 
 crate::size_lock!(16, Item);
-crate::size_lock!(104, ProcItem);
-crate::size_lock!(64, EnumItem);
-crate::size_lock!(56, StructItem);
-crate::size_lock!(64, ConstItem);
-crate::size_lock!(64, GlobalItem);
-crate::size_lock!(80, ImportItem);
+crate::size_lock!(96, ProcItem);
+crate::size_lock!(56, EnumItem);
+crate::size_lock!(48, StructItem);
+crate::size_lock!(56, ConstItem);
+crate::size_lock!(56, GlobalItem);
+crate::size_lock!(72, ImportItem);
 
 crate::size_lock!(40, Param);
-crate::size_lock!(48, Variant);
-crate::size_lock!(56, Field);
+crate::size_lock!(40, Variant);
+crate::size_lock!(48, Field);
 crate::size_lock!(28, ImportSymbol);
 
 crate::size_lock!(24, Type);

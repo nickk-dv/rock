@@ -145,10 +145,7 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
         cst::Item::Const(item) => ast::Item::Const(const_item(ctx, item)),
         cst::Item::Global(item) => ast::Item::Global(global_item(ctx, item)),
         cst::Item::Import(item) => ast::Item::Import(import_item(ctx, item)),
-        cst::Item::Directive(item) => {
-            let directives = directive_list(ctx, Some(item));
-            ast::Item::Directive(ctx.arena.alloc(directives))
-        }
+        cst::Item::Directive(dir_list) => ast::Item::Directive(directive_list(ctx, dir_list)),
     };
     ctx.s.items.add(item);
 }
@@ -166,7 +163,7 @@ fn proc_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -184,7 +181,7 @@ fn proc_item<'ast>(
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
     let proc_item = ast::ProcItem {
-        directives,
+        dir_list,
         name,
         poly_params,
         params,
@@ -208,7 +205,7 @@ fn enum_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -229,7 +226,7 @@ fn enum_item<'ast>(
     let variants = ctx.s.variants.take(offset, &mut ctx.arena);
 
     let enum_item = ast::EnumItem {
-        directives,
+        dir_list,
         name,
         poly_params,
         tag_ty,
@@ -239,7 +236,7 @@ fn enum_item<'ast>(
 }
 
 fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
-    let directives = directive_list(ctx, variant.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, variant.dir_list(ctx.tree));
     let name = name(ctx, variant.name(ctx.tree).unwrap());
 
     let kind = if let Some(value) = variant.value(ctx.tree) {
@@ -264,7 +261,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
     };
 
     let variant = ast::Variant {
-        directives,
+        dir_list,
         name,
         kind,
     };
@@ -275,7 +272,7 @@ fn struct_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item
         .poly_params(ctx.tree)
@@ -289,7 +286,7 @@ fn struct_item<'ast>(
     let fields = ctx.s.fields.take(offset, &mut ctx.arena);
 
     let struct_item = ast::StructItem {
-        directives,
+        dir_list,
         name,
         poly_params,
         fields,
@@ -298,15 +295,11 @@ fn struct_item<'ast>(
 }
 
 fn field(ctx: &mut AstBuild, field: cst::Field) {
-    let directives = directive_list(ctx, field.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, field.dir_list(ctx.tree));
     let name = name(ctx, field.name(ctx.tree).unwrap());
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
-    let field = ast::Field {
-        directives,
-        name,
-        ty,
-    };
+    let field = ast::Field { dir_list, name, ty };
     ctx.s.fields.add(field);
 }
 
@@ -314,13 +307,13 @@ fn const_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     #[rustfmt::skip]
-    let const_item = ast::ConstItem { directives, name, ty, value };
+    let const_item = ast::ConstItem { dir_list, name, ty, value };
     ctx.arena.alloc(const_item)
 }
 
@@ -328,7 +321,7 @@ fn global_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let mutt = mutt(item.t_mut(ctx.tree));
     let ty = ty(ctx, item.ty(ctx.tree).unwrap());
@@ -341,7 +334,7 @@ fn global_item<'ast>(
     };
 
     #[rustfmt::skip]
-    let global_item = ast::GlobalItem { directives, name, mutt, ty, init };
+    let global_item = ast::GlobalItem { dir_list, name, mutt, ty, init };
     ctx.arena.alloc(global_item)
 }
 
@@ -349,7 +342,7 @@ fn import_item<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
-    let directives = directive_list(ctx, item.directive_list(ctx.tree));
+    let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
     let offset = ctx.s.names.start();
@@ -372,7 +365,7 @@ fn import_item<'ast>(
     };
 
     let import_item = ast::ImportItem {
-        directives,
+        dir_list,
         package,
         import_path,
         rename,
@@ -407,17 +400,25 @@ fn import_symbol_rename(
 
 fn directive_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    directive_list: Option<cst::DirectiveList>,
-) -> &'ast [ast::Directive<'ast>] {
-    if let Some(directive_list) = directive_list {
-        let offset = ctx.s.directives.start();
-        for directive_cst in directive_list.directives(ctx.tree) {
-            let directive = directive(ctx, directive_cst);
-            ctx.s.directives.add(directive);
-        }
-        ctx.s.directives.take(offset, &mut ctx.arena)
+    dir_list: cst::DirectiveList,
+) -> &'ast ast::DirectiveList<'ast> {
+    let offset = ctx.s.directives.start();
+    for directive_cst in dir_list.directives(ctx.tree) {
+        let directive = directive(ctx, directive_cst);
+        ctx.s.directives.add(directive);
+    }
+    let directives = ctx.s.directives.take(offset, &mut ctx.arena);
+    ctx.arena.alloc(ast::DirectiveList { directives })
+}
+
+fn directive_list_opt<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    dir_list: Option<cst::DirectiveList>,
+) -> Option<&'ast ast::DirectiveList<'ast>> {
+    if let Some(dir_list) = dir_list {
+        Some(directive_list(ctx, dir_list))
     } else {
-        &[]
+        None
     }
 }
 
@@ -576,11 +577,11 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
             let expr = expr(ctx, tail.expr(ctx.tree).unwrap());
             ast::StmtKind::ExprTail(expr)
         }
-        cst::Stmt::WithDirective(attr) => {
-            let directives = directive_list(ctx, attr.directive_list(ctx.tree));
-            let stmt = stmt(ctx, attr.stmt(ctx.tree).unwrap());
+        cst::Stmt::WithDirective(stmt_dir) => {
+            let dir_list = directive_list_opt(ctx, stmt_dir.dir_list(ctx.tree));
+            let stmt = stmt(ctx, stmt_dir.stmt(ctx.tree).unwrap());
 
-            let stmt = ast::StmtWithDirective { directives, stmt };
+            let stmt = ast::StmtWithDirective { dir_list, stmt };
             let stmt = ctx.arena.alloc(stmt);
             ast::StmtKind::WithDirective(stmt)
         }

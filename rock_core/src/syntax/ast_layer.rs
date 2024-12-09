@@ -852,7 +852,7 @@ impl<'syn> SourceFile<'syn> {
 }
 
 impl<'syn> ProcItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(poly_params, PolymorphParams);
     node_find!(param_list, ParamList);
@@ -870,7 +870,7 @@ impl<'syn> Param<'syn> {
 }
 
 impl<'syn> EnumItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(poly_params, PolymorphParams);
     token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
@@ -880,7 +880,7 @@ impl<'syn> VariantList<'syn> {
     node_iter!(variants, Variant);
 }
 impl<'syn> Variant<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(value, Expr);
     node_find!(field_list, VariantFieldList);
@@ -890,7 +890,7 @@ impl<'syn> VariantFieldList<'syn> {
 }
 
 impl<'syn> StructItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(poly_params, PolymorphParams);
     node_find!(field_list, FieldList);
@@ -899,20 +899,20 @@ impl<'syn> FieldList<'syn> {
     node_iter!(fields, Field);
 }
 impl<'syn> Field<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(ty, Type);
 }
 
 impl<'syn> ConstItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
     node_find!(ty, Type);
     node_find!(value, Expr);
 }
 
 impl<'syn> GlobalItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     token_find!(t_mut, T![mut]);
     node_find!(name, Name);
     node_find!(ty, Type);
@@ -921,7 +921,7 @@ impl<'syn> GlobalItem<'syn> {
 }
 
 impl<'syn> ImportItem<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(package, Name);
     node_find!(import_path, ImportPath);
     node_find!(rename, ImportSymbolRename);
@@ -1074,7 +1074,7 @@ impl<'syn> StmtExprTail<'syn> {
 }
 
 impl<'syn> StmtWithDirective<'syn> {
-    node_find!(directive_list, DirectiveList);
+    node_find!(dir_list, DirectiveList);
     node_find!(stmt, Stmt);
 }
 

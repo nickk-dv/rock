@@ -1990,13 +1990,13 @@ fn typecheck_block<'hir, 'ast>(
 
     for stmt in block.stmts.iter().copied() {
         let stmt = match stmt.kind {
-            ast::StmtKind::WithDirective(dir) => {
+            ast::StmtKind::WithDirective(stmt_dir) => {
                 let config =
-                    check_directive::check_expect_config(ctx, dir.directives, "statements");
+                    check_directive::check_expect_config(ctx, stmt_dir.dir_list, "statements");
                 if config.disabled() {
                     continue;
                 }
-                dir.stmt
+                stmt_dir.stmt
             }
             _ => stmt,
         };

@@ -86,7 +86,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     let mut any_constant = false;
 
     for variant in item.variants.iter() {
-        let config = check_directive::check_expect_config(ctx, variant.directives, "variants");
+        let config = check_directive::check_expect_config(ctx, variant.dir_list, "variants");
         if config.disabled() {
             continue;
         }
@@ -218,7 +218,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
     let mut unique = Vec::<hir::Field>::new();
 
     for field in item.fields.iter() {
-        let config = check_directive::check_expect_config(ctx, field.directives, "fields");
+        let config = check_directive::check_expect_config(ctx, field.dir_list, "fields");
         if config.disabled() {
             continue;
         }
