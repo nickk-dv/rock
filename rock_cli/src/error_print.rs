@@ -46,9 +46,6 @@ pub fn print_impl(session: Option<&Session>, errors: Vec<Error>, warnings: Vec<W
         );
     }
     let _ = handle.flush();
-
-    std::mem::forget(errors);
-    std::mem::forget(warnings);
 }
 
 struct StateFmt<'src> {

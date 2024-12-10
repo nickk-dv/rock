@@ -53,7 +53,7 @@ pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
 pub fn match_cov<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     kind: hir::MatchKind,
-    arms: &mut [hir::MatchArm<'hir>],
+    arms: &[hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
 ) {
@@ -86,7 +86,7 @@ pub fn match_cov<'hir>(
 fn match_cov_int(
     ctx: &mut HirCtx,
     cov: &mut PatCovInt<i128>,
-    arms: &mut [hir::MatchArm],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
     int_ty: hir::BasicInt,
@@ -169,7 +169,7 @@ fn pat_cov_int(
 fn match_cov_bool(
     ctx: &mut HirCtx,
     cov: &mut PatCovBool,
-    arms: &mut [hir::MatchArm],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
 ) {
@@ -237,7 +237,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
 fn match_cov_char(
     ctx: &mut HirCtx,
     cov: &mut PatCovChar,
-    arms: &mut [hir::MatchArm],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
 ) {
@@ -298,7 +298,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
 fn match_cov_string(
     ctx: &mut HirCtx,
     cov: &mut PatCovString,
-    arms: &mut [hir::MatchArm],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
 ) {
@@ -357,7 +357,7 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
 fn match_cov_enum<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     cov: &mut PatCovEnum,
-    arms: &mut [hir::MatchArm<'hir>],
+    arms: &[hir::MatchArm<'hir>],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
     enum_id: hir::EnumID,

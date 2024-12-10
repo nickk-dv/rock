@@ -528,12 +528,12 @@ fn typecheck_if<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let mut if_type = hir::Type::NEVER;
 
-    let mut branches = Vec::with_capacity(if_.branches.len());
+    let offset = ctx.cache.branches.start();
     for branch in if_.branches {
         let branch = typecheck_branch(ctx, &mut expect, &mut if_type, branch);
-        branches.push(branch);
+        ctx.cache.branches.push(branch);
     }
-    let branches = ctx.arena.alloc_slice(&branches);
+    let branches = ctx.cache.branches.take(offset, &mut ctx.arena);
 
     let else_block = match if_.else_block {
         Some(block) => {
@@ -618,7 +618,7 @@ fn typecheck_match<'hir, 'ast>(
         Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
     };
 
-    let mut arms = Vec::with_capacity(match_.arms.len());
+    let offset = ctx.cache.match_arms.start();
     for arm in match_.arms {
         ctx.scope.local.start_block(BlockStatus::None);
         let pat = typecheck_pat(ctx, pat_expect, &arm.pat, ref_mut, false);
@@ -640,8 +640,9 @@ fn typecheck_match<'hir, 'ast>(
                 hir::Block { stmts }
             }
         };
-        arms.push(hir::MatchArm { pat, block });
+        ctx.cache.match_arms.push(hir::MatchArm { pat, block });
     }
+    let arms = ctx.cache.match_arms.take(offset, &mut ctx.arena);
 
     let kind = match kind_res {
         Ok(kind) => kind,
@@ -656,9 +657,8 @@ fn typecheck_match<'hir, 'ast>(
 
     let mut match_kw = TextRange::empty_at(match_range.start());
     match_kw.extend_by(5.into());
-    super::match_check::match_cov(ctx, kind, arms.as_mut_slice(), match_.arms, match_kw);
+    super::match_check::match_cov(ctx, kind, arms, match_.arms, match_kw);
 
-    let arms = ctx.arena.alloc_slice(&arms);
     let match_ = hir::Match {
         on_expr: on_res.expr,
         arms,
@@ -827,12 +827,12 @@ fn typecheck_pat_or<'hir, 'ast>(
     pats: &[ast::Pat<'ast>],
     ref_mut: Option<ast::Mut>,
 ) -> PatResult<'hir> {
-    let mut patterns = Vec::with_capacity(pats.len());
+    let offset = ctx.cache.patterns.start();
     for pat in pats {
         let pat = typecheck_pat(ctx, expect, pat, ref_mut, true);
-        patterns.push(pat);
+        ctx.cache.patterns.push(pat);
     }
-    let pats = ctx.arena.alloc_slice(&patterns);
+    let pats = ctx.cache.patterns.take(offset, &mut ctx.arena);
 
     PatResult::new(hir::Pat::Or(pats), hir::Type::Error)
 }
@@ -1369,12 +1369,12 @@ fn typecheck_item<'hir, 'ast>(
             } else {
                 let data = ctx.registry.proc_data(proc_id);
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
-                let mut param_types = Vec::with_capacity(data.params.len());
+                let offset = ctx.cache.types.start();
                 for param in data.params {
-                    param_types.push(param.ty);
+                    ctx.cache.types.push(param.ty);
                 }
                 let proc_ty = hir::ProcType {
-                    param_types: ctx.arena.alloc_slice(&param_types),
+                    param_types: ctx.cache.types.take(offset, &mut ctx.arena),
                     is_variadic: data.flag_set.contains(hir::ProcFlag::Variadic),
                     return_ty: data.return_ty,
                 };
@@ -1518,8 +1518,8 @@ fn typecheck_struct_init<'hir, 'ast>(
         Init(TextRange),
     }
 
-    //@potentially a lot of allocations (simple solution), same memory could be re-used
-    let mut field_inits = Vec::<hir::FieldInit>::with_capacity(field_count);
+    //@re-use FieldStatus memory
+    let offset_init = ctx.cache.field_inits.start();
     let mut field_status = Vec::<FieldStatus>::new();
     field_status.resize_with(field_count, || FieldStatus::None);
     let mut init_count: usize = 0;
@@ -1568,7 +1568,7 @@ fn typecheck_struct_init<'hir, 'ast>(
                 field_id,
                 expr: input_res.expr,
             };
-            field_inits.push(field_init);
+            ctx.cache.field_inits.push(field_init);
             field_status[field_id.index()] = FieldStatus::Init(input.name.range);
             init_count += 1;
         }
@@ -1621,9 +1621,9 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
     }
 
-    let input = ctx.arena.alloc_slice(&field_inits);
-    let kind = hir::ExprKind::StructInit { struct_id, input };
     //@ignored poly_types
+    let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
+    let kind = hir::ExprKind::StructInit { struct_id, input };
     TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
 }
 
@@ -1646,11 +1646,11 @@ fn typecheck_array_init<'hir, 'ast>(
     let mut did_error = false;
     let error_count = ctx.emit.error_count();
 
-    let mut input_res = Vec::with_capacity(input.len());
+    let offset = ctx.cache.exprs.start();
     for expr in input.iter().copied() {
         let expr_res = typecheck_expr(ctx, expect, expr);
-        input_res.push(expr_res.expr);
         did_error = ctx.emit.did_error(error_count);
+        ctx.cache.exprs.push(expr_res.expr);
 
         // stop expecting when errored
         if did_error {
@@ -1667,7 +1667,7 @@ fn typecheck_array_init<'hir, 'ast>(
             }
         }
     }
-    let input = ctx.arena.alloc_slice(&input_res);
+    let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
     if elem_ty.is_none() {
         match expect {
@@ -1978,7 +1978,7 @@ fn typecheck_block<'hir, 'ast>(
 ) -> BlockResult<'hir> {
     ctx.scope.local.start_block(status);
 
-    let mut block_stmts: Vec<hir::Stmt> = Vec::with_capacity(block.stmts.len());
+    let offset = ctx.cache.stmts.start();
     let mut block_ty: Option<hir::Type> = None;
     let mut tail_range: Option<TextRange> = None;
 
@@ -2091,12 +2091,12 @@ fn typecheck_block<'hir, 'ast>(
         };
 
         match ctx.scope.local.diverges() {
-            Diverges::Maybe | Diverges::Always(_) => block_stmts.push(stmt_res),
+            Diverges::Maybe | Diverges::Always(_) => ctx.cache.stmts.push(stmt_res),
             Diverges::AlwaysWarned => {}
         }
     }
 
-    let stmts = ctx.arena.alloc_slice(&block_stmts);
+    let stmts = ctx.cache.stmts.take(offset, &mut ctx.arena);
     let hir_block = hir::Block { stmts };
 
     //@wip approach, will change 03.07.24
@@ -2666,7 +2666,7 @@ fn check_call_direct<'hir, 'ast>(
     let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
 
-    let mut values = Vec::with_capacity(expected_count);
+    let offset = ctx.cache.exprs.start();
     for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {
         let data = ctx.registry.proc_data(proc_id);
         let expect = match data.params.get(idx) {
@@ -2677,9 +2677,9 @@ fn check_call_direct<'hir, 'ast>(
             None => Expectation::HasType(hir::Type::Error, None),
         };
         let expr_res = typecheck_expr(ctx, expect, expr);
-        values.push(expr_res.expr);
+        ctx.cache.exprs.push(expr_res.expr);
     }
-    let values = ctx.arena.alloc_slice(&values);
+    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
     let kind = hir::ExprKind::CallDirect {
         proc_id,
@@ -2713,16 +2713,16 @@ fn check_call_indirect<'hir, 'ast>(
     let is_variadic = proc_ty.is_variadic;
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
 
-    let mut values = Vec::with_capacity(expected_count);
+    let offset = ctx.cache.exprs.start();
     for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {
         let expect = match proc_ty.param_types.get(idx) {
             Some(param_ty) => Expectation::HasType(*param_ty, None),
             None => Expectation::HasType(hir::Type::Error, None),
         };
         let expr_res = typecheck_expr(ctx, expect, expr);
-        values.push(expr_res.expr);
+        ctx.cache.exprs.push(expr_res.expr);
     }
-    let values = ctx.arena.alloc_slice(&values);
+    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
     let indirect = hir::CallIndirect {
         proc_ty,
@@ -2793,7 +2793,7 @@ fn check_variant_input_opt<'hir, 'ast>(
     }
 
     let input = if let Some(arg_list) = arg_list {
-        let mut values = Vec::with_capacity(arg_list.exprs.len());
+        let offset = ctx.cache.exprs.start();
         for (idx, &expr) in arg_list.exprs.iter().enumerate() {
             let expect = match variant.fields.get(idx) {
                 Some(field) => {
@@ -2803,10 +2803,10 @@ fn check_variant_input_opt<'hir, 'ast>(
                 None => Expectation::HasType(hir::Type::Error, None),
             };
             let expr_res = typecheck_expr(ctx, expect, expr);
-            values.push(expr_res.expr);
+            ctx.cache.exprs.push(expr_res.expr);
         }
-        let values = ctx.arena.alloc_slice(&values);
-        ctx.arena.alloc(values)
+        let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
+        ctx.arena.alloc(input)
     } else {
         let empty: &[&hir::Expr] = &[];
         ctx.arena.alloc(empty)
@@ -2874,13 +2874,7 @@ fn check_variant_bind_list<'hir>(
         return &[];
     }
 
-    let expected_count = if let Some(variant) = variant {
-        variant.fields.len()
-    } else {
-        bind_list.binds.len()
-    };
-    let mut bind_ids = Vec::with_capacity(expected_count);
-
+    let offset = ctx.cache.bind_ids.start();
     for (idx, bind) in bind_list.binds.iter().enumerate() {
         let (mutt, name) = match *bind {
             ast::Binding::Named(mutt, name) => (mutt, name),
@@ -2926,10 +2920,10 @@ fn check_variant_bind_list<'hir>(
             was_used: false,
         };
         let bind_id = ctx.scope.local.add_bind(local_bind);
-        bind_ids.push(bind_id);
+        ctx.cache.bind_ids.push(bind_id);
     }
 
-    ctx.arena.alloc_slice(&bind_ids)
+    ctx.cache.bind_ids.take(offset, &mut ctx.arena)
 }
 
 //==================== OPERATOR ====================

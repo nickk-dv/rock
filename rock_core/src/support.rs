@@ -161,7 +161,7 @@ mod temp_buffer {
             }
         }
         #[inline]
-        pub fn add(&mut self, value: T) {
+        pub fn push(&mut self, value: T) {
             self.buffer.push(value);
         }
 

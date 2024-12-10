@@ -37,7 +37,7 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
         ctx.registry.proc_data_mut(id).poly_params = poly_params;
     }
 
-    let mut unique = Vec::<hir::Param>::new();
+    ctx.cache.proc_params.clear();
 
     for param in item.params.iter() {
         //@change error to `shadows` instead of already defined?
@@ -48,7 +48,11 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             &mut ctx.emit,
         );
 
-        let existing = unique.iter().find(|&it| it.name.id == param.name.id);
+        let existing = ctx
+            .cache
+            .proc_params
+            .iter()
+            .find(|&it| it.name.id == param.name.id);
         if let Some(existing) = existing {
             let param_src = ctx.src(param.name.range);
             let existing = ctx.src(existing.name.range);
@@ -63,12 +67,12 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             ty: type_resolve(ctx, param.ty, true),
             ty_range: param.ty.range,
         };
-        unique.push(param);
+        ctx.cache.proc_params.push(param);
     }
 
     let return_ty = type_resolve(ctx, item.return_ty, true);
     let data = ctx.registry.proc_data_mut(id);
-    data.params = ctx.arena.alloc_slice(&unique);
+    data.params = ctx.arena.alloc_slice(&ctx.cache.proc_params);
     data.return_ty = return_ty;
 }
 
@@ -82,8 +86,8 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         ctx.registry.enum_data_mut(id).poly_params = poly_params;
     }
 
-    let mut unique = Vec::<hir::Variant>::new();
     let mut any_constant = false;
+    ctx.cache.enum_variants.clear();
 
     for variant in item.variants.iter() {
         let config = check_directive::check_expect_config(ctx, variant.dir_list, "variants");
@@ -91,7 +95,11 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
             continue;
         }
 
-        let existing = unique.iter().find(|&it| it.name.id == variant.name.id);
+        let existing = ctx
+            .cache
+            .enum_variants
+            .iter()
+            .find(|&it| it.name.id == variant.name.id);
         if let Some(existing) = existing {
             let variant_src = ctx.src(variant.name.range);
             let existing = ctx.src(existing.name.range);
@@ -143,7 +151,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
                 }
             }
         };
-        unique.push(variant);
+        ctx.cache.enum_variants.push(variant);
     }
 
     let data = ctx.registry.enum_data(id);
@@ -162,7 +170,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     // when `tag_ty` is unknown and all fields are non constant:
     // perform default enum tag sizing: 0..<variant_count
     if tag_ty.is_unresolved() && !any_constant {
-        let variant_count = unique.len() as u64;
+        let variant_count = ctx.cache.enum_variants.len() as u64;
         let int_ty = if variant_count <= u8::MAX as u64 {
             hir::BasicInt::U8
         } else if variant_count <= u16::MAX as u64 {
@@ -186,7 +194,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     // when `tag_ty` is unknown: set all Evals to `ResolvedError`
     //@not needed?
     if !tag_ty.is_resolved_ok() {
-        for variant in unique.iter() {
+        for variant in ctx.cache.enum_variants.iter() {
             match variant.kind {
                 hir::VariantKind::Default(eval_id) => {
                     let eval = ctx.registry.variant_eval_mut(eval_id);
@@ -201,7 +209,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     }
 
     let data = ctx.registry.enum_data_mut(id);
-    data.variants = ctx.arena.alloc_slice(&unique);
+    data.variants = ctx.arena.alloc_slice(&ctx.cache.enum_variants);
     data.tag_ty = tag_ty;
 }
 
@@ -215,7 +223,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
         ctx.registry.struct_data_mut(id).poly_params = poly_params;
     }
 
-    let mut unique = Vec::<hir::Field>::new();
+    ctx.cache.struct_fields.clear();
 
     for field in item.fields.iter() {
         let config = check_directive::check_expect_config(ctx, field.dir_list, "fields");
@@ -223,7 +231,11 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
             continue;
         }
 
-        let existing = unique.iter().find(|&it| it.name.id == field.name.id);
+        let existing = ctx
+            .cache
+            .struct_fields
+            .iter()
+            .find(|&it| it.name.id == field.name.id);
         if let Some(existing) = existing {
             let field_src = ctx.src(field.name.range);
             let existing = ctx.src(existing.name.range);
@@ -238,11 +250,11 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
             ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,
         };
-        unique.push(field);
+        ctx.cache.struct_fields.push(field);
     }
 
     let data = ctx.registry.struct_data_mut(id);
-    data.fields = ctx.arena.alloc_slice(&unique);
+    data.fields = ctx.arena.alloc_slice(&ctx.cache.struct_fields);
 }
 
 fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {

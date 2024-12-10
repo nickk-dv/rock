@@ -147,7 +147,7 @@ fn item(ctx: &mut AstBuild, item: cst::Item) {
         cst::Item::Import(item) => ast::Item::Import(import_item(ctx, item)),
         cst::Item::Directive(dir_list) => ast::Item::Directive(directive_list(ctx, dir_list)),
     };
-    ctx.s.items.add(item);
+    ctx.s.items.push(item);
 }
 
 #[inline]
@@ -198,7 +198,7 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
     let ty = ty(ctx, param.ty(ctx.tree).unwrap());
 
     let param = ast::Param { mutt, name, ty };
-    ctx.s.params.add(param);
+    ctx.s.params.push(param);
 }
 
 fn enum_item<'ast>(
@@ -246,7 +246,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         let offset = ctx.s.types.start();
         for ty_cst in field_list.fields(ctx.tree) {
             let ty = ty(ctx, ty_cst);
-            ctx.s.types.add(ty);
+            ctx.s.types.push(ty);
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);
 
@@ -265,7 +265,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         name,
         kind,
     };
-    ctx.s.variants.add(variant);
+    ctx.s.variants.push(variant);
 }
 
 fn struct_item<'ast>(
@@ -300,7 +300,7 @@ fn field(ctx: &mut AstBuild, field: cst::Field) {
     let ty = ty(ctx, field.ty(ctx.tree).unwrap());
 
     let field = ast::Field { dir_list, name, ty };
-    ctx.s.fields.add(field);
+    ctx.s.fields.push(field);
 }
 
 fn const_item<'ast>(
@@ -349,7 +349,7 @@ fn import_item<'ast>(
     let import_path = item.import_path(ctx.tree).unwrap();
     for name_cst in import_path.names(ctx.tree) {
         let name = name(ctx, name_cst);
-        ctx.s.names.add(name);
+        ctx.s.names.push(name);
     }
     let import_path = ctx.s.names.take(offset, &mut ctx.arena);
     let rename = import_symbol_rename(ctx, item.rename(ctx.tree));
@@ -379,7 +379,7 @@ fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {
     let rename = import_symbol_rename(ctx, import_symbol.rename(ctx.tree));
 
     let import_symbol = ast::ImportSymbol { name, rename };
-    ctx.s.import_symbols.add(import_symbol);
+    ctx.s.import_symbols.push(import_symbol);
 }
 
 fn import_symbol_rename(
@@ -405,7 +405,7 @@ fn directive_list<'ast>(
     let offset = ctx.s.directives.start();
     for directive_cst in dir_list.directives(ctx.tree) {
         let directive = directive(ctx, directive_cst);
-        ctx.s.directives.add(directive);
+        ctx.s.directives.push(directive);
     }
     let directives = ctx.s.directives.take(offset, &mut ctx.arena);
     ctx.arena.alloc(ast::DirectiveList { directives })
@@ -476,7 +476,7 @@ fn directive_param_list<'ast>(
     let offset = ctx.s.directive_params.start();
     for param_cst in param_list.params(ctx.tree) {
         let param = directive_param(ctx, param_cst);
-        ctx.s.directive_params.add(param);
+        ctx.s.directive_params.push(param);
     }
     ctx.s.directive_params.take(offset, &mut ctx.arena)
 }
@@ -521,7 +521,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             let param_list = proc_ty.param_list(ctx.tree).unwrap();
             for param in param_list.params(ctx.tree) {
                 let ty = ty(ctx, param.ty(ctx.tree).unwrap());
-                ctx.s.types.add(ty);
+                ctx.s.types.push(ty);
             }
             let param_types = ctx.s.types.take(offset, &mut ctx.arena);
 
@@ -720,7 +720,7 @@ fn expr_kind<'ast>(
                     cond: expr(ctx, branch.cond(ctx.tree).unwrap()),
                     block: block(ctx, branch.block(ctx.tree).unwrap()),
                 };
-                ctx.s.branches.add(branch);
+                ctx.s.branches.push(branch);
             }
             let branches = ctx.s.branches.take(offset, &mut ctx.arena);
             let else_block = if_.else_block(ctx.tree).map(|b| block(ctx, b));
@@ -829,7 +829,7 @@ fn expr_kind<'ast>(
                 };
 
                 let field_init = ast::FieldInit { name, expr };
-                ctx.s.field_inits.add(field_init);
+                ctx.s.field_inits.push(field_init);
             }
             let input = ctx.s.field_inits.take(offset, &mut ctx.arena);
 
@@ -846,7 +846,7 @@ fn expr_kind<'ast>(
             let offset = ctx.s.exprs.start();
             for expr_cst in array_init.input(ctx.tree) {
                 let expr = expr(ctx, expr_cst);
-                ctx.s.exprs.add(expr);
+                ctx.s.exprs.push(expr);
             }
             let input = ctx.s.exprs.take(offset, &mut ctx.arena);
 
@@ -903,7 +903,7 @@ fn match_arm_list<'ast>(
     let offset = ctx.s.match_arms.start();
     for arm in match_arm_list.match_arms(ctx.tree) {
         let arm = match_arm(ctx, arm);
-        ctx.s.match_arms.add(arm)
+        ctx.s.match_arms.push(arm)
     }
     ctx.s.match_arms.take(offset, &mut ctx.arena)
 }
@@ -962,7 +962,7 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
             let offset = ctx.s.pats.start();
             for pat_cst in pat_or.pats(ctx.tree) {
                 let pat = pat(ctx, pat_cst);
-                ctx.s.pats.add(pat);
+                ctx.s.pats.push(pat);
             }
             let pats = ctx.s.pats.take(offset, &mut ctx.arena);
             ast::PatKind::Or { pats }
@@ -1040,7 +1040,7 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> a
     let offset = ctx.s.stmts.start();
     for stmt_cst in block.stmts(ctx.tree) {
         let stmt = stmt(ctx, stmt_cst);
-        ctx.s.stmts.add(stmt);
+        ctx.s.stmts.push(stmt);
     }
     let stmts = ctx.s.stmts.take(offset, &mut ctx.arena);
 
@@ -1074,7 +1074,7 @@ fn bind_list<'ast>(
     let offset = ctx.s.binds.start();
     for bind_cst in bind_list.binds(ctx.tree) {
         let bind = bind(ctx, bind_cst);
-        ctx.s.binds.add(bind);
+        ctx.s.binds.push(bind);
     }
     let binds = ctx.s.binds.take(offset, &mut ctx.arena);
 
@@ -1091,7 +1091,7 @@ fn args_list<'ast>(
     let offset = ctx.s.exprs.start();
     for expr_cst in args_list.exprs(ctx.tree) {
         let expr = expr(ctx, expr_cst);
-        ctx.s.exprs.add(expr);
+        ctx.s.exprs.push(expr);
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
 
@@ -1103,7 +1103,7 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'as
     let offset = ctx.s.segments.start();
     for segment in path.segments(ctx.tree) {
         let segment = path_segment(ctx, segment);
-        ctx.s.segments.add(segment);
+        ctx.s.segments.push(segment);
     }
     let segments = ctx.s.segments.take(offset, &mut ctx.arena);
 
@@ -1131,7 +1131,7 @@ fn polymorph_args<'ast>(
     let offset = ctx.s.types.start();
     for ty_cst in poly_args.types(ctx.tree) {
         let ty = ty(ctx, ty_cst);
-        ctx.s.types.add(ty);
+        ctx.s.types.push(ty);
     }
     let types = ctx.s.types.take(offset, &mut ctx.arena);
 
@@ -1148,7 +1148,7 @@ fn polymorph_params<'ast>(
     let offset = ctx.s.names.start();
     for name_cst in poly_params.names(ctx.tree) {
         let name = name(ctx, name_cst);
-        ctx.s.names.add(name);
+        ctx.s.names.push(name);
     }
     let names = ctx.s.names.take(offset, &mut ctx.arena);
 

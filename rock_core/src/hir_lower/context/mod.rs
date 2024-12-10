@@ -6,7 +6,7 @@ use crate::error::{ErrorWarningBuffer, SourceRange, WarningBuffer};
 use crate::hir;
 use crate::intern::NameID;
 use crate::session::Session;
-use crate::support::Arena;
+use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
@@ -18,10 +18,38 @@ pub struct HirCtx<'hir, 's, 's_ref> {
     pub const_intern: hir::ConstInternPool<'hir>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
     pub session: &'s_ref Session<'s>,
+    pub cache: Cache<'hir>,
+}
+
+pub struct Cache<'hir> {
+    pub proc_params: Vec<hir::Param<'hir>>,
+    pub enum_variants: Vec<hir::Variant<'hir>>,
+    pub struct_fields: Vec<hir::Field<'hir>>,
+    pub types: TempBuffer<hir::Type<'hir>>,
+    pub stmts: TempBuffer<hir::Stmt<'hir>>,
+    pub exprs: TempBuffer<&'hir hir::Expr<'hir>>,
+    pub branches: TempBuffer<hir::Branch<'hir>>,
+    pub match_arms: TempBuffer<hir::MatchArm<'hir>>,
+    pub patterns: TempBuffer<hir::Pat<'hir>>,
+    pub bind_ids: TempBuffer<hir::LocalBindID>,
+    pub field_inits: TempBuffer<hir::FieldInit<'hir>>,
 }
 
 impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
     pub fn new(session: &'s_ref Session<'s>) -> HirCtx<'hir, 's, 's_ref> {
+        let cache = Cache {
+            proc_params: Vec::with_capacity(32),
+            enum_variants: Vec::with_capacity(256),
+            struct_fields: Vec::with_capacity(32),
+            types: TempBuffer::new(32),
+            stmts: TempBuffer::new(64),
+            exprs: TempBuffer::new(64),
+            branches: TempBuffer::new(32),
+            match_arms: TempBuffer::new(32),
+            patterns: TempBuffer::new(32),
+            bind_ids: TempBuffer::new(32),
+            field_inits: TempBuffer::new(32),
+        };
         HirCtx {
             arena: Arena::new(),
             emit: ErrorWarningBuffer::default(),
@@ -30,6 +58,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             const_intern: hir::ConstInternPool::new(),
             enum_tag_set: HashMap::with_capacity(128),
             session,
+            cache,
         }
     }
 

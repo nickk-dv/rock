@@ -213,7 +213,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
                 while let Some(kind) = b.parent_stack.pop() {
                     let node = Node { kind, content: &[] };
                     let node_id = NodeID::new(b.nodes.len());
-                    b.content.add(NodeOrToken::Node(node_id));
+                    b.content.push(NodeOrToken::Node(node_id));
                     let offset = b.content.start();
 
                     b.nodes.push(node);
@@ -234,7 +234,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
                 let token_trivia = attached_token_trivia(b);
                 eat_n_outher_trivias(b, token_trivia.n_outher);
 
-                b.content.add(NodeOrToken::Token(b.curr_token));
+                b.content.push(NodeOrToken::Token(b.curr_token));
                 b.curr_token = b.curr_token.inc();
             }
             Event::Ignore => {}
@@ -390,7 +390,7 @@ fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
-        b.content.add(NodeOrToken::Trivia(id));
+        b.content.push(NodeOrToken::Trivia(id));
     }
 }
 
@@ -401,7 +401,7 @@ fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
-        b.content.add(NodeOrToken::Trivia(id));
+        b.content.push(NodeOrToken::Trivia(id));
 
         let (trivia, range) = b.tokens.trivia_and_range(id);
         match trivia {
