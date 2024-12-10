@@ -22,6 +22,8 @@ enum ConstDependency {
 
 //@set correct poly scopes everywhere paths are resolved
 pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
+    let mut tree = Tree::with_capacity(64);
+
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
         let error_count = ctx.emit.error_count();
@@ -41,8 +43,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
             };
 
             if unresolved {
-                let dependency = ConstDependency::EnumVariant(enum_id, variant_id);
-                let (mut tree, root_id) = Tree::new_rooted(dependency);
+                tree.clear();
+                let root_id = tree.add_root(ConstDependency::EnumVariant(enum_id, variant_id));
 
                 if let Err(from_id) =
                     add_variant_tag_const_dependency(ctx, &mut tree, root_id, enum_id, variant_id)
@@ -105,7 +107,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
         let data = ctx.registry.enum_data(id);
 
         if data.layout.is_unresolved() {
-            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::EnumLayout(id));
+            tree.clear();
+            let root_id = tree.add_root(ConstDependency::EnumLayout(id));
             let mut is_ok = true;
 
             for variant in data.variants {
@@ -129,7 +132,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
         let data = ctx.registry.struct_data(id);
 
         if data.layout.is_unresolved() {
-            let (mut tree, root_id) = Tree::new_rooted(ConstDependency::StructLayout(id));
+            tree.clear();
+            let root_id = tree.add_root(ConstDependency::StructLayout(id));
             let mut is_ok = true;
 
             for field in data.fields {
@@ -153,7 +157,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
-                let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Const(id));
+                tree.clear();
+                let root_id = tree.add_root(ConstDependency::Const(id));
 
                 if let Err(from_id) =
                     add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
@@ -182,7 +187,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
-                let (mut tree, root_id) = Tree::new_rooted(ConstDependency::Global(id));
+                tree.clear();
+                let root_id = tree.add_root(ConstDependency::Global(id));
 
                 if let Err(from_id) =
                     add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
@@ -237,6 +243,27 @@ impl<T: PartialEq + Copy + Clone> Tree<T> {
             }],
         };
         (tree, root_id)
+    }
+
+    #[must_use]
+    fn with_capacity(cap: usize) -> Tree<T> {
+        Tree {
+            nodes: Vec::with_capacity(cap),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.nodes.clear();
+    }
+
+    #[must_use]
+    fn add_root(&mut self, value: T) -> TreeNodeID {
+        let id = TreeNodeID::new(self.nodes.len());
+        self.nodes.push(TreeNode {
+            value,
+            parent: None,
+        });
+        id
     }
 
     #[must_use]
