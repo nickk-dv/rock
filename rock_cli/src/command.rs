@@ -236,7 +236,7 @@ fn parse_args_none(p: &mut CommandParser) {
 }
 
 fn parse_args_single(p: &mut CommandParser, name: &str) -> String {
-    if let Some(arg) = p.format.args.get(0) {
+    if let Some(arg) = p.format.args.first() {
         if p.format.args.len() > 1 {
             err::cmd_expect_single_arg(&mut p.err, &p.format.cmd, name);
         }

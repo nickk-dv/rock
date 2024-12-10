@@ -32,7 +32,7 @@ pub enum ValueID<'ast> {
 }
 
 fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
-    let segment_0 = path.segments.get(0).copied().expect("non empty path");
+    let segment_0 = path.segments.first().copied().expect("non empty path");
 
     // <variable> | <poly_param> | <symbol> | <module>
     if let Some(var_id) = ctx.scope.local.find_variable(segment_0.name.id, true) {
@@ -58,7 +58,7 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
         ctx.scope.origin(),
         ctx.scope.origin(),
         segment_0.name,
-        &ctx.session,
+        ctx.session,
         &ctx.registry,
         &mut ctx.emit,
     )?;
@@ -93,7 +93,7 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
         ctx.scope.origin(),
         target_id,
         segment_1.name,
-        &ctx.session,
+        ctx.session,
         &ctx.registry,
         &mut ctx.emit,
     )?;

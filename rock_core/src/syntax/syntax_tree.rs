@@ -258,15 +258,15 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 }
 
 fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia {
-    let can_attach_inner = match kind {
+    let can_attach_inner = matches!(
+        kind,
         SyntaxKind::PROC_ITEM
-        | SyntaxKind::ENUM_ITEM
-        | SyntaxKind::STRUCT_ITEM
-        | SyntaxKind::CONST_ITEM
-        | SyntaxKind::GLOBAL_ITEM
-        | SyntaxKind::IMPORT_ITEM => true,
-        _ => false,
-    };
+            | SyntaxKind::ENUM_ITEM
+            | SyntaxKind::STRUCT_ITEM
+            | SyntaxKind::CONST_ITEM
+            | SyntaxKind::GLOBAL_ITEM
+            | SyntaxKind::IMPORT_ITEM
+    );
 
     let mut total_count: usize = 0;
     let mut inner_count: usize = 0;

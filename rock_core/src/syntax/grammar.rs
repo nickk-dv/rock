@@ -706,16 +706,14 @@ fn stmt_assign_or_expr_semi(p: &mut Parser) {
         expr(p);
         p.expect(T![;]);
         m.complete(p, SyntaxKind::STMT_ASSIGN);
+    } else if p.at(T!['}']) {
+        m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
+    } else if p.at_prev(T!['}']) {
+        p.eat(T![;]);
+        m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
     } else {
-        if p.at(T!['}']) {
-            m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
-        } else if p.at_prev(T!['}']) {
-            p.eat(T![;]);
-            m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
-        } else {
-            p.expect(T![;]);
-            m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
-        }
+        p.expect(T![;]);
+        m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
     }
 }
 
@@ -1150,9 +1148,7 @@ const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
 
 fn bind(p: &mut Parser) {
     let m = p.start();
-    if p.eat(T![mut]) {
-        name(p);
-    } else if p.at(T![ident]) {
+    if p.eat(T![mut]) || p.at(T![ident]) {
         name(p);
     } else if !p.eat(T![_]) {
         p.error("expected `identifier` or `_`");

@@ -5,11 +5,11 @@ use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 use crate::token::{self, Token, TokenList, Trivia};
 
-pub fn lex<'src, 's>(
+pub fn lex<'src>(
     source: &'src str,
     module_id: ModuleID,
     with_trivia: bool,
-    intern_lit: &'src mut InternPool<'s, LitID>,
+    intern_lit: &'src mut InternPool<LitID>,
 ) -> (TokenList, ErrorBuffer) {
     let mut lex = Lexer {
         cursor: 0,
@@ -331,7 +331,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
             }
             b'\\' => {
                 let escape = lex_escape(lex, c_string);
-                lex.buffer.push(escape as char);
+                lex.buffer.push(escape);
             }
             _ => {
                 let ch = lex.peek_utf8();
@@ -684,7 +684,7 @@ mod gperf {
         if len <= MAX_WORD_LENGTH {
             let key = hash(string);
             if key <= MAX_HASH_VALUE {
-                let word = KEYWORD_TABLE[key as usize];
+                let word = KEYWORD_TABLE[key];
                 if string == word.as_str() {
                     return word;
                 }
@@ -700,7 +700,7 @@ mod gperf {
             hval += ASSOC_TABLE[string.as_bytes()[1] as usize] as usize;
         }
         hval += ASSOC_TABLE[string.as_bytes()[0] as usize] as usize;
-        return hval;
+        hval
     }
 
     #[rustfmt::skip]

@@ -145,7 +145,7 @@ fn check() -> Result<(), Error> {
         let (_, warn) = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(&session), warn);
+        error_print::print_warnings(Some(session), warn);
 
         let style = AnsiStyle::new();
         print_build_finished(session, &style, &session.stats);
@@ -177,7 +177,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
         let (hir, warn) = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(&session), warn);
+        error_print::print_warnings(Some(session), warn);
         let _ = rock_llvm::build::build(hir, session, data.options)?;
 
         let style = AnsiStyle::new();
@@ -213,7 +213,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         let (hir, warn) = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(&session), warn);
+        error_print::print_warnings(Some(session), warn);
         let bin_path = rock_llvm::build::build(hir, session, data.options)?;
 
         let style = AnsiStyle::new();

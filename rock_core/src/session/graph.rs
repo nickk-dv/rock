@@ -65,7 +65,6 @@ impl PackageGraph {
         package_id
     }
 
-    #[must_use]
     pub(super) fn add_dep(
         &mut self,
         from: PackageID,
@@ -104,7 +103,7 @@ impl PackageGraph {
 
     fn cycle_relation_msg(
         &self,
-        path: &Vec<PackageID>,
+        path: &[PackageID],
         intern_name: &InternPool<'_, NameID>,
     ) -> String {
         let mut msg = String::with_capacity(128);
@@ -121,11 +120,11 @@ impl PackageGraph {
                 msg.push_str(from_name);
                 msg.push_str("` to `");
                 msg.push_str(to_name);
-                msg.push_str("`");
+                msg.push('`');
             } else {
                 msg.push_str("which depends on `");
                 msg.push_str(to_name);
-                msg.push_str("`");
+                msg.push('`');
             }
 
             if relation_idx + 1 == relation_count {

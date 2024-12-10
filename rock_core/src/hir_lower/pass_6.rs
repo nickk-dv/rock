@@ -25,7 +25,7 @@ fn check_entry_point(ctx: &mut HirCtx) {
         }
     };
 
-    let module_or_directory = root_package.src().find(&ctx.session, main_id);
+    let module_or_directory = root_package.src().find(ctx.session, main_id);
     let target_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
         _ => {
@@ -41,7 +41,7 @@ fn check_entry_point(ctx: &mut HirCtx) {
     }
 }
 
-fn check_main_procedure<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
+fn check_main_procedure(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     let data = ctx.registry.proc_data_mut(proc_id);
     let mut flag_set = data.flag_set;
     let main_src = data.src();

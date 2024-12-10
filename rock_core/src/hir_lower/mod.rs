@@ -14,8 +14,8 @@ use crate::hir;
 use crate::session::Session;
 use context::HirCtx;
 
-pub fn check<'hir, 'ast, 's_ref>(
-    session: &'s_ref Session<'ast>,
+pub fn check<'hir>(
+    session: &Session,
 ) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
     let mut ctx = HirCtx::new(session);
     pass_1::populate_scopes(&mut ctx);

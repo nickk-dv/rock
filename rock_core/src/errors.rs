@@ -49,12 +49,12 @@ pub fn cmd_option_duplicate(emit: &mut impl ErrorSink, opt: &str) {
 }
 
 pub fn cmd_cannot_build_lib_package() -> Error {
-    let msg = format!("cannot `build` a library package, use `check` instead");
+    let msg = "cannot `build` a library package, use `check` instead";
     Error::message(msg)
 }
 
 pub fn cmd_cannot_run_lib_package() -> Error {
-    let msg = format!("cannot `run` a library package, use `check` instead");
+    let msg = "cannot `run` a library package, use `check` instead";
     Error::message(msg)
 }
 
@@ -84,7 +84,7 @@ pub fn session_src_not_found(path: &PathBuf) -> Error {
 
 //@add more context information
 pub fn session_dep_on_bin() -> Error {
-    let msg = format!("cannot depend on a binary package",);
+    let msg = "cannot depend on a binary package";
     Error::message(msg)
 }
 
@@ -212,7 +212,7 @@ pub fn lexer_int_hex_overflow(emit: &mut impl ErrorSink, src: SourceRange, digit
 }
 
 pub fn lexer_int_dec_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`");
+    let msg = "decimal integer overflow\nmaximum value is `18_446_744_073_709_551_615`";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -524,12 +524,12 @@ pub fn item_type_param_already_defined(
 }
 
 pub fn item_poly_params_empty(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("polymorphic parameter list is empty, remove it");
+    let msg = "polymorphic parameter list is empty, remove it";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn item_variant_fields_empty(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("variant field list is empty, remove it");
+    let msg = "variant field list is empty, remove it";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -729,12 +729,12 @@ pub fn const_index_out_of_bounds(
 }
 
 pub fn const_float_is_nan(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("float constant is NaN");
+    let msg = "float constant is NaN";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn const_float_is_infinite(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("float constant is Infinite");
+    let msg = "float constant is Infinite";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -763,22 +763,22 @@ pub fn tycheck_cannot_match_on_ty(emit: &mut impl ErrorSink, src: SourceRange, t
 }
 
 pub fn tycheck_pat_const_field_access(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("cannot access fields in patterns");
+    let msg = "cannot access fields in patterns";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_pat_const_with_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("constant patterns cannot have bindings");
+    let msg = "constant patterns cannot have bindings";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_pat_runtime_value(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("cannot use runtime values in patterns");
+    let msg = "cannot use runtime values in patterns";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_pat_in_or_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("cannot use named bindings in `or` patterns, use `_`");
+    let msg = "cannot use named bindings in `or` patterns, use `_`";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1261,7 +1261,7 @@ pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> E
 
     msg.push_str("used linker arguments:\n");
     for arg in args {
-        let _ = write!(&mut msg, "\"{}\"\n", arg.as_str());
+        let _ = writeln!(&mut msg, "\"{}\"", arg.as_str());
     }
     msg.pop();
 

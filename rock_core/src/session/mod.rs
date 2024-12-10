@@ -326,15 +326,15 @@ fn process_directory(
     path: &PathBuf,
     origin: PackageID,
 ) -> Result<Directory, Error> {
-    let filename = fs_env::filename_stem(&path)?;
+    let filename = fs_env::filename_stem(path)?;
     let name_id = session.intern_name.intern(filename);
 
     let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
-    let read_dir = fs_env::dir_read(&path)?;
+    let read_dir = fs_env::dir_read(path)?;
     for entry_result in read_dir {
-        let entry = fs_env::dir_entry_validate(&path, entry_result)?;
+        let entry = fs_env::dir_entry_validate(path, entry_result)?;
         let entry_path = entry.path();
 
         if entry_path.is_file() {
@@ -361,7 +361,7 @@ fn process_module(
     path: &PathBuf,
     origin: PackageID,
 ) -> Result<ModuleID, Error> {
-    let filename = fs_env::filename_stem(&path)?;
+    let filename = fs_env::filename_stem(path)?;
     let name_id = session.intern_name.intern(filename);
 
     let source = fs_env::file_read_to_string_sentinel(path)?;

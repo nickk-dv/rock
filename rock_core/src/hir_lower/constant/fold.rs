@@ -602,16 +602,14 @@ pub fn int_range_check<'hir>(
         let int_ty = int_ty.as_str();
         err::const_int_out_of_range(&mut ctx.emit, src, int_ty, val, min, max);
         Err(())
+    } else if val >= 0 {
+        let val: u64 = val.try_into().unwrap();
+        let neg = false;
+        Ok(hir::ConstValue::Int { val, neg, int_ty })
     } else {
-        if val >= 0 {
-            let val: u64 = val.try_into().unwrap();
-            let neg = false;
-            Ok(hir::ConstValue::Int { val, neg, int_ty })
-        } else {
-            let val: u64 = (-val).try_into().unwrap();
-            let neg = true;
-            Ok(hir::ConstValue::Int { val, neg, int_ty })
-        }
+        let val: u64 = (-val).try_into().unwrap();
+        let neg = true;
+        Ok(hir::ConstValue::Int { val, neg, int_ty })
     }
 }
 
@@ -623,7 +621,7 @@ fn float_range_check<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let (min, max) = match float_ty {
         hir::BasicFloat::F32 => (f32::MIN as f64, f32::MAX as f64),
-        hir::BasicFloat::F64 => (f64::MIN as f64, f64::MAX as f64),
+        hir::BasicFloat::F64 => (f64::MIN, f64::MAX),
     };
 
     if val.is_nan() {

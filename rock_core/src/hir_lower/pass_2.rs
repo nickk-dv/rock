@@ -42,7 +42,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
     let mut target_dir = source_package.src();
 
     for name in directory_names {
-        match target_dir.find(&ctx.session, name.id) {
+        match target_dir.find(ctx.session, name.id) {
             ModuleOrDirectory::None => {
                 let src = ctx.src(name.range);
                 let dir_name = ctx.name(name.id);
@@ -62,7 +62,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
         }
     }
 
-    let target_id = match target_dir.find(&ctx.session, module_name.id) {
+    let target_id = match target_dir.find(ctx.session, module_name.id) {
         ModuleOrDirectory::None => {
             let src = ctx.src(module_name.range);
             let mod_name = ctx.name(module_name.id);

@@ -18,7 +18,7 @@ pub fn typecheck_procedures(ctx: &mut HirCtx) {
     }
 }
 
-fn typecheck_proc<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, proc_id: hir::ProcID) {
+fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     let item = ctx.registry.proc_item(proc_id);
     let data = ctx.registry.proc_data(proc_id);
 
@@ -626,11 +626,10 @@ fn typecheck_match<'hir, 'ast>(
         type_unify_control_flow(&mut match_type, expr_res.ty);
         ctx.scope.local.exit_block();
 
-        if matches!(expect, Expectation::None) {
-            if !expr_res.ty.is_error() && !expr_res.ty.is_never() {
-                let expect_src = ctx.src(arm.expr.range);
-                expect = Expectation::HasType(expr_res.ty, Some(expect_src));
-            }
+        if matches!(expect, Expectation::None) && !expr_res.ty.is_error() && !expr_res.ty.is_never()
+        {
+            let expect_src = ctx.src(arm.expr.range);
+            expect = Expectation::HasType(expr_res.ty, Some(expect_src));
         }
 
         let block = match expr_res.expr.kind {
@@ -685,13 +684,10 @@ fn match_const_pats_resolved(ctx: &HirCtx, arms: &[hir::MatchArm]) -> bool {
             }
             hir::Pat::Or(patterns) => {
                 for pat in patterns {
-                    match pat {
-                        hir::Pat::Const(const_id) => {
-                            if !const_value_resolved_ok(ctx, *const_id) {
-                                return false;
-                            }
+                    if let hir::Pat::Const(const_id) = pat {
+                        if !const_value_resolved_ok(ctx, *const_id) {
+                            return false;
                         }
-                        _ => {}
                     }
                 }
             }
@@ -949,7 +945,7 @@ fn check_field_from_struct<'hir>(
     }
 }
 
-fn check_field_from_slice<'hir>(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::SliceField> {
+fn check_field_from_slice(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::SliceField> {
     let field_name = ctx.name(name.id);
     match field_name {
         "ptr" => Some(hir::SliceField::Ptr),
@@ -1180,9 +1176,11 @@ fn typecheck_cast<'hir, 'ast>(
         | (hir::Type::Procedure(_), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
         (hir::Type::Reference(_, _), hir::Type::MultiReference(_, _))
         | (hir::Type::MultiReference(_, _), hir::Type::Reference(_, _)) => {
-            type_matches(ctx, into, from)
-                .then_some(CastKind::NoOpUnchecked)
-                .unwrap_or(CastKind::Error)
+            if type_matches(ctx, into, from) {
+                CastKind::NoOpUnchecked
+            } else {
+                CastKind::Error
+            }
         }
         _ => CastKind::Error,
     };
@@ -1214,6 +1212,8 @@ fn typecheck_cast<'hir, 'ast>(
 
 fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir::CastKind {
     use hir::CastKind;
+    use std::cmp::Ordering;
+
     let from_kind = BasicTypeKind::new(from);
     let into_kind = BasicTypeKind::new(into);
     let from_size = constant::basic_layout(ctx, from).size();
@@ -1221,43 +1221,31 @@ fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir:
 
     match from_kind {
         BasicTypeKind::IntS => match into_kind {
-            BasicTypeKind::IntS | BasicTypeKind::IntU => {
-                if from_size < into_size {
-                    CastKind::IntS_Sign_Extend
-                } else if from_size > into_size {
-                    CastKind::Int_Trunc
-                } else {
-                    CastKind::NoOp
-                }
-            }
+            BasicTypeKind::IntS | BasicTypeKind::IntU => match from_size.cmp(&into_size) {
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Less => CastKind::IntS_Sign_Extend,
+                Ordering::Greater => CastKind::Int_Trunc,
+            },
             BasicTypeKind::Float => CastKind::IntS_to_Float,
             _ => CastKind::Error,
         },
         BasicTypeKind::IntU => match into_kind {
-            BasicTypeKind::IntS | BasicTypeKind::IntU => {
-                if from_size < into_size {
-                    CastKind::IntU_Zero_Extend
-                } else if from_size > into_size {
-                    CastKind::Int_Trunc
-                } else {
-                    CastKind::NoOp
-                }
-            }
+            BasicTypeKind::IntS | BasicTypeKind::IntU => match from_size.cmp(&into_size) {
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Less => CastKind::IntU_Zero_Extend,
+                Ordering::Greater => CastKind::Int_Trunc,
+            },
             BasicTypeKind::Float => CastKind::IntU_to_Float,
             _ => CastKind::Error,
         },
         BasicTypeKind::Float => match into_kind {
             BasicTypeKind::IntS => CastKind::Float_to_IntS,
             BasicTypeKind::IntU => CastKind::Float_to_IntU,
-            BasicTypeKind::Float => {
-                if from_size < into_size {
-                    CastKind::Float_Extend
-                } else if from_size > into_size {
-                    CastKind::Float_Trunc
-                } else {
-                    CastKind::NoOp
-                }
-            }
+            BasicTypeKind::Float => match from_size.cmp(&into_size) {
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Less => CastKind::Float_Extend,
+                Ordering::Greater => CastKind::Float_Trunc,
+            },
             _ => CastKind::Error,
         },
         BasicTypeKind::Bool => match into_kind {
@@ -1337,7 +1325,7 @@ fn typecheck_directive<'hir, 'ast>(
             let (struct_id, _) = match core_find_struct(ctx, "panics", "Location") {
                 Some(value) => value,
                 None => {
-                    let msg = format!("failed to locate struct `Location` in `core:panics`");
+                    let msg = "failed to locate struct `Location` in `core:panics`";
                     let src = ctx.src(directive.range);
                     ctx.emit.error(Error::new(msg, src, None));
                     return TypeResult::error();
@@ -1354,7 +1342,7 @@ fn typecheck_directive<'hir, 'ast>(
             )
         }
         _ => {
-            let msg = format!("unimplemented directive used`");
+            let msg = "unimplemented directive used`";
             let src = ctx.src(directive.range);
             ctx.emit.error(Error::new(msg, src, None));
             TypeResult::error()
@@ -1370,7 +1358,9 @@ fn typecheck_item<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let (item_res, fields) = match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
-            args_list.map(|al| default_check_arg_list(ctx, al));
+            if let Some(arg_list) = args_list {
+                default_check_arg_list(ctx, arg_list);
+            }
             return TypeResult::error();
         }
         ValueID::Proc(proc_id) => {
@@ -1471,14 +1461,18 @@ fn typecheck_variant<'hir, 'ast>(
     let enum_id = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
-            args_list.map(|al| default_check_arg_list(ctx, al));
+            if let Some(arg_list) = args_list {
+                default_check_arg_list(ctx, arg_list);
+            }
             return TypeResult::error();
         }
     };
     let variant_id = match scope::check_find_enum_variant(ctx, enum_id, name) {
         Some(found) => found,
         None => {
-            args_list.map(|al| default_check_arg_list(ctx, al));
+            if let Some(arg_list) = args_list {
+                default_check_arg_list(ctx, arg_list);
+            }
             return TypeResult::error();
         }
     };
@@ -1894,8 +1888,8 @@ fn typecheck_range<'hir, 'ast>(
     }
 }
 
-fn core_find_struct<'hir>(
-    ctx: &HirCtx<'hir, '_, '_>,
+fn core_find_struct(
+    ctx: &HirCtx,
     module_name: &'static str,
     struct_name: &'static str,
 ) -> Option<(hir::StructID, ModuleID)> {
@@ -2387,12 +2381,12 @@ fn typecheck_local<'hir, 'ast>(
     let already_defined = match local.bind {
         ast::Binding::Named(_, name) => ctx
             .scope
-            .check_already_defined(name, &ctx.session, &ctx.registry, &mut ctx.emit)
+            .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
             .is_err(),
         ast::Binding::Discard(_) => false,
     };
 
-    let (mut local_ty, expect) = match local.ty.clone() {
+    let (mut local_ty, expect) = match local.ty {
         Some(ty) => {
             let local_ty = super::pass_3::type_resolve(ctx, ty, false);
             let expect_src = ctx.src(ty.range);
@@ -2569,11 +2563,7 @@ fn infer_enum_type(
             hir::Type::Error => return None,
             //@ignored poly_types
             hir::Type::Enum(enum_id, _) => Some(enum_id),
-            hir::Type::Reference(_, ref_ty) => match *ref_ty {
-                //@ignored poly_types
-                hir::Type::Enum(enum_id, _) => Some(enum_id),
-                _ => None,
-            },
+            hir::Type::Reference(_, hir::Type::Enum(enum_id, _)) => Some(*enum_id),
             _ => None,
         },
     };
@@ -2873,16 +2863,15 @@ fn check_variant_bind_list<'hir>(
         None => return &[],
     };
 
-    if in_or_pat {
-        if bind_list
+    if in_or_pat
+        && bind_list
             .binds
             .iter()
             .any(|bind| matches!(bind, ast::Binding::Named(_, _)))
-        {
-            let src = ctx.src(bind_list.range);
-            err::tycheck_pat_in_or_bindings(&mut ctx.emit, src);
-            return &[];
-        }
+    {
+        let src = ctx.src(bind_list.range);
+        err::tycheck_pat_in_or_bindings(&mut ctx.emit, src);
+        return &[];
     }
 
     let expected_count = if let Some(variant) = variant {

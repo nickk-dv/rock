@@ -1,6 +1,7 @@
 use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
 use crate::intern::LitID;
 use crate::text::{TextOffset, TextRange};
+use std::mem::transmute;
 
 crate::define_id!(pub TokenID);
 crate::define_id!(pub TriviaID);
@@ -21,15 +22,6 @@ pub struct TokenList {
     token_encode: Vec<u64>,
     trivias: Vec<Trivia>,
     trivia_ranges: Vec<TextRange>,
-}
-
-macro_rules! transmute {
-    ($value:expr) => {
-        #[allow(unsafe_code)]
-        unsafe {
-            std::mem::transmute($value)
-        }
-    };
 }
 
 impl TokenList {
@@ -60,8 +52,8 @@ impl TokenList {
         match token {
             T![ident] | T![int_lit] | T![float_lit] | T![char_lit] | T![string_lit] => {
                 let index = self.token_data[id.index()];
-                let encode = self.token_encode[index as usize];
-                transmute!(encode)
+                let decode = self.token_encode[index as usize];
+                unsafe { transmute::<u64, TextRange>(decode) }
             }
             _ => {
                 let start = self.token_data[id.index()];
@@ -91,26 +83,25 @@ impl TokenList {
     #[inline(always)]
     pub fn int(&self, id: TokenID) -> u64 {
         let index = self.token_data[id.index()];
-        let encode = self.token_encode[index as usize + 1];
-        encode
+        self.token_encode[index as usize + 1]
     }
     #[inline(always)]
     pub fn float(&self, id: TokenID) -> f64 {
         let index = self.token_data[id.index()];
-        let encode = self.token_encode[index as usize + 1];
-        transmute!(encode)
+        let decode = self.token_encode[index as usize + 1];
+        f64::from_bits(decode)
     }
     #[inline(always)]
     pub fn char(&self, id: TokenID) -> char {
         let index = self.token_data[id.index()];
-        let encode = self.token_encode[index as usize + 1];
-        transmute!(encode as u32)
+        let decode = self.token_encode[index as usize + 1];
+        unsafe { transmute::<u32, char>(decode as u32) }
     }
     #[inline(always)]
     pub fn string(&self, id: TokenID) -> (LitID, bool) {
         let index = self.token_data[id.index()];
-        let encode = self.token_encode[index as usize + 1];
-        transmute!(encode)
+        let decode = self.token_encode[index as usize + 1];
+        unsafe { transmute::<u64, (LitID, bool)>(decode) }
     }
 
     #[inline(always)]
@@ -122,35 +113,41 @@ impl TokenList {
     pub fn add_ident(&mut self, range: TextRange) {
         self.tokens.push(Token::Ident);
         self.token_data.push(self.token_encode.len() as u32);
-        self.token_encode.push(transmute!(range));
+        let encode = unsafe { transmute::<TextRange, u64>(range) };
+        self.token_encode.push(encode);
     }
     #[inline(always)]
     pub fn add_int(&mut self, int: u64, range: TextRange) {
         self.tokens.push(Token::IntLit);
         self.token_data.push(self.token_encode.len() as u32);
-        self.token_encode.push(transmute!(range));
+        let encode = unsafe { transmute::<TextRange, u64>(range) };
+        self.token_encode.push(encode);
         self.token_encode.push(int);
     }
     #[inline(always)]
     pub fn add_float(&mut self, float: f64, range: TextRange) {
         self.tokens.push(Token::FloatLit);
         self.token_data.push(self.token_encode.len() as u32);
-        self.token_encode.push(transmute!(range));
-        self.token_encode.push(transmute!(float));
+        let encode_range = unsafe { transmute::<TextRange, u64>(range) };
+        self.token_encode.push(encode_range);
+        self.token_encode.push(float.to_bits());
     }
     #[inline(always)]
     pub fn add_char(&mut self, ch: char, range: TextRange) {
         self.tokens.push(Token::CharLit);
         self.token_data.push(self.token_encode.len() as u32);
-        self.token_encode.push(transmute!(range));
+        let encode_range = unsafe { transmute::<TextRange, u64>(range) };
+        self.token_encode.push(encode_range);
         self.token_encode.push(ch as u64);
     }
     #[inline(always)]
     pub fn add_string(&mut self, id: LitID, c_string: bool, range: TextRange) {
         self.tokens.push(Token::StringLit);
         self.token_data.push(self.token_encode.len() as u32);
-        self.token_encode.push(transmute!(range));
-        self.token_encode.push(transmute!((id, c_string)));
+        let encode_range = unsafe { transmute::<TextRange, u64>(range) };
+        let encode_string = unsafe { transmute::<(LitID, bool), u64>((id, c_string)) };
+        self.token_encode.push(encode_range);
+        self.token_encode.push(encode_string);
     }
     #[inline(always)]
     pub fn add_trivia(&mut self, trivia: Trivia, range: TextRange) {

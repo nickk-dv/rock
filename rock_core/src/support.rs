@@ -197,7 +197,7 @@ mod bitset {
         pub fn empty() -> BitSet<T> {
             BitSet {
                 mask: 0,
-                phantom: PhantomData::default(),
+                phantom: PhantomData,
             }
         }
         #[inline]

@@ -129,11 +129,11 @@ fn resolve_variant_layout(
     resolve_aggregate_layout(ctx, src, "variant", &mut types)
 }
 
-fn resolve_aggregate_layout<'hir>(
+fn resolve_aggregate_layout(
     ctx: &mut HirCtx,
     src: SourceRange,
     item_kind: &'static str,
-    types: &mut dyn Iterator<Item = hir::Type<'hir>>,
+    types: &mut dyn Iterator<Item = hir::Type>,
 ) -> Result<hir::Layout, ()> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;

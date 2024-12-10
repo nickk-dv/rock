@@ -232,7 +232,7 @@ fn check_config_parameter(
     config
 }
 
-pub fn apply_item_flag<T: hir::ItemFlag>(
+pub fn apply_item_flag<T>(
     ctx: &mut HirCtx,
     flag_set: &mut BitSet<T>,
     new_flag: T,
@@ -240,7 +240,7 @@ pub fn apply_item_flag<T: hir::ItemFlag>(
     directive: Option<&ast::Directive>,
     item_kinds: &'static str,
 ) where
-    T: Copy + Clone + Into<u32> + AsStr,
+    T: Copy + Clone + Into<u32> + hir::ItemFlag + AsStr,
 {
     if flag_set.contains(new_flag) {
         if let Some(directive) = directive {

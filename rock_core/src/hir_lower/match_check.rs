@@ -7,7 +7,7 @@ use crate::text::TextRange;
 use std::collections::HashSet;
 
 //@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
-pub fn match_kind<'hir>(ty: hir::Type<'hir>) -> Result<hir::MatchKind, bool> {
+pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
         hir::Type::InferDef(_, _) => Err(true),
@@ -209,10 +209,7 @@ fn match_cov_bool(
 fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(value) => match value {
-            hir::ConstValue::Bool { val } => cov.cover(val),
-            _ => unreachable!(),
-        },
+        hir::Pat::Lit(hir::ConstValue::Bool { val }) => cov.cover(val),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
@@ -271,10 +268,9 @@ fn match_cov_char(
 fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(value) => match value {
-            hir::ConstValue::Char { val } => cov.cover(RangeInc::new(val as u32, val as u32)),
-            _ => unreachable!(),
-        },
+        hir::Pat::Lit(hir::ConstValue::Char { val }) => {
+            cov.cover(RangeInc::new(val as u32, val as u32))
+        }
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
@@ -333,10 +329,7 @@ fn match_cov_string(
 fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(value) => match value {
-            hir::ConstValue::String { string_lit } => cov.cover(string_lit.id),
-            _ => unreachable!(),
-        },
+        hir::Pat::Lit(hir::ConstValue::String { string_lit }) => cov.cover(string_lit.id),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
@@ -595,14 +588,7 @@ impl PatCovString {
     }
 
     fn cover(&mut self, new_id: LitID) -> Result<(), PatCovError> {
-        if self.wild_covered {
-            Err(PatCovError::CoverFull)
-        } else if let Some(_) = self
-            .covered
-            .iter()
-            .copied()
-            .find(|&cov_id| cov_id == new_id)
-        {
+        if self.wild_covered || self.covered.iter().copied().any(|cov_id| cov_id == new_id) {
             Err(PatCovError::CoverFull)
         } else {
             self.covered.push(new_id);
@@ -648,9 +634,7 @@ impl PatCovEnum {
         variant_id: hir::VariantID,
         variant_count: usize,
     ) -> Result<(), PatCovError> {
-        if self.all_covered(variant_count) {
-            Err(PatCovError::CoverFull)
-        } else if self.covered.contains(&variant_id) {
+        if self.all_covered(variant_count) || self.covered.contains(&variant_id) {
             Err(PatCovError::CoverFull)
         } else {
             self.covered.insert(variant_id);
@@ -672,7 +656,7 @@ impl PatCovEnum {
             &[]
         } else {
             let each_idx = 0..variant_count;
-            let variant_iter = each_idx.map(|idx| hir::VariantID::new(idx));
+            let variant_iter = each_idx.map(hir::VariantID::new);
             for variant_id in variant_iter {
                 if !self.covered.contains(&variant_id) {
                     self.not_covered.push(variant_id);
@@ -791,7 +775,7 @@ where
 
             // merge with existing ranges
             while next_idx < self.ranges.len() {
-                let next_range = self.ranges[next_idx].clone();
+                let next_range = self.ranges[next_idx];
 
                 if new_end.inc() >= next_range.start {
                     new_end = new_end.max(next_range.end);

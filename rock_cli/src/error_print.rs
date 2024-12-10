@@ -146,7 +146,7 @@ fn print_diagnostic<'src>(
             let session = session.expect("session context");
             state.reset();
 
-            state.push(ContextFmt::new(session, &main, severity));
+            state.push(ContextFmt::new(session, main, severity));
             if let Some(info) = info {
                 state.push(ContextFmt::new(session, info.context(), Severity::Info));
             }
@@ -155,7 +155,7 @@ fn print_diagnostic<'src>(
             let session = session.expect("session context");
             state.reset();
 
-            state.push(ContextFmt::new(session, &main, severity));
+            state.push(ContextFmt::new(session, main, severity));
             for info in info_vec {
                 state.push(ContextFmt::new(session, info.context(), Severity::Info));
             }
@@ -184,7 +184,7 @@ fn print_context(
 
     let line_str = &fmt.source[fmt.line_range.as_usize()];
     let prefix_str = &fmt.source[prefix_range.as_usize()];
-    let source_str = (&fmt.source[source_range.as_usize()]).trim_end();
+    let source_str = (fmt.source[source_range.as_usize()]).trim_end();
 
     let line = line_str.trim_end().replace('\t', TAB_REPLACE_STR);
     let marker_pad = " ".repeat(normalized_tab_len(prefix_str));

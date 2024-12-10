@@ -6,7 +6,7 @@ use crate::support::AsStr;
 use crate::text::TextRange;
 use crate::token::Trivia;
 
-const TAB_STR: &'static str = "    ";
+const TAB_STR: &str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
 const WRAP_THRESHOLD: u32 = 90;
 const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
@@ -997,10 +997,8 @@ fn ty_ref<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::TypeReference<'syn>)
     }
 
     let ref_ty = ty_cst.ref_ty(fmt.tree).unwrap();
-    if !with_space {
-        if matches!(ref_ty, cst::Type::Reference(_)) {
-            fmt.space();
-        }
+    if !with_space && matches!(ref_ty, cst::Type::Reference(_)) {
+        fmt.space();
     }
     ty(fmt, ref_ty);
 }
@@ -1103,12 +1101,12 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
     }
 }
 
-fn stmt_break<'syn>(fmt: &mut Formatter<'syn, '_>) {
+fn stmt_break(fmt: &mut Formatter) {
     fmt.write_str("break");
     fmt.write(';');
 }
 
-fn stmt_continue<'syn>(fmt: &mut Formatter<'syn, '_>) {
+fn stmt_continue(fmt: &mut Formatter) {
     fmt.write_str("continue");
     fmt.write(';');
 }
@@ -1505,10 +1503,8 @@ fn expr_address<'syn>(fmt: &mut Formatter<'syn, '_>, address: cst::ExprAddress<'
     }
 
     let expr_cst = address.expr(fmt.tree).unwrap();
-    if !with_space {
-        if matches!(expr_cst, cst::Expr::Address(_)) {
-            fmt.space();
-        }
+    if !with_space && matches!(expr_cst, cst::Expr::Address(_)) {
+        fmt.space();
     }
     expr(fmt, expr_cst);
 }

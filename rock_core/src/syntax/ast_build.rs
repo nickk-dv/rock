@@ -85,7 +85,7 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBuffer> {
+pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBuffer> {
     let mut state = AstBuildState::new();
 
     for module_id in session.module.ids() {
@@ -117,7 +117,7 @@ pub fn parse_all<'ast>(session: &mut Session, with_trivia: bool) -> Result<(), E
         let file = session.vfs.file(module.file_id());
         let tree = module.tree_expect();
 
-        let mut ctx = AstBuild::new(&tree, &file.source, &mut session.intern_name, &mut state);
+        let mut ctx = AstBuild::new(tree, &file.source, &mut session.intern_name, &mut state);
         let items = source_file(&mut ctx, tree.source_file());
         let ast = ctx.finish(items);
         session.module.get_mut(module_id).set_ast(ast);

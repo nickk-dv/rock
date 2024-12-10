@@ -27,7 +27,7 @@ pub fn process_items(ctx: &mut HirCtx) {
     }
 }
 
-pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) {
+pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
     let item = ctx.registry.proc_item(id);
@@ -72,7 +72,7 @@ pub fn process_proc_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ProcID) 
     data.return_ty = return_ty;
 }
 
-fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
+fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Enum(id)));
     let item = ctx.registry.enum_item(id);
@@ -205,7 +205,7 @@ fn process_enum_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::EnumID) {
     data.tag_ty = tag_ty;
 }
 
-fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) {
+fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Struct(id)));
     let item = ctx.registry.struct_item(id);
@@ -245,7 +245,7 @@ fn process_struct_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::StructID) 
     data.fields = ctx.arena.alloc_slice(&unique);
 }
 
-fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID) {
+fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
     ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
     let item = ctx.registry.const_item(id);
 
@@ -253,7 +253,7 @@ fn process_const_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::ConstID) {
     ctx.registry.const_data_mut(id).ty = ty;
 }
 
-fn process_global_data<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, id: hir::GlobalID) {
+fn process_global_data(ctx: &mut HirCtx, id: hir::GlobalID) {
     ctx.scope.set_origin(ctx.registry.global_data(id).origin_id);
     let item = ctx.registry.global_item(id);
 

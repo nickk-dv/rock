@@ -181,7 +181,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
 
     pub fn proc_item(&self, id: hir::ProcID) -> &'ast ast::ProcItem<'ast> {
-        &self.ast_procs[id.index()]
+        self.ast_procs[id.index()]
     }
     pub fn enum_item(&self, id: hir::EnumID) -> &'ast ast::EnumItem<'ast> {
         self.ast_enums[id.index()]

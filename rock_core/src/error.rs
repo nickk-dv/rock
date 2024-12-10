@@ -206,8 +206,7 @@ impl ErrorBuffer {
 
     pub fn collect(mut self) -> Vec<Error> {
         self.collected = true;
-        let errors = std::mem::take(&mut self.errors);
-        errors
+        std::mem::take(&mut self.errors)
     }
 
     pub fn join_e(&mut self, err: ErrorBuffer) {
@@ -219,8 +218,7 @@ impl ErrorBuffer {
 impl WarningBuffer {
     pub fn collect(mut self) -> Vec<Warning> {
         self.collected = true;
-        let warnings = std::mem::take(&mut self.warnings);
-        warnings
+        std::mem::take(&mut self.warnings)
     }
 
     pub fn join_w(&mut self, warn: WarningBuffer) {
