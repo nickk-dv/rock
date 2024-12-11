@@ -56,7 +56,7 @@ crate::enum_as_str! {
 }
 
 impl PackageKind {
-    pub fn as_str_full(self) -> &'static str {
+    pub fn full_name(self) -> &'static str {
         match self {
             PackageKind::Bin => "executable",
             PackageKind::Lib => "library",

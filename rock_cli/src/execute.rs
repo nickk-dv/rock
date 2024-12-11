@@ -1,5 +1,5 @@
 use crate::ansi::AnsiStyle;
-use crate::command::{Command, CommandBuild, CommandNew, CommandRun};
+use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
 use rock_core::error::{Error, ErrorWarningBuffer};
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 pub fn command(command: Command) -> Result<(), Error> {
     match command {
         Command::New(data) => new(data),
-        Command::Check => check(),
+        Command::Check(data) => check(data),
         Command::Build(data) => build(data),
         Command::Run(data) => run(data),
         Command::Fmt => fmt(),
@@ -119,24 +119,24 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
 
     println!(
         "  {g}Created{r} {} `{}` package\n",
-        data.kind.as_str_full(),
+        data.kind.full_name(),
         data.name,
     );
     Ok(())
 }
 
-fn check() -> Result<(), Error> {
+fn check(data: CommandCheck) -> Result<(), Error> {
     let timer = Timer::start();
     let config = Config::new(TargetTriple::host(), BuildKind::Debug);
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    if let Err(errw) = check_impl(&mut session) {
+    if let Err(errw) = check_impl(&mut session, data) {
         error_print::print_errors_warnings(Some(&session), errw);
     }
     return Ok(());
 
-    fn check_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
+    fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ErrorWarningBuffer> {
         let timer = Timer::start();
         ast_build::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
@@ -148,6 +148,9 @@ fn check() -> Result<(), Error> {
         error_print::print_warnings(Some(session), warn);
 
         let style = AnsiStyle::new();
+        if data.stats {
+            print_stats(&style, &session.stats, false);
+        }
         print_build_finished(session, &style, &session.stats);
         Ok(())
     }
@@ -182,7 +185,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
 
         let style = AnsiStyle::new();
         if data.stats {
-            print_build_stats(&style, &session.stats);
+            print_stats(&style, &session.stats, true);
         }
         print_build_finished(session, &style, &session.stats);
         Ok(())
@@ -218,7 +221,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
 
         let style = AnsiStyle::new();
         if data.stats {
-            print_build_stats(&style, &session.stats);
+            print_stats(&style, &session.stats, true);
         }
         print_build_finished(session, &style, &session.stats);
         print_build_running(session, &style, &bin_path);
@@ -227,7 +230,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
     }
 }
 
-fn print_build_stats(style: &AnsiStyle, stats: &BuildStats) {
+fn print_stats(style: &AnsiStyle, stats: &BuildStats, build: bool) {
     let g = style.out.green_bold;
     let r = style.out.reset;
 
@@ -239,6 +242,9 @@ fn print_build_stats(style: &AnsiStyle, stats: &BuildStats) {
     println!("  {g}session:{r} {:.2} ms", stats.session_ms);
     println!("    {g}parse:{r} {:.2} ms", stats.parse_ms);
     println!("    {g}check:{r} {:.2} ms", stats.check_ms);
+    if !build {
+        return;
+    }
     println!("  {g}llvm-ir:{r} {:.2} ms", stats.llvm_ir_ms);
     println!("   {g}object:{r} {:.2} ms", stats.object_ms);
     println!("     {g}link:{r} {:.2} ms\n", stats.link_ms);
@@ -326,13 +332,15 @@ fn help() {
   {c}build, run
     {c}--debug      {r}Build in debug mode
     {c}--release    {r}Build in release mode
-    {c}--stats      {r}Print compilation stats
     {c}--emit-llvm  {r}Save llvm module to file
 
   {c}run
-    {c}-- [args]    {r}Pass command line arguments\n",
-        PackageKind::Lib.as_str_full(),
-        PackageKind::Bin.as_str_full()
+    {c}-- [args]    {r}Pass command line arguments
+
+  {c}check, build, run
+    {c}--stats      {r}Print compilation stats\n",
+        PackageKind::Lib.full_name(),
+        PackageKind::Bin.full_name()
     );
 }
 

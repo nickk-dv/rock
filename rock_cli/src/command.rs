@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 pub enum Command {
     New(CommandNew),
-    Check,
+    Check(CommandCheck),
     Build(CommandBuild),
     Run(CommandRun),
     Fmt,
@@ -20,6 +20,10 @@ pub struct CommandNew {
     pub name: String,
     pub kind: PackageKind,
     pub no_git: bool,
+}
+
+pub struct CommandCheck {
+    pub stats: bool,
 }
 
 pub struct CommandBuild {
@@ -80,8 +84,11 @@ fn command_new(p: &mut CommandParser) -> Command {
 
 fn command_check(p: &mut CommandParser) -> Command {
     parse_args_none(p);
+    let stats = parse_option_flag(p, false, "stats");
     parse_trail_args_none(p);
-    Command::Check
+
+    let data = CommandCheck { stats };
+    Command::Check(data)
 }
 
 fn command_build(p: &mut CommandParser) -> Command {
