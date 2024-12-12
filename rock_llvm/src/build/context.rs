@@ -211,10 +211,12 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn array_len(&self, len: hir::ArrayStaticLen) -> u64 {
         match len {
             hir::ArrayStaticLen::Immediate(len) => len,
-            hir::ArrayStaticLen::ConstEval(eval_id) => match self.hir.const_eval_value(eval_id) {
-                hir::ConstValue::Int { val, .. } => val,
-                _ => unreachable!(),
-            },
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                match self.hir.const_eval_values[eval_id.index()] {
+                    hir::ConstValue::Int { val, .. } => val,
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 

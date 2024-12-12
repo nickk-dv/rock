@@ -147,7 +147,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
 
 fn codegen_consts(cg: &mut Codegen) {
     for data in cg.hir.consts.iter() {
-        let value = emit_expr::codegen_const(cg, cg.hir.const_eval_value(data.value));
+        let value = emit_expr::codegen_const(cg, cg.hir.const_eval_values[data.value.index()]);
         cg.consts.push(value);
     }
 }
@@ -157,7 +157,7 @@ fn codegen_globals(cg: &mut Codegen) {
         let global_ty = cg.ty(data.ty);
         let global_val = match data.init {
             hir::GlobalInit::Init(eval_id) => {
-                emit_expr::codegen_const(cg, cg.hir.const_eval_value(eval_id))
+                emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
             }
             hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
         };

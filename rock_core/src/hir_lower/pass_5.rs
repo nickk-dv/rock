@@ -489,7 +489,7 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             let value = hir::ConstValue::Char { val };
             (value, hir::Type::Basic(BasicType::Char))
         }
-        ast::Lit::String(string_lit) => {
+        ast::Lit::String(val) => {
             const REF_U8: hir::Type =
                 hir::Type::Reference(ast::Mut::Immutable, &hir::Type::Basic(BasicType::U8));
             const SLICE_U8: hir::Type = hir::Type::ArraySlice(&hir::ArraySlice {
@@ -497,12 +497,8 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
                 elem_ty: hir::Type::Basic(BasicType::U8),
             });
 
-            let value = hir::ConstValue::String { string_lit };
-            let string_ty = if string_lit.c_string {
-                REF_U8
-            } else {
-                SLICE_U8
-            };
+            let value = hir::ConstValue::String { val };
+            let string_ty = if val.c_string { REF_U8 } else { SLICE_U8 };
             (value, string_ty)
         }
     };
@@ -974,10 +970,7 @@ fn check_field_from_array<'hir>(
                 },
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
-                    match eval.resolved() {
-                        Ok(value_id) => ctx.const_intern.get(value_id),
-                        Err(()) => return None,
-                    }
+                    eval.resolved().ok()?
                 }
             };
             Some(len)

@@ -5,25 +5,16 @@ use crate::intern::NameID;
 use crate::session::ModuleID;
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::TextRange;
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
-    pub const_intern: ConstInternPool<'hir>,
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
     pub structs: Vec<StructData<'hir>>,
     pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
-    pub const_values: Vec<ConstValueID>,
-    pub variant_tag_values: Vec<ConstValue<'hir>>,
-}
-
-pub struct ConstInternPool<'hir> {
-    arena: Arena<'hir>,
-    values: Vec<ConstValue<'hir>>,
-    intern_map: HashMap<ConstValue<'hir>, ConstValueID>,
+    pub const_eval_values: Vec<ConstValue<'hir>>,
+    pub variant_eval_values: Vec<ConstValue<'hir>>,
 }
 
 pub struct ProcData<'hir> {
@@ -311,7 +302,7 @@ pub enum ExprKind<'hir> {
 }
 
 #[rustfmt::skip]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub enum ConstValue<'hir> {
     Void,
     Null,
@@ -319,31 +310,36 @@ pub enum ConstValue<'hir> {
     Int         { val: u64, neg: bool, int_ty: BasicInt },
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
-    String      { string_lit: ast::StringLit },
+    String      { val: ast::StringLit },
     Procedure   { proc_id: ProcID },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
-    ArrayRepeat { value: ConstValueID, len: u64 },
+    ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct ConstVariant<'hir> {
     pub enum_id: EnumID,
     pub variant_id: VariantID,
-    pub value_ids: &'hir [ConstValueID],
+    pub values: &'hir [ConstValue<'hir>],
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct ConstStruct<'hir> {
     pub struct_id: StructID,
-    pub value_ids: &'hir [ConstValueID],
+    pub values: &'hir [ConstValue<'hir>],
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct ConstArray<'hir> {
+    pub values: &'hir [ConstValue<'hir>],
+}
+
+#[derive(Copy, Clone)]
+pub struct ConstArrayRepeat<'hir> {
     pub len: u64,
-    pub value_ids: &'hir [ConstValueID],
+    pub value: ConstValue<'hir>,
 }
 
 #[derive(Copy, Clone)]
@@ -521,7 +517,7 @@ where
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq, Hash)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum BasicInt {
         S8 "s8",
         S16 "s16",
@@ -537,7 +533,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq, Hash)]
+    #[derive(Copy, Clone, PartialEq)]
     pub enum BasicFloat {
         F32 "f32",
         F64 "f64",
@@ -616,10 +612,9 @@ crate::define_id!(pub VariantFieldID);
 crate::define_id!(pub FieldID);
 
 crate::define_id!(pub ConstEvalID);
-crate::define_id!(pub ConstValueID);
 crate::define_id!(pub VariantEvalID);
 
-pub type ConstEval<'hir, 'ast> = Eval<ast::ConstExpr<'ast>, ConstValueID>;
+pub type ConstEval<'hir, 'ast> = Eval<ast::ConstExpr<'ast>, ConstValue<'hir>>;
 pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 
 //==================== SIZE LOCK ====================
@@ -756,80 +751,6 @@ impl<'hir> Hir<'hir> {
     }
     pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
         &self.globals[id.index()]
-    }
-    pub fn const_value(&self, id: ConstValueID) -> ConstValue<'hir> {
-        self.const_intern.get(id)
-    }
-    pub fn const_eval_value(&self, id: ConstEvalID) -> ConstValue<'hir> {
-        let value_id = self.const_values[id.index()];
-        self.const_intern.get(value_id)
-    }
-}
-
-impl<'hir> ConstInternPool<'hir> {
-    pub fn new() -> ConstInternPool<'hir> {
-        ConstInternPool {
-            arena: Arena::new(),
-            values: Vec::with_capacity(1024),
-            intern_map: HashMap::with_capacity(1024),
-        }
-    }
-
-    pub fn intern(&mut self, value: ConstValue<'hir>) -> ConstValueID {
-        if let Some(id) = self.intern_map.get(&value).cloned() {
-            return id;
-        }
-        let id = ConstValueID::new(self.values.len());
-        self.values.push(value);
-        self.intern_map.insert(value, id);
-        id
-    }
-
-    pub fn get(&self, id: ConstValueID) -> ConstValue<'hir> {
-        self.values[id.index()]
-    }
-    pub fn arena(&mut self) -> &mut Arena<'hir> {
-        &mut self.arena
-    }
-}
-
-impl<'hir> Eq for ConstValue<'hir> {}
-
-//@perf: test for hash collision rates and how well this performs in terms of speed 09.05.24
-impl<'hir> Hash for ConstValue<'hir> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match *self {
-            ConstValue::Void => 0.hash(state),
-            ConstValue::Null => 1.hash(state),
-            ConstValue::Bool { val } => val.hash(state),
-            ConstValue::Int { val, neg, int_ty } => (val, neg, int_ty).hash(state),
-            ConstValue::Float { val, float_ty } => (val.to_bits(), float_ty).hash(state),
-            ConstValue::Char { val } => val.hash(state),
-            ConstValue::String { string_lit } => string_lit.hash(state),
-            ConstValue::Procedure { proc_id } => proc_id.raw().hash(state),
-            ConstValue::Variant { variant } => variant.hash(state),
-            ConstValue::Struct { struct_ } => struct_.hash(state),
-            ConstValue::Array { array } => array.hash(state),
-            ConstValue::ArrayRepeat { value, len } => (value.raw(), len).hash(state),
-        }
-    }
-}
-
-impl<'hir> Hash for ConstVariant<'hir> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.enum_id.raw(), self.variant_id.raw(), self.value_ids).hash(state);
-    }
-}
-
-impl<'hir> Hash for ConstStruct<'hir> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.struct_id.raw(), self.value_ids).hash(state);
-    }
-}
-
-impl<'hir> Hash for ConstArray<'hir> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.len, self.value_ids).hash(state);
     }
 }
 

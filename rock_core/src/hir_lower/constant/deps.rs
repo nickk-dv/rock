@@ -74,8 +74,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
                     }
                 }
                 hir::VariantKind::Constant(eval_id) => {
-                    if let Ok(value_id) = ctx.registry.const_eval(eval_id).0.resolved() {
-                        ctx.const_intern.get(value_id).into_int()
+                    if let Ok(value) = ctx.registry.const_eval(eval_id).0.resolved() {
+                        value.into_int()
                     } else {
                         continue;
                     }
@@ -1060,7 +1060,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree<ConstDependency>)
                                 }
                                 hir::VariantKind::Constant(eval_id) => {
                                     let (eval, _) = ctx.registry.const_eval(eval_id);
-                                    eval.resolved().map(|id| ctx.const_intern.get(id))
+                                    eval.resolved()
                                 }
                             };
 
@@ -1139,7 +1139,6 @@ fn resolve_and_update_const_eval<'hir>(
             ctx.scope.local.reset();
 
             let value_res = resolve_const_expr(ctx, expect, expr);
-            let value_res = value_res.map(|v| ctx.const_intern.intern(v));
             let (eval, _) = ctx.registry.const_eval_mut(eval_id);
             *eval = hir::Eval::from_res(value_res);
         }

@@ -15,7 +15,6 @@ pub struct HirCtx<'hir, 's, 's_ref> {
     pub emit: ErrorWarningBuffer,
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
-    pub const_intern: hir::ConstInternPool<'hir>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
     pub session: &'s_ref Session<'s>,
     pub cache: Cache<'hir>,
@@ -55,7 +54,6 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             emit: ErrorWarningBuffer::default(),
             scope: scope::Scope::new(session),
             registry: registry::Registry::new(session),
-            const_intern: hir::ConstInternPool::new(),
             enum_tag_set: HashMap::with_capacity(128),
             session,
             cache,
@@ -83,26 +81,24 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
     pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
         let ((), warnings) = self.emit.result(())?;
 
-        let mut const_values = Vec::with_capacity(self.registry.const_evals.len());
+        let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
         for (eval, _) in self.registry.const_evals.iter() {
-            const_values.push(eval.resolved_unwrap());
+            const_eval_values.push(eval.resolved_unwrap());
         }
-
-        let mut variant_tag_values = Vec::with_capacity(self.registry.const_evals.len());
+        let mut variant_eval_values = Vec::with_capacity(self.registry.const_evals.len());
         for eval in self.registry.variant_evals.iter() {
-            variant_tag_values.push(eval.resolved_unwrap());
+            variant_eval_values.push(eval.resolved_unwrap());
         }
 
         let hir = hir::Hir {
             arena: self.arena,
-            const_intern: self.const_intern,
             procs: self.registry.hir_procs,
             enums: self.registry.hir_enums,
             structs: self.registry.hir_structs,
             consts: self.registry.hir_consts,
             globals: self.registry.hir_globals,
-            const_values,
-            variant_tag_values,
+            const_eval_values,
+            variant_eval_values,
         };
         Ok((hir, warnings))
     }
@@ -115,9 +111,8 @@ impl hir::ArrayStaticLen {
             hir::ArrayStaticLen::Immediate(len) => Ok(len),
             hir::ArrayStaticLen::ConstEval(eval_id) => {
                 let (eval, _) = *ctx.registry.const_eval(eval_id);
-                let value_id = eval.resolved()?;
-
-                match ctx.const_intern.get(value_id) {
+                let value = eval.resolved()?;
+                match value {
                     hir::ConstValue::Int { val, .. } => Ok(val),
                     _ => unreachable!(),
                 }

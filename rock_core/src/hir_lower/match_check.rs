@@ -146,8 +146,7 @@ fn pat_cov_int(
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.resolved_unwrap();
-            let value = ctx.const_intern.get(value_id);
+            let value = eval.resolved_unwrap();
 
             let value = value.into_int();
             let range = RangeInc::new(value, value);
@@ -213,9 +212,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.resolved_unwrap();
-            let value = ctx.const_intern.get(value_id);
-
+            let value = eval.resolved_unwrap();
             match value {
                 hir::ConstValue::Bool { val } => cov.cover(val),
                 _ => unreachable!(),
@@ -274,9 +271,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.resolved_unwrap();
-            let value = ctx.const_intern.get(value_id);
-
+            let value = eval.resolved_unwrap();
             match value {
                 hir::ConstValue::Char { val } => cov.cover(RangeInc::new(val as u32, val as u32)),
                 _ => unreachable!(),
@@ -329,15 +324,14 @@ fn match_cov_string(
 fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(hir::ConstValue::String { string_lit }) => cov.cover(string_lit.id),
+        hir::Pat::Lit(hir::ConstValue::String { val }) => cov.cover(val.id),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.resolved_unwrap();
-            let value = ctx.const_intern.get(value_id);
+            let value = eval.resolved_unwrap();
 
             match value {
-                hir::ConstValue::String { string_lit } => cov.cover(string_lit.id),
+                hir::ConstValue::String { val } => cov.cover(val.id),
                 _ => unreachable!(),
             }
         }
@@ -414,8 +408,7 @@ fn pat_cov_enum<'hir>(
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
-            let value_id = eval.resolved_unwrap();
-            let value = ctx.const_intern.get(value_id);
+            let value = eval.resolved_unwrap();
 
             match value {
                 hir::ConstValue::Variant { variant } => {

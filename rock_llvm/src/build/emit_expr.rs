@@ -188,12 +188,12 @@ pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Int { val, neg, int_ty } => codegen_const_int(cg, val, neg, int_ty),
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
-        hir::ConstValue::String { string_lit } => codegen_const_string(cg, string_lit),
+        hir::ConstValue::String { val } => codegen_const_string(cg, val),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
-        hir::ConstValue::ArrayRepeat { value, len } => codegen_const_array_repeat(cg, value, len),
+        hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
     }
 }
 
@@ -233,14 +233,14 @@ fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
     llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
 }
 
-fn codegen_const_string(cg: &Codegen, string_lit: ast::StringLit) -> llvm::Value {
-    let string_idx = string_lit.id.index();
+fn codegen_const_string(cg: &Codegen, val: ast::StringLit) -> llvm::Value {
+    let string_idx = val.id.index();
     let global_ptr = cg.string_lits[string_idx].as_ptr();
 
-    if string_lit.c_string {
+    if val.c_string {
         global_ptr.as_val()
     } else {
-        let string = cg.session.intern_lit.get(string_lit.id);
+        let string = cg.session.intern_lit.get(val.id);
         let slice_len = cg.const_usize(string.len() as u64);
         llvm::const_struct_named(cg.slice_type(), &[global_ptr.as_val(), slice_len])
     }
@@ -255,16 +255,16 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
     }
 
     let variant_tag = match hir_variant.kind {
-        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
-        hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+        hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
+        hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
     codegen_const(cg, variant_tag)
 }
 
 fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
-    let mut values = Vec::with_capacity(struct_.value_ids.len());
-    for &value_id in struct_.value_ids {
-        let value = codegen_const(cg, cg.hir.const_value(value_id));
+    let mut values = Vec::with_capacity(struct_.values.len());
+    for value in struct_.values {
+        let value = codegen_const(cg, *value);
         values.push(value);
     }
 
@@ -273,9 +273,9 @@ fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value
 }
 
 fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
-    let mut values = Vec::with_capacity(array.len as usize);
-    for &value_id in array.value_ids {
-        let value = codegen_const(cg, cg.hir.const_value(value_id));
+    let mut values = Vec::with_capacity(array.values.len());
+    for value in array.values {
+        let value = codegen_const(cg, *value);
         values.push(value);
     }
 
@@ -288,10 +288,10 @@ fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
     llvm::const_array(elem_ty, &values)
 }
 
-fn codegen_const_array_repeat(cg: &Codegen, value_id: hir::ConstValueID, len: u64) -> llvm::Value {
-    let mut values = Vec::with_capacity(len as usize);
-    let value = codegen_const(cg, cg.hir.const_value(value_id));
-    values.resize(len as usize, value);
+fn codegen_const_array_repeat(cg: &Codegen, array: &hir::ConstArrayRepeat) -> llvm::Value {
+    let mut values = Vec::with_capacity(array.len as usize);
+    let value = codegen_const(cg, array.value);
+    values.resize(array.len as usize, value);
 
     let elem_ty = if let Some(val) = values.get(0) {
         llvm::typeof_value(*val)
@@ -402,8 +402,8 @@ fn codegen_match<'c>(
                 let enum_data = cg.hir.enum_data(enum_id);
                 let variant = enum_data.variant(variant_id);
                 let variant_tag = match variant.kind {
-                    hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
-                    hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+                    hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
+                    hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
                 };
                 let variant_tag = codegen_const(cg, variant_tag);
                 cases.push((variant_tag, arm_bb));
@@ -452,9 +452,11 @@ fn codegen_match<'c>(
                             let variant = enum_data.variant(variant_id);
                             let variant_tag = match variant.kind {
                                 hir::VariantKind::Default(id) => {
-                                    cg.hir.variant_tag_values[id.index()]
+                                    cg.hir.variant_eval_values[id.index()]
                                 }
-                                hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+                                hir::VariantKind::Constant(id) => {
+                                    cg.hir.const_eval_values[id.index()]
+                                }
                             };
                             let variant_tag = codegen_const(cg, variant_tag);
                             cases.push((variant_tag, arm_bb));
@@ -768,8 +770,8 @@ fn codegen_variant<'c>(
 
     //@generating each time
     let tag_value = match variant.kind {
-        hir::VariantKind::Default(id) => cg.hir.variant_tag_values[id.index()],
-        hir::VariantKind::Constant(id) => cg.hir.const_eval_value(id),
+        hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
+        hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
     let tag_value = codegen_const(cg, tag_value);
 

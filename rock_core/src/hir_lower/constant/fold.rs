@@ -82,10 +82,7 @@ fn fold_struct_field<'hir>(
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
-        hir::ConstValue::Struct { struct_ } => {
-            let value_id = struct_.value_ids[access.field_id.index()];
-            Ok(ctx.const_intern.get(value_id))
-        }
+        hir::ConstValue::Struct { struct_ } => Ok(struct_.values[access.field_id.index()]),
         _ => unreachable!(),
     }
 }
@@ -103,12 +100,12 @@ fn fold_slice_field<'hir>(
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
-        hir::ConstValue::String { string_lit } => match access.field {
+        hir::ConstValue::String { val } => match access.field {
             //@cannot be constant folded directly, handle it somehow.
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
-                if !string_lit.c_string {
-                    let string = ctx.session.intern_lit.get(string_lit.id);
+                if !val.c_string {
+                    let string = ctx.session.intern_lit.get(val.id);
                     let len = string.len();
 
                     Ok(hir::ConstValue::Int {
@@ -153,8 +150,8 @@ fn fold_index<'hir>(
     };
 
     let array_len = match target {
-        hir::ConstValue::Array { array } => array.len,
-        hir::ConstValue::ArrayRepeat { len, .. } => len,
+        hir::ConstValue::Array { array } => array.values.len() as u64,
+        hir::ConstValue::ArrayRepeat { array } => array.len,
         _ => unreachable!(),
     };
 
@@ -162,12 +159,12 @@ fn fold_index<'hir>(
         err::const_index_out_of_bounds(&mut ctx.emit, src, index, array_len);
         Err(())
     } else {
-        let value_id = match target {
-            hir::ConstValue::Array { array } => array.value_ids[index as usize],
-            hir::ConstValue::ArrayRepeat { value, .. } => value,
+        let value = match target {
+            hir::ConstValue::Array { array } => array.values[index as usize],
+            hir::ConstValue::ArrayRepeat { array } => array.value,
             _ => unreachable!(),
         };
-        Ok(ctx.const_intern.get(value_id))
+        Ok(value)
     }
 }
 
@@ -196,7 +193,7 @@ fn fold_cast<'hir>(
     let mut target = fold_const_expr(ctx, target_src, target)?;
 
     if let hir::ConstValue::Variant { variant } = target {
-        assert!(variant.value_ids.is_empty());
+        assert!(variant.values.is_empty()); //@why assert? document
         let enum_data = ctx.registry.enum_data(variant.enum_id);
         let variant = enum_data.variant(variant.variant_id);
 
@@ -208,8 +205,7 @@ fn fold_cast<'hir>(
             }
             hir::VariantKind::Constant(id) => {
                 let (eval, _) = ctx.registry.const_eval(id);
-                let value_id = eval.resolved()?;
-                ctx.const_intern.get(value_id)
+                eval.resolved()?
             }
         };
     }
@@ -259,9 +255,7 @@ fn fold_const_var<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let data = ctx.registry.const_data(const_id);
     let (eval, _) = ctx.registry.const_eval(data.value);
-    let value_id = eval.resolved()?;
-    let value = ctx.const_intern.get(value_id);
-    Ok(value)
+    eval.resolved()
 }
 
 fn fold_variant<'hir>(
@@ -272,26 +266,25 @@ fn fold_variant<'hir>(
     input: &&[&hir::Expr<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
-    let mut value_ids = Vec::new();
-    value_ids.resize(input.len(), hir::ConstValueID::dummy());
+    let mut values = Vec::with_capacity(input.len());
 
     for &expr in input.iter() {
         let src = SourceRange::new(src.module_id(), expr.range);
         if let Ok(value) = fold_const_expr(ctx, src, expr) {
-            value_ids.push(ctx.const_intern.intern(value));
+            values.push(value);
         } else {
             correct = false;
         }
     }
 
     if correct {
-        let value_ids = ctx.const_intern.arena().alloc_slice(&value_ids);
-        let const_variant = hir::ConstVariant {
+        let values = ctx.arena.alloc_slice(&values);
+        let variant = hir::ConstVariant {
             enum_id,
             variant_id,
-            value_ids,
+            values,
         };
-        let variant = ctx.const_intern.arena().alloc(const_variant);
+        let variant = ctx.arena.alloc(variant);
         Ok(hir::ConstValue::Variant { variant })
     } else {
         Err(())
@@ -305,25 +298,21 @@ fn fold_struct_init<'hir>(
     input: &[hir::FieldInit<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
-    let mut value_ids = Vec::new();
-    value_ids.resize(input.len(), hir::ConstValueID::dummy());
+    let mut values = Vec::with_capacity(input.len());
 
     for init in input {
         let src = SourceRange::new(src.module_id(), init.expr.range);
         if let Ok(value) = fold_const_expr(ctx, src, init.expr) {
-            value_ids[init.field_id.index()] = ctx.const_intern.intern(value);
+            values[init.field_id.index()] = value;
         } else {
             correct = false;
         }
     }
 
     if correct {
-        let value_ids = ctx.const_intern.arena().alloc_slice(&value_ids);
-        let const_struct = hir::ConstStruct {
-            struct_id,
-            value_ids,
-        };
-        let struct_ = ctx.const_intern.arena().alloc(const_struct);
+        let values = ctx.arena.alloc_slice(&values);
+        let struct_ = hir::ConstStruct { struct_id, values };
+        let struct_ = ctx.arena.alloc(struct_);
         Ok(hir::ConstValue::Struct { struct_ })
     } else {
         Err(())
@@ -336,22 +325,21 @@ fn fold_array_init<'hir>(
     array_init: &hir::ArrayInit<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
-    let mut value_ids = Vec::with_capacity(array_init.input.len());
+    let mut values = Vec::with_capacity(array_init.input.len());
 
     for &expr in array_init.input {
         let src = SourceRange::new(src.module_id(), expr.range);
         if let Ok(value) = fold_const_expr(ctx, src, expr) {
-            value_ids.push(ctx.const_intern.intern(value));
+            values.push(value);
         } else {
             correct = false;
         }
     }
 
     if correct {
-        let len = value_ids.len() as u64;
-        let value_ids = ctx.const_intern.arena().alloc_slice(value_ids.as_slice());
-        let const_array = hir::ConstArray { len, value_ids };
-        let array = ctx.const_intern.arena().alloc(const_array);
+        let values = ctx.arena.alloc_slice(values.as_slice());
+        let array = hir::ConstArray { values };
+        let array = ctx.arena.alloc(array);
         Ok(hir::ConstValue::Array { array })
     } else {
         Err(())
@@ -365,11 +353,11 @@ fn fold_array_repeat<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let src = SourceRange::new(src.module_id(), array_repeat.value.range);
     let value = fold_const_expr(ctx, src, array_repeat.value)?;
+    let len = array_repeat.len;
 
-    Ok(hir::ConstValue::ArrayRepeat {
-        value: ctx.const_intern.intern(value),
-        len: array_repeat.len,
-    })
+    let array = hir::ConstArrayRepeat { value, len };
+    let array = ctx.arena.alloc(array);
+    Ok(hir::ConstValue::ArrayRepeat { array })
 }
 
 fn fold_unary_expr<'hir>(
