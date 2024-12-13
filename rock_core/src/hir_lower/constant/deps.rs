@@ -10,19 +10,11 @@ use crate::hir;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-#[derive(Copy, Clone, PartialEq)]
-enum ConstDependency {
-    EnumVariant(hir::EnumID, hir::VariantID),
-    EnumLayout(hir::EnumID),
-    StructLayout(hir::StructID),
-    Const(hir::ConstID),
-    Global(hir::GlobalID),
-    ArrayLen(hir::ConstEvalID),
-}
-
 //@set correct poly scopes everywhere paths are resolved
 pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
-    let mut tree = Tree::with_capacity(64);
+    let mut tree = Tree {
+        nodes: Vec::with_capacity(128),
+    };
 
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
@@ -43,8 +35,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
             };
 
             if unresolved {
-                tree.clear();
-                let root_id = tree.add_root(ConstDependency::EnumVariant(enum_id, variant_id));
+                let root_id =
+                    tree.root_and_reset(ConstDependency::EnumVariant(enum_id, variant_id));
 
                 if let Err(from_id) =
                     add_variant_tag_const_dependency(ctx, &mut tree, root_id, enum_id, variant_id)
@@ -107,8 +99,7 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
         let data = ctx.registry.enum_data(id);
 
         if data.layout.is_unresolved() {
-            tree.clear();
-            let root_id = tree.add_root(ConstDependency::EnumLayout(id));
+            let root_id = tree.root_and_reset(ConstDependency::EnumLayout(id));
             let mut is_ok = true;
 
             for variant in data.variants {
@@ -132,8 +123,7 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
         let data = ctx.registry.struct_data(id);
 
         if data.layout.is_unresolved() {
-            tree.clear();
-            let root_id = tree.add_root(ConstDependency::StructLayout(id));
+            let root_id = tree.root_and_reset(ConstDependency::StructLayout(id));
             let mut is_ok = true;
 
             for field in data.fields {
@@ -157,8 +147,7 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
-                tree.clear();
-                let root_id = tree.add_root(ConstDependency::Const(id));
+                let root_id = tree.root_and_reset(ConstDependency::Const(id));
 
                 if let Err(from_id) =
                     add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
@@ -187,8 +176,7 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
 
         match eval {
             hir::ConstEval::Unresolved(expr) => {
-                tree.clear();
-                let root_id = tree.add_root(ConstDependency::Global(id));
+                let root_id = tree.root_and_reset(ConstDependency::Global(id));
 
                 if let Err(from_id) =
                     add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
@@ -222,114 +210,13 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
     }
 }
 
-struct Tree<T: PartialEq + Copy + Clone> {
-    nodes: Vec<TreeNode<T>>,
-}
-
-crate::define_id!(TreeNodeID);
-struct TreeNode<T: PartialEq + Copy + Clone> {
-    value: T,
-    parent: Option<TreeNodeID>,
-}
-
-impl<T: PartialEq + Copy + Clone> Tree<T> {
-    #[must_use]
-    fn new_rooted(root: T) -> (Tree<T>, TreeNodeID) {
-        let root_id = TreeNodeID::new(0);
-        let tree = Tree {
-            nodes: vec![TreeNode {
-                value: root,
-                parent: None,
-            }],
-        };
-        (tree, root_id)
-    }
-
-    #[must_use]
-    fn with_capacity(cap: usize) -> Tree<T> {
-        Tree {
-            nodes: Vec::with_capacity(cap),
-        }
-    }
-
-    fn clear(&mut self) {
-        self.nodes.clear();
-    }
-
-    #[must_use]
-    fn add_root(&mut self, value: T) -> TreeNodeID {
-        let id = TreeNodeID::new(self.nodes.len());
-        self.nodes.push(TreeNode {
-            value,
-            parent: None,
-        });
-        id
-    }
-
-    #[must_use]
-    fn add_child(&mut self, parent_id: TreeNodeID, value: T) -> TreeNodeID {
-        let id = TreeNodeID::new(self.nodes.len());
-        self.nodes.push(TreeNode {
-            value,
-            parent: Some(parent_id),
-        });
-        id
-    }
-
-    #[must_use]
-    fn find_cycle(&self, id: TreeNodeID) -> Option<TreeNodeID> {
-        let mut node = self.get_node(id);
-        let value = node.value;
-
-        while let Some(parent_id) = node.parent {
-            node = self.get_node(parent_id);
-            if node.value == value {
-                return Some(parent_id);
-            }
-        }
-        None
-    }
-
-    #[must_use]
-    fn get_values_up_to_node(&self, from_id: TreeNodeID, up_to: TreeNodeID) -> Vec<T> {
-        let mut node = self.get_node(from_id);
-        let mut values = vec![node.value];
-
-        while let Some(parent_id) = node.parent {
-            node = self.get_node(parent_id);
-            values.push(node.value);
-            if parent_id == up_to {
-                return values;
-            }
-        }
-        values
-    }
-
-    #[must_use]
-    fn get_values_up_to_root(&self, from_id: TreeNodeID) -> Vec<T> {
-        let mut node = self.get_node(from_id);
-        let mut values = vec![node.value];
-
-        while let Some(parent_id) = node.parent {
-            node = self.get_node(parent_id);
-            values.push(node.value);
-        }
-        values
-    }
-
-    #[must_use]
-    fn get_node(&self, id: TreeNodeID) -> &TreeNode<T> {
-        &self.nodes[id.index()]
-    }
-}
-
 //@change Err type to enum
 // bubble it to the top
 // `already error`, `cycle` variants
 // tree itself should return a result on each `add` operation
 fn check_const_dependency_cycle(
     ctx: &mut HirCtx,
-    tree: &Tree<ConstDependency>,
+    tree: &Tree,
     parent_id: TreeNodeID,
     node_id: TreeNodeID,
 ) -> Result<(), TreeNodeID> {
@@ -338,7 +225,7 @@ fn check_const_dependency_cycle(
         None => return Ok(()),
     };
 
-    let src = match tree.get_node(cycle_id).value {
+    let src = match tree.node(cycle_id).value {
         ConstDependency::EnumVariant(id, variant_id) => {
             let data = ctx.registry.enum_data(id);
             let variant = data.variant(variant_id);
@@ -360,7 +247,7 @@ fn check_const_dependency_cycle(
         }
     };
 
-    let cycle_deps = tree.get_values_up_to_node(node_id, cycle_id);
+    let cycle_deps = tree.values_up_to_node(node_id, cycle_id);
     let mut ctx_msg: StringOrStr = "".into();
     let mut info_vec = Vec::with_capacity(cycle_deps.len());
     let mut info_src = src;
@@ -452,12 +339,8 @@ fn check_const_dependency_cycle(
     Err(parent_id)
 }
 
-fn const_dependencies_mark_error_up_to_root(
-    ctx: &mut HirCtx,
-    tree: &Tree<ConstDependency>,
-    from_id: TreeNodeID,
-) {
-    let const_deps = tree.get_values_up_to_root(from_id);
+fn const_dependencies_mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
+    let const_deps = tree.values_up_to_root(from_id);
     for dep in const_deps {
         match dep {
             ConstDependency::EnumVariant(id, variant_id) => {
@@ -508,7 +391,7 @@ fn const_dependencies_mark_error_up_to_root(
 
 fn add_variant_tag_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
@@ -568,7 +451,7 @@ fn add_variant_tag_const_dependency(
 // adds tag dependency and type usage of each inner field value
 fn add_variant_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
@@ -585,7 +468,7 @@ fn add_variant_const_dependency(
 
 fn add_const_var_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     const_id: hir::ConstID,
 ) -> Result<(), TreeNodeID> {
@@ -611,7 +494,7 @@ fn add_const_var_const_dependency(
 
 fn add_array_len_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     eval_id: hir::ConstEvalID,
 ) -> Result<(), TreeNodeID> {
@@ -632,7 +515,7 @@ fn add_array_len_const_dependency(
 
 fn add_type_size_const_dependencies<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     ty: hir::Type<'hir>,
 ) -> Result<(), TreeNodeID> {
@@ -673,7 +556,7 @@ fn add_type_size_const_dependencies<'hir>(
 
 fn add_enum_size_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
 ) -> Result<(), TreeNodeID> {
@@ -700,7 +583,7 @@ fn add_enum_size_const_dependency(
 
 fn add_struct_size_const_dependency(
     ctx: &mut HirCtx,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
 ) -> Result<(), TreeNodeID> {
@@ -725,7 +608,7 @@ fn add_struct_size_const_dependency(
 
 fn add_type_usage_const_dependencies<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     ty: hir::Type<'hir>,
 ) -> Result<(), TreeNodeID> {
@@ -785,7 +668,7 @@ fn add_type_usage_const_dependencies<'hir>(
 
 fn add_expr_const_dependencies<'ast>(
     ctx: &mut HirCtx<'_, 'ast, '_>,
-    tree: &mut Tree<ConstDependency>,
+    tree: &mut Tree,
     parent_id: TreeNodeID,
     origin_id: ModuleID,
     expr: &ast::Expr<'ast>,
@@ -1027,7 +910,7 @@ fn error_cannot_refer_to_in_constants(
     ));
 }
 
-fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree<ConstDependency>) {
+fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
     // reverse iteration allows to resolve dependencies in correct order
     for node in tree.nodes.iter().rev() {
         match node.value {
@@ -1164,5 +1047,95 @@ pub fn resolve_const_expr<'hir, 'ast>(
         fold::fold_const_expr(ctx, src, expr_res.expr)
     } else {
         Err(())
+    }
+}
+
+//==================== DEPENDENCY TREE ====================
+
+#[derive(Copy, Clone, PartialEq)]
+enum ConstDependency {
+    EnumVariant(hir::EnumID, hir::VariantID),
+    EnumLayout(hir::EnumID),
+    StructLayout(hir::StructID),
+    Const(hir::ConstID),
+    Global(hir::GlobalID),
+    ArrayLen(hir::ConstEvalID),
+}
+
+crate::define_id!(TreeNodeID);
+struct Tree {
+    nodes: Vec<TreeNode>,
+}
+struct TreeNode {
+    value: ConstDependency,
+    parent: Option<TreeNodeID>,
+}
+
+//@remove the vector allocations
+// iterate directly where needed
+impl Tree {
+    #[must_use]
+    #[inline(always)]
+    fn node(&self, id: TreeNodeID) -> &TreeNode {
+        &self.nodes[id.index()]
+    }
+    #[must_use]
+    #[inline(always)]
+    fn root_and_reset(&mut self, value: ConstDependency) -> TreeNodeID {
+        self.nodes.clear();
+        let id = TreeNodeID::new(self.nodes.len());
+        self.nodes.push(TreeNode {
+            value,
+            parent: None,
+        });
+        id
+    }
+    #[must_use]
+    #[inline(always)]
+    fn add_child(&mut self, parent_id: TreeNodeID, value: ConstDependency) -> TreeNodeID {
+        let id = TreeNodeID::new(self.nodes.len());
+        self.nodes.push(TreeNode {
+            value,
+            parent: Some(parent_id),
+        });
+        id
+    }
+    #[must_use]
+    fn find_cycle(&self, id: TreeNodeID) -> Option<TreeNodeID> {
+        let mut node = self.node(id);
+        let value = node.value;
+
+        while let Some(parent_id) = node.parent {
+            node = self.node(parent_id);
+            if node.value == value {
+                return Some(parent_id);
+            }
+        }
+        None
+    }
+    #[must_use]
+    fn values_up_to_node(&self, from: TreeNodeID, up_to: TreeNodeID) -> Vec<ConstDependency> {
+        let mut node = self.node(from);
+        let mut values = vec![node.value];
+
+        while let Some(parent_id) = node.parent {
+            node = self.node(parent_id);
+            values.push(node.value);
+            if parent_id == up_to {
+                return values;
+            }
+        }
+        values
+    }
+    #[must_use]
+    fn values_up_to_root(&self, from: TreeNodeID) -> Vec<ConstDependency> {
+        let mut node = self.node(from);
+        let mut values = vec![node.value];
+
+        while let Some(parent_id) = node.parent {
+            node = self.node(parent_id);
+            values.push(node.value);
+        }
+        values
     }
 }
