@@ -128,16 +128,17 @@ mod temp_buffer {
     use super::Arena;
     use std::marker::PhantomData;
 
-    pub struct TempBuffer<T: Copy> {
+    pub struct TempBuffer<T> {
         buffer: Vec<T>,
     }
 
-    pub struct BufferOffset<T: Copy> {
+    #[derive(Clone)]
+    pub struct BufferOffset<T> {
         idx: usize,
         phantom: PhantomData<T>,
     }
 
-    impl<T: Copy> TempBuffer<T> {
+    impl<T> TempBuffer<T> {
         pub fn new(cap: usize) -> TempBuffer<T> {
             TempBuffer {
                 buffer: Vec::with_capacity(cap),
@@ -165,11 +166,22 @@ mod temp_buffer {
             self.buffer.push(value);
         }
 
+        #[inline]
+        pub fn view(&self, offset: BufferOffset<T>) -> &[T] {
+            &self.buffer[offset.idx..]
+        }
+        #[inline]
+        pub fn pop_view(&mut self, offset: BufferOffset<T>) {
+            self.buffer.truncate(offset.idx);
+        }
         pub fn take<'arena>(
             &mut self,
             offset: BufferOffset<T>,
             arena: &mut Arena<'arena>,
-        ) -> &'arena [T] {
+        ) -> &'arena [T]
+        where
+            T: Copy,
+        {
             let slice = arena.alloc_slice(&self.buffer[offset.idx..]);
             self.buffer.truncate(offset.idx);
             slice

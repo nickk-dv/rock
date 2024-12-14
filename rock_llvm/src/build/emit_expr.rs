@@ -132,7 +132,7 @@ fn codegen_expr<'c>(
     }
 }
 
-fn codegen_const_expr(cg: &Codegen, expect: Expect, value: hir::ConstValue) -> llvm::Value {
+fn codegen_const_expr(cg: &mut Codegen, expect: Expect, value: hir::ConstValue) -> llvm::Value {
     let value = codegen_const(cg, value);
     match expect {
         Expect::Value(_) | Expect::Store(_) => value,
@@ -146,7 +146,7 @@ fn codegen_const_expr(cg: &Codegen, expect: Expect, value: hir::ConstValue) -> l
     }
 }
 
-pub fn codegen_const(cg: &Codegen, value: hir::ConstValue) -> llvm::Value {
+pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
         hir::ConstValue::Void => codegen_const_void(cg),
         hir::ConstValue::Null => codegen_const_null(cg),
@@ -212,7 +212,7 @@ fn codegen_const_string(cg: &Codegen, val: ast::StringLit) -> llvm::Value {
     }
 }
 
-fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Value {
+fn codegen_const_variant(cg: &mut Codegen, variant: &hir::ConstVariant) -> llvm::Value {
     let enum_data = cg.hir.enum_data(variant.enum_id);
     let hir_variant = enum_data.variant(variant.variant_id);
 
@@ -227,37 +227,46 @@ fn codegen_const_variant(cg: &Codegen, variant: &hir::ConstVariant) -> llvm::Val
     codegen_const(cg, variant_tag)
 }
 
-fn codegen_const_struct(cg: &Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
-    let mut values = Vec::with_capacity(struct_.values.len());
+fn codegen_const_struct(cg: &mut Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
+    let offset = cg.cache.values.start();
     for value in struct_.values {
         let value = codegen_const(cg, *value);
-        values.push(value);
+        cg.cache.values.push(value);
     }
 
+    let values = cg.cache.values.view(offset.clone());
     let struct_ty = cg.struct_type(struct_.struct_id);
-    llvm::const_struct_named(struct_ty, &values)
+    let struct_ = llvm::const_struct_named(struct_ty, values);
+    cg.cache.values.pop_view(offset);
+    struct_
 }
 
-fn codegen_const_array(cg: &Codegen, array: &hir::ConstArray) -> llvm::Value {
-    let mut values = Vec::with_capacity(array.values.len());
+fn codegen_const_array(cg: &mut Codegen, array: &hir::ConstArray) -> llvm::Value {
+    let offset = cg.cache.values.start();
     for value in array.values {
         let value = codegen_const(cg, *value);
-        values.push(value);
+        cg.cache.values.push(value);
     }
 
+    let values = cg.cache.values.view(offset.clone());
     let elem_ty = if let Some(val) = values.get(0) {
         llvm::typeof_value(*val)
     } else {
         //@FIX(8.12.24) empty array type not available, causes llvm type errors.
         cg.void_val_type().as_ty()
     };
-    llvm::const_array(elem_ty, &values)
+    let array = llvm::const_array(elem_ty, &values);
+    cg.cache.values.pop_view(offset);
+    array
 }
 
-fn codegen_const_array_repeat(cg: &Codegen, array: &hir::ConstArrayRepeat) -> llvm::Value {
-    let mut values = Vec::with_capacity(array.len as usize);
+fn codegen_const_array_repeat(cg: &mut Codegen, array: &hir::ConstArrayRepeat) -> llvm::Value {
+    let offset = cg.cache.values.start();
     let value = codegen_const(cg, array.value);
-    values.resize(array.len as usize, value);
+    for _ in 0..array.len {
+        cg.cache.values.push(value);
+    }
+    let values = cg.cache.values.view(offset.clone());
 
     let elem_ty = if let Some(val) = values.get(0) {
         llvm::typeof_value(*val)
@@ -265,7 +274,9 @@ fn codegen_const_array_repeat(cg: &Codegen, array: &hir::ConstArrayRepeat) -> ll
         //@FIX(8.12.24) empty array type not available, causes llvm type errors.
         cg.void_val_type().as_ty()
     };
-    llvm::const_array(elem_ty, &values)
+    let array = llvm::const_array(elem_ty, &values);
+    cg.cache.values.pop_view(offset);
+    array
 }
 
 fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c>) {
@@ -341,7 +352,7 @@ fn codegen_match<'c>(
     let exit_bb = cg.append_bb("match_exit");
     let insert_bb = cg.build.insert_bb();
     let mut wild_bb = None;
-    let mut cases = Vec::<(llvm::Value, llvm::BasicBlock)>::with_capacity(match_.arms.len());
+    let offset = cg.cache.cases.start();
 
     for arm in match_.arms {
         let arm_bb = cg.append_bb("match_arm");
@@ -352,11 +363,15 @@ fn codegen_match<'c>(
             hir::Pat::Wild => wild_bb = Some(arm_bb),
             hir::Pat::Lit(value) => {
                 let pat_value = codegen_const(cg, value);
-                cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                cg.cache
+                    .cases
+                    .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
             }
             hir::Pat::Const(const_id) => {
                 let pat_value = codegen_const_var(cg, const_id);
-                cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                cg.cache
+                    .cases
+                    .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
@@ -366,7 +381,7 @@ fn codegen_match<'c>(
                     hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
                 };
                 let variant_tag = codegen_const(cg, variant_tag);
-                cases.push((variant_tag, arm_bb));
+                cg.cache.cases.push((variant_tag, arm_bb));
 
                 if !bind_ids.is_empty() {
                     let variant_ty = &cg.variants[enum_id.index()];
@@ -401,11 +416,15 @@ fn codegen_match<'c>(
                         hir::Pat::Wild => wild_bb = Some(arm_bb),
                         hir::Pat::Lit(value) => {
                             let pat_value = codegen_const(cg, value);
-                            cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                            cg.cache
+                                .cases
+                                .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
                         }
                         hir::Pat::Const(const_id) => {
                             let pat_value = codegen_const_var(cg, const_id);
-                            cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                            cg.cache
+                                .cases
+                                .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
                             let enum_data = cg.hir.enum_data(enum_id);
@@ -419,7 +438,7 @@ fn codegen_match<'c>(
                                 }
                             };
                             let variant_tag = codegen_const(cg, variant_tag);
-                            cases.push((variant_tag, arm_bb));
+                            cg.cache.cases.push((variant_tag, arm_bb));
                         }
                     }
                 }
@@ -433,10 +452,14 @@ fn codegen_match<'c>(
     cg.build.position_at_end(insert_bb);
     let on_value = extract_slice_len_if_needed(cg, kind, on_value);
     let else_bb = wild_bb.unwrap_or(exit_bb);
+
+    let cases = cg.cache.cases.view(offset.clone());
     let switch = cg.build.switch(on_value, else_bb, cases.len() as u32);
-    for (case_val, dest_bb) in cases {
+    for (case_val, dest_bb) in cases.iter().copied() {
         cg.build.add_case(switch, case_val, dest_bb);
     }
+    cg.cache.cases.pop_view(offset);
+
     cg.build.position_at_end(exit_bb);
 }
 
@@ -706,6 +729,7 @@ fn codegen_variant<'c>(
 ) -> llvm::Value {
     let enum_data = cg.hir.enum_data(enum_id);
     let variant = enum_data.variant(variant_id);
+    let enum_with_fields = enum_data.flag_set.contains(hir::EnumFlag::WithFields);
 
     //@generating each time
     let tag_value = match variant.kind {
@@ -714,7 +738,7 @@ fn codegen_variant<'c>(
     };
     let tag_value = codegen_const(cg, tag_value);
 
-    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
+    if enum_with_fields {
         let enum_ty = cg.enum_type(enum_id);
         let enum_ptr = cg.entry_alloca(enum_ty, "enum_init");
         cg.build.store(tag_value, enum_ptr);
@@ -755,10 +779,10 @@ fn codegen_call_direct<'c>(
     input: &[&hir::Expr<'c>],
     expr_range: TextRange,
 ) -> Option<llvm::Value> {
-    let mut input_values = Vec::with_capacity(input.len());
+    let offset = cg.cache.values.start();
     for &expr in input {
         let value = codegen_expr_value(cg, expr);
-        input_values.push(value);
+        cg.cache.values.push(value);
     }
 
     let proc_data = cg.hir.proc_data(proc_id);
@@ -793,11 +817,13 @@ fn codegen_call_direct<'c>(
         let string_slice =
             llvm::const_struct_named(cg.slice_type(), &[global.as_ptr().as_val(), slice_len]);
         let location = llvm::const_struct_inline(&cg.context, &[line, col, string_slice], false);
-        input_values.push(location);
+        cg.cache.values.push(location);
     }
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];
+    let input_values = cg.cache.values.view(offset.clone());
     let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "call_val")?;
+    cg.cache.values.pop_view(offset);
 
     match expect {
         Expect::Pointer => {
@@ -821,14 +847,16 @@ fn codegen_call_indirect<'c>(
 ) -> Option<llvm::Value> {
     let fn_val = codegen_expr_value(cg, target).into_fn();
 
-    let mut input_values = Vec::with_capacity(indirect.input.len());
+    let offset = cg.cache.values.start();
     for &expr in indirect.input {
         let value = codegen_expr_value(cg, expr);
-        input_values.push(value);
+        cg.cache.values.push(value);
     }
 
     let fn_ty = cg.proc_type(indirect.proc_ty);
+    let input_values = cg.cache.values.view(offset.clone());
     let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "icall_val")?;
+    cg.cache.values.pop_view(offset);
 
     match expect {
         Expect::Pointer => {

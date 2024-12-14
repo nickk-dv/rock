@@ -639,31 +639,31 @@ pub fn const_string(ctx: &IRContext, string: &str, null_terminate: bool) -> Valu
         )
     })
 }
-pub fn const_array(elem_ty: Type, const_vals: &[Value]) -> Value {
+pub fn const_array(elem_ty: Type, values: &[Value]) -> Value {
     Value(unsafe {
         core::LLVMConstArray2(
             elem_ty.0,
-            const_vals.as_ptr() as *mut sys::LLVMValueRef,
-            const_vals.len() as u64,
+            values.as_ptr() as *mut sys::LLVMValueRef,
+            values.len() as u64,
         )
     })
 }
-pub fn const_struct_inline(ctx: &IRContext, const_vals: &[Value], packed: bool) -> Value {
+pub fn const_struct_inline(ctx: &IRContext, values: &[Value], packed: bool) -> Value {
     Value(unsafe {
         core::LLVMConstStructInContext(
             ctx.context,
-            const_vals.as_ptr() as *mut sys::LLVMValueRef,
-            const_vals.len() as u32,
+            values.as_ptr() as *mut sys::LLVMValueRef,
+            values.len() as u32,
             packed as i32,
         )
     })
 }
-pub fn const_struct_named(struct_ty: TypeStruct, const_vals: &[Value]) -> Value {
+pub fn const_struct_named(struct_ty: TypeStruct, values: &[Value]) -> Value {
     Value(unsafe {
         core::LLVMConstNamedStruct(
             struct_ty.0,
-            const_vals.as_ptr() as *mut sys::LLVMValueRef,
-            const_vals.len() as u32,
+            values.as_ptr() as *mut sys::LLVMValueRef,
+            values.len() as u32,
         )
     })
 }

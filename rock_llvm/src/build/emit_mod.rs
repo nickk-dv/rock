@@ -146,21 +146,16 @@ fn codegen_variant_types(cg: &mut Codegen) {
 }
 
 fn codegen_consts(cg: &mut Codegen) {
-    for data in cg.hir.consts.iter() {
+    for idx in 0..cg.hir.consts.len() {
+        let data = cg.hir.const_data(hir::ConstID::new(idx));
         let value = emit_expr::codegen_const(cg, cg.hir.const_eval_values[data.value.index()]);
         cg.consts.push(value);
     }
 }
 
 fn codegen_globals(cg: &mut Codegen) {
-    for data in cg.hir.globals.iter() {
-        let global_ty = cg.ty(data.ty);
-        let global_val = match data.init {
-            hir::GlobalInit::Init(eval_id) => {
-                emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
-            }
-            hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
-        };
+    for idx in 0..cg.hir.globals.len() {
+        let data = cg.hir.global_data(hir::GlobalID::new(idx));
 
         let module = cg.session.module.get(data.origin_id);
         let package = cg.session.graph.package(module.origin());
@@ -171,13 +166,18 @@ fn codegen_globals(cg: &mut Codegen) {
         cg.string_buf.push(':');
         cg.string_buf.push_str(struct_name);
 
-        let global = cg.module.add_global(
-            &cg.string_buf,
-            global_val,
-            global_ty,
-            data.mutt == ast::Mut::Immutable,
-            false,
-        );
+        let constant = data.mutt == ast::Mut::Immutable;
+        let global_ty = cg.ty(data.ty);
+        let value = match data.init {
+            hir::GlobalInit::Init(eval_id) => {
+                emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
+            }
+            hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
+        };
+
+        let global = cg
+            .module
+            .add_global(&cg.string_buf, value, global_ty, constant, false);
         cg.globals.push(global);
     }
 }

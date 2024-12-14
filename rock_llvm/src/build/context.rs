@@ -3,6 +3,7 @@ use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;
+use rock_core::support::TempBuffer;
 
 pub struct Codegen<'c, 's, 's_ref> {
     pub proc: ProcCodegen<'c>,
@@ -20,7 +21,7 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub hir: hir::Hir<'c>,
     pub session: &'s_ref Session<'s>,
     pub string_buf: String,
-    cache: CodegenCache,
+    pub cache: CodegenCache,
     pub attr_cache: CodegenAttrCache,
     pub location_ty: llvm::TypeStruct,
 }
@@ -63,7 +64,7 @@ pub struct TailValue {
     pub value_ty: llvm::Type,
 }
 
-struct CodegenCache {
+pub struct CodegenCache {
     int_1: llvm::Type,
     int_8: llvm::Type,
     int_16: llvm::Type,
@@ -76,6 +77,8 @@ struct CodegenCache {
     ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
     void_val_type: llvm::TypeStruct,
+    pub values: TempBuffer<llvm::Value>,
+    pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
 }
 
 pub struct CodegenAttrCache {
@@ -402,6 +405,8 @@ impl CodegenCache {
             ptr_sized_int,
             slice_type,
             void_val_type,
+            values: TempBuffer::new(64),
+            cases: TempBuffer::new(64),
         }
     }
 }
