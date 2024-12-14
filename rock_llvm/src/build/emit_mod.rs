@@ -1,4 +1,4 @@
-use super::context::{Codegen, Expect, ProcCodegen};
+use super::context::{Codegen, Expect};
 use super::emit_expr;
 use super::emit_stmt;
 use crate::llvm;
@@ -249,17 +249,17 @@ fn codegen_function_values(cg: &mut Codegen) {
 }
 
 fn codegen_function_bodies(cg: &mut Codegen) {
-    for (proc_idx, data) in cg.hir.procs.iter().enumerate() {
+    for proc_idx in 0..cg.hir.procs.len() {
+        let fn_val = cg.procs[proc_idx].0;
+        let proc_id = hir::ProcID::new(proc_idx);
+        let data = cg.hir.proc_data(proc_id);
+        cg.proc.reset(proc_id, fn_val);
+
         if data.flag_set.contains(hir::ProcFlag::External)
             && !data.flag_set.contains(hir::ProcFlag::Builtin)
         {
             continue;
         }
-
-        let fn_val = cg.procs[proc_idx].0;
-        let proc_id = hir::ProcID::new(proc_idx);
-        //@re-use, reduce allocations
-        let mut proc_cg = ProcCodegen::new(proc_id, fn_val);
 
         let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
         cg.build.position_at_end(entry_bb);
@@ -271,7 +271,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let param_ty = cg.ty(param.ty);
             let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
-            proc_cg.param_ptrs.push(param_ptr);
+            cg.proc.param_ptrs.push(param_ptr);
 
             let param_val = fn_val.param_val(param_idx as u32);
             cg.build.store(param_val, param_ptr);
@@ -281,7 +281,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             let param_idx = data.params.len();
             let param_ty = cg.location_ty.as_ty();
             let param_ptr = cg.build.alloca(param_ty, "caller_location");
-            proc_cg.param_ptrs.push(param_ptr);
+            cg.proc.param_ptrs.push(param_ptr);
 
             let param_val = fn_val.param_val(param_idx as u32);
             cg.build.store(param_val, param_ptr);
@@ -294,7 +294,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let local_ty = cg.ty(local.ty);
             let local_ptr = cg.build.alloca(local_ty, &cg.string_buf);
-            proc_cg.local_ptrs.push(local_ptr);
+            cg.proc.local_ptrs.push(local_ptr);
         }
 
         for local_bind in data.local_binds {
@@ -305,7 +305,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let local_ty = cg.ty(local_bind.ty);
             let local_ptr = cg.build.alloca(local_ty, name);
-            proc_cg.local_bind_ptrs.push(local_ptr);
+            cg.proc.local_bind_ptrs.push(local_ptr);
         }
 
         for for_bind in data.for_binds {
@@ -320,14 +320,14 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let local_ty = cg.ty(for_bind.ty);
             let local_ptr = cg.build.alloca(local_ty, name);
-            proc_cg.for_bind_ptrs.push(local_ptr);
+            cg.proc.for_bind_ptrs.push(local_ptr);
         }
 
         if let Some(block) = data.block {
-            let value_id = proc_cg.add_tail_value();
-            emit_stmt::codegen_block(cg, &mut proc_cg, Expect::Value(Some(value_id)), block);
+            let value_id = cg.proc.add_tail_value();
+            emit_stmt::codegen_block(cg, Expect::Value(Some(value_id)), block);
 
-            let value = if let Some(tail) = proc_cg.tail_value(value_id) {
+            let value = if let Some(tail) = cg.proc.tail_value(value_id) {
                 Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
             } else {
                 None
@@ -339,8 +339,8 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             //@hack: generate slice builtins (all are the same)
             let slice_ty = cg.slice_type();
             let slice_ptr = cg.build.alloca(slice_ty.as_ty(), "slice");
-            let param_ptr_ptr = proc_cg.param_ptrs[0];
-            let param_len_ptr = proc_cg.param_ptrs[1];
+            let param_ptr_ptr = cg.proc.param_ptrs[0];
+            let param_len_ptr = cg.proc.param_ptrs[1];
 
             let slice_ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
             let param_ptr = cg.build.load(cg.ptr_type(), param_ptr_ptr, "param_ptr");

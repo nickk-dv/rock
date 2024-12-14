@@ -5,6 +5,7 @@ use rock_core::hir;
 use rock_core::session::Session;
 
 pub struct Codegen<'c, 's, 's_ref> {
+    pub proc: ProcCodegen<'c>,
     pub target: llvm::IRTarget,
     pub context: llvm::IRContext,
     pub module: llvm::IRModule,
@@ -100,6 +101,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         );
 
         Codegen {
+            proc: ProcCodegen::new(),
             target,
             context,
             module,
@@ -221,8 +223,8 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     }
 
     #[inline]
-    pub fn append_bb(&self, proc_cg: &ProcCodegen, name: &str) -> llvm::BasicBlock {
-        self.context.append_bb(proc_cg.fn_val, name)
+    pub fn append_bb(&self, name: &str) -> llvm::BasicBlock {
+        self.context.append_bb(self.proc.fn_val, name)
     }
     #[inline]
     pub fn insert_bb_terminated(&self) -> bool {
@@ -235,14 +237,9 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         }
     }
     #[must_use]
-    pub fn entry_alloca(
-        &self,
-        proc_cg: &ProcCodegen,
-        ty: llvm::Type,
-        name: &str,
-    ) -> llvm::ValuePtr {
+    pub fn entry_alloca(&self, ty: llvm::Type, name: &str) -> llvm::ValuePtr {
         let insert_bb = self.build.insert_bb();
-        let entry_bb = proc_cg.fn_val.entry_bb();
+        let entry_bb = self.proc.fn_val.entry_bb();
 
         if let Some(instr) = entry_bb.first_instr() {
             self.build.position_before_instr(instr);
@@ -270,19 +267,32 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
 }
 
 impl<'c> ProcCodegen<'c> {
-    pub fn new(proc_id: hir::ProcID, fn_val: llvm::ValueFn) -> ProcCodegen<'c> {
+    pub fn new() -> ProcCodegen<'c> {
         ProcCodegen {
-            proc_id,
-            fn_val,
+            proc_id: hir::ProcID::dummy(),
+            fn_val: llvm::ValueFn::null(),
             param_ptrs: Vec::with_capacity(16),
             local_ptrs: Vec::with_capacity(64),
             local_bind_ptrs: Vec::with_capacity(64),
             for_bind_ptrs: Vec::with_capacity(16),
             tail_values: Vec::with_capacity(32),
             block_stack: Vec::with_capacity(16),
-            defer_blocks: Vec::new(),
+            defer_blocks: Vec::with_capacity(8),
             next_loop_info: None,
         }
+    }
+
+    pub fn reset(&mut self, proc_id: hir::ProcID, fn_val: llvm::ValueFn) {
+        self.proc_id = proc_id;
+        self.fn_val = fn_val;
+        self.param_ptrs.clear();
+        self.local_ptrs.clear();
+        self.local_bind_ptrs.clear();
+        self.for_bind_ptrs.clear();
+        self.tail_values.clear();
+        self.block_stack.clear();
+        self.defer_blocks.clear();
+        self.next_loop_info = None;
     }
 
     pub fn block_enter(&mut self) {

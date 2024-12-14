@@ -567,6 +567,10 @@ impl ValuePtr {
 
 impl ValueFn {
     #[inline]
+    pub fn null() -> ValueFn {
+        ValueFn(std::ptr::null_mut())
+    }
+    #[inline]
     pub fn as_ptr(self) -> ValuePtr {
         ValuePtr(self.0)
     }
