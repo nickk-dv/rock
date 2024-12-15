@@ -272,6 +272,15 @@ impl<'syn> InterleaveFormat<'syn> for cst::Stmt<'syn> {
         stmt(fmt, node, true);
     }
 }
+impl<'syn> InterleaveFormat<'syn> for cst::Expr<'syn> {
+    const COMMENT_ALIGN: u32 = 0;
+    #[inline(always)]
+    fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        fmt.tab_depth();
+        expr(fmt, node);
+        fmt.write(',');
+    }
+}
 impl<'syn> InterleaveFormat<'syn> for cst::MatchArm<'syn> {
     const COMMENT_ALIGN: u32 = 0;
     #[inline(always)]
@@ -283,7 +292,9 @@ impl<'syn> InterleaveFormat<'syn> for cst::FieldInit<'syn> {
     const COMMENT_ALIGN: u32 = 0;
     #[inline(always)]
     fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
-        field_init(fmt, node, true, true);
+        fmt.tab_depth();
+        field_init(fmt, node);
+        fmt.write(',');
     }
 }
 
@@ -1433,29 +1444,18 @@ fn field_init_list<'syn>(fmt: &mut Formatter<'syn, '_>, field_init_list: cst::Fi
             fmt.space();
         }
         first = false;
-        field_init(fmt, field_init_cst, false, false);
+        field_init(fmt, field_init_cst);
     }
     fmt.space();
     fmt.write('}');
 }
 
-fn field_init<'syn>(
-    fmt: &mut Formatter<'syn, '_>,
-    field_init: cst::FieldInit<'syn>,
-    tab: bool,
-    comma: bool,
-) {
-    if tab {
-        fmt.tab_depth();
-    }
+fn field_init<'syn>(fmt: &mut Formatter<'syn, '_>, field_init: cst::FieldInit<'syn>) {
     name(fmt, field_init.name(fmt.tree).unwrap());
     if let Some(expr_cst) = field_init.expr(fmt.tree) {
         fmt.write(':');
         fmt.space();
         expr(fmt, expr_cst);
-    }
-    if comma {
-        fmt.write(',');
     }
 }
 
@@ -1644,6 +1644,26 @@ fn bind_list(fmt: &mut Formatter, bind_list: cst::BindList) {
 }
 
 fn args_list<'syn>(fmt: &mut Formatter<'syn, '_>, args_list: cst::ArgsList<'syn>) {
+    if content_empty(fmt, args_list.0) {
+        fmt.write('(');
+        fmt.write(')');
+        return;
+    }
+
+    let wrap = fmt.wrap_line_break_based(args_list.exprs(fmt.tree));
+    let empty = args_list.exprs(fmt.tree).next().is_none();
+
+    if wrap || empty {
+        fmt.write('(');
+        fmt.new_line();
+        fmt.tab_inc();
+        interleaved_node_list::<cst::Expr>(fmt, args_list.0);
+        fmt.tab_dec();
+        fmt.tab_depth();
+        fmt.write(')');
+        return;
+    }
+
     fmt.write('(');
     let mut first = true;
     for expr_cst in args_list.exprs(fmt.tree) {
