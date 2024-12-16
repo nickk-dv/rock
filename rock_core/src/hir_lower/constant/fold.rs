@@ -298,7 +298,8 @@ fn fold_struct_init<'hir>(
     input: &[hir::FieldInit<'hir>],
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let mut correct = true;
-    let mut values = Vec::with_capacity(input.len());
+    let mut values = Vec::new();
+    values.resize(input.len(), hir::ConstValue::Null); //dummy value
 
     for init in input {
         let src = SourceRange::new(src.module_id(), init.expr.range);
