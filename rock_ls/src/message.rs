@@ -33,8 +33,9 @@ pub enum Request {
 
 #[rustfmt::skip]
 pub enum Notification {
-    FileOpened { path: PathBuf, text: String },
-    FileClosed { path: PathBuf },
+    FileOpened  { path: PathBuf, text: String },
+    FileClosed  { path: PathBuf },
+    FileSaved   { path: PathBuf },
     FileChanged { path: PathBuf, changes: Vec<lsp::TextDocumentContentChangeEvent> },
 }
 
@@ -152,7 +153,9 @@ fn extract_request(request: lsp_server::Request) -> Option<Message> {
 }
 
 fn extract_notification(notification: lsp_server::Notification) -> Option<Message> {
-    use notification::{DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument};
+    use notification::{
+        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+    };
 
     let notification = match notification.method.as_str() {
         DidOpenTextDocument::METHOD => {
@@ -165,6 +168,12 @@ fn extract_notification(notification: lsp_server::Notification) -> Option<Messag
         DidCloseTextDocument::METHOD => {
             let params = cast_notification::<DidCloseTextDocument>(notification);
             Notification::FileClosed {
+                path: super::uri_to_path(&params.text_document.uri),
+            }
+        }
+        DidSaveTextDocument::METHOD => {
+            let params = cast_notification::<DidSaveTextDocument>(notification);
+            Notification::FileSaved {
                 path: super::uri_to_path(&params.text_document.uri),
             }
         }

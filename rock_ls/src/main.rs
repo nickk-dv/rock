@@ -20,13 +20,10 @@ fn main() {
     if !check_args() {
         return;
     };
-    let (conn, io_threads) = Connection::stdio();
+    let (conn, threads) = Connection::stdio();
     let _ = initialize_handshake(&conn);
-
     server_loop(&conn);
-
-    drop(conn);
-    io_threads.join().expect("io_threads joined");
+    threads.join().expect("io joined");
 }
 
 fn check_args() -> bool {
@@ -46,97 +43,76 @@ you do not need to run `rock_ls` manually"#;
 }
 
 fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
-    let capabilities = lsp::ServerCapabilities {
-        position_encoding: None, //@vscode client crashes on init Some(lsp::PositionEncodingKind::UTF8),
-        text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(
-            lsp::TextDocumentSyncOptions {
-                open_close: Some(true),
-                change: Some(lsp::TextDocumentSyncKind::INCREMENTAL),
-                will_save: Some(false),
-                will_save_wait_until: Some(false),
-                save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
-                    lsp::SaveOptions {
-                        include_text: Some(false),
-                    },
-                )),
-            },
+    let document_sync = lsp::TextDocumentSyncOptions {
+        open_close: Some(true),
+        change: Some(lsp::TextDocumentSyncKind::INCREMENTAL),
+        will_save: None,
+        will_save_wait_until: None,
+        save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
+            lsp::SaveOptions { include_text: None },
         )),
-        selection_range_provider: None,
-        hover_provider: None,
-        //@re-enable when supported
-        //hover_provider: Some(lsp::HoverProviderCapability::Simple(true)),
-        completion_provider: Some(lsp::CompletionOptions {
-            resolve_provider: None,
-            trigger_characters: Some(vec![".".into()]),
-            all_commit_characters: None,
-            work_done_progress_options: lsp::WorkDoneProgressOptions {
-                work_done_progress: None,
-            },
-            completion_item: None,
-        }),
-        signature_help_provider: None,
-        definition_provider: None,
-        //@re-enable when supported
-        //definition_provider: Some(lsp::OneOf::Left(true)),
-        type_definition_provider: None,
-        implementation_provider: None,
-        references_provider: None,
-        document_highlight_provider: None,
-        document_symbol_provider: None,
-        workspace_symbol_provider: None,
-        code_action_provider: None,
-        code_lens_provider: None,
-        document_formatting_provider: Some(lsp::OneOf::Left(true)),
-        document_range_formatting_provider: None,
-        document_on_type_formatting_provider: None,
-        rename_provider: None,
-        document_link_provider: None,
-        color_provider: None,
-        folding_range_provider: None,
-        declaration_provider: None,
-        execute_command_provider: None,
-        workspace: None,
-        call_hierarchy_provider: None,
-        semantic_tokens_provider: Some(
-            lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(
-                lsp::SemanticTokensOptions {
-                    work_done_progress_options: lsp::WorkDoneProgressOptions {
-                        work_done_progress: None,
-                    },
-                    legend: lsp::SemanticTokensLegend {
-                        token_types: vec![
-                            //@needs to corespond to `SemanticToken` in rock_core::token
-                            lsp::SemanticTokenType::NAMESPACE,
-                            lsp::SemanticTokenType::TYPE,
-                            lsp::SemanticTokenType::PARAMETER,
-                            lsp::SemanticTokenType::VARIABLE,
-                            lsp::SemanticTokenType::PROPERTY,
-                            lsp::SemanticTokenType::ENUM_MEMBER,
-                            lsp::SemanticTokenType::FUNCTION,
-                            lsp::SemanticTokenType::KEYWORD,
-                            lsp::SemanticTokenType::COMMENT,
-                            lsp::SemanticTokenType::NUMBER,
-                            lsp::SemanticTokenType::STRING,
-                            lsp::SemanticTokenType::OPERATOR,
-                        ],
-                        token_modifiers: vec![],
-                    },
-                    range: None,
-                    full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
-                },
-            ),
-        ),
-        moniker_provider: None,
-        linked_editing_range_provider: None,
-        inline_value_provider: None,
-        inlay_hint_provider: None,
-        diagnostic_provider: None,
-        experimental: None,
     };
 
-    let capabilities_json = serde_json::to_value(capabilities).expect("capabilities to json");
-    let initialize_params_json = conn.initialize(capabilities_json).expect("lsp initialize");
-    serde_json::from_value(initialize_params_json).expect("initialize_params from json")
+    let semantic_tokens = lsp::SemanticTokensOptions {
+        work_done_progress_options: lsp::WorkDoneProgressOptions {
+            work_done_progress: None,
+        },
+        legend: lsp::SemanticTokensLegend {
+            token_types: vec![
+                lsp::SemanticTokenType::NAMESPACE,
+                lsp::SemanticTokenType::TYPE,
+                lsp::SemanticTokenType::PARAMETER,
+                lsp::SemanticTokenType::VARIABLE,
+                lsp::SemanticTokenType::PROPERTY,
+                lsp::SemanticTokenType::ENUM_MEMBER,
+                lsp::SemanticTokenType::FUNCTION,
+                lsp::SemanticTokenType::KEYWORD,
+                lsp::SemanticTokenType::COMMENT,
+                lsp::SemanticTokenType::NUMBER,
+                lsp::SemanticTokenType::STRING,
+                lsp::SemanticTokenType::OPERATOR,
+            ],
+            token_modifiers: vec![],
+        },
+        range: None,
+        full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
+    };
+
+    let capabilities = lsp::ServerCapabilities {
+        text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
+        document_formatting_provider: Some(lsp::OneOf::Left(true)),
+        semantic_tokens_provider: Some(
+            lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(semantic_tokens),
+        ),
+        ..Default::default()
+    };
+
+    let init_params = conn
+        .initialize(into_json(capabilities))
+        .expect("internal: initialize failed");
+    from_json(init_params)
+}
+
+#[track_caller]
+fn into_json<T: serde::Serialize>(value: T) -> serde_json::Value {
+    match serde_json::to_value(value) {
+        Ok(value) => value,
+        Err(error) => {
+            let loc = core::panic::Location::caller();
+            panic!("internal: json serialize failed at: {loc}\n{error}");
+        }
+    }
+}
+
+#[track_caller]
+fn from_json<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
+    match serde_json::from_value(value) {
+        Ok(value) => value,
+        Err(error) => {
+            let loc = core::panic::Location::caller();
+            panic!("internal: json deserialize failed at: {loc}\n{error}");
+        }
+    }
 }
 
 struct ServerContext<'s> {
@@ -156,6 +132,7 @@ impl<'s> ServerContext<'s> {
 fn server_loop(conn: &Connection) {
     let mut buffer = MessageBuffer::new();
     let mut context = ServerContext::new();
+    handle_compile_project(conn, &mut context);
 
     loop {
         match buffer.receive(conn) {
@@ -182,6 +159,7 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
             Message::Notification(not) => match not {
                 Notification::FileOpened { .. } => eprintln!(" - Notification::FileOpened"),
                 Notification::FileChanged { .. } => eprintln!(" - Notification::FileChanged"),
+                Notification::FileSaved { .. } => eprintln!(" - Notification::FileSaved"),
                 Notification::FileClosed { .. } => eprintln!(" - Notification::FileClosed"),
             },
             Message::CompileProject => eprintln!(" - CompileProject"),
@@ -192,8 +170,8 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
     for message in messages {
         match message {
             Message::Request(id, req) => handle_request(conn, context, id.clone(), req),
-            Message::Notification(not) => handle_notification(context, not),
-            Message::CompileProject => handle_compile_project(conn, context),
+            Message::Notification(not) => handle_notification(conn, context, not),
+            Message::CompileProject => {}
         }
     }
 }
@@ -347,7 +325,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
     }
 }
 
-fn handle_notification(context: &mut ServerContext, not: Notification) {
+fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Notification) {
     match not {
         Notification::FileOpened { path, text } => {
             //@handle file open, send when:
@@ -360,6 +338,9 @@ fn handle_notification(context: &mut ServerContext, not: Notification) {
             // 1) existing file deleted
             // 2) existing file renamed
             // 3) file closed in the editor
+        }
+        Notification::FileSaved { path } => {
+            handle_compile_project(conn, context);
         }
         Notification::FileChanged { path, changes } => {
             eprintln!(
