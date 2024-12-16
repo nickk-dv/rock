@@ -136,9 +136,9 @@ fn server_loop(conn: &Connection) {
 
     loop {
         match buffer.receive(conn) {
-            Action::Stop => break,
             Action::Collect => continue,
             Action::Handle(messages) => handle_messages(conn, &mut context, messages),
+            Action::Shutdown => break,
         }
     }
 }
@@ -149,10 +149,7 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
     for message in &messages {
         match message {
             Message::Request(_, request) => match request {
-                Request::Completion(_) => eprintln!(" - Request::Completion"),
-                Request::GotoDefinition(_) => eprintln!(" - Request::GotoDefinition"),
                 Request::Format(_) => eprintln!(" - Request::Format"),
-                Request::Hover(_) => eprintln!(" - Request::Hover"),
                 Request::SemanticTokens(_) => eprintln!(" - Request::SemanticTokens"),
                 Request::ShowSyntaxTree(_) => eprintln!(" - Request::ShowSyntaxTree"),
             },
@@ -162,7 +159,6 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
                 Notification::FileSaved { .. } => eprintln!(" - Notification::FileSaved"),
                 Notification::FileClosed { .. } => eprintln!(" - Notification::FileClosed"),
             },
-            Message::CompileProject => eprintln!(" - CompileProject"),
         }
     }
     eprintln!("====================\n");
@@ -171,15 +167,12 @@ fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec
         match message {
             Message::Request(id, req) => handle_request(conn, context, id.clone(), req),
             Message::Notification(not) => handle_notification(conn, context, not),
-            Message::CompileProject => {}
         }
     }
 }
 
 fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId, req: Request) {
     match &req {
-        Request::Completion(params) => {}
-        Request::GotoDefinition(params) => {}
         Request::Format(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::Format\n - document: {:?}", &path);
@@ -234,10 +227,6 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let text_edit = lsp::TextEdit::new(edit_range, formatted);
             let json = serde_json::to_value(vec![text_edit]).unwrap();
             send_response(conn, id, json);
-        }
-        Request::Hover(params) => {
-            let path = uri_to_path(&params.text_document_position_params.text_document.uri);
-            eprintln!("[Handle] Request::Hover\n - document: {:?}", &path);
         }
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -327,22 +316,22 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 
 fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Notification) {
     match not {
-        Notification::FileOpened { path, text } => {
+        Notification::FileOpened(path, text) => {
             //@handle file open, send when:
             // 1) new file created
             // 2) existing file renamed
             // 3) file opened in the editor
         }
-        Notification::FileClosed { path } => {
+        Notification::FileClosed(path) => {
             //@handle file closed, sent when:
             // 1) existing file deleted
             // 2) existing file renamed
             // 3) file closed in the editor
         }
-        Notification::FileSaved { path } => {
+        Notification::FileSaved(path) => {
             handle_compile_project(conn, context);
         }
-        Notification::FileChanged { path, changes } => {
+        Notification::FileChanged(path, changes) => {
             eprintln!(
                 "[HANDLE] Notification::SourceFileChanged: {:?} changes: {}",
                 &path,
@@ -540,22 +529,6 @@ fn create_diagnostic<'src>(
     );
 
     Some((diagnostic, main_path))
-}
-
-//@use something like this state later
-//@store compiler diagnostics and convert on send only
-struct Feedback {
-    messages: Vec<lsp::Diagnostic>,
-    diagnostics: HashMap<PathBuf, Vec<lsp::Diagnostic>>,
-}
-
-impl Feedback {
-    fn new() -> Feedback {
-        Feedback {
-            messages: Vec::new(),
-            diagnostics: HashMap::with_capacity(64),
-        }
-    }
 }
 
 fn run_diagnostics(
