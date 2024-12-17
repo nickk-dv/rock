@@ -429,6 +429,20 @@ pub fn typecheck_expr<'hir, 'ast>(
 
 //@not range checked
 fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
+    fn infer_int_type(expect: &Expectation) -> Option<BasicInt> {
+        match expect {
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicInt::from_basic(*basic),
+            _ => None,
+        }
+    }
+
+    fn infer_float_type(expect: &Expectation) -> Option<BasicFloat> {
+        match expect {
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicFloat::from_basic(*basic),
+            _ => None,
+        }
+    }
+
     let (value, ty) = match lit {
         ast::Lit::Void => {
             let value = hir::ConstValue::Void;
@@ -442,13 +456,21 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             let value = hir::ConstValue::Bool { val };
             (value, hir::Type::Basic(BasicType::Bool))
         }
-        ast::Lit::Int(val) => {
-            let int_ty = infer_int_type(expect);
-            let value = hir::ConstValue::Int { val, neg: false, int_ty };
-            (value, hir::Type::Basic(int_ty.into_basic()))
-        }
+        ast::Lit::Int(val) => match infer_float_type(&expect) {
+            Some(float_ty) => {
+                let value = hir::ConstValue::Float { val: val as f64, float_ty };
+                (value, hir::Type::Basic(float_ty.into_basic()))
+            }
+            None => {
+                const DEFAULT: BasicInt = BasicInt::S32;
+                let int_ty = infer_int_type(&expect).unwrap_or(DEFAULT);
+                let value = hir::ConstValue::Int { val, neg: false, int_ty };
+                (value, hir::Type::Basic(int_ty.into_basic()))
+            }
+        },
         ast::Lit::Float(val) => {
-            let float_ty = infer_float_type(expect);
+            const DEFAULT: BasicFloat = BasicFloat::F64;
+            let float_ty = infer_float_type(&expect).unwrap_or(DEFAULT);
             let value = hir::ConstValue::Float { val, float_ty };
             (value, hir::Type::Basic(float_ty.into_basic()))
         }
@@ -2388,28 +2410,6 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
 }
 
 //==================== INFER ====================
-
-fn infer_int_type(expect: Expectation) -> BasicInt {
-    const DEFAULT_INT_TYPE: BasicInt = BasicInt::S32;
-    match expect {
-        Expectation::None => DEFAULT_INT_TYPE,
-        Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => BasicInt::from_basic(basic).unwrap_or(DEFAULT_INT_TYPE),
-            _ => DEFAULT_INT_TYPE,
-        },
-    }
-}
-
-fn infer_float_type(expect: Expectation) -> BasicFloat {
-    const DEFAULT_FLOAT_TYPE: BasicFloat = BasicFloat::F64;
-    match expect {
-        Expectation::None => DEFAULT_FLOAT_TYPE,
-        Expectation::HasType(expect_ty, _) => match expect_ty {
-            hir::Type::Basic(basic) => BasicFloat::from_basic(basic).unwrap_or(DEFAULT_FLOAT_TYPE),
-            _ => DEFAULT_FLOAT_TYPE,
-        },
-    }
-}
 
 fn infer_enum_type(
     ctx: &mut HirCtx,
