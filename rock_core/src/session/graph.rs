@@ -15,10 +15,7 @@ pub struct PackageGraph {
 
 impl PackageGraph {
     pub(super) fn new(cap: usize) -> PackageGraph {
-        PackageGraph {
-            unique: HashMap::with_capacity(cap),
-            packages: HashMap::with_capacity(cap),
-        }
+        PackageGraph { unique: HashMap::with_capacity(cap), packages: HashMap::with_capacity(cap) }
     }
 
     #[inline]

@@ -3,10 +3,7 @@ use std::{io::Read, path::Path, path::PathBuf};
 
 pub fn current_exe_path() -> Result<PathBuf, Error> {
     let mut current_exe = std::env::current_exe().map_err(|io_error| {
-        Error::message(format!(
-            "failed to get current executable path\nreason: {}",
-            io_error
-        ))
+        Error::message(format!("failed to get current executable path\nreason: {}", io_error))
     })?;
     current_exe.pop();
     Ok(current_exe)
@@ -14,10 +11,7 @@ pub fn current_exe_path() -> Result<PathBuf, Error> {
 
 pub fn dir_get_current_working() -> Result<PathBuf, Error> {
     std::env::current_dir().map_err(|io_error| {
-        Error::message(format!(
-            "failed to get working directory\nreason: {}",
-            io_error
-        ))
+        Error::message(format!("failed to get working directory\nreason: {}", io_error))
     })
 }
 

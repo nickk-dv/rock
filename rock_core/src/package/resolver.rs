@@ -21,24 +21,18 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
     if !index_dir.exists() {
         fs_env::dir_set_current_working(&registry_dir)?;
         const INDEX_LINK: &str = "https://github.com/nickk-dv/rock-index";
-        let _ = Command::new("git")
-            .args(["clone", INDEX_LINK])
-            .status()
-            .map_err(|io_error| {
-                Error::message(format!(
-                    "failed command: git clone {}\nreason: {}",
-                    INDEX_LINK, io_error
-                ))
-            })?;
+        let _ = Command::new("git").args(["clone", INDEX_LINK]).status().map_err(|io_error| {
+            Error::message(format!(
+                "failed command: git clone {}\nreason: {}",
+                INDEX_LINK, io_error
+            ))
+        })?;
         fs_env::dir_set_current_working(&cwd)?;
     } else {
         fs_env::dir_set_current_working(&index_dir)?;
-        let _ = Command::new("git")
-            .args(["pull"])
-            .status()
-            .map_err(|io_error| {
-                Error::message(format!("failed command: git pull\nreason: {}", io_error))
-            })?;
+        let _ = Command::new("git").args(["pull"]).status().map_err(|io_error| {
+            Error::message(format!("failed command: git pull\nreason: {}", io_error))
+        })?;
         fs_env::dir_set_current_working(&cwd)?;
     }
 

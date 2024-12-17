@@ -48,15 +48,13 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         change: Some(lsp::TextDocumentSyncKind::INCREMENTAL),
         will_save: None,
         will_save_wait_until: None,
-        save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(
-            lsp::SaveOptions { include_text: None },
-        )),
+        save: Some(lsp::TextDocumentSyncSaveOptions::SaveOptions(lsp::SaveOptions {
+            include_text: None,
+        })),
     };
 
     let semantic_tokens = lsp::SemanticTokensOptions {
-        work_done_progress_options: lsp::WorkDoneProgressOptions {
-            work_done_progress: None,
-        },
+        work_done_progress_options: lsp::WorkDoneProgressOptions { work_done_progress: None },
         legend: lsp::SemanticTokensLegend {
             token_types: vec![
                 lsp::SemanticTokenType::NAMESPACE,
@@ -87,9 +85,8 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         ..Default::default()
     };
 
-    let init_params = conn
-        .initialize(into_json(capabilities))
-        .expect("internal: initialize failed");
+    let init_params =
+        conn.initialize(into_json(capabilities)).expect("internal: initialize failed");
     from_json(init_params)
 }
 
@@ -122,10 +119,7 @@ struct ServerContext<'s> {
 
 impl<'s> ServerContext<'s> {
     fn new() -> ServerContext<'s> {
-        ServerContext {
-            session: None,
-            fmt_cache: FormatterCache::new(),
-        }
+        ServerContext { session: None, fmt_cache: FormatterCache::new() }
     }
 }
 
@@ -263,14 +257,8 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let semantic_tokens = semantic_tokens(&mut session.intern_name, file, tree);
             eprintln!("semantic tokens: {}", timer.measure_ms());
 
-            eprintln!(
-                "[SEND: Response] SemanticTokens ({})",
-                semantic_tokens.len()
-            );
-            let result = lsp::SemanticTokens {
-                result_id: None,
-                data: semantic_tokens,
-            };
+            eprintln!("[SEND: Response] SemanticTokens ({})", semantic_tokens.len());
+            let result = lsp::SemanticTokens { result_id: None, data: semantic_tokens };
             send(conn, lsp_server::Response::new_ok(id, result));
         }
         Request::ShowSyntaxTree(params) => {
@@ -305,10 +293,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
 
             let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
-            eprintln!(
-                "[SEND: Response] ShowSyntaxTree len: {}",
-                tree_display.len()
-            );
+            eprintln!("[SEND: Response] ShowSyntaxTree len: {}", tree_display.len());
             send(conn, lsp_server::Response::new_ok(id, tree_display));
         }
     }
@@ -374,10 +359,7 @@ fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
     let start_time = Instant::now();
     let publish_diagnostics = run_diagnostics(conn, context);
     let elapsed_time = start_time.elapsed();
-    eprintln!(
-        "run diagnostics: {} ms",
-        elapsed_time.as_secs_f64() * 1000.0
-    );
+    eprintln!("run diagnostics: {} ms", elapsed_time.as_secs_f64() * 1000.0);
 
     for publish in publish_diagnostics.iter() {
         send(
@@ -632,9 +614,7 @@ fn semantic_tokens(
         line_ranges: file.line_ranges.as_slice(),
         //@temp semantic token count estimate
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
-        scope: ModuleScope {
-            symbols: HashMap::with_capacity(512),
-        },
+        scope: ModuleScope { symbols: HashMap::with_capacity(512) },
     };
 
     use rock_core::syntax::ast_layer::{self as cst, AstNode};
@@ -663,10 +643,7 @@ fn semantic_tokens(
                     let range = name.ident(tree).unwrap();
                     let name_text = &builder.source[range.as_usize()];
                     let name_id = intern_name.intern(name_text);
-                    builder
-                        .scope
-                        .symbols
-                        .insert(name_id, SyntaxKind::STRUCT_ITEM);
+                    builder.scope.symbols.insert(name_id, SyntaxKind::STRUCT_ITEM);
                 }
             }
             cst::Item::Const(item) => {
@@ -674,10 +651,7 @@ fn semantic_tokens(
                     let range = name.ident(tree).unwrap();
                     let name_text = &builder.source[range.as_usize()];
                     let name_id = intern_name.intern(name_text);
-                    builder
-                        .scope
-                        .symbols
-                        .insert(name_id, SyntaxKind::CONST_ITEM);
+                    builder.scope.symbols.insert(name_id, SyntaxKind::CONST_ITEM);
                 }
             }
             cst::Item::Global(item) => {
@@ -685,10 +659,7 @@ fn semantic_tokens(
                     let range = name.ident(tree).unwrap();
                     let name_text = &builder.source[range.as_usize()];
                     let name_id = intern_name.intern(name_text);
-                    builder
-                        .scope
-                        .symbols
-                        .insert(name_id, SyntaxKind::GLOBAL_ITEM);
+                    builder.scope.symbols.insert(name_id, SyntaxKind::GLOBAL_ITEM);
                 }
             }
             cst::Item::Import(item) => {
@@ -697,10 +668,8 @@ fn semantic_tokens(
                         let range = name.ident(tree).unwrap();
                         let name_text = &builder.source[range.as_usize()];
                         let name_id = intern_name.intern(name_text);
-                        builder
-                            .scope
-                            .symbols
-                            .insert(name_id, SyntaxKind::SOURCE_FILE); //@"module"
+                        builder.scope.symbols.insert(name_id, SyntaxKind::SOURCE_FILE);
+                        //@"module"
                     }
                 }
             }

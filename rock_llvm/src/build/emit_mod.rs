@@ -30,9 +30,7 @@ fn codegen_string_lits(cg: &mut Codegen) {
         let string_val = llvm::const_string(&cg.context, string, true);
         let string_ty = llvm::typeof_value(string_val);
 
-        let global = cg
-            .module
-            .add_global("rock.string", string_val, string_ty, true, true);
+        let global = cg.module.add_global("rock.string", string_val, string_ty, true, true);
         cg.string_lits.push(global);
     }
 }
@@ -175,9 +173,7 @@ fn codegen_globals(cg: &mut Codegen) {
             hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
         };
 
-        let global = cg
-            .module
-            .add_global(&cg.string_buf, value, global_ty, constant, false);
+        let global = cg.module.add_global(&cg.string_buf, value, global_ty, constant, false);
         cg.globals.push(global);
     }
 }
@@ -347,9 +343,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             cg.build.store(param_ptr, slice_ptr_ptr);
 
             let slice_len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
-            let param_len = cg
-                .build
-                .load(cg.ptr_sized_int(), param_len_ptr, "param_len");
+            let param_len = cg.build.load(cg.ptr_sized_int(), param_len_ptr, "param_len");
             cg.build.store(param_len, slice_len_ptr);
 
             let slice_val = cg.build.load(slice_ty.as_ty(), slice_ptr, "slice_val");

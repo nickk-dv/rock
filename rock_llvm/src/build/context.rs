@@ -98,10 +98,8 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         let cache = CodegenCache::new(&context, &target);
         let attr_cache = CodegenAttrCache::new(&context);
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
-        let location_ty = context.struct_type_inline(
-            &[cache.int_32, cache.int_32, cache.slice_type.as_ty()],
-            false,
-        );
+        let location_ty = context
+            .struct_type_inline(&[cache.int_32, cache.int_32, cache.slice_type.as_ty()], false);
 
         Codegen {
             proc: ProcCodegen::new(),
@@ -299,10 +297,7 @@ impl<'c> ProcCodegen<'c> {
     }
 
     pub fn block_enter(&mut self) {
-        let block_info = BlockInfo {
-            defer_count: 0,
-            loop_info: self.next_loop_info.take(),
-        };
+        let block_info = BlockInfo { defer_count: 0, loop_info: self.next_loop_info.take() };
         self.block_stack.push(block_info);
     }
 
@@ -319,10 +314,7 @@ impl<'c> ProcCodegen<'c> {
         break_bb: llvm::BasicBlock,
         continue_bb: llvm::BasicBlock,
     ) {
-        let loop_info = LoopInfo {
-            break_bb,
-            continue_bb,
-        };
+        let loop_info = LoopInfo { break_bb, continue_bb };
         self.next_loop_info = Some(loop_info);
     }
 
@@ -375,10 +367,7 @@ impl<'c> ProcCodegen<'c> {
         value_ptr: llvm::ValuePtr,
         value_ty: llvm::Type,
     ) {
-        let value = TailValue {
-            value_ptr,
-            value_ty,
-        };
+        let value = TailValue { value_ptr, value_ty };
         self.tail_values[value_id.index()] = Some(value);
     }
 }

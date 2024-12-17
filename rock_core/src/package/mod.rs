@@ -7,10 +7,7 @@ use std::path::PathBuf;
 
 pub fn manifest_serialize(manifest: &manifest::Manifest) -> Result<String, Error> {
     basic_toml::to_string(manifest).map_err(|error| {
-        Error::message(format!(
-            "failed to serialize manifest file\nreason: {}",
-            error
-        ))
+        Error::message(format!("failed to serialize manifest file\nreason: {}", error))
     })
 }
 
@@ -29,10 +26,7 @@ pub fn manifest_deserialize(
 
 pub fn index_manifest_serialize(manifest: &manifest::IndexManifest) -> Result<String, Error> {
     serde_json::to_string(manifest).map_err(|error| {
-        Error::message(format!(
-            "failed to serialize index manifest file\nreason: {}",
-            error
-        ))
+        Error::message(format!("failed to serialize index manifest file\nreason: {}", error))
     })
 }
 
@@ -78,9 +72,7 @@ pub fn verify_name(name: &str) -> Result<&str, Error> {
     }
 
     if !fc.is_ascii_lowercase() {
-        return Err(Error::message(format!(
-            "package name cannot start with `{fc}`"
-        )));
+        return Err(Error::message(format!("package name cannot start with `{fc}`")));
     }
 
     Ok(name)

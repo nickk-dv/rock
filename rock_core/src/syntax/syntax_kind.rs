@@ -130,9 +130,7 @@ impl SyntaxSet {
     }
     #[inline]
     pub const fn combine(self, other: SyntaxSet) -> SyntaxSet {
-        SyntaxSet {
-            mask: self.mask | other.mask,
-        }
+        SyntaxSet { mask: self.mask | other.mask }
     }
     #[inline]
     pub const fn contains(&self, syntax: SyntaxKind) -> bool {

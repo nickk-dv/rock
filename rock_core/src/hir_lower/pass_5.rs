@@ -29,9 +29,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         ctx.scope.set_origin(data.origin_id);
         ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(proc_id)));
         ctx.scope.local.reset();
-        ctx.scope
-            .local
-            .set_proc_context(Some(proc_id), data.params, expect); //shadowing params still added here
+        ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect); //shadowing params still added here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
 
         let (locals, binds, for_binds) = ctx.scope.local.finish_proc_context();
@@ -330,35 +328,20 @@ struct BlockResult<'hir> {
 
 impl<'hir> TypeResult<'hir> {
     fn new(ty: hir::Type<'hir>, kind: hir::ExprKind<'hir>) -> TypeResult<'hir> {
-        TypeResult {
-            ty,
-            kind,
-            ignore: false,
-        }
+        TypeResult { ty, kind, ignore: false }
     }
     fn new_ignore(ty: hir::Type<'hir>, kind: hir::ExprKind<'hir>) -> TypeResult<'hir> {
-        TypeResult {
-            ty,
-            kind,
-            ignore: true,
-        }
+        TypeResult { ty, kind, ignore: true }
     }
     fn error() -> TypeResult<'hir> {
-        TypeResult {
-            ty: hir::Type::Error,
-            kind: hir::ExprKind::Error,
-            ignore: true,
-        }
+        TypeResult { ty: hir::Type::Error, kind: hir::ExprKind::Error, ignore: true }
     }
     fn into_expr_result(
         self,
         ctx: &mut HirCtx<'hir, '_, '_>,
         range: TextRange,
     ) -> ExprResult<'hir> {
-        let expr = hir::Expr {
-            kind: self.kind,
-            range,
-        };
+        let expr = hir::Expr { kind: self.kind, range };
         let expr = ctx.arena.alloc(expr);
         ExprResult::new(self.ty, expr)
     }
@@ -375,10 +358,7 @@ impl<'hir> PatResult<'hir> {
         PatResult { pat, pat_ty }
     }
     fn error() -> PatResult<'hir> {
-        PatResult {
-            pat: hir::Pat::Error,
-            pat_ty: hir::Type::Error,
-        }
+        PatResult { pat: hir::Pat::Error, pat_ty: hir::Type::Error }
     }
 }
 
@@ -388,11 +368,7 @@ impl<'hir> BlockResult<'hir> {
         block: hir::Block<'hir>,
         tail_range: Option<TextRange>,
     ) -> BlockResult<'hir> {
-        BlockResult {
-            ty,
-            block,
-            tail_range,
-        }
+        BlockResult { ty, block, tail_range }
     }
 
     fn into_type_result(self) -> TypeResult<'hir> {
@@ -416,11 +392,9 @@ pub fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
-        ast::ExprKind::Slice {
-            target,
-            mutt,
-            range,
-        } => typecheck_slice(ctx, target, mutt, range, expr.range),
+        ast::ExprKind::Slice { target, mutt, range } => {
+            typecheck_slice(ctx, target, mutt, range, expr.range)
+        }
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
@@ -442,12 +416,9 @@ pub fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
-        ast::ExprKind::Binary {
-            op,
-            op_start,
-            lhs,
-            rhs,
-        } => typecheck_binary(ctx, expect, op, op_start, lhs, rhs),
+        ast::ExprKind::Binary { op, op_start, lhs, rhs } => {
+            typecheck_binary(ctx, expect, op, op_start, lhs, rhs)
+        }
     };
 
     if !expr_res.ignore {
@@ -473,11 +444,7 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
         }
         ast::Lit::Int(val) => {
             let int_ty = infer_int_type(expect);
-            let value = hir::ConstValue::Int {
-                val,
-                neg: false,
-                int_ty,
-            };
+            let value = hir::ConstValue::Int { val, neg: false, int_ty };
             (value, hir::Type::Basic(int_ty.into_basic()))
         }
         ast::Lit::Float(val) => {
@@ -549,10 +516,7 @@ fn typecheck_if<'hir, 'ast>(
         err::tycheck_if_missing_else(&mut ctx.emit, src);
     }
 
-    let if_ = hir::If {
-        branches,
-        else_block,
-    };
+    let if_ = hir::If { branches, else_block };
     let if_ = ctx.arena.alloc(if_);
     let kind = hir::ExprKind::If { if_ };
     TypeResult::new_ignore(if_type, kind)
@@ -576,10 +540,7 @@ fn typecheck_branch<'hir, 'ast>(
         }
     }
 
-    hir::Branch {
-        cond: cond_res.expr,
-        block: block_res.block,
-    }
+    hir::Branch { cond: cond_res.expr, block: block_res.block }
 }
 
 fn typecheck_match<'hir, 'ast>(
@@ -655,10 +616,7 @@ fn typecheck_match<'hir, 'ast>(
     match_kw.extend_by(5.into());
     super::match_check::match_cov(ctx, kind, arms, match_.arms, match_kw);
 
-    let match_ = hir::Match {
-        on_expr: on_res.expr,
-        arms,
-    };
+    let match_ = hir::Match { on_expr: on_res.expr, arms };
     let match_ = ctx.arena.alloc(match_);
     let kind = hir::ExprKind::Match { kind, match_ };
     TypeResult::new_ignore(match_type, kind)
@@ -862,11 +820,7 @@ impl<'hir> FieldResult<'hir> {
         kind: FieldKind<'hir>,
         field_ty: hir::Type<'hir>,
     ) -> FieldResult<'hir> {
-        FieldResult {
-            deref,
-            kind,
-            field_ty,
-        }
+        FieldResult { deref, kind, field_ty }
     }
 }
 
@@ -963,11 +917,9 @@ fn check_field_from_array<'hir>(
     match field_name {
         "len" => {
             let len = match array.len {
-                hir::ArrayStaticLen::Immediate(len) => hir::ConstValue::Int {
-                    val: len,
-                    neg: false,
-                    int_ty: hir::BasicInt::Usize,
-                },
+                hir::ArrayStaticLen::Immediate(len) => {
+                    hir::ConstValue::Int { val: len, neg: false, int_ty: hir::BasicInt::Usize }
+                }
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
                     eval.resolved().ok()?
@@ -995,18 +947,11 @@ fn emit_field_expr<'hir>(
     let kind = match result.kind {
         FieldKind::Struct(struct_id, field_id) => hir::ExprKind::StructField {
             target,
-            access: hir::StructFieldAccess {
-                deref: result.deref,
-                struct_id,
-                field_id,
-            },
+            access: hir::StructFieldAccess { deref: result.deref, struct_id, field_id },
         },
         FieldKind::ArraySlice { field } => hir::ExprKind::SliceField {
             target,
-            access: hir::SliceFieldAccess {
-                deref: result.deref,
-                field,
-            },
+            access: hir::SliceFieldAccess { deref: result.deref, field },
         },
         FieldKind::ArrayStatic { len } => hir::ExprKind::Const { value: len },
     };
@@ -1034,11 +979,9 @@ fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
     }
     match ty {
         hir::Type::Error => Ok(None),
-        hir::Type::MultiReference(mutt, ref_ty) => Ok(Some(CollectionType {
-            deref,
-            elem_ty: *ref_ty,
-            kind: CollectionKind::Multi(mutt),
-        })),
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            Ok(Some(CollectionType { deref, elem_ty: *ref_ty, kind: CollectionKind::Multi(mutt) }))
+        }
         hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
             deref,
             elem_ty: slice.elem_ty,
@@ -1076,10 +1019,8 @@ fn typecheck_index<'hir, 'ast>(
                 kind,
                 index: index_res.expr,
             };
-            let kind = hir::ExprKind::Index {
-                target: target_res.expr,
-                access: ctx.arena.alloc(access),
-            };
+            let kind =
+                hir::ExprKind::Index { target: target_res.expr, access: ctx.arena.alloc(access) };
             TypeResult::new(collection.elem_ty, kind)
         }
         Err(()) => {
@@ -1296,11 +1237,8 @@ fn typecheck_sizeof<'hir, 'ast>(
     //@review source range for this type_size error 10.05.24
     let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
         Ok(layout) => {
-            let value = hir::ConstValue::Int {
-                val: layout.size(),
-                neg: false,
-                int_ty: BasicInt::Usize,
-            };
+            let value =
+                hir::ConstValue::Int { val: layout.size(), neg: false, int_ty: BasicInt::Usize };
             hir::ExprKind::Const { value }
         }
         Err(()) => hir::ExprKind::Error,
@@ -1396,17 +1334,11 @@ fn typecheck_item<'hir, 'ast>(
             fields,
         ),
         ValueID::Param(id, fields) => (
-            TypeResult::new(
-                ctx.scope.local.param(id).ty,
-                hir::ExprKind::ParamVar { param_id: id },
-            ),
+            TypeResult::new(ctx.scope.local.param(id).ty, hir::ExprKind::ParamVar { param_id: id }),
             fields,
         ),
         ValueID::Local(id, fields) => (
-            TypeResult::new(
-                ctx.scope.local.local(id).ty,
-                hir::ExprKind::LocalVar { local_id: id },
-            ),
+            TypeResult::new(ctx.scope.local.local(id).ty, hir::ExprKind::LocalVar { local_id: id }),
             fields,
         ),
         ValueID::LocalBind(id, fields) => (
@@ -1524,11 +1456,8 @@ fn typecheck_struct_init<'hir, 'ast>(
         let field_id = match scope::check_find_struct_field(ctx, struct_id, input.name) {
             Some(found) => found,
             None => {
-                let _ = typecheck_expr(
-                    ctx,
-                    Expectation::HasType(hir::Type::Error, None),
-                    input.expr,
-                );
+                let _ =
+                    typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), input.expr);
                 continue;
             }
         };
@@ -1557,10 +1486,7 @@ fn typecheck_struct_init<'hir, 'ast>(
                 err::tycheck_field_is_private(&mut ctx.emit, src, field_name, field_src);
             }
 
-            let field_init = hir::FieldInit {
-                field_id,
-                expr: input_res.expr,
-            };
+            let field_init = hir::FieldInit { field_id, expr: input_res.expr };
             ctx.cache.field_inits.push(field_init);
             field_status[field_id.index()] = FieldStatus::Init(input.name.range);
             init_count += 1;
@@ -1722,11 +1648,8 @@ fn typecheck_array_repeat<'hir, 'ast>(
             len: hir::ArrayStaticLen::Immediate(len),
             elem_ty: expr_res.ty,
         });
-        let array_repeat = ctx.arena.alloc(hir::ArrayRepeat {
-            elem_ty: expr_res.ty,
-            value: expr_res.expr,
-            len,
-        });
+        let array_repeat =
+            ctx.arena.alloc(hir::ArrayRepeat { elem_ty: expr_res.ty, value: expr_res.expr, len });
         let kind = hir::ExprKind::ArrayRepeat { array_repeat };
         TypeResult::new(hir::Type::ArrayStatic(array_type), kind)
     } else {
@@ -1744,11 +1667,7 @@ fn typecheck_deref<'hir, 'ast>(
     match rhs_res.ty {
         hir::Type::Error => TypeResult::error(),
         hir::Type::Reference(mutt, ref_ty) => {
-            let kind = hir::ExprKind::Deref {
-                rhs: rhs_res.expr,
-                mutt,
-                ref_ty,
-            };
+            let kind = hir::ExprKind::Deref { rhs: rhs_res.expr, mutt, ref_ty };
             TypeResult::new(*ref_ty, kind)
         }
         _ => {
@@ -1803,10 +1722,7 @@ fn typecheck_range<'hir, 'ast>(
 
     macro_rules! range_full {
         () => {{
-            let kind = hir::ExprKind::StructInit {
-                struct_id,
-                input: &[],
-            };
+            let kind = hir::ExprKind::StructInit { struct_id, input: &[] };
             TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
@@ -1822,14 +1738,9 @@ fn typecheck_range<'hir, 'ast>(
             let one_res =
                 typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, one_src), $one);
 
-            let input = [hir::FieldInit {
-                field_id: hir::FieldID::new(0),
-                expr: one_res.expr,
-            }];
-            let kind = hir::ExprKind::StructInit {
-                struct_id,
-                input: ctx.arena.alloc_slice(&input),
-            };
+            let input = [hir::FieldInit { field_id: hir::FieldID::new(0), expr: one_res.expr }];
+            let kind =
+                hir::ExprKind::StructInit { struct_id, input: ctx.arena.alloc_slice(&input) };
             TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
@@ -1854,19 +1765,11 @@ fn typecheck_range<'hir, 'ast>(
                 typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, two_src), $two);
 
             let input = [
-                hir::FieldInit {
-                    field_id: hir::FieldID::new(0),
-                    expr: one_res.expr,
-                },
-                hir::FieldInit {
-                    field_id: hir::FieldID::new(1),
-                    expr: two_res.expr,
-                },
+                hir::FieldInit { field_id: hir::FieldID::new(0), expr: one_res.expr },
+                hir::FieldInit { field_id: hir::FieldID::new(1), expr: two_res.expr },
             ];
-            let kind = hir::ExprKind::StructInit {
-                struct_id,
-                input: ctx.arena.alloc_slice(&input),
-            };
+            let kind =
+                hir::ExprKind::StructInit { struct_id, input: ctx.arena.alloc_slice(&input) };
             TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
         }};
     }
@@ -1913,10 +1816,7 @@ fn typecheck_unary<'hir, 'ast>(
 
     if let Some(un_op) = un_op {
         let unary_type = unary_output_type(op, rhs_res.ty);
-        let kind = hir::ExprKind::Unary {
-            op: un_op,
-            rhs: rhs_res.expr,
-        };
+        let kind = hir::ExprKind::Unary { op: un_op, rhs: rhs_res.expr };
         TypeResult::new_ignore(unary_type, kind)
     } else {
         TypeResult::error()
@@ -1952,11 +1852,7 @@ fn typecheck_binary<'hir, 'ast>(
 
     if let Some(bin_op) = bin_op {
         let binary_ty = binary_output_type(op, lhs_res.ty);
-        let kind = hir::ExprKind::Binary {
-            op: bin_op,
-            lhs: lhs_res.expr,
-            rhs: rhs_res.expr,
-        };
+        let kind = hir::ExprKind::Binary { op: bin_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
         TypeResult::new(binary_ty, kind)
     } else {
         TypeResult::error()
@@ -2109,11 +2005,7 @@ fn typecheck_block<'hir, 'ast>(
             type_expectation_check(ctx, block.range, hir::Type::VOID, expect);
         }
         //@hack but should be correct
-        let block_ty = if diverges {
-            hir::Type::NEVER
-        } else {
-            hir::Type::VOID
-        };
+        let block_ty = if diverges { hir::Type::NEVER } else { hir::Type::VOID };
         BlockResult::new(block_ty, hir_block, tail_range)
     };
 
@@ -2274,26 +2166,19 @@ fn typecheck_for<'hir, 'ast>(
             } else {
                 collection.elem_ty
             };
-            let value_bind = hir::ForBind {
-                mutt: ast::Mut::Immutable,
-                name: header.value,
-                ty: value_ty,
-            };
+            let value_bind =
+                hir::ForBind { mutt: ast::Mut::Immutable, name: header.value, ty: value_ty };
             let index_bind = hir::ForBind {
                 mutt: ast::Mut::Immutable,
-                name: header.index.unwrap_or(ast::Name {
-                    id: NameID::dummy(),
-                    range: TextRange::zero(),
-                }),
+                name: header
+                    .index
+                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
                 ty: hir::Type::USIZE,
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
             let value_id = ctx.scope.local.add_for_bind(value_bind, true);
-            let index_id = ctx
-                .scope
-                .local
-                .add_for_bind(index_bind, header.index.is_some());
+            let index_id = ctx.scope.local.add_for_bind(index_bind, header.index.is_some());
 
             let for_elem = hir::ForElem {
                 value_id,
@@ -2335,10 +2220,7 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
 
-            let for_pat = hir::ForPat {
-                pat,
-                expr: on_res.expr,
-            };
+            let for_pat = hir::ForPat { pat, expr: on_res.expr };
             hir::ForKind::Pat(ctx.arena.alloc(for_pat))
         }
     };
@@ -2354,10 +2236,7 @@ fn typecheck_for<'hir, 'ast>(
         ast::ForHeader::Pat(_) => ctx.scope.local.exit_block(),
     }
 
-    let for_ = hir::For {
-        kind,
-        block: block_res.block,
-    };
+    let for_ = hir::For { kind, block: block_res.block };
     Some(ctx.arena.alloc(for_))
 }
 
@@ -2383,10 +2262,7 @@ fn typecheck_local<'hir, 'ast>(
         Some(ty) => {
             let local_ty = super::pass_3::type_resolve(ctx, ty, false);
             let expect_src = ctx.src(ty.range);
-            (
-                Some(local_ty),
-                Expectation::HasType(local_ty, Some(expect_src)),
-            )
+            (Some(local_ty), Expectation::HasType(local_ty, Some(expect_src)))
         }
         None => (None, Expectation::None),
     };
@@ -2415,13 +2291,7 @@ fn typecheck_local<'hir, 'ast>(
                 return LocalResult::Error;
             }
 
-            let local = hir::Local {
-                mutt,
-                name,
-                ty,
-                init,
-                was_used: false,
-            };
+            let local = hir::Local { mutt, name, ty, init, was_used: false };
             let local_id = ctx.scope.local.add_local(local);
             LocalResult::Local(local_id)
         }
@@ -2453,12 +2323,8 @@ fn typecheck_assign<'hir, 'ast>(
     let rhs_expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));
     let rhs_res = typecheck_expr(ctx, rhs_expect, assign.rhs);
 
-    let assign = hir::Assign {
-        op: assign_op,
-        lhs: lhs_res.expr,
-        rhs: rhs_res.expr,
-        lhs_ty: lhs_res.ty,
-    };
+    let assign =
+        hir::Assign { op: assign_op, lhs: lhs_res.expr, rhs: rhs_res.expr, lhs_ty: lhs_res.ty };
     ctx.arena.alloc(assign)
 }
 
@@ -2602,11 +2468,7 @@ fn default_check_field_init_list<'ast>(
     input: &[ast::FieldInit<'ast>],
 ) {
     for field in input.iter() {
-        let _ = typecheck_expr(
-            ctx,
-            Expectation::HasType(hir::Type::Error, None),
-            field.expr,
-        );
+        let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), field.expr);
     }
 }
 
@@ -2674,10 +2536,7 @@ fn check_call_direct<'hir, 'ast>(
     }
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
-    let kind = hir::ExprKind::CallDirect {
-        proc_id,
-        input: values,
-    };
+    let kind = hir::ExprKind::CallDirect { proc_id, input: values };
     TypeResult::new(return_ty, kind)
 }
 
@@ -2717,10 +2576,7 @@ fn check_call_indirect<'hir, 'ast>(
     }
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
-    let indirect = hir::CallIndirect {
-        proc_ty,
-        input: values,
-    };
+    let indirect = hir::CallIndirect { proc_ty, input: values };
     let kind = hir::ExprKind::CallIndirect {
         target: target_res.expr,
         indirect: ctx.arena.alloc(indirect),
@@ -2736,11 +2592,8 @@ fn check_call_arg_count(
     is_variadic: bool,
 ) {
     let input_count = arg_list.exprs.len();
-    let wrong_count = if is_variadic {
-        input_count < expected_count
-    } else {
-        input_count != expected_count
-    };
+    let wrong_count =
+        if is_variadic { input_count < expected_count } else { input_count != expected_count };
 
     if wrong_count {
         let src = ctx.src(arg_list_range(arg_list));
@@ -2805,11 +2658,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         ctx.arena.alloc(empty)
     };
 
-    let kind = hir::ExprKind::Variant {
-        enum_id,
-        variant_id,
-        input,
-    };
+    let kind = hir::ExprKind::Variant { enum_id, variant_id, input };
     //@ignored poly_types
     TypeResult::new(hir::Type::Enum(enum_id, &[]), kind)
 }
@@ -2856,12 +2705,7 @@ fn check_variant_bind_list<'hir>(
         None => return &[],
     };
 
-    if in_or_pat
-        && bind_list
-            .binds
-            .iter()
-            .any(|bind| matches!(bind, ast::Binding::Named(_, _)))
-    {
+    if in_or_pat && bind_list.binds.iter().any(|bind| matches!(bind, ast::Binding::Named(_, _))) {
         let src = ctx.src(bind_list.range);
         err::tycheck_pat_in_or_bindings(&mut ctx.emit, src);
         return &[];
@@ -2897,21 +2741,12 @@ fn check_variant_bind_list<'hir>(
             (hir::Type::Error, None)
         };
 
-        if ctx
-            .scope
-            .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
-            .is_err()
+        if ctx.scope.check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit).is_err()
         {
             continue;
         }
 
-        let local_bind = hir::LocalBind {
-            mutt,
-            name,
-            ty,
-            field_id,
-            was_used: false,
-        };
+        let local_bind = hir::LocalBind { mutt, name, ty, field_id, was_used: false };
         let bind_id = ctx.scope.local.add_bind(local_bind);
         ctx.cache.bind_ids.push(bind_id);
     }

@@ -26,11 +26,7 @@ mod arena {
 
     impl<'arena> Arena<'arena> {
         pub fn new() -> Arena<'arena> {
-            Arena {
-                offset: 0,
-                block: Block::alloc(PAGE_SIZE),
-                phantom: PhantomData,
-            }
+            Arena { offset: 0, block: Block::alloc(PAGE_SIZE), phantom: PhantomData }
         }
 
         pub fn alloc<T: Copy>(&mut self, val: T) -> &'arena T {
@@ -102,11 +98,7 @@ mod arena {
         fn alloc(size: usize) -> Block<'arena> {
             let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
             let data = unsafe { alloc::alloc(layout) };
-            Block {
-                data,
-                layout,
-                prev: None,
-            }
+            Block { data, layout, prev: None }
         }
         fn dealloc(&self) {
             unsafe { alloc::dealloc(self.data, self.layout) }
@@ -140,9 +132,7 @@ mod temp_buffer {
 
     impl<T> TempBuffer<T> {
         pub fn new(cap: usize) -> TempBuffer<T> {
-            TempBuffer {
-                buffer: Vec::with_capacity(cap),
-            }
+            TempBuffer { buffer: Vec::with_capacity(cap) }
         }
 
         #[inline]
@@ -156,10 +146,7 @@ mod temp_buffer {
 
         #[inline]
         pub fn start(&self) -> BufferOffset<T> {
-            BufferOffset {
-                idx: self.buffer.len(),
-                phantom: PhantomData,
-            }
+            BufferOffset { idx: self.buffer.len(), phantom: PhantomData }
         }
         #[inline]
         pub fn push(&mut self, value: T) {
@@ -194,23 +181,18 @@ mod bitset {
 
     #[derive(Copy, Clone)]
     pub struct BitSet<T>
-    where
-        T: Copy + Clone + Into<u32>,
+    where T: Copy + Clone + Into<u32>
     {
         mask: u32,
         phantom: PhantomData<T>,
     }
 
     impl<T> BitSet<T>
-    where
-        T: Copy + Clone + Into<u32>,
+    where T: Copy + Clone + Into<u32>
     {
         #[inline]
         pub fn empty() -> BitSet<T> {
-            BitSet {
-                mask: 0,
-                phantom: PhantomData,
-            }
+            BitSet { mask: 0, phantom: PhantomData }
         }
         #[inline]
         pub fn set(&mut self, flag: T) {
@@ -232,9 +214,7 @@ mod timer {
 
     impl Timer {
         pub fn start() -> Timer {
-            Timer {
-                start: Instant::now(),
-            }
+            Timer { start: Instant::now() }
         }
         pub fn measure_ms(self) -> f64 {
             let end = Instant::now();
@@ -302,8 +282,7 @@ macro_rules! define_id {
 /// `fn as_str()` convert enum to string.  
 /// `fn from_str()` try to convert string to an enum.
 pub trait AsStr
-where
-    Self: Sized + 'static,
+where Self: Sized + 'static
 {
     const ALL: &[Self];
     fn as_str(self) -> &'static str;

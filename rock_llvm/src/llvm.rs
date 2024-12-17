@@ -121,10 +121,7 @@ impl IRTarget {
         };
         let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
 
-        IRTarget {
-            target_data,
-            target_machine,
-        }
+        IRTarget { target_data, target_machine }
     }
 
     pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
@@ -141,10 +138,7 @@ impl Drop for IRTarget {
 
 impl IRContext {
     pub fn new() -> IRContext {
-        IRContext {
-            context: unsafe { core::LLVMContextCreate() },
-            cstr_buf: CStrBuffer::new(),
-        }
+        IRContext { context: unsafe { core::LLVMContextCreate() }, cstr_buf: CStrBuffer::new() }
     }
 
     pub fn attr_kind_id(&self, name: &str) -> AttributeKindID {
@@ -538,10 +532,7 @@ impl Value {
 
         match ty_kind {
             sys::LLVMTypeKind::LLVMPointerTypeKind => ValuePtr(self.0),
-            _ => panic!(
-                "internal: `Value::into_ptr` type kind `{}` not a pointer",
-                ty_kind as i32
-            ),
+            _ => panic!("internal: `Value::into_ptr` type kind `{}` not a pointer", ty_kind as i32),
         }
     }
     pub fn into_fn(self) -> ValueFn {
@@ -550,10 +541,7 @@ impl Value {
 
         match ty_kind {
             sys::LLVMTypeKind::LLVMPointerTypeKind => ValueFn(self.0),
-            _ => panic!(
-                "internal: `Value::into_fn` type kind `{}` not a pointer",
-                ty_kind as i32
-            ),
+            _ => panic!("internal: `Value::into_fn` type kind `{}` not a pointer", ty_kind as i32),
         }
     }
 }

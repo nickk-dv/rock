@@ -35,11 +35,8 @@ struct RockTestEnv {
 }
 
 fn parse_tests() -> Vec<RockTestFile> {
-    let test_src_path = if fs::exists("./rock_test/src").unwrap() {
-        "./rock_test/src"
-    } else {
-        "./src"
-    };
+    let test_src_path =
+        if fs::exists("./rock_test/src").unwrap() { "./rock_test/src" } else { "./src" };
 
     let read_dir = fs::read_dir(test_src_path).expect("`./rock_test/src` or `./src` must exist");
     let mut test_files = vec![];
@@ -92,14 +89,9 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
             "test file `{}` expected `//#entry` tag",
             path.to_string_lossy()
         );
-        let start_idx = entry_line
-            .find('"')
-            .expect("expected entry name opening \"")
-            + 1;
-        let end_idx = entry_line[start_idx..]
-            .find('"')
-            .expect("expected entry name closing \"")
-            + start_idx;
+        let start_idx = entry_line.find('"').expect("expected entry name opening \"") + 1;
+        let end_idx =
+            entry_line[start_idx..].find('"').expect("expected entry name closing \"") + start_idx;
         let entry = entry_line[start_idx..end_idx].to_string();
 
         let expect_line = lines.next().expect("#expect tag must exist");
@@ -120,10 +112,7 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
             }
             expect
         } else {
-            panic!(
-                "test file `{}` expected `//#expect` tag",
-                path.to_string_lossy()
-            )
+            panic!("test file `{}` expected `//#expect` tag", path.to_string_lossy())
         };
 
         let mut source = String::with_capacity(128);
@@ -136,28 +125,16 @@ fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String)
             lines.next();
         }
 
-        let test = RockTest {
-            no_run: entry_line.starts_with("//#entry(no_run)"),
-            entry,
-            expect,
-            source,
-        };
+        let test =
+            RockTest { no_run: entry_line.starts_with("//#entry(no_run)"), entry, expect, source };
         if test_set.contains(&test.entry) {
-            panic!(
-                "duplicate test name fould `{}` in `{}`",
-                test.entry,
-                path.to_string_lossy(),
-            )
+            panic!("duplicate test name fould `{}` in `{}`", test.entry, path.to_string_lossy(),)
         }
         test_set.insert(test.entry.clone());
         tests.push(test);
     }
 
-    RockTestFile {
-        name: path.file_name().unwrap().to_str().unwrap().to_string(),
-        prelude,
-        tests,
-    }
+    RockTestFile { name: path.file_name().unwrap().to_str().unwrap().to_string(), prelude, tests }
 }
 
 fn setup_test_env(test_src: PathBuf) -> RockTestEnv {
@@ -187,10 +164,7 @@ version = "0.1.0"
     fs::write(&manifest_path, manifest).unwrap();
     std::env::set_current_dir(&run_root).unwrap();
 
-    RockTestEnv {
-        main_path,
-        test_path,
-    }
+    RockTestEnv { main_path, test_path }
 }
 
 fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
@@ -210,10 +184,7 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
 
         for test in test_file.tests {
             let main_src = if test.no_run {
-                format!(
-                    "import test.{{test_{0}}}\nproc main() s32 {{ return 0; }}",
-                    test.entry
-                )
+                format!("import test.{{test_{0}}}\nproc main() s32 {{ return 0; }}", test.entry)
             } else {
                 format!(
                     "import test.{{test_{0}}}\nproc main() s32 {{ test_{0}(); return 0; }}",

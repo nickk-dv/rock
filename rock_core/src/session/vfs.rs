@@ -18,10 +18,7 @@ pub struct FileData {
 
 impl Vfs {
     pub fn new(cap: usize) -> Vfs {
-        Vfs {
-            files: Vec::with_capacity(cap),
-            paths: HashMap::with_capacity(cap),
-        }
+        Vfs { files: Vec::with_capacity(cap), paths: HashMap::with_capacity(cap) }
     }
 
     #[inline]
@@ -48,11 +45,7 @@ impl Vfs {
             file_id
         } else {
             let file_id = FileID(self.files.len() as u32);
-            let file = FileData {
-                path: path.as_ref().to_path_buf(),
-                source,
-                line_ranges,
-            };
+            let file = FileData { path: path.as_ref().to_path_buf(), source, line_ranges };
             assert!(file.path.is_absolute());
             self.files.push(file);
             self.paths.insert(path.as_ref().to_path_buf(), file_id);

@@ -12,9 +12,7 @@ use crate::text::TextRange;
 
 //@set correct poly scopes everywhere paths are resolved
 pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
-    let mut tree = Tree {
-        nodes: Vec::with_capacity(128),
-    };
+    let mut tree = Tree { nodes: Vec::with_capacity(128) };
 
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
@@ -257,11 +255,7 @@ fn check_const_dependency_cycle(
         let last = idx + 2 == cycle_deps.len();
 
         let prefix = if first { "" } else { "which " };
-        let postfix = if last {
-            ", completing the cycle..."
-        } else {
-            ""
-        };
+        let postfix = if last { ", completing the cycle..." } else { "" };
 
         let (msg, src) = match const_dep {
             ConstDependency::EnumVariant(id, variant_id) => {
@@ -277,26 +271,20 @@ fn check_const_dependency_cycle(
             }
             ConstDependency::EnumLayout(id) => {
                 let data = ctx.registry.enum_data(id);
-                let msg = format!(
-                    "{prefix}depends on size of `{}`{postfix}",
-                    ctx.name(data.name.id)
-                );
+                let msg =
+                    format!("{prefix}depends on size of `{}`{postfix}", ctx.name(data.name.id));
                 (msg, data.src())
             }
             ConstDependency::StructLayout(id) => {
                 let data = ctx.registry.struct_data(id);
-                let msg = format!(
-                    "{prefix}depends on size of `{}`{postfix}",
-                    ctx.name(data.name.id)
-                );
+                let msg =
+                    format!("{prefix}depends on size of `{}`{postfix}", ctx.name(data.name.id));
                 (msg, data.src())
             }
             ConstDependency::Const(id) => {
                 let data = ctx.registry.const_data(id);
-                let msg = format!(
-                    "{prefix}depends on `{}` const value{postfix}",
-                    ctx.name(data.name.id)
-                );
+                let msg =
+                    format!("{prefix}depends on `{}` const value{postfix}", ctx.name(data.name.id));
                 (msg, data.src())
             }
             ConstDependency::Global(id) => {
@@ -330,12 +318,7 @@ fn check_const_dependency_cycle(
         info_src = src;
     }
 
-    ctx.emit.error(Error::new_info_vec(
-        "constant dependency cycle found:",
-        ctx_msg,
-        src,
-        info_vec,
-    ));
+    ctx.emit.error(Error::new_info_vec("constant dependency cycle found:", ctx_msg, src, info_vec));
     Err(parent_id)
 }
 
@@ -925,11 +908,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 match variant.kind {
                     hir::VariantKind::Default(eval_id) => {
                         if variant_id.raw() == 0 {
-                            let zero = hir::ConstValue::Int {
-                                val: 0,
-                                neg: false,
-                                int_ty: tag_ty,
-                            };
+                            let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: tag_ty };
 
                             let eval = ctx.registry.variant_eval_mut(eval_id);
                             *eval = hir::Eval::Resolved(zero);
@@ -1084,20 +1063,14 @@ impl Tree {
     fn root_and_reset(&mut self, value: ConstDependency) -> TreeNodeID {
         self.nodes.clear();
         let id = TreeNodeID::new(self.nodes.len());
-        self.nodes.push(TreeNode {
-            value,
-            parent: None,
-        });
+        self.nodes.push(TreeNode { value, parent: None });
         id
     }
     #[must_use]
     #[inline(always)]
     fn add_child(&mut self, parent_id: TreeNodeID, value: ConstDependency) -> TreeNodeID {
         let id = TreeNodeID::new(self.nodes.len());
-        self.nodes.push(TreeNode {
-            value,
-            parent: Some(parent_id),
-        });
+        self.nodes.push(TreeNode { value, parent: Some(parent_id) });
         id
     }
     #[must_use]

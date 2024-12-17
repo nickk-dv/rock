@@ -28,22 +28,10 @@ pub fn print_impl(session: Option<&Session>, errors: Vec<Error>, warnings: Vec<W
     let mut handle = BufWriter::new(std::io::stderr());
 
     for warning in warnings.iter() {
-        print_diagnostic(
-            session,
-            warning.diagnostic(),
-            Severity::Warning,
-            &mut state,
-            &mut handle,
-        );
+        print_diagnostic(session, warning.diagnostic(), Severity::Warning, &mut state, &mut handle);
     }
     for error in errors.iter() {
-        print_diagnostic(
-            session,
-            error.diagnostic(),
-            Severity::Error,
-            &mut state,
-            &mut handle,
-        );
+        print_diagnostic(session, error.diagnostic(), Severity::Error, &mut state, &mut handle);
     }
     let _ = handle.flush();
 }
@@ -93,10 +81,7 @@ impl<'src> ContextFmt<'src> {
     ) -> ContextFmt<'src> {
         let module = session.module.get(context.src().module_id());
         let file = session.vfs.file(module.file_id());
-        let path = file
-            .path()
-            .strip_prefix(&session.curr_work_dir)
-            .unwrap_or_else(|_| file.path());
+        let path = file.path().strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| file.path());
 
         let range = context.src().range();
         let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
@@ -217,9 +202,7 @@ const TAB_SPACE_COUNT: usize = 2;
 const TAB_REPLACE_STR: &str = "  ";
 
 fn normalized_tab_len(text: &str) -> usize {
-    text.chars()
-        .map(|c| if c == '\t' { TAB_SPACE_COUNT } else { 1 })
-        .sum::<usize>()
+    text.chars().map(|c| if c == '\t' { TAB_SPACE_COUNT } else { 1 }).sum::<usize>()
 }
 
 const fn severity_name(severity: Severity) -> &'static str {

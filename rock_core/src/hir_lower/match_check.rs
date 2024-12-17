@@ -23,18 +23,14 @@ pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
             }
         }
         //@gen types not handled
-        hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum {
-            enum_id,
-            ref_mut: None,
-        }),
+        hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum { enum_id, ref_mut: None }),
         //@gen types not handled
         hir::Type::Struct(_, _) => Err(true),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
             //@gen types not handled
-            hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum {
-                enum_id,
-                ref_mut: Some(mutt),
-            }),
+            hir::Type::Enum(enum_id, _) => {
+                Ok(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt) })
+            }
             _ => Err(true),
         },
         hir::Type::MultiReference(_, _) => Err(true),
@@ -483,11 +479,7 @@ impl PatCov {
 
 impl PatCovBool {
     fn new() -> PatCovBool {
-        PatCovBool {
-            cov_true: false,
-            cov_false: false,
-            not_covered: Vec::with_capacity(2),
-        }
+        PatCovBool { cov_true: false, cov_false: false, not_covered: Vec::with_capacity(2) }
     }
 
     fn reset(&mut self) {
@@ -534,10 +526,7 @@ impl PatCovBool {
 
 impl PatCovChar {
     fn new() -> PatCovChar {
-        PatCovChar {
-            wild_covered: false,
-            covered: PatCovInt::new(),
-        }
+        PatCovChar { wild_covered: false, covered: PatCovInt::new() }
     }
 
     fn reset(&mut self) {
@@ -569,10 +558,7 @@ impl PatCovChar {
 
 impl PatCovString {
     fn new() -> PatCovString {
-        PatCovString {
-            wild_covered: false,
-            covered: Vec::with_capacity(32),
-        }
+        PatCovString { wild_covered: false, covered: Vec::with_capacity(32) }
     }
 
     fn reset(&mut self) {
@@ -675,17 +661,13 @@ enum RangeIncDisplay<T> {
 }
 
 impl<T> RangeInc<T>
-where
-    T: Copy + Clone + PartialEq + Ord,
+where T: Copy + Clone + PartialEq + Ord
 {
     fn new(start: T, end: T) -> RangeInc<T> {
         if start < end {
             RangeInc { start, end }
         } else {
-            RangeInc {
-                start: end,
-                end: start,
-            }
+            RangeInc { start: end, end: start }
         }
     }
     fn display(self) -> RangeIncDisplay<T> {
@@ -721,22 +703,17 @@ impl PatCovIncrement<i128> for i128 {
 }
 
 struct PatCovInt<T>
-where
-    T: Copy + Clone + PartialEq + Ord,
+where T: Copy + Clone + PartialEq + Ord
 {
     ranges: Vec<RangeInc<T>>,
     not_covered: Vec<RangeInc<T>>,
 }
 
 impl<T> PatCovInt<T>
-where
-    T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>,
+where T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>
 {
     fn new() -> PatCovInt<T> {
-        PatCovInt {
-            ranges: Vec::with_capacity(64),
-            not_covered: Vec::with_capacity(64),
-        }
+        PatCovInt { ranges: Vec::with_capacity(64), not_covered: Vec::with_capacity(64) }
     }
 
     fn reset(&mut self) {

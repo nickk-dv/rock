@@ -12,14 +12,8 @@ pub struct Diagnostic {
 
 pub enum DiagnosticData {
     Message,
-    Context {
-        main: DiagnosticContext,
-        info: Option<Info>,
-    },
-    ContextVec {
-        main: DiagnosticContext,
-        info_vec: Vec<Info>,
-    },
+    Context { main: DiagnosticContext, info: Option<Info> },
+    ContextVec { main: DiagnosticContext, info_vec: Vec<Info> },
 }
 
 pub struct DiagnosticContext {
@@ -64,10 +58,7 @@ impl Error {
         Error(Diagnostic::new(msg, data))
     }
     pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Error {
-        let data = DiagnosticData::Context {
-            main: DiagnosticContext::new_empty(src),
-            info,
-        };
+        let data = DiagnosticData::Context { main: DiagnosticContext::new_empty(src), info };
         Error(Diagnostic::new(msg, data))
     }
     pub fn new_info_vec(
@@ -76,10 +67,8 @@ impl Error {
         src: SourceRange,
         info_vec: Vec<Info>,
     ) -> Error {
-        let data = DiagnosticData::ContextVec {
-            main: DiagnosticContext::new(ctx_msg, src),
-            info_vec,
-        };
+        let data =
+            DiagnosticData::ContextVec { main: DiagnosticContext::new(ctx_msg, src), info_vec };
         Error(Diagnostic::new(msg, data))
     }
 
@@ -90,10 +79,7 @@ impl Error {
 
 impl Warning {
     pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Warning {
-        let data = DiagnosticData::Context {
-            main: DiagnosticContext::new_empty(src),
-            info,
-        };
+        let data = DiagnosticData::Context { main: DiagnosticContext::new_empty(src), info };
         Warning(Diagnostic::new(msg, data))
     }
 
@@ -104,10 +90,7 @@ impl Warning {
 
 impl Diagnostic {
     fn new(msg: impl Into<StringOrStr>, data: DiagnosticData) -> Diagnostic {
-        Diagnostic {
-            msg: msg.into(),
-            data,
-        }
+        Diagnostic { msg: msg.into(), data }
     }
 
     pub fn msg(&self) -> &StringOrStr {
@@ -120,16 +103,10 @@ impl Diagnostic {
 
 impl DiagnosticContext {
     fn new(msg: impl Into<StringOrStr>, src: SourceRange) -> DiagnosticContext {
-        DiagnosticContext {
-            msg: msg.into(),
-            src,
-        }
+        DiagnosticContext { msg: msg.into(), src }
     }
     fn new_empty(src: SourceRange) -> DiagnosticContext {
-        DiagnosticContext {
-            msg: StringOrStr::Str(""),
-            src,
-        }
+        DiagnosticContext { msg: StringOrStr::Str(""), src }
     }
 
     pub fn msg(&self) -> &str {
@@ -288,20 +265,14 @@ impl From<ErrorBuffer> for ErrorWarningBuffer {
 impl Drop for ErrorBuffer {
     fn drop(&mut self) {
         if !self.collected {
-            panic!(
-                "internal: ErrorBuffer was not collected! E:{}",
-                self.errors.len(),
-            );
+            panic!("internal: ErrorBuffer was not collected! E:{}", self.errors.len());
         }
     }
 }
 impl Drop for WarningBuffer {
     fn drop(&mut self) {
         if !self.collected {
-            panic!(
-                "internal: WarningBuffer was not collected! W:{}",
-                self.warnings.len(),
-            );
+            panic!("internal: WarningBuffer was not collected! W:{}", self.warnings.len());
         }
     }
 }

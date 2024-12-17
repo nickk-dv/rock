@@ -99,11 +99,7 @@ pub fn session_pkg_dep_cycle(relation: String, manifest_path: &PathBuf) -> Error
 //==================== LEXER ====================
 
 pub fn lexer_unknown_symbol(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
-    let non_acsii = if !c.is_ascii() {
-        "\nonly ascii symbols are supported"
-    } else {
-        ""
-    };
+    let non_acsii = if !c.is_ascii() { "\nonly ascii symbols are supported" } else { "" };
     let msg = format!("unknown symbol token {c:?}{non_acsii}");
     emit.error(Error::new(msg, src, None));
 }
@@ -1245,18 +1241,10 @@ pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> E
     let _ = write!(&mut msg, "status code: {code}\n\n");
 
     if !output.stderr.is_empty() {
-        let _ = write!(
-            &mut msg,
-            "stderr output:\n{}\n",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let _ = write!(&mut msg, "stderr output:\n{}\n", String::from_utf8_lossy(&output.stderr));
     }
     if !output.stdout.is_empty() {
-        let _ = write!(
-            &mut msg,
-            "stdout output:\n{}\n",
-            String::from_utf8_lossy(&output.stdout)
-        );
+        let _ = write!(&mut msg, "stdout output:\n{}\n", String::from_utf8_lossy(&output.stdout));
     }
 
     msg.push_str("used linker arguments:\n");

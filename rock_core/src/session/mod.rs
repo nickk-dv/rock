@@ -77,9 +77,7 @@ pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
 
 impl<'s> Modules<'s> {
     fn new(cap: usize) -> Modules<'s> {
-        Modules {
-            modules: Vec::with_capacity(cap),
-        }
+        Modules { modules: Vec::with_capacity(cap) }
     }
 
     #[inline]
@@ -314,9 +312,7 @@ fn process_package(
             Some(dep_id) => dep_id,
             None => process_package(session, &dep_root_dir, Some(package_id), false)?,
         };
-        session
-            .graph
-            .add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
+        session.graph.add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
     }
     Ok(package_id)
 }

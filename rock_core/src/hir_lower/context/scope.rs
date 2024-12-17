@@ -356,11 +356,7 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn finish_proc_context(
         &self,
-    ) -> (
-        &[hir::Local<'hir>],
-        &[hir::LocalBind<'hir>],
-        &[hir::ForBind<'hir>],
-    ) {
+    ) -> (&[hir::Local<'hir>], &[hir::LocalBind<'hir>], &[hir::ForBind<'hir>]) {
         (&self.locals, &self.binds, &self.for_binds)
     }
 
@@ -372,18 +368,8 @@ impl<'hir> LocalScope<'hir> {
     }
 
     pub fn start_block(&mut self, status: BlockStatus) {
-        let diverges = self
-            .blocks
-            .last()
-            .map(|b| b.diverges)
-            .unwrap_or(Diverges::Maybe);
-        let data = BlockData {
-            local_count: 0,
-            bind_count: 0,
-            for_bind_count: 0,
-            status,
-            diverges,
-        };
+        let diverges = self.blocks.last().map(|b| b.diverges).unwrap_or(Diverges::Maybe);
+        let data = BlockData { local_count: 0, bind_count: 0, for_bind_count: 0, status, diverges };
         self.blocks.push(data);
     }
 

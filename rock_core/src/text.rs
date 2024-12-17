@@ -29,17 +29,11 @@ impl TextRange {
     }
     #[inline]
     pub const fn zero() -> TextRange {
-        TextRange {
-            start: TextOffset(0),
-            end: TextOffset(0),
-        }
+        TextRange { start: TextOffset(0), end: TextOffset(0) }
     }
     #[inline]
     pub const fn empty_at(offset: TextOffset) -> TextRange {
-        TextRange {
-            start: offset,
-            end: offset,
-        }
+        TextRange { start: offset, end: offset }
     }
     #[inline]
     pub const fn start(self) -> TextOffset {

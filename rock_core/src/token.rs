@@ -201,9 +201,7 @@ impl TokenSet {
     }
     #[inline]
     pub const fn combine(self, other: TokenSet) -> TokenSet {
-        TokenSet {
-            mask: self.mask | other.mask,
-        }
+        TokenSet { mask: self.mask | other.mask }
     }
     #[inline]
     pub const fn contains(&self, token: Token) -> bool {

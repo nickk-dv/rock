@@ -43,10 +43,8 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
         });
     }
     //@rename the `poly_def` to poly_param everywhere
-    if let Some((poly_def, poly_param_idx)) = ctx
-        .scope
-        .poly
-        .find_poly_param(segment_0.name.id, &ctx.registry)
+    if let Some((poly_def, poly_param_idx)) =
+        ctx.scope.poly.find_poly_param(segment_0.name.id, &ctx.registry)
     {
         return Ok(PathResolved {
             kind: PathResolvedKind::PolyParam(poly_def, poly_param_idx),
@@ -235,12 +233,10 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 let src = ctx.src(segment.name.range);
                 let name = ctx.name(item_name.id);
                 err::path_type_missing_poly_args(&mut ctx.emit, src, name, item_kind);
-                ctx.arena
-                    .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
             } else {
                 //@use Type::Infer when its supported
-                ctx.arena
-                    .alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
             }
         }
         (Some(poly_params), Some(poly_args)) => {

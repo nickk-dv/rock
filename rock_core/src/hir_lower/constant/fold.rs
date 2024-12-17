@@ -29,11 +29,9 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::ForBind { .. } => unreachable!(),
         hir::ExprKind::ConstVar { const_id } => fold_const_var(ctx, const_id),
         hir::ExprKind::GlobalVar { .. } => unreachable!(),
-        hir::ExprKind::Variant {
-            enum_id,
-            variant_id,
-            input,
-        } => fold_variant(ctx, src, enum_id, variant_id, input),
+        hir::ExprKind::Variant { enum_id, variant_id, input } => {
+            fold_variant(ctx, src, enum_id, variant_id, input)
+        }
         hir::ExprKind::CallDirect { .. } => unreachable!(),
         hir::ExprKind::CallIndirect { .. } => unreachable!(),
         hir::ExprKind::StructInit { struct_id, input } => {
@@ -279,11 +277,7 @@ fn fold_variant<'hir>(
 
     if correct {
         let values = ctx.arena.alloc_slice(&values);
-        let variant = hir::ConstVariant {
-            enum_id,
-            variant_id,
-            values,
-        };
+        let variant = hir::ConstVariant { enum_id, variant_id, values };
         let variant = ctx.arena.alloc(variant);
         Ok(hir::ConstValue::Variant { variant })
     } else {
@@ -630,25 +624,13 @@ fn float_range_check<'hir>(
 
 impl<'hir> hir::ConstValue<'hir> {
     fn from_u64(val: u64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
-        hir::ConstValue::Int {
-            val,
-            neg: false,
-            int_ty,
-        }
+        hir::ConstValue::Int { val, neg: false, int_ty }
     }
     fn from_i64(val: i64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
         if val < 0 {
-            hir::ConstValue::Int {
-                val: -val as u64,
-                neg: true,
-                int_ty,
-            }
+            hir::ConstValue::Int { val: -val as u64, neg: true, int_ty }
         } else {
-            hir::ConstValue::Int {
-                val: val as u64,
-                neg: false,
-                int_ty,
-            }
+            hir::ConstValue::Int { val: val as u64, neg: false, int_ty }
         }
     }
 

@@ -48,11 +48,7 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             &mut ctx.emit,
         );
 
-        let existing = ctx
-            .cache
-            .proc_params
-            .iter()
-            .find(|&it| it.name.id == param.name.id);
+        let existing = ctx.cache.proc_params.iter().find(|&it| it.name.id == param.name.id);
         if let Some(existing) = existing {
             let param_src = ctx.src(param.name.range);
             let existing = ctx.src(existing.name.range);
@@ -95,11 +91,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
             continue;
         }
 
-        let existing = ctx
-            .cache
-            .enum_variants
-            .iter()
-            .find(|&it| it.name.id == variant.name.id);
+        let existing = ctx.cache.enum_variants.iter().find(|&it| it.name.id == variant.name.id);
         if let Some(existing) = existing {
             let variant_src = ctx.src(variant.name.range);
             let existing = ctx.src(existing.name.range);
@@ -231,11 +223,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
             continue;
         }
 
-        let existing = ctx
-            .cache
-            .struct_fields
-            .iter()
-            .find(|&it| it.name.id == field.name.id);
+        let existing = ctx.cache.struct_fields.iter().find(|&it| it.name.id == field.name.id);
         if let Some(existing) = existing {
             let field_src = ctx.src(field.name.range);
             let existing = ctx.src(existing.name.range);
@@ -306,10 +294,7 @@ fn process_polymorph_params<'hir>(
     }
 
     let names = ctx.arena.alloc_slice(&unique);
-    let poly_params = hir::PolymorphParams {
-        names,
-        range: poly_params.range,
-    };
+    let poly_params = hir::PolymorphParams { names, range: poly_params.range };
     Some(ctx.arena.alloc(poly_params))
 }
 
@@ -349,11 +334,7 @@ pub fn type_resolve<'hir, 'ast>(
             let is_variadic = proc_ty.is_variadic;
             let return_ty = type_resolve(ctx, proc_ty.return_ty, delayed);
 
-            let proc_ty = hir::ProcType {
-                param_types,
-                is_variadic,
-                return_ty,
-            };
+            let proc_ty = hir::ProcType { param_types, is_variadic, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {

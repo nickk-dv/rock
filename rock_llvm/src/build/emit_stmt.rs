@@ -46,11 +46,8 @@ fn codegen_return<'c>(cg: &mut Codegen<'c, '_, '_>, expr: Option<&hir::Expr<'c>>
     let defer_range = cg.proc.all_defer_blocks();
     codegen_defer_blocks(cg, defer_range);
 
-    let value = if let Some(expr) = expr {
-        emit_expr::codegen_expr_value_opt(cg, expr)
-    } else {
-        None
-    };
+    let value =
+        if let Some(expr) = expr { emit_expr::codegen_expr_value_opt(cg, expr) } else { None };
     cg.build.ret(value);
 }
 
@@ -103,9 +100,7 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
             // evaluate value being iterated on
             let iter_ptr = emit_expr::codegen_expr_pointer(cg, for_elem.expr);
             let iter_ptr = if for_elem.deref {
-                cg.build
-                    .load(cg.ptr_type(), iter_ptr, "deref_ptr")
-                    .into_ptr()
+                cg.build.load(cg.ptr_type(), iter_ptr, "deref_ptr").into_ptr()
             } else {
                 iter_ptr
             };
@@ -117,8 +112,7 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
                         let slice_ty = cg.slice_type();
                         let slice_len_ptr =
                             cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
-                        cg.build
-                            .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+                        cg.build.load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
                     }
                     hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
                 };
@@ -149,8 +143,7 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
                         let slice_ty = cg.slice_type();
                         let slice_len_ptr =
                             cg.build.gep_struct(slice_ty, iter_ptr, 1, "slice_len_ptr");
-                        cg.build
-                            .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
+                        cg.build.load(cg.ptr_sized_int(), slice_len_ptr, "slice_len")
                     }
                     hir::ForElemKind::Array(len) => cg.const_usize(cg.array_len(len)),
                 };
@@ -178,12 +171,8 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
             let elem_ty = cg.ty(for_elem.elem_ty);
             let elem_ptr = match for_elem.kind {
                 hir::ForElemKind::Slice => {
-                    let slice_ptr = cg
-                        .build
-                        .load(cg.ptr_type(), iter_ptr, "slice_ptr")
-                        .into_ptr();
-                    cg.build
-                        .gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
+                    let slice_ptr = cg.build.load(cg.ptr_type(), iter_ptr, "slice_ptr").into_ptr();
+                    cg.build.gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
                 }
                 hir::ForElemKind::Array(len) => {
                     let len = cg.array_len(len);

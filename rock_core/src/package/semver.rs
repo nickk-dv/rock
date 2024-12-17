@@ -9,11 +9,7 @@ pub struct Semver {
 
 impl Semver {
     pub const fn new(major: u32, minor: u32, patch: u32) -> Semver {
-        Semver {
-            major,
-            minor,
-            patch,
-        }
+        Semver { major, minor, patch }
     }
 
     //@review patch compatibility rules when on 0.0.P
@@ -36,18 +32,14 @@ impl std::fmt::Display for Semver {
 
 impl Serialize for Semver {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+    where S: serde::Serializer {
         serializer.serialize_str(&self.to_string())
     }
 }
 
 impl<'de> Deserialize<'de> for Semver {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+    where D: serde::Deserializer<'de> {
         let s = String::deserialize(deserializer)?;
         s.parse::<Semver>().map_err(serde::de::Error::custom)
     }
@@ -72,10 +64,6 @@ impl std::str::FromStr for Semver {
             .parse::<u32>()
             .map_err(|error| format!("failed to parse semver patch version\nreason: {error}"))?;
 
-        Ok(Semver {
-            major,
-            minor,
-            patch,
-        })
+        Ok(Semver { major, minor, patch })
     }
 }

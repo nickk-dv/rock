@@ -43,20 +43,11 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
         intern_name: &'src mut InternPool<'s, NameID>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
-        AstBuild {
-            arena: Arena::new(),
-            tree,
-            source,
-            intern_name,
-            s: state,
-        }
+        AstBuild { arena: Arena::new(), tree, source, intern_name, s: state }
     }
 
     fn finish(self, items: &'ast [ast::Item<'ast>]) -> ast::Ast<'ast> {
-        ast::Ast {
-            arena: self.arena,
-            items,
-        }
+        ast::Ast { arena: self.arena, items }
     }
 }
 
@@ -165,9 +156,7 @@ fn proc_item<'ast>(
 ) -> &'ast ast::ProcItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = item
-        .poly_params(ctx.tree)
-        .map(|poly| polymorph_params(ctx, poly));
+    let poly_params = item.poly_params(ctx.tree).map(|poly| polymorph_params(ctx, poly));
 
     let offset = ctx.s.params.start();
     let param_list = item.param_list(ctx.tree).unwrap();
@@ -180,15 +169,8 @@ fn proc_item<'ast>(
     let return_ty = ty(ctx, item.return_ty(ctx.tree).unwrap());
     let block = item.block(ctx.tree).map(|b| block(ctx, b));
 
-    let proc_item = ast::ProcItem {
-        dir_list,
-        name,
-        poly_params,
-        params,
-        is_variadic,
-        return_ty,
-        block,
-    };
+    let proc_item =
+        ast::ProcItem { dir_list, name, poly_params, params, is_variadic, return_ty, block };
     ctx.arena.alloc(proc_item)
 }
 
@@ -207,9 +189,7 @@ fn enum_item<'ast>(
 ) -> &'ast ast::EnumItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = item
-        .poly_params(ctx.tree)
-        .map(|poly| polymorph_params(ctx, poly));
+    let poly_params = item.poly_params(ctx.tree).map(|poly| polymorph_params(ctx, poly));
 
     let tag_ty = if let Some((basic, range)) = item.tag_ty(ctx.tree) {
         let tag_ty = ast::EnumTagType { basic, range };
@@ -225,13 +205,7 @@ fn enum_item<'ast>(
     }
     let variants = ctx.s.variants.take(offset, &mut ctx.arena);
 
-    let enum_item = ast::EnumItem {
-        dir_list,
-        name,
-        poly_params,
-        tag_ty,
-        variants,
-    };
+    let enum_item = ast::EnumItem { dir_list, name, poly_params, tag_ty, variants };
     ctx.arena.alloc(enum_item)
 }
 
@@ -250,21 +224,14 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);
 
-        let field_list = ast::VariantFieldList {
-            types,
-            range: field_list.find_range(ctx.tree),
-        };
+        let field_list = ast::VariantFieldList { types, range: field_list.find_range(ctx.tree) };
         let field_list = ctx.arena.alloc(field_list);
         ast::VariantKind::HasFields(field_list)
     } else {
         ast::VariantKind::Default
     };
 
-    let variant = ast::Variant {
-        dir_list,
-        name,
-        kind,
-    };
+    let variant = ast::Variant { dir_list, name, kind };
     ctx.s.variants.push(variant);
 }
 
@@ -274,9 +241,7 @@ fn struct_item<'ast>(
 ) -> &'ast ast::StructItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let poly_params = item
-        .poly_params(ctx.tree)
-        .map(|poly| polymorph_params(ctx, poly));
+    let poly_params = item.poly_params(ctx.tree).map(|poly| polymorph_params(ctx, poly));
 
     let offset = ctx.s.fields.start();
     let field_list = item.field_list(ctx.tree).unwrap();
@@ -285,12 +250,7 @@ fn struct_item<'ast>(
     }
     let fields = ctx.s.fields.take(offset, &mut ctx.arena);
 
-    let struct_item = ast::StructItem {
-        dir_list,
-        name,
-        poly_params,
-        fields,
-    };
+    let struct_item = ast::StructItem { dir_list, name, poly_params, fields };
     ctx.arena.alloc(struct_item)
 }
 
@@ -364,13 +324,7 @@ fn import_item<'ast>(
         &[]
     };
 
-    let import_item = ast::ImportItem {
-        dir_list,
-        package,
-        import_path,
-        rename,
-        symbols,
-    };
+    let import_item = ast::ImportItem { dir_list, package, import_path, rename, symbols };
     ctx.arena.alloc(import_item)
 }
 
@@ -463,10 +417,7 @@ fn directive<'ast>(
         }
     };
 
-    ast::Directive {
-        kind,
-        range: directive.find_range(ctx.tree),
-    }
+    ast::Directive { kind, range: directive.find_range(ctx.tree) }
 }
 
 fn directive_param_list<'ast>(
@@ -487,11 +438,7 @@ fn directive_param(ctx: &mut AstBuild, param: cst::DirectiveParam) -> ast::Direc
     let value = string_lit(ctx, lit_string).id;
     let value_range = lit_string.find_range(ctx.tree);
 
-    ast::DirectiveParam {
-        name,
-        value,
-        value_range,
-    }
+    ast::DirectiveParam { name, value, value_range }
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
@@ -529,11 +476,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
             let return_ty = ty(ctx, return_ty);
 
-            let proc_ty = ast::ProcType {
-                param_types,
-                is_variadic,
-                return_ty,
-            };
+            let proc_ty = ast::ProcType { param_types, is_variadic, return_ty };
             ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {
@@ -600,10 +543,7 @@ fn stmt_defer<'ast>(
     } else {
         let stmt = stmt(ctx, defer.stmt(ctx.tree).unwrap());
         let stmts = ctx.arena.alloc_slice(&[stmt]);
-        let block = ast::Block {
-            stmts,
-            range: stmt.range,
-        };
+        let block = ast::Block { stmts, range: stmt.range };
         ctx.arena.alloc(block)
     }
 }
@@ -626,13 +566,7 @@ fn stmt_for<'ast>(
         let reverse = header.t_rev(ctx.tree).is_some();
         let expr = expr(ctx, header.expr(ctx.tree).unwrap());
 
-        let header = ast::ForHeaderElem {
-            ref_mut,
-            value,
-            index,
-            reverse,
-            expr,
-        };
+        let header = ast::ForHeaderElem { ref_mut, value, index, reverse, expr };
         ast::ForHeader::Elem(ctx.arena.alloc(header))
     } else if let Some(header) = for_.header_pat(ctx.tree) {
         let pat = pat(ctx, header.pat(ctx.tree).unwrap());
@@ -654,11 +588,7 @@ fn stmt_local<'ast>(
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let bind = bind(ctx, local.bind(ctx.tree).unwrap());
-    let ty = if let Some(ty_cst) = local.ty(ctx.tree) {
-        Some(ty(ctx, ty_cst))
-    } else {
-        None
-    };
+    let ty = if let Some(ty_cst) = local.ty(ctx.tree) { Some(ty(ctx, ty_cst)) } else { None };
 
     let init = if let Some(expr_cst) = local.init(ctx.tree) {
         ast::LocalInit::Init(expr(ctx, expr_cst))
@@ -680,12 +610,7 @@ fn stmt_assign<'ast>(
     let lhs = expr(ctx, assign.lhs(ctx.tree).unwrap());
     let rhs = expr(ctx, assign.rhs(ctx.tree).unwrap());
 
-    let assign = ast::Assign {
-        op,
-        op_range,
-        lhs,
-        rhs,
-    };
+    let assign = ast::Assign { op, op_range, lhs, rhs };
     ctx.arena.alloc(assign)
 }
 
@@ -725,10 +650,7 @@ fn expr_kind<'ast>(
             let branches = ctx.s.branches.take(offset, &mut ctx.arena);
             let else_block = if_.else_block(ctx.tree).map(|b| block(ctx, b));
 
-            let if_ = ast::If {
-                branches,
-                else_block,
-            };
+            let if_ = ast::If { branches, else_block };
             let if_ = ctx.arena.alloc(if_);
             ast::ExprKind::If { if_ }
         }
@@ -760,11 +682,7 @@ fn expr_kind<'ast>(
             let target = expr(ctx, slice.target(ctx.tree).unwrap());
             let mutt = mutt(slice.t_mut(ctx.tree));
             let range = expr(ctx, slice.range_(ctx.tree).unwrap());
-            ast::ExprKind::Slice {
-                target,
-                mutt,
-                range,
-            }
+            ast::ExprKind::Slice { target, mutt, range }
         }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());
@@ -810,21 +728,12 @@ fn expr_kind<'ast>(
                 let expr = if let Some(expr_cst) = field_init_cst.expr(ctx.tree) {
                     expr(ctx, expr_cst)
                 } else {
-                    let segment = ast::PathSegment {
-                        name,
-                        poly_args: None,
-                    };
+                    let segment = ast::PathSegment { name, poly_args: None };
                     let segments = ctx.arena.alloc_slice(&[segment]);
                     let path = ctx.arena.alloc(ast::Path { segments });
 
-                    let kind = ast::ExprKind::Item {
-                        path,
-                        args_list: None,
-                    };
-                    let expr = ast::Expr {
-                        kind,
-                        range: name.range,
-                    };
+                    let kind = ast::ExprKind::Item { path, args_list: None };
+                    let expr = ast::Expr { kind, range: name.range };
                     ctx.arena.alloc(expr)
                 };
 
@@ -834,11 +743,7 @@ fn expr_kind<'ast>(
             let input = ctx.s.field_inits.take(offset, &mut ctx.arena);
 
             let input_start = field_init_range.start() + 1.into();
-            let struct_init = ast::StructInit {
-                path,
-                input,
-                input_start,
-            };
+            let struct_init = ast::StructInit { path, input, input_start };
             let struct_init = ctx.arena.alloc(struct_init);
             ast::ExprKind::StructInit { struct_init }
         }
@@ -886,12 +791,7 @@ fn expr_kind<'ast>(
             let lhs = expr(ctx, binary.lhs(ctx.tree).unwrap());
             let rhs = expr(ctx, binary.rhs(ctx.tree).unwrap());
 
-            ast::ExprKind::Binary {
-                op,
-                op_start: op_range.start(),
-                lhs,
-                rhs,
-            }
+            ast::ExprKind::Binary { op, op_start: op_range.start(), lhs, rhs }
         }
     }
 }
@@ -926,19 +826,13 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast
             let lit_cst = pat.lit(ctx.tree).unwrap();
             let lit = lit(ctx, lit_cst);
 
-            let lit_expr = ast::Expr {
-                kind: ast::ExprKind::Lit { lit },
-                range: lit_cst.find_range(ctx.tree),
-            };
+            let lit_expr =
+                ast::Expr { kind: ast::ExprKind::Lit { lit }, range: lit_cst.find_range(ctx.tree) };
             let lit_expr = ctx.arena.alloc(lit_expr);
 
             let expr = if let Some((op, op_range)) = pat.un_op(ctx.tree) {
                 let un_expr = ast::Expr {
-                    kind: ast::ExprKind::Unary {
-                        op,
-                        op_range,
-                        rhs: lit_expr,
-                    },
+                    kind: ast::ExprKind::Unary { op, op_range, rhs: lit_expr },
                     range: pat.find_range(ctx.tree),
                 };
                 ctx.arena.alloc(un_expr)
@@ -1116,9 +1010,7 @@ fn path_segment<'ast>(
     segment: cst::PathSegment,
 ) -> ast::PathSegment<'ast> {
     let name = name(ctx, segment.name(ctx.tree).unwrap());
-    let poly_args = segment
-        .poly_args(ctx.tree)
-        .map(|pa| polymorph_args(ctx, pa));
+    let poly_args = segment.poly_args(ctx.tree).map(|pa| polymorph_args(ctx, pa));
     ast::PathSegment { name, poly_args }
 }
 

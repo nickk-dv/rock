@@ -28,11 +28,7 @@ fn item(p: &mut Parser) {
         mc = Some(m);
     }
 
-    let m = if let Some(mc) = mc {
-        p.start_before(mc)
-    } else {
-        p.start()
-    };
+    let m = if let Some(mc) = mc { p.start_before(mc) } else { p.start() };
 
     match p.peek() {
         T![proc] => proc_item(p, m),
@@ -49,15 +45,8 @@ fn item(p: &mut Parser) {
     }
 }
 
-const FIRST_ITEM: TokenSet = TokenSet::new(&[
-    T![#],
-    T![proc],
-    T![enum],
-    T![struct],
-    T![const],
-    T![global],
-    T![import],
-]);
+const FIRST_ITEM: TokenSet =
+    TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![const], T![global], T![import]]);
 
 //@add FIRST_EXPR FIRST_STMT `;` for these (can be anywhere)
 const RECOVER_DIRECTIVE_PARAM_LIST: TokenSet = FIRST_ITEM;
@@ -65,9 +54,8 @@ const RECOVER_DIRECTIVE_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![
 
 const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
 
-const RECOVER_PARAM_LIST: TokenSet = TokenSet::new(&[T!['('], T!['{'], T![;]])
-    .combine(FIRST_ITEM)
-    .combine(FIRST_TYPE);
+const RECOVER_PARAM_LIST: TokenSet =
+    TokenSet::new(&[T!['('], T!['{'], T![;]]).combine(FIRST_ITEM).combine(FIRST_TYPE);
 const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
 const RECOVER_IMPORT_PATH: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![as], T![.], T![;]]));
@@ -394,10 +382,7 @@ fn directive(p: &mut Parser) -> (MarkerClosed, bool) {
             if p.at(T!['(']) {
                 directive_param_list(p);
             } else {
-                p.error_recover(
-                    "expected directive parameter list",
-                    RECOVER_DIRECTIVE_PARAM_LIST,
-                );
+                p.error_recover("expected directive parameter list", RECOVER_DIRECTIVE_PARAM_LIST);
             }
         }
         _ => {}
@@ -500,9 +485,8 @@ fn type_proc(p: &mut Parser) {
     m.complete(p, SyntaxKind::TYPE_PROCEDURE);
 }
 
-const RECOVER_PROC_TYPE_PARAM_LIST: TokenSet = FIRST_ITEM
-    .combine(FIRST_TYPE)
-    .combine(TokenSet::new(&[T![')']]));
+const RECOVER_PROC_TYPE_PARAM_LIST: TokenSet =
+    FIRST_ITEM.combine(FIRST_TYPE).combine(TokenSet::new(&[T![')']]));
 
 fn proc_type_param_list(p: &mut Parser) {
     let m = p.start();

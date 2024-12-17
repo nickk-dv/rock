@@ -107,11 +107,9 @@ fn codegen_expr<'c>(
         }
         hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
-        hir::ExprKind::Variant {
-            enum_id,
-            variant_id,
-            input,
-        } => Some(codegen_variant(cg, expect, enum_id, variant_id, input)),
+        hir::ExprKind::Variant { enum_id, variant_id, input } => {
+            Some(codegen_variant(cg, expect, enum_id, variant_id, input))
+        }
         hir::ExprKind::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, expect, proc_id, input, expr.range)
         }
@@ -181,11 +179,7 @@ fn codegen_const_bool(cg: &Codegen, val: bool) -> llvm::Value {
 #[inline]
 fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::BasicInt) -> llvm::Value {
     let is_signed = int_ty.is_signed();
-    let ext_val = if is_signed && neg {
-        (!val).wrapping_add(1)
-    } else {
-        val
-    };
+    let ext_val = if is_signed && neg { (!val).wrapping_add(1) } else { val };
     llvm::const_int(cg.basic_type(int_ty.into_basic()), ext_val, is_signed)
 }
 
@@ -289,11 +283,7 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
 
         let body_bb = cg.append_bb("if_body");
         let last_branch = idx + 1 == if_.branches.len() && if_.else_block.is_none();
-        branch_bb = if !last_branch {
-            cg.append_bb("if_branch")
-        } else {
-            exit_bb
-        };
+        branch_bb = if !last_branch { cg.append_bb("if_branch") } else { exit_bb };
 
         cg.build.cond_br(cond, body_bb, branch_bb);
         cg.build.position_at_end(body_bb);
@@ -363,15 +353,11 @@ fn codegen_match<'c>(
             hir::Pat::Wild => wild_bb = Some(arm_bb),
             hir::Pat::Lit(value) => {
                 let pat_value = codegen_const(cg, value);
-                cg.cache
-                    .cases
-                    .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                cg.cache.cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
             }
             hir::Pat::Const(const_id) => {
                 let pat_value = codegen_const_var(cg, const_id);
-                cg.cache
-                    .cases
-                    .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                cg.cache.cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
@@ -471,9 +457,7 @@ fn codegen_struct_field<'c>(
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, target);
     let target_ptr = if access.deref.is_some() {
-        cg.build
-            .load(cg.ptr_type(), target_ptr, "deref_ptr")
-            .into_ptr()
+        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
     } else {
         target_ptr
     };
@@ -503,9 +487,7 @@ fn codegen_slice_field<'c>(
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, target);
     let target_ptr = if access.deref.is_some() {
-        cg.build
-            .load(cg.ptr_type(), target_ptr, "deref_ptr")
-            .into_ptr()
+        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
     } else {
         target_ptr
     };
@@ -533,9 +515,7 @@ fn codegen_index<'c>(
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, target);
     let target_ptr = if access.deref.is_some() {
-        cg.build
-            .load(cg.ptr_type(), target_ptr, "deref_ptr")
-            .into_ptr()
+        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
     } else {
         target_ptr
     };
@@ -546,11 +526,8 @@ fn codegen_index<'c>(
         hir::IndexKind::Multi(_) => None,
         hir::IndexKind::Slice(_) => {
             let slice_len_ptr =
-                cg.build
-                    .gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
-            let len = cg
-                .build
-                .load(cg.ptr_sized_int(), slice_len_ptr, "slice_len");
+                cg.build.gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
+            let len = cg.build.load(cg.ptr_sized_int(), slice_len_ptr, "slice_len");
             Some(len)
         }
         hir::IndexKind::Array(len) => {
@@ -573,16 +550,11 @@ fn codegen_index<'c>(
     let elem_ty = cg.ty(access.elem_ty);
     let elem_ptr = match access.kind {
         hir::IndexKind::Multi(_) => {
-            cg.build
-                .gep(elem_ty, target_ptr, &[index_val], "multi_elem_ptr")
+            cg.build.gep(elem_ty, target_ptr, &[index_val], "multi_elem_ptr")
         }
         hir::IndexKind::Slice(_) => {
-            let slice_ptr = cg
-                .build
-                .load(cg.ptr_type(), target_ptr, "slice_ptr")
-                .into_ptr();
-            cg.build
-                .gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
+            let slice_ptr = cg.build.load(cg.ptr_type(), target_ptr, "slice_ptr").into_ptr();
+            cg.build.gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
         }
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
@@ -638,8 +610,7 @@ fn codegen_caller_location(cg: &Codegen, expect: Expect) -> llvm::Value {
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
-            cg.build
-                .load(cg.location_ty.as_ty(), param_ptr, "caller_location_val")
+            cg.build.load(cg.location_ty.as_ty(), param_ptr, "caller_location_val")
         }
         Expect::Pointer => param_ptr.as_val(),
     }
@@ -749,8 +720,7 @@ fn codegen_variant<'c>(
 
             for (idx, expr) in input.iter().enumerate() {
                 let field_ptr =
-                    cg.build
-                        .gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
+                    cg.build.gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
                 codegen_expr_store(cg, expr, field_ptr);
             }
         }
@@ -790,28 +760,16 @@ fn codegen_call_direct<'c>(
         let call_origin_id = cg.hir.proc_data(cg.proc.proc_id).origin_id;
         let call_origin = cg.session.module.get(call_origin_id);
         let call_file = cg.session.vfs.file(call_origin.file_id());
-        let location = text::find_text_location(
-            &call_file.source,
-            expr_range.start(),
-            &call_file.line_ranges,
-        );
-        let line = llvm::const_int(
-            cg.basic_type(ast::BasicType::U32),
-            location.line() as u64,
-            false,
-        );
-        let col = llvm::const_int(
-            cg.basic_type(ast::BasicType::U32),
-            location.col() as u64,
-            false,
-        );
+        let location =
+            text::find_text_location(&call_file.source, expr_range.start(), &call_file.line_ranges);
+        let line =
+            llvm::const_int(cg.basic_type(ast::BasicType::U32), location.line() as u64, false);
+        let col = llvm::const_int(cg.basic_type(ast::BasicType::U32), location.col() as u64, false);
 
         let path = call_file.path().to_str().unwrap();
         let string_val = llvm::const_string(&cg.context, path, true);
         let string_ty = llvm::typeof_value(string_val);
-        let global = cg
-            .module
-            .add_global("rock.string.path", string_val, string_ty, true, true);
+        let global = cg.module.add_global("rock.string.path", string_val, string_ty, true, true);
 
         let slice_len = cg.const_usize(path.len() as u64);
         let string_slice =
@@ -882,12 +840,8 @@ fn codegen_struct_init<'c>(
     };
 
     for field_init in input {
-        let field_ptr = cg.build.gep_struct(
-            struct_ty,
-            struct_ptr,
-            field_init.field_id.raw(),
-            "field_ptr",
-        );
+        let field_ptr =
+            cg.build.gep_struct(struct_ty, struct_ptr, field_init.field_id.raw(), "field_ptr");
         codegen_expr_store(cg, field_init.expr, field_ptr);
     }
 
@@ -913,9 +867,7 @@ fn codegen_array_init<'c>(
     let mut indices = [cg.const_usize_zero(), cg.const_usize_zero()];
     for (idx, &expr) in array_init.input.iter().enumerate() {
         indices[1] = cg.const_usize(idx as u64);
-        let elem_ptr = cg
-            .build
-            .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
+        let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
         codegen_expr_store(cg, expr, elem_ptr);
     }
 
@@ -955,9 +907,7 @@ fn codegen_array_repeat<'c>(
 
     cg.build.position_at_end(body_bb);
     let indices = [cg.const_usize_zero(), count_val];
-    let elem_ptr = cg
-        .build
-        .gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
+    let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(copied_val, elem_ptr);
 
     let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize_one());

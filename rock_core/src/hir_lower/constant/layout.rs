@@ -122,10 +122,7 @@ fn resolve_variant_layout(
 
     let tag_ty = data.tag_ty.resolved()?;
     let tag_ty = [hir::Type::Basic(tag_ty.into_basic())];
-    let mut types = tag_ty
-        .iter()
-        .copied()
-        .chain(variant.fields.iter().map(|f| &f.ty).copied());
+    let mut types = tag_ty.iter().copied().chain(variant.fields.iter().map(|f| &f.ty).copied());
     resolve_aggregate_layout(ctx, src, "variant", &mut types)
 }
 

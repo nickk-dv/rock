@@ -43,11 +43,7 @@ pub struct CommandRun {
 
 pub fn parse() -> Result<Command, ErrorBuffer> {
     let format = format()?;
-
-    let mut p = CommandParser {
-        err: ErrorBuffer::default(),
-        format,
-    };
+    let mut p = CommandParser { err: ErrorBuffer::default(), format };
 
     let command = match p.format.cmd.as_str() {
         "n" | "new" => command_new(&mut p),
@@ -99,11 +95,7 @@ fn command_build(p: &mut CommandParser) -> Command {
     parse_trail_args_none(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandBuild {
-        build_kind,
-        stats,
-        options,
-    };
+    let data = CommandBuild { build_kind, stats, options };
     Command::Build(data)
 }
 
@@ -115,12 +107,7 @@ fn command_run(p: &mut CommandParser) -> Command {
     let args = parse_trail_args(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandRun {
-        build_kind,
-        stats,
-        options,
-        args,
-    };
+    let data = CommandRun { build_kind, stats, options, args };
     Command::Run(data)
 }
 
@@ -157,9 +144,7 @@ struct FormatParser {
 }
 
 fn format() -> Result<CommandFormat, ErrorBuffer> {
-    let mut p = FormatParser {
-        args: std::env::args().skip(1).rev().collect(),
-    };
+    let mut p = FormatParser { args: std::env::args().skip(1).rev().collect() };
 
     let cmd = match format_eat_arg(&mut p) {
         Some(cmd) => cmd,
@@ -169,18 +154,10 @@ fn format() -> Result<CommandFormat, ErrorBuffer> {
             return Err(err);
         }
     };
-
     let args = format_args(&mut p);
     let (options, duplicates) = format_options(&mut p);
     let trail_args = p.args;
-
-    Ok(CommandFormat {
-        cmd,
-        args,
-        options,
-        duplicates,
-        trail_args,
-    })
+    Ok(CommandFormat { cmd, args, options, duplicates, trail_args })
 }
 
 fn format_args(p: &mut FormatParser) -> Vec<String> {

@@ -693,8 +693,7 @@ impl Into<u32> for GlobalFlag {
 }
 
 pub trait ItemFlag
-where
-    Self: PartialEq,
+where Self: PartialEq
 {
     fn not_compatible(self, other: Self) -> bool;
 }
@@ -828,10 +827,7 @@ impl Layout {
         Layout { size, align }
     }
     pub fn new_equal(size_align: u64) -> Layout {
-        Layout {
-            size: size_align,
-            align: size_align,
-        }
+        Layout { size: size_align, align: size_align }
     }
     pub fn size(&self) -> u64 {
         self.size

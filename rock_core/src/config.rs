@@ -88,18 +88,20 @@ impl TargetTriple {
     }
 
     pub fn host() -> TargetTriple {
-        #[rustfmt::skip]
-        #[cfg(all(target_arch = "x86_64", target_vendor = "pc", target_os = "windows", target_env = "msvc"))]
-        return TargetTriple::x86_64_pc_windows_msvc;
-        #[rustfmt::skip]
-        #[cfg(all(target_arch = "aarch64", target_vendor = "pc", target_os = "windows", target_env = "msvc"))]
-        return TargetTriple::Arm_64_pc_windows_msvc;
-        #[rustfmt::skip]
-        #[cfg(all(target_arch = "x86_64", target_vendor = "unknown", target_os = "linux", target_env = "gnu"))]
-        return TargetTriple::x86_64_unknown_linux_gnu;
-        #[rustfmt::skip]
-        #[cfg(all(target_arch = "aarch64", target_vendor = "unknown", target_os = "linux", target_env = "gnu"))]
-        return TargetTriple::Arm_64_unknown_linux_gnu;
+        #[cfg(target_arch = "x86_64")]
+        {
+            #[cfg(all(target_vendor = "pc", target_os = "windows", target_env = "msvc"))]
+            return TargetTriple::x86_64_pc_windows_msvc;
+            #[cfg(all(target_vendor = "unknown", target_os = "linux", target_env = "gnu"))]
+            return TargetTriple::x86_64_unknown_linux_gnu;
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            #[cfg(all(target_vendor = "pc", target_os = "windows", target_env = "msvc"))]
+            return TargetTriple::Arm_64_pc_windows_msvc;
+            #[cfg(all(target_vendor = "unknown", target_os = "linux", target_env = "gnu"))]
+            return TargetTriple::Arm_64_unknown_linux_gnu;
+        }
     }
 }
 

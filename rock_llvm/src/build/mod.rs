@@ -135,20 +135,14 @@ pub fn build(
         TargetOS::Windows => install_bin.join("lld-link.exe"),
         TargetOS::Linux => install_bin.join("ld.lld"),
     };
-    match std::process::Command::new(&linker_path)
-        .args(&args)
-        .output()
-    {
+    match std::process::Command::new(&linker_path).args(&args).output() {
         Ok(output) => {
             if !output.status.success() {
                 return Err(err::backend_link_failed(output, args));
             }
         }
         Err(error) => {
-            return Err(err::backend_link_command_failed(
-                error.to_string(),
-                &linker_path,
-            ))
+            return Err(err::backend_link_command_failed(error.to_string(), &linker_path))
         }
     };
     session.stats.link_ms = timer.measure_ms();
@@ -158,10 +152,7 @@ pub fn build(
 
 pub fn run(bin_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
     if let Err(error) = std::process::Command::new(&bin_path).args(args).status() {
-        Err(err::backend_run_command_failed(
-            error.to_string(),
-            &bin_path,
-        ))
+        Err(err::backend_run_command_failed(error.to_string(), &bin_path))
     } else {
         Ok(())
     }

@@ -16,10 +16,7 @@ pub struct Parser<'src> {
 
 #[derive(Copy, Clone)]
 pub enum Event {
-    StartNode {
-        kind: SyntaxKind,
-        forward_parent: Option<u32>,
-    },
+    StartNode { kind: SyntaxKind, forward_parent: Option<u32> },
     EndNode,
     Token,
     Ignore,
@@ -125,11 +122,7 @@ impl<'src> Parser<'src> {
     }
 
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let cursor = if self.at(Token::Eof) {
-            self.cursor.dec()
-        } else {
-            self.cursor
-        };
+        let cursor = if self.at(Token::Eof) { self.cursor.dec() } else { self.cursor };
         let range = self.tokens.token_range(cursor);
         let src = SourceRange::new(self.module_id, range);
         self.errors.error(Error::new(msg, src, None));
@@ -152,20 +145,14 @@ impl<'src> Parser<'src> {
     #[must_use]
     pub fn start(&mut self) -> Marker {
         let event_idx = self.events.len() as u32;
-        self.events.push(Event::StartNode {
-            kind: SyntaxKind::TOMBSTONE,
-            forward_parent: None,
-        });
+        self.events.push(Event::StartNode { kind: SyntaxKind::TOMBSTONE, forward_parent: None });
         Marker::new(event_idx)
     }
 
     #[must_use]
     pub fn start_before(&mut self, mc: MarkerClosed) -> Marker {
         let event_idx = self.events.len() as u32;
-        self.events.push(Event::StartNode {
-            kind: SyntaxKind::TOMBSTONE,
-            forward_parent: None,
-        });
+        self.events.push(Event::StartNode { kind: SyntaxKind::TOMBSTONE, forward_parent: None });
         match &mut self.events[mc.event_idx as usize] {
             Event::StartNode { forward_parent, .. } => {
                 assert!(forward_parent.is_none());
@@ -179,10 +166,7 @@ impl<'src> Parser<'src> {
 
 impl Marker {
     fn new(event_idx: u32) -> Marker {
-        Marker {
-            handled: false,
-            event_idx,
-        }
+        Marker { handled: false, event_idx }
     }
 
     pub fn complete(mut self, p: &mut Parser, kind: SyntaxKind) -> MarkerClosed {
@@ -192,9 +176,7 @@ impl Marker {
             _ => unreachable!(),
         }
         p.events.push(Event::EndNode);
-        MarkerClosed {
-            event_idx: self.event_idx,
-        }
+        MarkerClosed { event_idx: self.event_idx }
     }
 }
 

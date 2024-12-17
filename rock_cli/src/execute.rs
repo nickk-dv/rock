@@ -78,19 +78,12 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
                 lib_paths: None,
                 links: None,
             },
-            PackageKind::Lib => BuildManifest {
-                bin_name: None,
-                nodefaultlib: None,
-                lib_paths: None,
-                links: None,
-            },
+            PackageKind::Lib => {
+                BuildManifest { bin_name: None, nodefaultlib: None, lib_paths: None, links: None }
+            }
         };
 
-        let manifest = Manifest {
-            package,
-            build,
-            dependencies: BTreeMap::new(),
-        };
+        let manifest = Manifest { package, build, dependencies: BTreeMap::new() };
 
         let manifest_text = package::manifest_serialize(&manifest)?;
         fs_env::file_create_or_rewrite(&root_dir.join("Rock.toml"), &manifest_text)?;
@@ -106,22 +99,14 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
             .stdout(std::process::Stdio::null())
             .status()
             .map_err(|io_error| {
-                Error::message(format!(
-                    "failed to initialize git repository\nreason: {}",
-                    io_error
-                ))
+                Error::message(format!("failed to initialize git repository\nreason: {}", io_error))
             })?;
     }
 
     let style = AnsiStyle::new();
     let g = style.out.green_bold;
     let r = style.out.reset;
-
-    println!(
-        "  {g}Created{r} {} `{}` package\n",
-        data.kind.full_name(),
-        data.name,
-    );
+    println!("  {g}Created{r} {} `{}` package\n", data.kind.full_name(), data.name,);
     Ok(())
 }
 
@@ -267,9 +252,7 @@ fn print_build_finished(session: &Session, style: &AnsiStyle, stats: &BuildStats
 }
 
 fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &PathBuf) {
-    let run_path = bin_path
-        .strip_prefix(&session.curr_work_dir)
-        .unwrap_or_else(|_| bin_path);
+    let run_path = bin_path.strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| bin_path);
     let g = style.out.green_bold;
     let r = style.out.reset;
     println!("   {g}Running{r} {}\n", run_path.to_string_lossy());

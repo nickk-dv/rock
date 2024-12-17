@@ -20,10 +20,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
     let mut source_package = ctx.session.graph.package(source_package_id);
 
     if let Some(package_name) = import.package {
-        if let Some(dep_id) = ctx
-            .session
-            .graph
-            .find_package_dep(source_package_id, package_name.id)
+        if let Some(dep_id) = ctx.session.graph.find_package_dep(source_package_id, package_name.id)
         {
             source_package = ctx.session.graph.package(dep_id);
         } else {
@@ -99,8 +96,7 @@ fn import_module(
     rename: ast::SymbolRename,
 ) -> Result<(), ()> {
     let alias = check_symbol_rename(ctx, module_name, rename, false)?;
-    ctx.scope
-        .check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
+    ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let origin_id = ctx.scope.origin();
     let symbol = Symbol::ImportedModule(target_id, alias.range);
@@ -124,8 +120,7 @@ fn import_symbol(
     )?;
 
     let alias = check_symbol_rename(ctx, symbol.name, symbol.rename, true)?;
-    ctx.scope
-        .check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
+    ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let symbol = match kind {
         SymbolOrModule::Symbol(symbol_id) => {

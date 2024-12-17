@@ -132,10 +132,7 @@ pub fn tree_build<'syn>(
     module_id: ModuleID,
     complete: bool,
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
-    let node_count = events
-        .iter()
-        .filter(|&e| matches!(e, Event::StartNode { .. }))
-        .count();
+    let node_count = events.iter().filter(|&e| matches!(e, Event::StartNode { .. })).count();
 
     let mut build = SyntaxTreeBuild {
         source,
@@ -168,10 +165,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
     // SOURCE_FILE StartNode:
     {
-        let node = Node {
-            kind: SyntaxKind::SOURCE_FILE,
-            content: &[],
-        };
+        let node = Node { kind: SyntaxKind::SOURCE_FILE, content: &[] };
         let node_id = NodeID::new(b.nodes.len());
         let offset = b.content.start();
 
@@ -184,19 +178,13 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
     for event_idx in 1..b.events.len() - 1 {
         match b.events[event_idx] {
-            Event::StartNode {
-                kind,
-                forward_parent,
-            } => {
+            Event::StartNode { kind, forward_parent } => {
                 let mut parent_next = forward_parent;
                 b.parent_stack.push(kind);
 
                 while let Some(parent_idx) = parent_next {
                     match b.events[parent_idx as usize] {
-                        Event::StartNode {
-                            kind,
-                            forward_parent,
-                        } => {
+                        Event::StartNode { kind, forward_parent } => {
                             parent_next = forward_parent;
                             b.parent_stack.push(kind);
                             b.events[parent_idx as usize] = Event::Ignore;
@@ -357,9 +345,7 @@ fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
         }
     }
 
-    SourceTrivia {
-        n_inner: InnerTrivia(total_count),
-    }
+    SourceTrivia { n_inner: InnerTrivia(total_count) }
 }
 
 fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
@@ -378,9 +364,7 @@ fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
         total_count += 1;
     }
 
-    TokenTrivia {
-        n_outher: OutherTrivia(total_count),
-    }
+    TokenTrivia { n_outher: OutherTrivia(total_count) }
 }
 
 /// `InnerTrivia` is always considered valid

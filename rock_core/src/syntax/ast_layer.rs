@@ -7,8 +7,7 @@ use std::marker::PhantomData;
 
 pub trait AstNode<'syn> {
     fn cast(node: &'syn Node<'syn>) -> Option<Self>
-    where
-        Self: Sized;
+    where Self: Sized;
     fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange;
 }
 
@@ -20,11 +19,7 @@ pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
 
 impl<'syn, T: AstNode<'syn>> AstNodeIterator<'syn, T> {
     fn new(tree: &'syn SyntaxTree<'syn>, node: &'syn Node<'syn>) -> AstNodeIterator<'syn, T> {
-        AstNodeIterator {
-            tree,
-            iter: node.content.iter(),
-            phantom: PhantomData,
-        }
+        AstNodeIterator { tree, iter: node.content.iter(), phantom: PhantomData }
     }
 }
 
@@ -298,9 +293,7 @@ macro_rules! ast_node_impl {
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
             fn cast(node: &'syn Node<'syn>) -> Option<Self>
-            where
-                Self: Sized,
-            {
+            where Self: Sized {
                 if matches!(node.kind, $kind_pat) {
                     Some($name(node))
                 } else {

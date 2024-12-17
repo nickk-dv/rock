@@ -30,9 +30,7 @@ pub enum Notification {
 //@buffering only to avoid doing semantic tokens on each edit (16.12.24).
 impl MessageBuffer {
     pub fn new() -> MessageBuffer {
-        MessageBuffer {
-            messages: Vec::new(),
-        }
+        MessageBuffer { messages: Vec::new() }
     }
 
     pub fn receive(&mut self, conn: &lsr::Connection) -> Action {

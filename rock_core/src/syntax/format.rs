@@ -152,10 +152,7 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
         let range_idx = self.cache.ranges.len() as u32;
         self.cache.ranges.push(range);
         let event_idx = self.cache.events.len() as u32;
-        self.cache.events.push(FormatEvent::Comment {
-            spacing: 0,
-            range_idx,
-        });
+        self.cache.events.push(FormatEvent::Comment { spacing: 0, range_idx });
         event_idx
     }
 
@@ -175,9 +172,7 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
             return;
         }
         self.line_offset += TAB_LEN * self.tab_depth;
-        self.cache.events.push(FormatEvent::Tab {
-            count: self.tab_depth,
-        });
+        self.cache.events.push(FormatEvent::Tab { count: self.tab_depth });
     }
 
     fn wrap_line_break_based<N: AstNode<'syn>>(

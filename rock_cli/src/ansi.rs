@@ -36,18 +36,9 @@ const ANSI_COLORS_EMPTY: AnsiColors = AnsiColors {
 impl AnsiStyle {
     pub fn new() -> AnsiStyle {
         use std::io::IsTerminal;
-
         AnsiStyle {
-            out: if std::io::stdout().is_terminal() {
-                &ANSI_COLORS
-            } else {
-                &ANSI_COLORS_EMPTY
-            },
-            err: if std::io::stderr().is_terminal() {
-                &ANSI_COLORS
-            } else {
-                &ANSI_COLORS_EMPTY
-            },
+            out: if std::io::stdout().is_terminal() { &ANSI_COLORS } else { &ANSI_COLORS_EMPTY },
+            err: if std::io::stderr().is_terminal() { &ANSI_COLORS } else { &ANSI_COLORS_EMPTY },
         }
     }
 }
