@@ -2,15 +2,18 @@ use super::check_directive;
 use super::context::scope::{Symbol, SymbolID};
 use super::context::HirCtx;
 use crate::ast;
+use crate::errors as err;
 use crate::hir;
-use crate::support::BitSet;
+use crate::support::{AsStr, BitSet};
 
 pub fn populate_scopes(ctx: &mut HirCtx) {
     for module_id in ctx.session.module.ids() {
         ctx.scope.set_origin(module_id);
+
         let module = ctx.session.module.get(module_id);
         let items = module.ast_expect().items;
         let mut scope_vis = hir::Vis::Public;
+        let mut prev_scope: Option<&ast::Directive> = None;
 
         for item in items.iter().copied() {
             match item {
@@ -21,16 +24,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
                 ast::Item::Global(item) => add_global_item(ctx, item, scope_vis),
                 ast::Item::Import(item) => add_import_item(ctx, item),
                 ast::Item::Directive(item) => {
-                    //@check all invalid ones (up to the last one)
-                    //@warn redudant scope visibility changes
-                    let scope = item.directives.last().unwrap();
-                    let new_vis = match scope.kind {
-                        ast::DirectiveKind::ScopePublic => hir::Vis::Public,
-                        ast::DirectiveKind::ScopePackage => hir::Vis::Public, //@introduce `package` vis
-                        ast::DirectiveKind::ScopePrivate => hir::Vis::Private,
-                        _ => unreachable!(),
-                    };
-                    scope_vis = new_vis;
+                    check_directive_item(ctx, item, &mut scope_vis, &mut prev_scope)
                 }
             }
         }
@@ -230,4 +224,37 @@ fn add_import_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Import
     let origin_id = ctx.scope.origin();
     let data = hir::ImportData { origin_id };
     let _ = ctx.registry.add_import(item, data);
+}
+
+fn check_directive_item<'ast>(
+    ctx: &mut HirCtx,
+    item: &ast::DirectiveList<'ast>,
+    scope_vis: &mut hir::Vis,
+    prev_scope: &mut Option<&ast::Directive<'ast>>,
+) {
+    let (scope_dir, first) = match item.directives.split_last() {
+        Some(value) => value,
+        None => return,
+    };
+    for directive in first {
+        if check_directive::try_check_error_directive(ctx, directive) {
+            continue;
+        }
+        let src = ctx.src(directive.range);
+        let name = directive.kind.as_str();
+        err::directive_cannot_apply(&mut ctx.emit, src, name, "directives");
+    }
+    let new_vis = match scope_dir.kind {
+        ast::DirectiveKind::ScopePublic => hir::Vis::Public,
+        ast::DirectiveKind::ScopePackage => hir::Vis::Public, //@introduce `package` vis
+        ast::DirectiveKind::ScopePrivate => hir::Vis::Private,
+        _ => unreachable!(),
+    };
+    if *scope_vis == new_vis {
+        let src = ctx.src(scope_dir.range);
+        let prev_src = prev_scope.map(|s| ctx.src(s.range));
+        err::dir_scope_vis_redundant(&mut ctx.emit, src, prev_src, scope_vis.as_str());
+    }
+    *scope_vis = new_vis;
+    *prev_scope = Some(scope_dir);
 }

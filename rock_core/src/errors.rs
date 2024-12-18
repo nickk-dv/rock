@@ -385,6 +385,17 @@ pub fn directive_not_compatible(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn dir_scope_vis_redundant(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    prev_src: Option<SourceRange>,
+    vis: &str,
+) {
+    let msg = format!("scope visibility is already `{vis}`, remove this directive");
+    let info = prev_src.map(|prev| Info::new_val("already set here", prev));
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn flag_not_compatible(
     emit: &mut impl ErrorSink,
     item_src: SourceRange,

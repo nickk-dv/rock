@@ -143,7 +143,7 @@ pub fn check_expect_config(
     config
 }
 
-fn try_check_error_directive(ctx: &mut HirCtx, directive: &ast::Directive) -> bool {
+pub fn try_check_error_directive(ctx: &mut HirCtx, directive: &ast::Directive) -> bool {
     match directive.kind {
         DirectiveKind::Error(name) => {
             let src = ctx.src(directive.range);

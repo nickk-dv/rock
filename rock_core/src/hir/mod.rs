@@ -499,10 +499,12 @@ pub struct ArrayRepeat<'hir> {
     pub len: u64,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum Vis {
-    Public,
-    Private,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum Vis {
+        Public "public",
+        Private "private",
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -542,49 +544,33 @@ crate::enum_as_str! {
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
+#[rustfmt::skip]
 pub enum UnOp {
-    Neg_Int,
-    Neg_Float,
+    Neg_Int, Neg_Float,
     BitNot,
     LogicNot,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
+#[rustfmt::skip]
 pub enum BinOp {
-    Add_Int,
-    Add_Float,
-    Sub_Int,
-    Sub_Float,
-    Mul_Int,
-    Mul_Float,
-    Div_IntS,
-    Div_IntU,
-    Div_Float,
-    Rem_IntS,
-    Rem_IntU,
+    Add_Int, Add_Float,
+    Sub_Int, Sub_Float,
+    Mul_Int, Mul_Float,
+    Div_IntS, Div_IntU, Div_Float,
+    Rem_IntS, Rem_IntU,
     BitAnd,
     BitOr,
     BitXor,
     BitShl,
-    BitShr_IntS,
-    BitShr_IntU,
-    IsEq_Int,
-    IsEq_Float,
-    NotEq_Int,
-    NotEq_Float,
-    Less_IntS,
-    Less_IntU,
-    Less_Float,
-    LessEq_IntS,
-    LessEq_IntU,
-    LessEq_Float,
-    Greater_IntS,
-    Greater_IntU,
-    Greater_Float,
-    GreaterEq_IntS,
-    GreaterEq_IntU,
-    GreaterEq_Float,
+    BitShr_IntS, BitShr_IntU,
+    IsEq_Int, IsEq_Float,
+    NotEq_Int, NotEq_Float,
+    Less_IntS, Less_IntU, Less_Float,
+    LessEq_IntS, LessEq_IntU, LessEq_Float,
+    Greater_IntS, Greater_IntU, Greater_Float,
+    GreaterEq_IntS, GreaterEq_IntU, GreaterEq_Float,
     LogicAnd,
     LogicOr,
 }
@@ -693,7 +679,8 @@ impl Into<u32> for GlobalFlag {
 }
 
 pub trait ItemFlag
-where Self: PartialEq
+where
+    Self: PartialEq,
 {
     fn not_compatible(self, other: Self) -> bool;
 }
