@@ -36,7 +36,6 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
         let poly_params = process_polymorph_params(ctx, poly_params);
         ctx.registry.proc_data_mut(id).poly_params = poly_params;
     }
-
     ctx.cache.proc_params.clear();
 
     for param in item.params.iter() {
@@ -81,7 +80,6 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         let poly_params = process_polymorph_params(ctx, poly_params);
         ctx.registry.enum_data_mut(id).poly_params = poly_params;
     }
-
     let mut any_constant = false;
     ctx.cache.enum_variants.clear();
 
@@ -214,7 +212,6 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
         let poly_params = process_polymorph_params(ctx, poly_params);
         ctx.registry.struct_data_mut(id).poly_params = poly_params;
     }
-
     ctx.cache.struct_fields.clear();
 
     for field in item.fields.iter() {
@@ -248,7 +245,6 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
 fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
     ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
     let item = ctx.registry.const_item(id);
-
     let ty = type_resolve(ctx, item.ty, true);
     ctx.registry.const_data_mut(id).ty = ty;
 }
@@ -256,23 +252,21 @@ fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
 fn process_global_data(ctx: &mut HirCtx, id: hir::GlobalID) {
     ctx.scope.set_origin(ctx.registry.global_data(id).origin_id);
     let item = ctx.registry.global_item(id);
-
     let ty = type_resolve(ctx, item.ty, true);
     ctx.registry.global_data_mut(id).ty = ty;
 }
 
-#[must_use]
 fn process_polymorph_params<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     poly_params: &ast::PolymorphParams,
-) -> Option<&'hir hir::PolymorphParams<'hir>> {
+) -> Option<&'hir [ast::Name]> {
     if poly_params.names.is_empty() {
         let src = ctx.src(poly_params.range);
         err::item_poly_params_empty(&mut ctx.emit, src);
         return None;
     }
+    ctx.cache.poly_param_names.clear();
 
-    let mut unique = Vec::<ast::Name>::new();
     for param in poly_params.names.iter().copied() {
         //@change error to `shadows` instead of already defined?
         let _ = ctx.scope.check_already_defined_global(
@@ -282,7 +276,7 @@ fn process_polymorph_params<'hir>(
             &mut ctx.emit,
         );
 
-        let existing = unique.iter().find(|&it| it.id == param.id);
+        let existing = ctx.cache.poly_param_names.iter().find(|&it| it.id == param.id);
         if let Some(existing) = existing {
             let param_src = ctx.src(param.range);
             let existing = ctx.src(existing.range);
@@ -290,26 +284,22 @@ fn process_polymorph_params<'hir>(
             err::item_type_param_already_defined(&mut ctx.emit, param_src, existing, name);
             continue;
         }
-        unique.push(param);
+        ctx.cache.poly_param_names.push(param);
     }
 
-    let names = ctx.arena.alloc_slice(&unique);
-    let poly_params = hir::PolymorphParams { names, range: poly_params.range };
-    Some(ctx.arena.alloc(poly_params))
+    Some(ctx.arena.alloc_slice(&ctx.cache.poly_param_names))
 }
 
-#[must_use]
 pub fn type_resolve<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     ast_ty: ast::Type<'ast>,
-    delayed: bool,
+    in_definition: bool,
 ) -> hir::Type<'hir> {
-    //@delayed means something like "type definition in global scope", rename?
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
-        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, delayed),
+        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, in_definition),
         ast::TypeKind::Reference(mutt, ref_ty) => {
-            let ref_ty = type_resolve(ctx, *ref_ty, delayed);
+            let ref_ty = type_resolve(ctx, *ref_ty, in_definition);
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -317,7 +307,7 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::MultiReference(mutt, ref_ty) => {
-            let ref_ty = type_resolve(ctx, *ref_ty, delayed);
+            let ref_ty = type_resolve(ctx, *ref_ty, in_definition);
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -325,21 +315,20 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::Procedure(proc_ty) => {
-            let mut param_types = Vec::with_capacity(proc_ty.param_types.len());
+            let offset = ctx.cache.types.start();
             for param_ty in proc_ty.param_types {
-                let ty = type_resolve(ctx, *param_ty, delayed);
-                param_types.push(ty);
+                let ty = type_resolve(ctx, *param_ty, in_definition);
+                ctx.cache.types.push(ty);
             }
-            let param_types = ctx.arena.alloc_slice(&param_types);
-            let is_variadic = proc_ty.is_variadic;
-            let return_ty = type_resolve(ctx, proc_ty.return_ty, delayed);
+            let param_types = ctx.cache.types.take(offset, &mut ctx.arena);
+            let variadic = proc_ty.variadic;
+            let return_ty = type_resolve(ctx, proc_ty.return_ty, in_definition);
 
-            let proc_ty = hir::ProcType { param_types, is_variadic, return_ty };
+            let proc_ty = hir::ProcType { param_types, variadic, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {
-            let elem_ty = type_resolve(ctx, slice.elem_ty, delayed);
-
+            let elem_ty = type_resolve(ctx, slice.elem_ty, in_definition);
             if elem_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -349,9 +338,9 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let elem_ty = type_resolve(ctx, array.elem_ty, delayed);
+            let elem_ty = type_resolve(ctx, array.elem_ty, in_definition);
 
-            let len = if delayed {
+            let len = if in_definition {
                 let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {

@@ -146,7 +146,7 @@ pub fn path_resolve_type<'hir, 'ast>(
         Err(()) => return hir::Type::Error,
     };
     if let PathResolvedKind::Symbol(symbol_id) = path.kind {
-        set_symbol_usage_flag(ctx, symbol_id);
+        set_symbol_used_flag(ctx, symbol_id);
     }
 
     let ty = match path.kind {
@@ -179,7 +179,7 @@ pub fn path_resolve_type<'hir, 'ast>(
                 let src = ctx.src(path.at_segment.name.range);
                 let defined_src = symbol_id.src(&ctx.registry);
                 let name = ctx.name(path.at_segment.name.id);
-                #[rustfmt::skip] //@set line len to like 120, to stop wrapping
+                #[rustfmt::skip]
                 err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", symbol_id.desc());
                 return hir::Type::Error;
             }
@@ -215,7 +215,7 @@ pub fn path_resolve_type<'hir, 'ast>(
 fn resolve_type_poly_args<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     segment: ast::PathSegment<'ast>,
-    poly_params: Option<&hir::PolymorphParams>,
+    poly_params: Option<&'hir [ast::Name]>,
     require_poly: bool,
     item_name: ast::Name,
     item_kind: &'static str,
@@ -233,17 +233,16 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 let src = ctx.src(segment.name.range);
                 let name = ctx.name(item_name.id);
                 err::path_type_missing_poly_args(&mut ctx.emit, src, name, item_kind);
-                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.len())
             } else {
                 //@use Type::Infer when its supported
-                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.names.len())
+                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.len())
             }
         }
         (Some(poly_params), Some(poly_args)) => {
-            let mut poly_types = Vec::with_capacity(poly_params.names.len());
-
+            let mut poly_types = Vec::with_capacity(poly_params.len());
             let input_count = poly_args.types.len();
-            let expected_count = poly_params.names.len();
+            let expected_count = poly_params.len();
 
             if input_count != expected_count {
                 let src = ctx.src(poly_args_range(poly_args));
@@ -255,7 +254,7 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 );
             }
 
-            for idx in 0..poly_params.names.len() {
+            for idx in 0..poly_params.len() {
                 let ty = if let Some(arg_type) = poly_args.types.get(idx) {
                     super::pass_3::type_resolve(ctx, *arg_type, require_poly)
                 } else {
@@ -284,7 +283,7 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
         Err(()) => return None,
     };
     if let PathResolvedKind::Symbol(symbol_id) = path.kind {
-        set_symbol_usage_flag(ctx, symbol_id);
+        set_symbol_used_flag(ctx, symbol_id);
     }
 
     let struct_id = match path.kind {
@@ -304,7 +303,6 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
             let src = ctx.src(path.at_segment.name.range);
             let defined_src = ctx.scope.var_src(var_id);
             let name = ctx.name(path.at_segment.name.id);
-            #[rustfmt::skip]
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", var_id.desc());
             return None;
         }
@@ -319,14 +317,8 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
             let src = ctx.src(path.at_segment.name.range);
             let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
             let name = ctx.name(path.at_segment.name.id);
-            err::path_not_expected(
-                &mut ctx.emit,
-                src,
-                defined_src,
-                name,
-                "struct",
-                "type parameter",
-            );
+            #[rustfmt::skip]
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "type parameter");
             return None;
         }
     };
@@ -346,7 +338,7 @@ pub fn path_resolve_value<'ast>(
         Err(()) => return ValueID::None,
     };
     if let PathResolvedKind::Symbol(symbol_id) = path.kind {
-        set_symbol_usage_flag(ctx, symbol_id);
+        set_symbol_used_flag(ctx, symbol_id);
     }
 
     match path.kind {
@@ -408,14 +400,8 @@ pub fn path_resolve_value<'ast>(
             let src = ctx.src(path.at_segment.name.range);
             let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
             let name = ctx.name(path.at_segment.name.id);
-            err::path_not_expected(
-                &mut ctx.emit,
-                src,
-                defined_src,
-                name,
-                "value",
-                "type parameter",
-            );
+            #[rustfmt::skip]
+            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "type parameter");
             ValueID::None
         }
     }
@@ -424,7 +410,7 @@ pub fn path_resolve_value<'ast>(
 // `was_used` are set regardless of path resolve being valid.
 // finding a symbol acts like a `usage` even in invalid context.
 #[rustfmt::skip]
-pub fn set_symbol_usage_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
+pub fn set_symbol_used_flag(ctx: &mut HirCtx, symbol_id: SymbolID) {
     match symbol_id {
         SymbolID::Proc(id) => ctx.registry.proc_data_mut(id).flag_set.set(hir::ProcFlag::WasUsed),
         SymbolID::Enum(id) => ctx.registry.enum_data_mut(id).flag_set.set(hir::EnumFlag::WasUsed),

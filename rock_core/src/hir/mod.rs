@@ -22,7 +22,7 @@ pub struct ProcData<'hir> {
     pub flag_set: BitSet<ProcFlag>,
     pub vis: Vis,
     pub name: ast::Name,
-    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
+    pub poly_params: Option<&'hir [ast::Name]>,
     pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
@@ -44,7 +44,7 @@ pub struct EnumData<'hir> {
     pub flag_set: BitSet<EnumFlag>,
     pub vis: Vis,
     pub name: ast::Name,
-    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
+    pub poly_params: Option<&'hir [ast::Name]>,
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), BasicInt>,
     pub layout: Eval<(), Layout>,
@@ -74,7 +74,7 @@ pub struct StructData<'hir> {
     pub flag_set: BitSet<StructFlag>,
     pub vis: Vis,
     pub name: ast::Name,
-    pub poly_params: Option<&'hir PolymorphParams<'hir>>,
+    pub poly_params: Option<&'hir [ast::Name]>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
 }
@@ -122,12 +122,7 @@ pub struct Layout {
     align: u64,
 }
 
-#[derive(Copy, Clone)]
-pub struct PolymorphParams<'hir> {
-    pub names: &'hir [ast::Name],
-    pub range: TextRange,
-}
-
+#[must_use]
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
@@ -153,7 +148,7 @@ pub enum PolymorphDefID {
 pub struct ProcType<'hir> {
     pub param_types: &'hir [Type<'hir>],
     pub return_ty: Type<'hir>,
-    pub is_variadic: bool,
+    pub variadic: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -830,15 +825,15 @@ impl<'hir> Type<'hir> {
     pub const VOID: Type<'static> = Type::Basic(ast::BasicType::Void);
     pub const NEVER: Type<'static> = Type::Basic(ast::BasicType::Never);
 
-    #[inline]
+    #[inline(always)]
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)
     }
-    #[inline]
+    #[inline(always)]
     pub fn is_void(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Void))
     }
-    #[inline]
+    #[inline(always)]
     pub fn is_never(&self) -> bool {
         matches!(self, Type::Basic(ast::BasicType::Never))
     }

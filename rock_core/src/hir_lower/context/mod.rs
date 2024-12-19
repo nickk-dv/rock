@@ -24,6 +24,7 @@ pub struct Cache<'hir> {
     pub proc_params: Vec<hir::Param<'hir>>,
     pub enum_variants: Vec<hir::Variant<'hir>>,
     pub struct_fields: Vec<hir::Field<'hir>>,
+    pub poly_param_names: Vec<ast::Name>,
     pub types: TempBuffer<hir::Type<'hir>>,
     pub stmts: TempBuffer<hir::Stmt<'hir>>,
     pub exprs: TempBuffer<&'hir hir::Expr<'hir>>,
@@ -40,6 +41,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             proc_params: Vec::with_capacity(32),
             enum_variants: Vec::with_capacity(256),
             struct_fields: Vec::with_capacity(32),
+            poly_param_names: Vec::with_capacity(32),
             types: TempBuffer::new(32),
             stmts: TempBuffer::new(64),
             exprs: TempBuffer::new(64),
@@ -75,7 +77,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             hir::PolymorphDefID::Enum(id) => self.registry.enum_data(id).poly_params.unwrap(),
             hir::PolymorphDefID::Struct(id) => self.registry.struct_data(id).poly_params.unwrap(),
         };
-        poly_params.names[poly_param_idx as usize]
+        poly_params[poly_param_idx as usize]
     }
 
     pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {

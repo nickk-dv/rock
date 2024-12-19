@@ -988,11 +988,11 @@ pub fn tycheck_unexpected_proc_arg_count(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     proc_src: Option<SourceRange>,
-    is_variadic: bool,
+    variadic: bool,
     input_count: usize,
     expected_count: usize,
 ) {
-    let at_least = if is_variadic { " at least" } else { "" };
+    let at_least = if variadic { " at least" } else { "" };
     let plural = if expected_count == 1 { "" } else { "s" };
     let msg = format!("expected{at_least} {expected_count} argument{plural}, found {input_count}");
     let info = proc_src.map(|src| Info::new_val("procedure defined here", src));

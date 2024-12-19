@@ -524,7 +524,7 @@ impl PolyScope {
             hir::PolymorphDefID::Enum(id) => registry.enum_data(id).poly_params,
             hir::PolymorphDefID::Struct(id) => registry.struct_data(id).poly_params,
         }?;
-        for (idx, param) in poly_params.names.iter().enumerate() {
+        for (idx, param) in poly_params.iter().enumerate() {
             if name_id == param.id {
                 return Some((poly_def, idx as u32));
             }

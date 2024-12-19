@@ -131,7 +131,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
-                && (proc_ty.is_variadic == proc_ty2.is_variadic)
+                && (proc_ty.variadic == proc_ty2.variadic)
                 && type_matches(ctx, proc_ty.return_ty, proc_ty2.return_ty)
                 && (0..proc_ty.param_types.len()).all(|idx| {
                     type_matches(ctx, proc_ty.param_types[idx], proc_ty2.param_types[idx])
@@ -239,7 +239,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                     format.push_str(", ");
                 }
             }
-            if proc_ty.is_variadic {
+            if proc_ty.variadic {
                 format.push_str(", ..")
             }
             format.push_str(") ");
@@ -1328,7 +1328,7 @@ fn typecheck_item<'hir, 'ast>(
                 }
                 let proc_ty = hir::ProcType {
                     param_types: ctx.cache.types.take(offset, &mut ctx.arena),
-                    is_variadic: data.flag_set.contains(hir::ProcFlag::Variadic),
+                    variadic: data.flag_set.contains(hir::ProcFlag::Variadic),
                     return_ty: data.return_ty,
                 };
 
@@ -2562,8 +2562,8 @@ fn check_call_indirect<'hir, 'ast>(
 
     let proc_src = None;
     let expected_count = proc_ty.param_types.len();
-    let is_variadic = proc_ty.is_variadic;
-    check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
+    let variadic = proc_ty.variadic;
+    check_call_arg_count(ctx, arg_list, proc_src, expected_count, variadic);
 
     let offset = ctx.cache.exprs.start();
     for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {
@@ -2589,11 +2589,11 @@ fn check_call_arg_count(
     arg_list: &ast::ArgumentList,
     proc_src: Option<SourceRange>,
     expected_count: usize,
-    is_variadic: bool,
+    variadic: bool,
 ) {
     let input_count = arg_list.exprs.len();
     let wrong_count =
-        if is_variadic { input_count < expected_count } else { input_count != expected_count };
+        if variadic { input_count < expected_count } else { input_count != expected_count };
 
     if wrong_count {
         let src = ctx.src(arg_list_range(arg_list));
@@ -2601,7 +2601,7 @@ fn check_call_arg_count(
             &mut ctx.emit,
             src,
             proc_src,
-            is_variadic,
+            variadic,
             input_count,
             expected_count,
         );

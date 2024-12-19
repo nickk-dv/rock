@@ -472,11 +472,11 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
             }
             let param_types = ctx.s.types.take(offset, &mut ctx.arena);
 
-            let is_variadic = param_list.t_dotdot(ctx.tree).is_some();
+            let variadic = param_list.t_dotdot(ctx.tree).is_some();
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
             let return_ty = ty(ctx, return_ty);
 
-            let proc_ty = ast::ProcType { param_types, is_variadic, return_ty };
+            let proc_ty = ast::ProcType { param_types, variadic, return_ty };
             ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {

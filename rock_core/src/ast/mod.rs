@@ -189,7 +189,7 @@ pub enum TypeKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct ProcType<'ast> {
     pub param_types: &'ast [Type<'ast>],
-    pub is_variadic: bool,
+    pub variadic: bool,
     pub return_ty: Type<'ast>,
 }
 
