@@ -25,7 +25,7 @@ pub fn lex<'src>(
     (lex.tokens, lex.errors)
 }
 
-pub struct Lexer<'src, 's> {
+struct Lexer<'src, 's> {
     cursor: usize,
     tokens: TokenList,
     errors: ErrorBuffer,
@@ -98,7 +98,6 @@ const SENTINEL: u8 = b'\0';
 fn source_file(lex: &mut Lexer) {
     loop {
         lex_whitespace(lex);
-
         let c = lex.peek();
         match c {
             SENTINEL => break,
@@ -122,15 +121,13 @@ fn source_file(lex: &mut Lexer) {
                     let c = lex.peek_utf8();
                     lex.bump_utf8(c);
                     let src = lex.make_src(start);
-                    err::lexer_unknown_symbol(&mut lex.errors, src, c);
+                    err::lexer_symbol_unknown(&mut lex.errors, src, c);
                 }
             }
         }
     }
-
-    let end_offset: TextOffset = (lex.cursor as u32).into();
-    lex.tokens.add_token(Token::Eof, end_offset);
-    lex.tokens.add_token(Token::Eof, end_offset);
+    lex.tokens.add_token(Token::Eof, lex.start_range());
+    lex.tokens.add_token(Token::Eof, lex.start_range());
 }
 
 fn lex_whitespace(lex: &mut Lexer) {
@@ -163,7 +160,6 @@ fn lex_whitespace(lex: &mut Lexer) {
                 Trivia::LineComment
             };
 
-            //@always do utf8 here?
             loop {
                 let c = lex.peek();
                 if c == b'\n' || c == b'\r' || c == SENTINEL {
@@ -199,6 +195,7 @@ fn lex_ident(lex: &mut Lexer) {
             break;
         }
     }
+
     let range = lex.make_range(start);
     let string = unsafe { lex.source.get_unchecked(range.as_usize()) };
     let token = gperf::lookup(string);
@@ -217,34 +214,26 @@ fn lex_symbol(lex: &mut Lexer, c: u8) {
     let mut token = unsafe { *token::TOKEN_BYTE_TO_SINGLE.get_unchecked(c as usize) };
     if token == Token::Eof {
         let src = lex.make_src(start);
-        err::lexer_unknown_symbol(&mut lex.errors, src, c as char);
+        err::lexer_symbol_unknown(&mut lex.errors, src, c as char);
         return;
     }
 
     let c = lex.peek();
-    if c != SENTINEL {
-        let double = Token::glue_double(c, token);
-        if token != double {
-            token = double;
-            lex.bump();
-        } else {
-            lex.tokens.add_token(token, start);
-            return;
-        }
+    let double = Token::glue_double(c, token);
+    if token != double {
+        token = double;
+        lex.bump();
     } else {
         lex.tokens.add_token(token, start);
         return;
     }
 
     let c = lex.peek();
-    if c != SENTINEL {
-        let triple = Token::glue_triple(c, token);
-        if token != triple {
-            token = triple;
-            lex.bump();
-        }
+    let triple = Token::glue_triple(c, token);
+    if token != triple {
+        token = triple;
+        lex.bump();
     }
-
     lex.tokens.add_token(token, start);
 }
 
@@ -260,7 +249,7 @@ fn lex_char(lex: &mut Lexer) {
     }
 
     let mut inner_tick = false;
-    let char: char = match fc {
+    let char = match fc {
         b'\\' => lex_escape(lex, false),
         b'\'' => {
             inner_tick = true;
@@ -280,32 +269,19 @@ fn lex_char(lex: &mut Lexer) {
             fc
         }
     };
+    let terminated = lex.eat(b'\'');
 
-    let terminated = lex.at(b'\'');
-    if terminated {
-        lex.bump();
-    }
-
-    match (inner_tick, terminated) {
-        (true, false) => {
-            // example: ''
+    if inner_tick {
+        if !terminated {
             let src = lex.make_src(start);
             err::lexer_char_empty(&mut lex.errors, src);
-        }
-        (true, true) => {
-            // example: '''
+        } else {
             let src = lex.make_src(start);
             err::lexer_char_quote_not_escaped(&mut lex.errors, src);
         }
-        (false, false) => {
-            // example: 'x, '\n
-            let src = lex.make_src(start);
-            err::lexer_char_not_terminated(&mut lex.errors, src);
-        }
-        (false, true) => {
-            // example: 'x', '\n'
-            // correctly terminated without inner tick
-        }
+    } else if !terminated {
+        let src = lex.make_src(start);
+        err::lexer_char_not_terminated(&mut lex.errors, src);
     }
 
     let range = lex.make_range(start);
@@ -382,7 +358,7 @@ fn lex_string_raw(lex: &mut Lexer, c_string: bool) {
 
     if !terminated {
         let src = lex.make_src(start);
-        err::lexer_raw_string_not_terminated(&mut lex.errors, src);
+        err::lexer_string_raw_not_terminated(&mut lex.errors, src);
     }
 }
 
@@ -515,9 +491,8 @@ fn lex_number(lex: &mut Lexer, fc: u8) {
 fn lex_float(lex: &mut Lexer, start: TextOffset) {
     lex.eat(b'.');
     lex.buffer.push('.');
-
     skip_num_digits(lex);
-    let mut float_error = false;
+    let mut error = false;
 
     if lex.eat(b'e') {
         lex.buffer.push('e');
@@ -531,13 +506,13 @@ fn lex_float(lex: &mut Lexer, start: TextOffset) {
         if lex.peek().is_ascii_digit() {
             skip_num_digits(lex);
         } else {
-            float_error = true;
+            error = true;
             let src = lex.make_src(start);
             err::lexer_float_exp_missing_digits(&mut lex.errors, src);
         }
     }
 
-    if float_error {
+    if error {
         lex.tokens.add_float(0.0, lex.make_range(start));
     } else if let Ok(float) = lex.buffer.parse::<f64>() {
         lex.tokens.add_float(float, lex.make_range(start));
@@ -670,9 +645,9 @@ fn skip_num_digits(lex: &mut Lexer) {
     }
 }
 
-/// generated using `gperf-3.0.1`.  
-/// command: `./gperf keywords.txt -G -7 > gperf.h`.  
-/// some checks removed based on known preconditions.
+/// generated using `gperf-3.0.1`  
+/// command: `./gperf keywords.txt -G -7 > gperf.h`  
+/// some checks removed based on known preconditions
 mod gperf {
     use crate::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
@@ -684,9 +659,9 @@ mod gperf {
         if len <= MAX_WORD_LENGTH {
             let key = hash(string);
             if key <= MAX_HASH_VALUE {
-                let word = KEYWORD_TABLE[key];
-                if string == word.as_str() {
-                    return word;
+                let keyword = KEYWORD_TABLE[key];
+                if string == keyword.as_str() {
+                    return keyword;
                 }
             }
         }

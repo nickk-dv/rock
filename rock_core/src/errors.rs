@@ -98,16 +98,8 @@ pub fn session_pkg_dep_cycle(relation: String, manifest_path: &PathBuf) -> Error
 
 //==================== LEXER ====================
 
-pub fn lexer_unknown_symbol(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
-    let non_acsii = if !c.is_ascii() { "\nonly ascii symbols are supported" } else { "" };
-    let msg = format!("unknown symbol token {c:?}{non_acsii}");
-    emit.error(Error::new(msg, src, None));
-}
-
-//==================== LEXER.CHAR ====================
-
-pub fn lexer_char_incomplete(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "character literal is incomplete";
+pub fn lexer_symbol_unknown(emit: &mut impl ErrorSink, src: SourceRange, c: char) {
+    let msg = format!("unknown symbol token {c:?}");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -116,13 +108,8 @@ pub fn lexer_char_empty(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_char_tab_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "character literal `tab` must be escaped: `\\t`";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn lexer_char_quote_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "character literal `'` must be escaped: `\\'`";
+pub fn lexer_char_incomplete(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal is incomplete";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -131,19 +118,25 @@ pub fn lexer_char_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-//==================== LEXER.STRING ====================
+pub fn lexer_char_quote_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal `'` must be escaped: `\\'`";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn lexer_char_tab_not_escaped(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "character literal `tab` must be escaped: `\\t`";
+    emit.error(Error::new(msg, src, None));
+}
 
 pub fn lexer_string_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "string literal not terminated, missing closing \"";
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_raw_string_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
+pub fn lexer_string_raw_not_terminated(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "raw string literal not terminated, missing closing `";
     emit.error(Error::new(msg, src, None));
 }
-
-//==================== LEXER.ESCAPE ====================
 
 pub fn lexer_escape_sequence_incomplete(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "escape sequence is incomplete\nif you meant to use `\\`, escape it: `\\\\`";
@@ -181,8 +174,6 @@ pub fn lexer_expect_close_bracket(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-//==================== LEXER.NUMBER ====================
-
 pub fn lexer_int_base_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "missing digits after integer base prefix";
     emit.error(Error::new(msg, src, None));
@@ -212,13 +203,13 @@ pub fn lexer_int_dec_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_float_parse_failed(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "failed to parse float literal";
+pub fn lexer_float_exp_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "missing digits after float exponent";
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_float_exp_missing_digits(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "missing digits after float exponent";
+pub fn lexer_float_parse_failed(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "failed to parse float literal";
     emit.error(Error::new(msg, src, None));
 }
 
