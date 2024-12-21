@@ -1,4 +1,5 @@
 use super::context::{Codegen, Expect};
+use super::emit_mod;
 use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
@@ -741,7 +742,7 @@ fn codegen_variant<'c>(
     }
 }
 
-//@set correct calling conv
+//@set correct calling conv for the call itself?
 fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
@@ -750,8 +751,18 @@ fn codegen_call_direct<'c>(
     expr_range: TextRange,
 ) -> Option<llvm::Value> {
     let offset = cg.cache.values.start();
-    for &expr in input {
-        let value = codegen_expr_value(cg, expr);
+    for (idx, expr) in input.iter().copied().enumerate() {
+        let proc_data = cg.hir.proc_data(proc_id);
+        let param = proc_data.param(hir::ParamID::new(idx));
+
+        //@copy pasta from fn_val generation
+        let is_external = proc_data.flag_set.contains(hir::ProcFlag::External)
+            && !proc_data.flag_set.contains(hir::ProcFlag::Builtin);
+        let value = if is_external && emit_mod::win64_abi_pass_by_pointer(cg, param.ty) {
+            codegen_expr_pointer(cg, expr).as_val()
+        } else {
+            codegen_expr_value(cg, expr)
+        };
         cg.cache.values.push(value);
     }
 
@@ -794,6 +805,7 @@ fn codegen_call_direct<'c>(
     }
 }
 
+//@handle ABI for indirect calls aswell
 //@set correct calling conv,
 // add calling conv to proc pointer type?
 // need to support #ccall directive specifically for proc pointer type

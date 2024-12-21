@@ -182,19 +182,24 @@ fn codegen_function_values(cg: &mut Codegen) {
     let mut param_types = Vec::with_capacity(64);
 
     for data in cg.hir.procs.iter() {
-        param_types.clear();
-        for param in data.params {
-            param_types.push(cg.ty(param.ty));
-        }
-        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
-            param_types.push(cg.location_ty.as_ty());
-        }
-
         //builtin takes precedence over external flag
         let is_external = data.flag_set.contains(hir::ProcFlag::External)
             && !data.flag_set.contains(hir::ProcFlag::Builtin);
         let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
         let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
+
+        param_types.clear();
+        for param in data.params {
+            let ty = if is_external && win64_abi_pass_by_pointer(cg, param.ty) {
+                cg.ptr_type()
+            } else {
+                cg.ty(param.ty)
+            };
+            param_types.push(ty);
+        }
+        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
+            param_types.push(cg.location_ty.as_ty());
+        }
 
         let name = if is_external || is_entry {
             cg.session.intern_name.get(data.name.id)
@@ -350,4 +355,16 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             cg.build.ret(Some(slice_val));
         }
     }
+}
+
+//@hack: trying to fix abi (also handle arrays!)
+pub fn win64_abi_pass_by_pointer(cg: &Codegen, ty: hir::Type) -> bool {
+    if let hir::Type::Struct(id, poly) = ty {
+        let data = cg.hir.struct_data(id);
+        let size = data.layout.resolved_unwrap().size();
+        if size != 1 && size != 2 && size != 4 && size != 8 {
+            return true;
+        }
+    }
+    false
 }
