@@ -486,6 +486,8 @@ crate::enum_as_str! {
         Rawptr "rawptr",
         Void "void",
         Never "never",
+        String "string",
+        CString "cstring",
     }
 }
 

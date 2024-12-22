@@ -651,7 +651,7 @@ fn skip_num_digits(lex: &mut Lexer) {
 mod gperf {
     use crate::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
-    const MAX_HASH_VALUE: usize = 58;
+    const MAX_HASH_VALUE: usize = 68;
 
     #[inline(always)]
     pub fn lookup(string: &str) -> Token {
@@ -670,32 +670,30 @@ mod gperf {
 
     #[inline(always)]
     fn hash(string: &str) -> usize {
-        let mut hval = string.len();
-        if hval != 1 {
-            hval += ASSOC_TABLE[string.as_bytes()[1] as usize] as usize;
-        }
-        hval += ASSOC_TABLE[string.as_bytes()[0] as usize] as usize;
-        hval
+        let len = string.len();
+        len + ASSOC_TABLE[string.as_bytes()[len - 1] as usize] as usize
+            + ASSOC_TABLE[string.as_bytes()[0] as usize] as usize
     }
 
     #[rustfmt::skip]
-    const KEYWORD_TABLE: [Token; 59] = [
-        T![ident], T![_], T![in], T![mut], T![null], T![match], T![import], T![as],
-        T![u64], T![undefined], T![usize], T![sizeof], T![ident], T![s64], T![void], T![ssize],
-        T![rawptr], T![if], T![for], T![bool], T![false], T![global], T![u8], T![f64],
-        T![enum], T![never], T![struct], T![s8], T![u32], T![true], T![break], T![zeroed],
-        T![ident], T![s32], T![proc], T![defer], T![return], T![ident], T![let], T![else],
-        T![ident], T![ident], T![ident], T![f32], T![char], T![const], T![ident], T![ident],
-        T![continue], T![ident], T![ident], T![ident], T![ident], T![u16], T![ident], T![ident],
-        T![ident], T![ident], T![s16],
+    const KEYWORD_TABLE: [Token; 69] = [
+        T![ident], T![_], T![as], T![s64], T![ident], T![ident], T![struct], T![s8],
+        T![f64], T![true], T![ssize], T![sizeof], T![ident], T![for], T![else], T![false],
+        T![rawptr], T![ident], T![let], T![proc], T![const], T![import], T![if], T![u64],
+        T![char], T![never], T![return], T![u8], T![continue], T![void], T![usize], T![string],
+        T![in], T![s32], T![null], T![defer], T![zeroed], T![ident], T![f32], T![bool],
+        T![break], T![ident], T![ident], T![mut], T![ident], T![match], T![global], T![cstring],
+        T![s16], T![enum], T![ident], T![ident], T![ident], T![u32], T![undefined], T![ident],
+        T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident],
+        T![ident], T![ident], T![ident], T![ident], T![u16],
     ];
 
     const ASSOC_TABLE: [u8; 128] = [
-        59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-        59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-        59, 59, 59, 50, 59, 25, 59, 59, 5, 59, 20, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-        59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59, 59,
-        59, 59, 59, 0, 59, 0, 15, 40, 10, 20, 15, 0, 0, 0, 59, 59, 15, 0, 0, 0, 20, 59, 10, 5, 15,
-        0, 10, 59, 59, 59, 5, 59, 59, 59, 59, 59,
+        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
+        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
+        69, 69, 69, 69, 30, 69, 0, 69, 45, 69, 5, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
+        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
+        69, 69, 69, 0, 69, 0, 20, 15, 25, 5, 5, 25, 0, 15, 69, 15, 15, 40, 15, 69, 0, 69, 5, 0, 0,
+        20, 0, 69, 69, 69, 5, 69, 69, 69, 69, 69,
     ];
 }

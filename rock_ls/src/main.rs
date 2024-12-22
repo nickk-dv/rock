@@ -950,7 +950,7 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
         T![u8] | T![u16] | T![u32] | T![u64] | T![usize] | 
         T![f32] | T![f64] | T![bool] | T![char] |
-        T![rawptr] | T![void] | T![never] => SemanticToken::Type,
+        T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
 
         T![.] | T![,] | T![:] | T![;] | T![#] |
         T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,

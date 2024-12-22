@@ -479,15 +479,12 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Char))
         }
         ast::Lit::String(val) => {
-            const REF_U8: hir::Type =
-                hir::Type::Reference(ast::Mut::Immutable, &hir::Type::Basic(BasicType::U8));
-            const SLICE_U8: hir::Type = hir::Type::ArraySlice(&hir::ArraySlice {
-                mutt: ast::Mut::Immutable,
-                elem_ty: hir::Type::Basic(BasicType::U8),
-            });
-
             let value = hir::ConstValue::String { val };
-            let string_ty = if val.c_string { REF_U8 } else { SLICE_U8 };
+            let string_ty = if val.c_string {
+                hir::Type::Basic(BasicType::CString)
+            } else {
+                hir::Type::Basic(BasicType::String)
+            };
             (value, string_ty)
         }
     };
@@ -1085,6 +1082,8 @@ enum BasicTypeKind {
     Rawptr,
     Void,
     Never,
+    String,
+    Cstring,
 }
 
 impl BasicTypeKind {
@@ -1102,6 +1101,8 @@ impl BasicTypeKind {
             BasicType::Rawptr => BasicTypeKind::Rawptr,
             BasicType::Void => BasicTypeKind::Void,
             BasicType::Never => BasicTypeKind::Never,
+            BasicType::String => BasicTypeKind::String,
+            BasicType::CString => BasicTypeKind::Cstring,
         }
     }
 }
@@ -1223,6 +1224,8 @@ fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir:
             _ => CastKind::Error,
         },
         BasicTypeKind::Never => CastKind::Error,
+        BasicTypeKind::String => CastKind::Error,
+        BasicTypeKind::Cstring => CastKind::Error,
     }
 }
 
