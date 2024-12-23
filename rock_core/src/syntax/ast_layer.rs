@@ -7,7 +7,8 @@ use std::marker::PhantomData;
 
 pub trait AstNode<'syn> {
     fn cast(node: &'syn Node<'syn>) -> Option<Self>
-    where Self: Sized;
+    where
+        Self: Sized;
     fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange;
 }
 
@@ -293,7 +294,9 @@ macro_rules! ast_node_impl {
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
             fn cast(node: &'syn Node<'syn>) -> Option<Self>
-            where Self: Sized {
+            where
+                Self: Sized,
+            {
                 if matches!(node.kind, $kind_pat) {
                     Some($name(node))
                 } else {
@@ -434,6 +437,7 @@ ast_node_impl!(StmtContinue, SyntaxKind::STMT_CONTINUE);
 ast_node_impl!(StmtReturn, SyntaxKind::STMT_RETURN);
 ast_node_impl!(StmtDefer, SyntaxKind::STMT_DEFER);
 ast_node_impl!(StmtFor, SyntaxKind::STMT_FOR);
+ast_node_impl!(ForBind, SyntaxKind::FOR_BIND);
 ast_node_impl!(ForHeaderCond, SyntaxKind::FOR_HEADER_COND);
 ast_node_impl!(ForHeaderElem, SyntaxKind::FOR_HEADER_ELEM);
 ast_node_impl!(ForHeaderPat, SyntaxKind::FOR_HEADER_PAT);
@@ -1025,6 +1029,11 @@ impl<'syn> StmtFor<'syn> {
     node_find!(block, Block);
 }
 
+impl<'syn> ForBind<'syn> {
+    node_find!(name, Name);
+    token_find!(t_discard, T![_]);
+}
+
 impl<'syn> ForHeaderCond<'syn> {
     node_find!(expr, Expr);
 }
@@ -1032,8 +1041,8 @@ impl<'syn> ForHeaderCond<'syn> {
 impl<'syn> ForHeaderElem<'syn> {
     token_find!(t_ampersand, T![&]);
     token_find!(t_mut, T![mut]);
-    node_before_token!(value, Name, T![,]);
-    node_after_token!(index, Name, T![,]);
+    node_before_token!(value, ForBind, T![,]);
+    node_after_token!(index, ForBind, T![,]);
     token_find!(t_rev, T![<<]);
     node_find!(expr, Expr);
 }

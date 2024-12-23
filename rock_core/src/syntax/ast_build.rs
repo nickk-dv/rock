@@ -561,8 +561,9 @@ fn stmt_for<'ast>(
         } else {
             None
         };
-        let value = name(ctx, header.value(ctx.tree).unwrap());
-        let index = header.index(ctx.tree).map(|n| name(ctx, n));
+        let value = for_bind(ctx, header.value(ctx.tree).unwrap());
+        let index =
+            if let Some(bind) = header.index(ctx.tree) { for_bind(ctx, bind) } else { None };
         let reverse = header.t_rev(ctx.tree).is_some();
         let expr = expr(ctx, header.expr(ctx.tree).unwrap());
 
@@ -581,6 +582,10 @@ fn stmt_for<'ast>(
     let block = block(ctx, for_.block(ctx.tree).unwrap());
     let for_ = ast::For { header, block };
     ctx.arena.alloc(for_)
+}
+
+fn for_bind(ctx: &mut AstBuild, bind: cst::ForBind) -> Option<ast::Name> {
+    bind.name(ctx.tree).map(|n| name(ctx, n))
 }
 
 fn stmt_local<'ast>(

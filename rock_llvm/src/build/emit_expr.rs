@@ -753,6 +753,12 @@ fn codegen_call_direct<'c>(
     let offset = cg.cache.values.start();
     for (idx, expr) in input.iter().copied().enumerate() {
         let proc_data = cg.hir.proc_data(proc_id);
+        //@hack for variadics
+        if proc_data.params.len() >= idx {
+            let value = codegen_expr_value(cg, expr);
+            cg.cache.values.push(value);
+            continue;
+        }
         let param = proc_data.param(hir::ParamID::new(idx));
 
         //@copy pasta from fn_val generation

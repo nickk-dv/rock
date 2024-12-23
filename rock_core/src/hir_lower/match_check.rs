@@ -10,22 +10,20 @@ use std::collections::HashSet;
 pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
-        hir::Type::InferDef(_, _) => Err(true),
         hir::Type::Basic(basic) => {
             if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
                 Ok(hir::MatchKind::Int { int_ty })
-            } else if basic == BasicType::Bool {
-                Ok(hir::MatchKind::Bool)
-            } else if basic == BasicType::Char {
-                Ok(hir::MatchKind::Char)
             } else {
-                Err(true)
+                match basic {
+                    BasicType::Bool => Ok(hir::MatchKind::Bool),
+                    BasicType::Char => Ok(hir::MatchKind::Char),
+                    BasicType::String => Ok(hir::MatchKind::String),
+                    _ => Err(true),
+                }
             }
         }
         //@gen types not handled
         hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum { enum_id, ref_mut: None }),
-        //@gen types not handled
-        hir::Type::Struct(_, _) => Err(true),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
             //@gen types not handled
             hir::Type::Enum(enum_id, _) => {
@@ -33,16 +31,7 @@ pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
             }
             _ => Err(true),
         },
-        hir::Type::MultiReference(_, _) => Err(true),
-        hir::Type::Procedure(_) => Err(true),
-        hir::Type::ArraySlice(slice) => {
-            if matches!(slice.elem_ty, hir::Type::Basic(BasicType::U8)) {
-                Ok(hir::MatchKind::String)
-            } else {
-                Err(true)
-            }
-        }
-        hir::Type::ArrayStatic(_) => Err(true),
+        _ => Err(true),
     }
 }
 

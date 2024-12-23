@@ -250,7 +250,7 @@ pub enum ForHeader<'ast> {
 #[derive(Copy, Clone)]
 pub struct ForHeaderElem<'ast> {
     pub ref_mut: Option<Mut>,
-    pub value: Name,
+    pub value: Option<Name>,
     pub index: Option<Name>,
     pub reverse: bool,
     pub expr: &'ast Expr<'ast>,

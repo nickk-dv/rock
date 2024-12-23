@@ -45,6 +45,7 @@ pub enum SyntaxKind {
     STMT_RETURN,
     STMT_DEFER,
     STMT_FOR,
+    FOR_BIND,
     FOR_HEADER_COND,
     FOR_HEADER_ELEM,
     FOR_HEADER_PAT,

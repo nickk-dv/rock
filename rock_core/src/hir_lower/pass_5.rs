@@ -2191,8 +2191,17 @@ fn typecheck_for<'hir, 'ast>(
             } else {
                 collection.elem_ty
             };
-            let value_bind =
-                hir::ForBind { mutt: ast::Mut::Immutable, name: header.value, ty: value_ty };
+            //@TODO: have unused checks apply to these bindings aswell (after var unification is done)
+            //@FIX: remove special variable binding kinds
+            // handle `_` differently? store `_` as names
+            // handle them where they can occur?
+            let value_bind = hir::ForBind {
+                mutt: ast::Mut::Immutable,
+                name: header
+                    .value
+                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                ty: value_ty,
+            };
             let index_bind = hir::ForBind {
                 mutt: ast::Mut::Immutable,
                 name: header
@@ -2200,9 +2209,8 @@ fn typecheck_for<'hir, 'ast>(
                     .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
                 ty: hir::Type::USIZE,
             };
-
             ctx.scope.local.start_block(BlockStatus::None);
-            let value_id = ctx.scope.local.add_for_bind(value_bind, true);
+            let value_id = ctx.scope.local.add_for_bind(value_bind, header.value.is_some());
             let index_id = ctx.scope.local.add_for_bind(index_bind, header.index.is_some());
 
             let for_elem = hir::ForElem {

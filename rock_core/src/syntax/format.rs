@@ -1152,11 +1152,11 @@ fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
                 fmt.space();
             }
         }
-        name(fmt, header.value(fmt.tree).unwrap());
-        if let Some(name_cst) = header.index(fmt.tree) {
+        for_bind(fmt, header.value(fmt.tree).unwrap());
+        if let Some(bind) = header.index(fmt.tree) {
             fmt.write(',');
             fmt.space();
-            name(fmt, name_cst)
+            for_bind(fmt, bind);
         }
         fmt.space();
         fmt.write_str("in");
@@ -1179,6 +1179,14 @@ fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
 
     fmt.space();
     block(fmt, stmt.block(fmt.tree).unwrap(), false);
+}
+
+fn for_bind(fmt: &mut Formatter, bind: cst::ForBind) {
+    if let Some(name_cst) = bind.name(fmt.tree) {
+        name(fmt, name_cst);
+    } else {
+        fmt.write('_');
+    }
 }
 
 fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {

@@ -614,21 +614,21 @@ fn stmt_for(p: &mut Parser) {
             let mh = p.start();
             p.bump(T![&]);
             p.eat(T![mut]);
-            name(p);
+            for_bind(p);
             if p.eat(T![,]) {
-                name(p);
+                for_bind(p);
             }
             p.expect(T![in]);
             p.eat(T![<<]);
             expr(p);
             mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
         }
-        T![ident] => {
+        T![ident] | T![_] => {
             if p.at_next(T![,]) || p.at_next(T![in]) {
                 let mh = p.start();
-                name(p);
+                for_bind(p);
                 if p.eat(T![,]) {
-                    name(p);
+                    for_bind(p);
                 }
                 p.expect(T![in]);
                 p.eat(T![<<]);
@@ -657,6 +657,16 @@ fn stmt_for(p: &mut Parser) {
 
     block_expect(p);
     m.complete(p, SyntaxKind::STMT_FOR);
+}
+
+fn for_bind(p: &mut Parser) {
+    let m = p.start();
+    if p.at(T![ident]) {
+        name(p);
+    } else if !p.eat(T![_]) {
+        p.error("expected name or `_`");
+    }
+    m.complete(p, SyntaxKind::FOR_BIND);
 }
 
 fn stmt_local(p: &mut Parser) {
@@ -1135,7 +1145,7 @@ fn bind(p: &mut Parser) {
     if p.eat(T![mut]) || p.at(T![ident]) {
         name(p);
     } else if !p.eat(T![_]) {
-        p.error("expected `identifier` or `_`");
+        p.error("expected name or `_`");
     }
     m.complete(p, SyntaxKind::BIND);
 }
