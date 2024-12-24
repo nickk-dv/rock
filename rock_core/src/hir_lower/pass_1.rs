@@ -59,9 +59,7 @@ fn add_proc_item<'ast>(
         params: &[],
         return_ty: hir::Type::Error,
         block: None,
-        locals: &[],
-        local_binds: &[],
-        for_binds: &[],
+        variables: &[],
     };
 
     let proc_id = ctx.registry.add_proc(item, data);

@@ -26,9 +26,7 @@ pub struct ProcData<'hir> {
     pub params: &'hir [Param<'hir>],
     pub return_ty: Type<'hir>,
     pub block: Option<Block<'hir>>,
-    pub locals: &'hir [Local<'hir>],
-    pub local_binds: &'hir [LocalBind<'hir>],
-    pub for_binds: &'hir [ForBind<'hir>],
+    pub variables: &'hir [Variable<'hir>],
 }
 
 #[derive(Copy, Clone)]
@@ -37,6 +35,14 @@ pub struct Param<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub ty_range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct Variable<'hir> {
+    pub mutt: ast::Mut,
+    pub name: ast::Name,
+    pub ty: Type<'hir>,
+    pub was_used: bool,
 }
 
 pub struct EnumData<'hir> {
@@ -181,7 +187,7 @@ pub enum Stmt<'hir> {
     Return(Option<&'hir Expr<'hir>>),
     Defer(&'hir Block<'hir>),
     For(&'hir For<'hir>),
-    Local(LocalID),
+    Local(&'hir Local<'hir>),
     Discard(Option<&'hir Expr<'hir>>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
@@ -204,8 +210,8 @@ pub enum ForKind<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ForElem<'hir> {
-    pub value_id: ForBindID,
-    pub index_id: ForBindID,
+    pub value_id: VariableID,
+    pub index_id: VariableID,
     pub deref: bool,
     pub by_pointer: bool,
     pub reverse: bool,
@@ -226,21 +232,10 @@ pub struct ForPat<'hir> {
     pub expr: &'hir Expr<'hir>,
 }
 
-crate::define_id!(pub ForBindID);
-#[derive(Copy, Clone)]
-pub struct ForBind<'hir> {
-    pub mutt: ast::Mut,
-    pub name: ast::Name,
-    pub ty: Type<'hir>,
-}
-
 #[derive(Copy, Clone)]
 pub struct Local<'hir> {
-    pub mutt: ast::Mut,
-    pub name: ast::Name,
-    pub ty: Type<'hir>,
+    pub var_id: VariableID,
     pub init: LocalInit<'hir>,
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -277,11 +272,9 @@ pub enum ExprKind<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    CallerLocation { struct_id: StructID },
+    CallerLocation { struct_id: StructID }, //@why is it an expr_kind?
     ParamVar     { param_id: ParamID },
-    LocalVar     { local_id: LocalID },
-    LocalBind    { local_bind_id: LocalBindID },
-    ForBind      { for_bind_id: ForBindID },
+    Variable     { var_id: VariableID },
     ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
@@ -377,7 +370,7 @@ pub enum Pat<'hir> {
     Wild,
     Lit(ConstValue<'hir>),
     Const(ConstID),
-    Variant(EnumID, VariantID, &'hir [LocalBindID]),
+    Variant(EnumID, VariantID, &'hir [VariableID]),
     Or(&'hir [Pat<'hir>]),
 }
 
@@ -458,15 +451,6 @@ pub enum CastKind {
     Float_Extend,
     Bool_to_Int,
     Char_to_U32,
-}
-
-#[derive(Copy, Clone)]
-pub struct LocalBind<'hir> {
-    pub mutt: ast::Mut,
-    pub name: ast::Name,
-    pub ty: Type<'hir>,
-    pub field_id: Option<VariantFieldID>,
-    pub was_used: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -586,8 +570,7 @@ crate::define_id!(pub GlobalID);
 crate::define_id!(pub ImportID);
 
 crate::define_id!(pub ParamID);
-crate::define_id!(pub LocalID);
-crate::define_id!(pub LocalBindID);
+crate::define_id!(pub VariableID);
 crate::define_id!(pub VariantID);
 crate::define_id!(pub VariantFieldID);
 crate::define_id!(pub FieldID);
@@ -742,14 +725,8 @@ impl<'hir> ProcData<'hir> {
     pub fn param(&self, id: ParamID) -> &'hir Param<'hir> {
         &self.params[id.index()]
     }
-    pub fn local(&self, id: LocalID) -> &'hir Local<'hir> {
-        &self.locals[id.index()]
-    }
-    pub fn local_bind(&self, id: LocalBindID) -> &'hir LocalBind<'hir> {
-        &self.local_binds[id.index()]
-    }
-    pub fn for_bind(&self, id: ForBindID) -> &'hir ForBind<'hir> {
-        &self.for_binds[id.index()]
+    pub fn variable(&self, id: VariableID) -> &'hir Variable<'hir> {
+        &self.variables[id.index()]
     }
     pub fn find_param(&self, id: NameID) -> Option<(ParamID, &'hir Param<'hir>)> {
         for (idx, param) in self.params.iter().enumerate() {

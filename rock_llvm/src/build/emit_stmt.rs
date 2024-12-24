@@ -22,7 +22,7 @@ fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stm
         hir::Stmt::Return(expr) => codegen_return(cg, expr),
         hir::Stmt::Defer(block) => cg.proc.add_defer_block(*block),
         hir::Stmt::For(for_) => codegen_for(cg, for_),
-        hir::Stmt::Local(local_id) => codegen_local(cg, local_id),
+        hir::Stmt::Local(local) => codegen_local(cg, local),
         hir::Stmt::Discard(value) => codegen_discard(cg, value),
         hir::Stmt::Assign(assign) => codegen_assign(cg, assign),
         hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, expr),
@@ -94,8 +94,8 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
             cg.build_br_no_term(entry_bb);
         }
         hir::ForKind::Elem(for_elem) => {
-            let value_ptr = cg.proc.for_bind_ptrs[for_elem.value_id.index()];
-            let index_ptr = cg.proc.for_bind_ptrs[for_elem.index_id.index()];
+            let value_ptr = cg.proc.variable_ptrs[for_elem.value_id.index()];
+            let index_ptr = cg.proc.variable_ptrs[for_elem.index_id.index()];
 
             // evaluate value being iterated on
             let iter_ptr = emit_expr::codegen_expr_pointer(cg, for_elem.expr);
@@ -225,17 +225,17 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
     cg.build.position_at_end(exit_bb);
 }
 
-fn codegen_local<'c>(cg: &mut Codegen<'c, '_, '_>, local_id: hir::LocalID) {
-    let local = cg.hir.proc_data(cg.proc.proc_id).local(local_id);
-    let local_ptr = cg.proc.local_ptrs[local_id.index()];
+fn codegen_local<'c>(cg: &mut Codegen<'c, '_, '_>, local: &hir::Local<'c>) {
+    let var = cg.hir.proc_data(cg.proc.proc_id).variable(local.var_id);
+    let var_ptr = cg.proc.variable_ptrs[local.var_id.index()];
 
     match local.init {
         hir::LocalInit::Init(expr) => {
-            emit_expr::codegen_expr_store(cg, expr, local_ptr);
+            emit_expr::codegen_expr_store(cg, expr, var_ptr);
         }
         hir::LocalInit::Zeroed => {
-            let zero_init = llvm::const_all_zero(cg.ty(local.ty));
-            cg.build.store(zero_init, local_ptr);
+            let zero_init = llvm::const_all_zero(cg.ty(var.ty));
+            cg.build.store(zero_init, var_ptr);
         }
         hir::LocalInit::Undefined => {}
     }

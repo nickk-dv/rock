@@ -30,9 +30,7 @@ pub struct ProcCodegen<'c> {
     pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
-    pub local_ptrs: Vec<llvm::ValuePtr>,
-    pub local_bind_ptrs: Vec<llvm::ValuePtr>,
-    pub for_bind_ptrs: Vec<llvm::ValuePtr>,
+    pub variable_ptrs: Vec<llvm::ValuePtr>,
     tail_values: Vec<Option<TailValue>>,
     block_stack: Vec<BlockInfo>,
     defer_blocks: Vec<hir::Block<'c>>,
@@ -275,9 +273,7 @@ impl<'c> ProcCodegen<'c> {
             proc_id: hir::ProcID::dummy(),
             fn_val: llvm::ValueFn::null(),
             param_ptrs: Vec::with_capacity(16),
-            local_ptrs: Vec::with_capacity(64),
-            local_bind_ptrs: Vec::with_capacity(64),
-            for_bind_ptrs: Vec::with_capacity(16),
+            variable_ptrs: Vec::with_capacity(128),
             tail_values: Vec::with_capacity(32),
             block_stack: Vec::with_capacity(16),
             defer_blocks: Vec::with_capacity(8),
@@ -289,9 +285,7 @@ impl<'c> ProcCodegen<'c> {
         self.proc_id = proc_id;
         self.fn_val = fn_val;
         self.param_ptrs.clear();
-        self.local_ptrs.clear();
-        self.local_bind_ptrs.clear();
-        self.for_bind_ptrs.clear();
+        self.variable_ptrs.clear();
         self.tail_values.clear();
         self.block_stack.clear();
         self.defer_blocks.clear();

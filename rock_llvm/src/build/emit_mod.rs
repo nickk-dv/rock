@@ -288,40 +288,19 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             cg.build.store(param_val, param_ptr);
         }
 
-        for local in data.locals {
-            let name = cg.session.intern_name.get(local.name.id);
-            cg.string_buf.clear();
-            cg.string_buf.push_str(name);
-
-            let local_ty = cg.ty(local.ty);
-            let local_ptr = cg.build.alloca(local_ty, &cg.string_buf);
-            cg.proc.local_ptrs.push(local_ptr);
-        }
-
-        for local_bind in data.local_binds {
-            let name = cg.session.intern_name.get(local_bind.name.id);
-            cg.string_buf.clear();
-            cg.string_buf.push_str("bind:");
-            cg.string_buf.push_str(name);
-
-            let local_ty = cg.ty(local_bind.ty);
-            let local_ptr = cg.build.alloca(local_ty, name);
-            cg.proc.local_bind_ptrs.push(local_ptr);
-        }
-
-        for for_bind in data.for_binds {
-            let name = if for_bind.name.id.raw() == u32::MAX {
-                "bind:index(_)"
+        for var in data.variables {
+            //@hack, for variables added with dummy name ids (temp)
+            let name = if var.name.id.raw() == u32::MAX {
+                "<for_bind_discard>"
             } else {
-                cg.session.intern_name.get(for_bind.name.id)
+                cg.session.intern_name.get(var.name.id)
             };
             cg.string_buf.clear();
-            cg.string_buf.push_str("bind:");
             cg.string_buf.push_str(name);
 
-            let local_ty = cg.ty(for_bind.ty);
-            let local_ptr = cg.build.alloca(local_ty, name);
-            cg.proc.for_bind_ptrs.push(local_ptr);
+            let var_ty = cg.ty(var.ty);
+            let var_ptr = cg.build.alloca(var_ty, &cg.string_buf);
+            cg.proc.variable_ptrs.push(var_ptr);
         }
 
         if let Some(block) = data.block {

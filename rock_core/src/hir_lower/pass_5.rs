@@ -32,29 +32,19 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect); //shadowing params still added here
         let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
 
-        let (locals, binds, for_binds) = ctx.scope.local.finish_proc_context();
-        let locals = ctx.arena.alloc_slice(locals);
-        let binds = ctx.arena.alloc_slice(binds);
-        let for_binds = ctx.arena.alloc_slice(for_binds);
+        let variables = ctx.scope.local.finish_proc_context();
+        let variables = ctx.arena.alloc_slice(variables);
 
         let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
-        data.locals = locals;
-        data.local_binds = binds;
-        data.for_binds = for_binds;
+        data.variables = variables;
 
-        for local in locals {
-            if !local.was_used {
-                let src = ctx.src(local.name.range);
-                let name = ctx.name(local.name.id);
+        for var in variables {
+            //@hack checking for dummy ids, due to `for` binds always being added
+            if !var.was_used && var.name.id.raw() != u32::MAX {
+                let src = ctx.src(var.name.range);
+                let name = ctx.name(var.name.id);
                 err::scope_unused_variable(&mut ctx.emit, src, name);
-            }
-        }
-        for bind in binds {
-            if !bind.was_used {
-                let src = ctx.src(bind.name.range);
-                let name = ctx.name(bind.name.id);
-                err::scope_unused_binding(&mut ctx.emit, src, name);
             }
         }
     }
@@ -747,9 +737,7 @@ fn typecheck_pat_item<'hir, 'ast>(
         ValueID::Proc(_)
         | ValueID::Global(_, _)
         | ValueID::Param(_, _)
-        | ValueID::Local(_, _)
-        | ValueID::LocalBind(_, _)
-        | ValueID::ForBind(_, _) => {
+        | ValueID::Variable(_, _) => {
             let src = ctx.src(pat_range);
             err::tycheck_pat_runtime_value(&mut ctx.emit, src);
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
@@ -1362,21 +1350,10 @@ fn typecheck_item<'hir, 'ast>(
             TypeResult::new(ctx.scope.local.param(id).ty, hir::ExprKind::ParamVar { param_id: id }),
             fields,
         ),
-        ValueID::Local(id, fields) => (
-            TypeResult::new(ctx.scope.local.local(id).ty, hir::ExprKind::LocalVar { local_id: id }),
-            fields,
-        ),
-        ValueID::LocalBind(id, fields) => (
+        ValueID::Variable(id, fields) => (
             TypeResult::new(
-                ctx.scope.local.bind(id).ty,
-                hir::ExprKind::LocalBind { local_bind_id: id },
-            ),
-            fields,
-        ),
-        ValueID::ForBind(id, fields) => (
-            TypeResult::new(
-                ctx.scope.local.for_bind(id).ty,
-                hir::ExprKind::ForBind { for_bind_id: id },
+                ctx.scope.local.variable(id).ty,
+                hir::ExprKind::Variable { var_id: id },
             ),
             fields,
         ),
@@ -1385,6 +1362,7 @@ fn typecheck_item<'hir, 'ast>(
     let mut target_res = item_res;
     let mut target_range = expr_range;
 
+    //@check segments for having poly types in them + rename
     for &name in fields {
         let expr_res = target_res.into_expr_result(ctx, target_range);
         let field_result = check_field_from_type(ctx, name.name, expr_res.ty);
@@ -1958,7 +1936,7 @@ fn typecheck_block<'hir, 'ast>(
                 let local_res = typecheck_local(ctx, local);
                 match local_res {
                     LocalResult::Error => continue,
-                    LocalResult::Local(local_id) => hir::Stmt::Local(local_id),
+                    LocalResult::Local(local) => hir::Stmt::Local(local),
                     LocalResult::Discard(value) => hir::Stmt::Discard(value),
                 }
             }
@@ -2195,23 +2173,25 @@ fn typecheck_for<'hir, 'ast>(
             //@FIX: remove special variable binding kinds
             // handle `_` differently? store `_` as names
             // handle them where they can occur?
-            let value_bind = hir::ForBind {
+            let value_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header
                     .value
                     .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
                 ty: value_ty,
+                was_used: false,
             };
-            let index_bind = hir::ForBind {
+            let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header
                     .index
                     .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
                 ty: hir::Type::USIZE,
+                was_used: false,
             };
             ctx.scope.local.start_block(BlockStatus::None);
-            let value_id = ctx.scope.local.add_for_bind(value_bind, header.value.is_some());
-            let index_id = ctx.scope.local.add_for_bind(index_bind, header.index.is_some());
+            let value_id = ctx.scope.local.add_variable_hack(value_var, header.value.is_some());
+            let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
 
             let for_elem = hir::ForElem {
                 value_id,
@@ -2261,7 +2241,6 @@ fn typecheck_for<'hir, 'ast>(
     let expect = Expectation::HasType(hir::Type::VOID, None);
     let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
 
-    // exit binding local scope
     match for_.header {
         ast::ForHeader::Loop => {}
         ast::ForHeader::Cond(_) => {}
@@ -2275,7 +2254,7 @@ fn typecheck_for<'hir, 'ast>(
 
 enum LocalResult<'hir> {
     Error,
-    Local(hir::LocalID),
+    Local(&'hir hir::Local<'hir>),
     Discard(Option<&'hir hir::Expr<'hir>>),
 }
 
@@ -2324,9 +2303,10 @@ fn typecheck_local<'hir, 'ast>(
                 return LocalResult::Error;
             }
 
-            let local = hir::Local { mutt, name, ty, init, was_used: false };
-            let local_id = ctx.scope.local.add_local(local);
-            LocalResult::Local(local_id)
+            let var = hir::Variable { mutt, name, ty, was_used: false };
+            let var_id = ctx.scope.local.add_variable(var);
+            let local = hir::Local { var_id, init };
+            LocalResult::Local(ctx.arena.alloc(local))
         }
         //allowing discard locals to have no type
         //@emit a warning for useless variables? eg: let _ = zeroed;
@@ -2391,9 +2371,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
         hir::ExprKind::CallerLocation { .. } => UnusedExpr::Yes("caller location"),
         hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
-        hir::ExprKind::LocalVar { .. } => UnusedExpr::Yes("local value"),
-        hir::ExprKind::LocalBind { .. } => UnusedExpr::Yes("local binding value"),
-        hir::ExprKind::ForBind { .. } => UnusedExpr::Yes("for loop binding value"), //@change naming everywhere
+        hir::ExprKind::Variable { .. } => UnusedExpr::Yes("variable value"),
         hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
         hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
         hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
@@ -2710,7 +2688,7 @@ fn check_variant_bind_list<'hir>(
     variant: Option<&hir::Variant<'hir>>,
     ref_mut: Option<ast::Mut>,
     in_or_pat: bool,
-) -> &'hir [hir::LocalBindID] {
+) -> &'hir [hir::VariableID] {
     let bind_list = match bind_list {
         Some(bind_list) => bind_list,
         None => return &[],
@@ -2722,18 +2700,17 @@ fn check_variant_bind_list<'hir>(
         return &[];
     }
 
-    let offset = ctx.cache.bind_ids.start();
+    let offset = ctx.cache.var_ids.start();
     for (idx, bind) in bind_list.binds.iter().enumerate() {
         let (mutt, name) = match *bind {
             ast::Binding::Named(mutt, name) => (mutt, name),
             ast::Binding::Discard(_) => continue,
         };
 
-        let (ty, field_id) = if let Some(variant) = variant {
+        let ty = if let Some(variant) = variant {
             if let Some(field_id) = variant.field_id(idx) {
                 let field = variant.field(field_id);
-
-                let ty = match ref_mut {
+                match ref_mut {
                     Some(ref_mut) => {
                         if field.ty.is_error() {
                             hir::Type::Error
@@ -2742,27 +2719,23 @@ fn check_variant_bind_list<'hir>(
                         }
                     }
                     None => field.ty,
-                };
-
-                (ty, Some(field_id))
+                }
             } else {
-                (hir::Type::Error, None)
+                hir::Type::Error
             }
         } else {
-            (hir::Type::Error, None)
+            hir::Type::Error
         };
 
-        if ctx.scope.check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit).is_err()
+        if ctx.scope.check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit).is_ok()
         {
-            continue;
+            let var = hir::Variable { mutt, name, ty, was_used: false };
+            let var_id = ctx.scope.local.add_variable(var);
+            ctx.cache.var_ids.push(var_id);
         }
-
-        let local_bind = hir::LocalBind { mutt, name, ty, field_id, was_used: false };
-        let bind_id = ctx.scope.local.add_bind(local_bind);
-        ctx.cache.bind_ids.push(bind_id);
     }
 
-    ctx.cache.bind_ids.take(offset, &mut ctx.arena)
+    ctx.cache.var_ids.take(offset, &mut ctx.arena)
 }
 
 //==================== OPERATOR ====================
@@ -3184,20 +3157,10 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 let src = ctx.src(param.name.range);
                 AddrBase::Variable(param.mutt, src)
             }
-            hir::ExprKind::LocalVar { local_id } => {
-                let local = ctx.scope.local.local(local_id);
-                let src = ctx.src(local.name.range);
-                AddrBase::Variable(local.mutt, src)
-            }
-            hir::ExprKind::LocalBind { local_bind_id } => {
-                let local_bind = ctx.scope.local.bind(local_bind_id);
-                let src = ctx.src(local_bind.name.range);
-                AddrBase::Variable(local_bind.mutt, src)
-            }
-            hir::ExprKind::ForBind { for_bind_id } => {
-                let for_bind = ctx.scope.local.for_bind(for_bind_id);
-                let src = ctx.src(for_bind.name.range);
-                AddrBase::Variable(for_bind.mutt, src)
+            hir::ExprKind::Variable { var_id } => {
+                let var = ctx.scope.local.variable(var_id);
+                let src = ctx.src(var.name.range);
+                AddrBase::Variable(var.mutt, src)
             }
             hir::ExprKind::ConstVar { const_id } => {
                 let const_data = ctx.registry.const_data(const_id);

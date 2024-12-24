@@ -759,30 +759,12 @@ fn add_expr_const_dependencies<'ast>(
                     );
                     Err(parent_id)
                 }
-                ValueID::Local(_, _) => {
+                ValueID::Variable(_, _) => {
                     error_cannot_refer_to_in_constants(
                         &mut ctx.emit,
                         origin_id,
                         expr.range,
-                        "locals",
-                    );
-                    Err(parent_id)
-                }
-                ValueID::LocalBind(_, _) => {
-                    error_cannot_refer_to_in_constants(
-                        &mut ctx.emit,
-                        origin_id,
-                        expr.range,
-                        "pattern bindings",
-                    );
-                    Err(parent_id)
-                }
-                ValueID::ForBind(_, _) => {
-                    error_cannot_refer_to_in_constants(
-                        &mut ctx.emit,
-                        origin_id,
-                        expr.range,
-                        "for loop bindings",
+                        "variables",
                     );
                     Err(parent_id)
                 }

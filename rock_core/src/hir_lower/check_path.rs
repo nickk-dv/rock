@@ -1,4 +1,4 @@
-use super::context::scope::{self, SymbolID, SymbolOrModule, VariableID};
+use super::context::scope::{self, LocalVariableID, SymbolID, SymbolOrModule};
 use super::context::HirCtx;
 use crate::ast;
 use crate::errors as err;
@@ -14,7 +14,7 @@ struct PathResolved<'ast> {
 
 enum PathResolvedKind {
     Symbol(SymbolID),
-    Variable(VariableID),
+    Variable(LocalVariableID),
     Module(ModuleID),
     PolyParam(hir::PolymorphDefID, u32),
 }
@@ -26,9 +26,7 @@ pub enum ValueID<'ast> {
     Const(hir::ConstID, &'ast [ast::PathSegment<'ast>]),
     Global(hir::GlobalID, &'ast [ast::PathSegment<'ast>]),
     Param(hir::ParamID, &'ast [ast::PathSegment<'ast>]),
-    Local(hir::LocalID, &'ast [ast::PathSegment<'ast>]),
-    LocalBind(hir::LocalBindID, &'ast [ast::PathSegment<'ast>]),
-    ForBind(hir::ForBindID, &'ast [ast::PathSegment<'ast>]),
+    Variable(hir::VariableID, &'ast [ast::PathSegment<'ast>]),
 }
 
 fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
@@ -383,11 +381,9 @@ pub fn path_resolve_value<'ast>(
             SymbolID::Const(id) => ValueID::Const(id, path.names),
             SymbolID::Global(id) => ValueID::Global(id, path.names),
         },
-        PathResolvedKind::Variable(var_id) => match var_id {
-            VariableID::Param(id) => ValueID::Param(id, path.names),
-            VariableID::Local(id) => ValueID::Local(id, path.names),
-            VariableID::Bind(id) => ValueID::LocalBind(id, path.names),
-            VariableID::ForBind(id) => ValueID::ForBind(id, path.names),
+        PathResolvedKind::Variable(local_var_id) => match local_var_id {
+            LocalVariableID::Param(id) => ValueID::Param(id, path.names),
+            LocalVariableID::Variable(id) => ValueID::Variable(id, path.names),
         },
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_segment.name.range);

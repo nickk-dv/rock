@@ -319,11 +319,6 @@ pub fn scope_unused_variable(emit: &mut impl WarningSink, src: SourceRange, name
     emit.warning(Warning::new(msg, src, None));
 }
 
-pub fn scope_unused_binding(emit: &mut impl WarningSink, src: SourceRange, name: &str) {
-    let msg = format!("unused binding `{name}`");
-    emit.warning(Warning::new(msg, src, None));
-}
-
 //==================== CHECK DIRECTIVE & FLAG ====================
 
 pub fn directive_unknown(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {

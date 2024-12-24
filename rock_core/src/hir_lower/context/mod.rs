@@ -31,7 +31,7 @@ pub struct Cache<'hir> {
     pub branches: TempBuffer<hir::Branch<'hir>>,
     pub match_arms: TempBuffer<hir::MatchArm<'hir>>,
     pub patterns: TempBuffer<hir::Pat<'hir>>,
-    pub bind_ids: TempBuffer<hir::LocalBindID>,
+    pub var_ids: TempBuffer<hir::VariableID>,
     pub field_inits: TempBuffer<hir::FieldInit<'hir>>,
 }
 
@@ -48,7 +48,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             branches: TempBuffer::new(32),
             match_arms: TempBuffer::new(32),
             patterns: TempBuffer::new(32),
-            bind_ids: TempBuffer::new(32),
+            var_ids: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
         };
         HirCtx {
