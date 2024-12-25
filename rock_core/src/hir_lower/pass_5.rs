@@ -2261,9 +2261,37 @@ fn typecheck_for<'hir, 'ast>(
 
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
+            let expect_void = Expectation::HasType(hir::Type::VOID, None);
+            let block_res = typecheck_block(ctx, expect_void, for_.block, BlockStatus::Loop);
+            ctx.scope.local.exit_block();
 
-            let for_pat = hir::ForPat { pat, expr: on_res.expr };
-            hir::ForKind::Pat(ctx.arena.alloc(for_pat))
+            let match_kind = match kind_res {
+                Ok(match_kind) => match_kind,
+                Err(_) => return None,
+            };
+
+            //@this should also consider or patterns,
+            // ideally check match coverage, allowing `_`
+            // to be added without emitting exaust errors.
+            let arms = if let hir::Pat::Wild = pat {
+                let arm = hir::MatchArm { pat, block: block_res.block };
+                ctx.arena.alloc_slice(&[arm])
+            } else {
+                let arm = hir::MatchArm { pat, block: block_res.block };
+                let block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+                let arm_break = hir::MatchArm { pat: hir::Pat::Wild, block };
+                ctx.arena.alloc_slice(&[arm, arm_break])
+            };
+            let match_ = hir::Match { on_expr: on_res.expr, arms };
+            let match_ = ctx.arena.alloc(match_);
+            let match_ = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Match { kind: match_kind, match_ },
+                range: header.pat.range, //fake range
+            });
+            let stmt_match = hir::Stmt::ExprSemi(match_);
+            let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_match]) };
+            let block = ctx.arena.alloc(block);
+            return Some(hir::Stmt::Loop(block));
         }
     };
 
