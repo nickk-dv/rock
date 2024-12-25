@@ -1922,10 +1922,10 @@ fn typecheck_block<'hir, 'ast>(
                 }
             }
             ast::StmtKind::For(for_) => {
-                if let Some(for_) = typecheck_for(ctx, for_) {
+                if let Some(loop_stmt) = typecheck_for(ctx, for_) {
                     //@can diverge (inf loop, return, panic)
                     check_stmt_diverges(ctx, false, stmt.range);
-                    hir::Stmt::For(for_)
+                    loop_stmt
                 } else {
                     continue;
                 }
@@ -2129,13 +2129,42 @@ fn typecheck_defer<'hir, 'ast>(
 fn typecheck_for<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     for_: &ast::For<'ast>,
-) -> Option<&'hir hir::For<'hir>> {
+) -> Option<hir::Stmt<'hir>> {
     let kind = match for_.header {
-        ast::ForHeader::Loop => hir::ForKind::Loop,
+        ast::ForHeader::Loop => {
+            let expect = Expectation::HasType(hir::Type::VOID, None);
+            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+
+            let block = ctx.arena.alloc(block_res.block);
+            return Some(hir::Stmt::Loop(block));
+        }
+        //@some ranges are not correct since those exprs are made up (not_cond, expr_if)
+        // does hir actually need all the expr ranges? probably not?
         ast::ForHeader::Cond(cond) => {
             let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
             let expr_res = typecheck_expr(ctx, expect_bool, cond);
-            hir::ForKind::Cond(expr_res.expr)
+
+            let expect = Expectation::HasType(hir::Type::VOID, None);
+            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+
+            let cond_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+            let not_cond = hir::Expr {
+                kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: expr_res.expr },
+                range: expr_res.expr.range,
+            };
+            let branch = hir::Branch { cond: ctx.arena.alloc(not_cond), block: cond_block };
+            let if_ = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+            let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(if_) };
+            let expr_if = hir::Expr { kind: kind_if, range: cond.range };
+
+            let kind_block = hir::ExprKind::Block { block: block_res.block };
+            let expr_block = hir::Expr { kind: kind_block, range: for_.block.range };
+
+            let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
+            let stmt_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_block));
+            let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_block]) };
+            let block = ctx.arena.alloc(block);
+            return Some(hir::Stmt::Loop(block));
         }
         ast::ForHeader::Elem(header) => {
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
@@ -2249,7 +2278,8 @@ fn typecheck_for<'hir, 'ast>(
     }
 
     let for_ = hir::For { kind, block: block_res.block };
-    Some(ctx.arena.alloc(for_))
+    let for_ = ctx.arena.alloc(for_);
+    Some(hir::Stmt::For(for_))
 }
 
 enum LocalResult<'hir> {

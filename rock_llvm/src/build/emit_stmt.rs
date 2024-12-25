@@ -22,6 +22,7 @@ fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stm
         hir::Stmt::Return(expr) => codegen_return(cg, expr),
         hir::Stmt::Defer(block) => cg.proc.add_defer_block(*block),
         hir::Stmt::For(for_) => codegen_for(cg, for_),
+        hir::Stmt::Loop(block) => codegen_loop(cg, block),
         hir::Stmt::Local(local) => codegen_local(cg, local),
         hir::Stmt::Discard(value) => codegen_discard(cg, value),
         hir::Stmt::Assign(assign) => codegen_assign(cg, assign),
@@ -222,6 +223,21 @@ fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {
         }
     }
 
+    cg.build.position_at_end(exit_bb);
+}
+
+fn codegen_loop<'c>(cg: &mut Codegen<'c, '_, '_>, block: &hir::Block<'c>) {
+    let entry_bb = cg.append_bb("loop_entry");
+    let body_bb = cg.append_bb("loop_body");
+    let exit_bb = cg.append_bb("loop_exit");
+    cg.proc.set_next_loop_info(exit_bb, entry_bb);
+
+    cg.build.br(entry_bb);
+    cg.build.position_at_end(entry_bb);
+    cg.build.br(body_bb);
+    cg.build.position_at_end(body_bb);
+    codegen_block(cg, Expect::Value(None), *block);
+    cg.build_br_no_term(entry_bb);
     cg.build.position_at_end(exit_bb);
 }
 
