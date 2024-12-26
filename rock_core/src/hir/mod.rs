@@ -197,20 +197,6 @@ pub enum Stmt<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct For<'hir> {
-    pub kind: ForKind<'hir>,
-    pub block: Block<'hir>,
-}
-
-#[derive(Copy, Clone)]
-pub enum ForKind<'hir> {
-    Loop,
-    Cond(&'hir Expr<'hir>),
-    Elem(&'hir ForElem<'hir>),
-    Pat(&'hir ForPat<'hir>),
-}
-
-#[derive(Copy, Clone)]
-pub struct ForElem<'hir> {
     pub value_id: VariableID,
     pub index_id: VariableID,
     pub deref: bool,
@@ -219,6 +205,7 @@ pub struct ForElem<'hir> {
     pub elem_ty: Type<'hir>,
     pub kind: ForElemKind,
     pub expr: &'hir Expr<'hir>,
+    pub block: Block<'hir>,
 }
 
 #[derive(Copy, Clone)]

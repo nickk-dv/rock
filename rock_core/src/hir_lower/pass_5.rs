@@ -804,8 +804,8 @@ fn typecheck_field<'hir, 'ast>(
     name: ast::Name,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let field_result = check_field_from_type(ctx, name, target_res.ty);
-    emit_field_expr(target_res.expr, field_result)
+    let field_res = check_field_from_type(ctx, name, target_res.ty);
+    emit_field_expr(target_res.expr, field_res)
 }
 
 struct FieldResult<'hir> {
@@ -816,6 +816,7 @@ struct FieldResult<'hir> {
 
 #[rustfmt::skip]
 enum FieldKind<'hir> {
+    Error,
     Struct(hir::StructID, hir::FieldID),
     ArraySlice { field: hir::SliceField },
     ArrayStatic { len: hir::ConstValue<'hir> },
@@ -829,28 +830,31 @@ impl<'hir> FieldResult<'hir> {
     ) -> FieldResult<'hir> {
         FieldResult { deref, kind, field_ty }
     }
+    fn error() -> FieldResult<'hir> {
+        FieldResult { deref: None, kind: FieldKind::Error, field_ty: hir::Type::Error }
+    }
 }
 
 fn check_field_from_type<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     name: ast::Name,
     ty: hir::Type<'hir>,
-) -> Option<FieldResult<'hir>> {
+) -> FieldResult<'hir> {
     let (ty, deref) = match ty {
         hir::Type::Reference(mutt, ref_ty) => (*ref_ty, Some(mutt)),
         _ => (ty, None),
     };
 
     match ty {
-        hir::Type::Error => None,
+        hir::Type::Error => FieldResult::error(),
         //@gen types not handled
         hir::Type::Struct(struct_id, _) => match check_field_from_struct(ctx, struct_id, name) {
             Some((field_id, field)) => {
                 let kind = FieldKind::Struct(struct_id, field_id);
                 let field_ty = field.ty;
-                Some(FieldResult::new(deref, kind, field_ty))
+                FieldResult::new(deref, kind, field_ty)
             }
-            None => None,
+            None => FieldResult::error(),
         },
         hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, name) {
             Some(field) => {
@@ -859,24 +863,24 @@ fn check_field_from_type<'hir>(
                     hir::SliceField::Ptr => hir::Type::Reference(slice.mutt, &slice.elem_ty),
                     hir::SliceField::Len => hir::Type::USIZE,
                 };
-                Some(FieldResult::new(deref, kind, field_ty))
+                FieldResult::new(deref, kind, field_ty)
             }
-            None => None,
+            None => FieldResult::error(),
         },
         hir::Type::ArrayStatic(array) => match check_field_from_array(ctx, name, array) {
             Some(len) => {
                 let kind = FieldKind::ArrayStatic { len };
                 let field_ty = hir::Type::USIZE;
-                Some(FieldResult::new(deref, kind, field_ty))
+                FieldResult::new(deref, kind, field_ty)
             }
-            None => None,
+            None => FieldResult::error(),
         },
         _ => {
             let src = ctx.src(name.range);
             let field_name = ctx.name(name.id);
             let ty_fmt = type_format(ctx, ty);
             err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, ty_fmt.as_str());
-            None
+            FieldResult::error()
         }
     }
 }
@@ -944,26 +948,25 @@ fn check_field_from_array<'hir>(
 
 fn emit_field_expr<'hir>(
     target: &'hir hir::Expr<'hir>,
-    field_result: Option<FieldResult<'hir>>,
+    field_res: FieldResult<'hir>,
 ) -> TypeResult<'hir> {
-    let result = match field_result {
-        Some(result) => result,
-        None => return TypeResult::error(),
-    };
-
-    let kind = match result.kind {
-        FieldKind::Struct(struct_id, field_id) => hir::ExprKind::StructField {
-            target,
-            access: hir::StructFieldAccess { deref: result.deref, struct_id, field_id },
-        },
-        FieldKind::ArraySlice { field } => hir::ExprKind::SliceField {
-            target,
-            access: hir::SliceFieldAccess { deref: result.deref, field },
-        },
-        FieldKind::ArrayStatic { len } => hir::ExprKind::Const { value: len },
-    };
-
-    TypeResult::new(result.field_ty, kind)
+    match field_res.kind {
+        FieldKind::Error => TypeResult::error(),
+        FieldKind::Struct(struct_id, field_id) => {
+            let access = hir::StructFieldAccess { deref: field_res.deref, struct_id, field_id };
+            let kind = hir::ExprKind::StructField { target, access };
+            TypeResult::new(field_res.field_ty, kind)
+        }
+        FieldKind::ArraySlice { field } => {
+            let access = hir::SliceFieldAccess { deref: field_res.deref, field };
+            let kind = hir::ExprKind::SliceField { target, access };
+            TypeResult::new(field_res.field_ty, kind)
+        }
+        FieldKind::ArrayStatic { len } => {
+            let kind = hir::ExprKind::Const { value: len };
+            TypeResult::new(field_res.field_ty, kind)
+        }
+    }
 }
 
 struct CollectionType<'hir> {
@@ -1365,8 +1368,8 @@ fn typecheck_item<'hir, 'ast>(
     //@check segments for having poly types in them + rename
     for &name in fields {
         let expr_res = target_res.into_expr_result(ctx, target_range);
-        let field_result = check_field_from_type(ctx, name.name, expr_res.ty);
-        target_res = emit_field_expr(expr_res.expr, field_result);
+        let field_res = check_field_from_type(ctx, name.name, expr_res.ty);
+        target_res = emit_field_expr(expr_res.expr, field_res);
         target_range = TextRange::new(expr_range.start(), name.name.range.end());
     }
 
@@ -2130,7 +2133,7 @@ fn typecheck_for<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     for_: &ast::For<'ast>,
 ) -> Option<hir::Stmt<'hir>> {
-    let kind = match for_.header {
+    match for_.header {
         ast::ForHeader::Loop => {
             let expect = Expectation::HasType(hir::Type::VOID, None);
             let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
@@ -2198,7 +2201,7 @@ fn typecheck_for<'hir, 'ast>(
             } else {
                 collection.elem_ty
             };
-            //@TODO: have unused checks apply to these bindings aswell (after var unification is done)
+
             //@FIX: remove special variable binding kinds
             // handle `_` differently? store `_` as names
             // handle them where they can occur?
@@ -2218,11 +2221,15 @@ fn typecheck_for<'hir, 'ast>(
                 ty: hir::Type::USIZE,
                 was_used: false,
             };
+
             ctx.scope.local.start_block(BlockStatus::None);
             let value_id = ctx.scope.local.add_variable_hack(value_var, header.value.is_some());
             let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
+            let expect = Expectation::HasType(hir::Type::VOID, None);
+            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+            ctx.scope.local.exit_block();
 
-            let for_elem = hir::ForElem {
+            let for_ = hir::For {
                 value_id,
                 index_id,
                 deref: collection.deref.is_some(),
@@ -2231,8 +2238,9 @@ fn typecheck_for<'hir, 'ast>(
                 elem_ty: collection.elem_ty,
                 kind: elem_kind,
                 expr: expr_res.expr,
+                block: block_res.block,
             };
-            hir::ForKind::Elem(ctx.arena.alloc(for_elem))
+            return Some(hir::Stmt::For(ctx.arena.alloc(for_)));
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
@@ -2293,21 +2301,7 @@ fn typecheck_for<'hir, 'ast>(
             let block = ctx.arena.alloc(block);
             return Some(hir::Stmt::Loop(block));
         }
-    };
-
-    let expect = Expectation::HasType(hir::Type::VOID, None);
-    let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
-
-    match for_.header {
-        ast::ForHeader::Loop => {}
-        ast::ForHeader::Cond(_) => {}
-        ast::ForHeader::Elem(_) => ctx.scope.local.exit_block(),
-        ast::ForHeader::Pat(_) => ctx.scope.local.exit_block(),
     }
-
-    let for_ = hir::For { kind, block: block_res.block };
-    let for_ = ctx.arena.alloc(for_);
-    Some(hir::Stmt::For(for_))
 }
 
 enum LocalResult<'hir> {
