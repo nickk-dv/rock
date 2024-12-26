@@ -647,7 +647,6 @@ fn skip_num_digits(lex: &mut Lexer) {
 
 /// generated using `gperf-3.0.1`  
 /// command: `./gperf keywords.txt -G -7 > gperf.h`  
-/// some checks removed based on known preconditions
 mod gperf {
     use crate::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
@@ -677,23 +676,23 @@ mod gperf {
 
     #[rustfmt::skip]
     const KEYWORD_TABLE: [Token; 69] = [
-        T![ident], T![_], T![as], T![s64], T![ident], T![ident], T![struct], T![s8],
-        T![f64], T![true], T![ssize], T![sizeof], T![ident], T![for], T![else], T![false],
-        T![rawptr], T![ident], T![let], T![proc], T![const], T![import], T![if], T![u64],
-        T![char], T![never], T![return], T![u8], T![continue], T![void], T![usize], T![string],
-        T![in], T![s32], T![null], T![defer], T![zeroed], T![ident], T![f32], T![bool],
-        T![break], T![ident], T![ident], T![mut], T![ident], T![match], T![global], T![cstring],
-        T![s16], T![enum], T![ident], T![ident], T![ident], T![u32], T![undefined], T![ident],
-        T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident],
-        T![ident], T![ident], T![ident], T![ident], T![u16],
+        T![ident], T![_], T![s8], T![ident], T![else], T![ssize], T![rawptr], T![as],
+        T![for], T![ident], T![false], T![sizeof], T![u8], T![s64], T![true], T![usize],
+        T![struct], T![if], T![f64], T![ident], T![never], T![return], T![ident], T![u64],
+        T![ident], T![ident], T![import], T![in], T![s32], T![ident], T![break], T![string],
+        T![ident], T![f32], T![void], T![defer], T![zeroed], T![ident], T![u32], T![char],
+        T![ident], T![ident], T![ident], T![continue], T![enum], T![match], T![ident], T![ident],
+        T![let], T![undefined], T![ident], T![ident], T![ident], T![mut], T![null], T![ident],
+        T![ident], T![ident], T![s16], T![proc], T![ident], T![ident], T![ident], T![ident],
+        T![bool], T![ident], T![ident], T![cstring], T![u16],
     ];
 
     const ASSOC_TABLE: [u8; 128] = [
         69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
         69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 69, 30, 69, 0, 69, 45, 69, 5, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
+        69, 69, 69, 69, 25, 69, 10, 69, 55, 69, 0, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
         69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 0, 69, 0, 20, 15, 25, 5, 5, 25, 0, 15, 69, 15, 15, 40, 15, 69, 0, 69, 5, 0, 0,
-        20, 0, 69, 69, 69, 5, 69, 69, 69, 69, 69,
+        69, 69, 69, 0, 69, 5, 25, 35, 30, 0, 5, 25, 0, 10, 69, 0, 35, 40, 15, 69, 20, 69, 0, 0, 10,
+        10, 0, 69, 69, 69, 0, 69, 69, 69, 69, 69,
     ];
 }

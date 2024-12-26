@@ -743,8 +743,6 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
         directive_list(fmt, dir_list, true);
     }
 
-    fmt.write_str("const");
-    fmt.space();
     name(fmt, item.name(fmt.tree).unwrap());
     fmt.write(':');
     fmt.space();
@@ -762,7 +760,7 @@ fn global_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::GlobalItem<'syn>)
         directive_list(fmt, dir_list, true);
     }
 
-    fmt.write_str("global");
+    fmt.write_str("let");
     fmt.space();
     if item.t_mut(fmt.tree).is_some() {
         fmt.write_str("mut");

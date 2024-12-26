@@ -34,8 +34,8 @@ fn item(p: &mut Parser) {
         T![proc] => proc_item(p, m),
         T![enum] => enum_item(p, m),
         T![struct] => struct_item(p, m),
-        T![const] => const_item(p, m),
-        T![global] => global_item(p, m),
+        T![ident] => const_item(p, m),
+        T![let] => global_item(p, m),
         T![import] => import_item(p, m),
         _ => {
             p.error("expected item");
@@ -46,7 +46,7 @@ fn item(p: &mut Parser) {
 }
 
 const FIRST_ITEM: TokenSet =
-    TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![const], T![global], T![import]]);
+    TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![ident], T![let], T![import]]);
 
 //@add FIRST_EXPR FIRST_STMT `;` for these (can be anywhere)
 const RECOVER_DIRECTIVE_PARAM_LIST: TokenSet = FIRST_ITEM;
@@ -234,8 +234,7 @@ fn field(p: &mut Parser) {
 }
 
 fn const_item(p: &mut Parser, m: Marker) {
-    p.bump(T![const]);
-    name(p);
+    name_bump(p);
     p.expect(T![:]);
     ty(p);
     p.expect(T![=]);
@@ -245,7 +244,7 @@ fn const_item(p: &mut Parser, m: Marker) {
 }
 
 fn global_item(p: &mut Parser, m: Marker) {
-    p.bump(T![global]);
+    p.bump(T![let]);
     p.eat(T![mut]);
     name(p);
     p.expect(T![:]);

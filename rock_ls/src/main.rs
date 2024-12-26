@@ -939,9 +939,8 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![int_lit] | T![float_lit] => SemanticToken::Number,
         T![char_lit] | T![string_lit] => SemanticToken::String,
 
-        T![proc] | T![enum] | T![struct] | T![const] |
-        T![global] | T![import] | T![break] | T![continue] |
-        T![return] | T![defer] | T![for] | T![in] |
+        T![proc] | T![enum] | T![struct] | T![import] |
+        T![break] | T![continue] | T![return] | T![defer] | T![for] | T![in] |
         T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
 
         T![null] | T![true] | T![false] => SemanticToken::Number,
