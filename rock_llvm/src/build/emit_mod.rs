@@ -337,9 +337,14 @@ fn codegen_function_bodies(cg: &mut Codegen) {
                     let slice_val = cg.build.load(slice_ty.as_ty(), slice_ptr, "slice_val");
                     cg.build.ret(Some(slice_val));
                 }
-                "string_to_bytes" | "string_to_bytes_mut" | "string_from_bytes" => {
+                "string_to_bytes" | "string_from_bytes" => {
                     let param_0_ptr = cg.proc.param_ptrs[0];
                     let value = cg.build.load(cg.slice_type().as_ty(), param_0_ptr, "value");
+                    cg.build.ret(Some(value));
+                }
+                "cstring_to_bytes" => {
+                    let param_0_ptr = cg.proc.param_ptrs[0];
+                    let value = cg.build.load(cg.ptr_type(), param_0_ptr, "value");
                     cg.build.ret(Some(value));
                 }
                 _ => unreachable!("unknown #builtin `{name}`"),
