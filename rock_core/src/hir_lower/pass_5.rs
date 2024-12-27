@@ -1915,14 +1915,12 @@ fn typecheck_block<'hir, 'ast>(
                     continue;
                 }
             }
-            //@defer block divergence should be simulated to correctly handle block_ty and divergence warnings 03.07.24
+            //@currently not considering diverging blocks in defer (can happen from `never` calls)
             ast::StmtKind::Defer(block) => {
-                if let Some(stmt_res) = typecheck_defer(ctx, *block, stmt.range) {
+                if typecheck_defer(ctx, *block, stmt.range) {
                     check_stmt_diverges(ctx, false, stmt.range);
-                    stmt_res
-                } else {
-                    continue;
                 }
+                continue;
             }
             ast::StmtKind::For(for_) => {
                 if let Some(loop_stmt) = typecheck_for(ctx, for_) {
@@ -1986,8 +1984,36 @@ fn typecheck_block<'hir, 'ast>(
         };
 
         match ctx.scope.local.diverges() {
-            Diverges::Maybe | Diverges::Always(_) => ctx.cache.stmts.push(stmt_res),
+            Diverges::Maybe | Diverges::Always(_) => {
+                match stmt_res {
+                    hir::Stmt::Break | hir::Stmt::Continue => {
+                        for block in ctx.scope.local.defer_blocks_loop().iter().copied().rev() {
+                            let kind = hir::ExprKind::Block { block };
+                            let expr = hir::Expr { kind, range: stmt.range }; //@unrelated range
+                            ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
+                        }
+                    }
+                    hir::Stmt::Return(_) => {
+                        for block in ctx.scope.local.defer_blocks_all().iter().copied().rev() {
+                            let kind = hir::ExprKind::Block { block };
+                            let expr = hir::Expr { kind, range: stmt.range }; //@unrelated range
+                            ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
+                        }
+                    }
+                    _ => {}
+                }
+                ctx.cache.stmts.push(stmt_res);
+            }
             Diverges::AlwaysWarned => {}
+        }
+    }
+
+    // generate defer blocks on exit from non-diverging block
+    if let Diverges::Maybe = ctx.scope.local.diverges() {
+        for block in ctx.scope.local.defer_blocks_last().iter().copied().rev() {
+            let kind = hir::ExprKind::Block { block };
+            let expr = hir::Expr { kind, range: TextRange::zero() }; //@unrelated range
+            ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
         }
     }
 
@@ -2107,7 +2133,7 @@ fn typecheck_defer<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     block: ast::Block<'ast>,
     stmt_range: TextRange,
-) -> Option<hir::Stmt<'hir>> {
+) -> bool {
     let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 5.into());
     let valid = if let Some(defer) = ctx.scope.local.find_prev_defer() {
         let src = ctx.src(kw_range);
@@ -2120,13 +2146,8 @@ fn typecheck_defer<'hir, 'ast>(
 
     let expect = Expectation::HasType(hir::Type::VOID, None);
     let block_res = typecheck_block(ctx, expect, block, BlockStatus::Defer(kw_range));
-
-    if valid {
-        let block = ctx.arena.alloc(block_res.block);
-        Some(hir::Stmt::Defer(block))
-    } else {
-        None
-    }
+    ctx.scope.local.add_defer_block(block_res.block);
+    valid
 }
 
 fn typecheck_for<'hir, 'ast>(

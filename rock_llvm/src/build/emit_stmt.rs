@@ -8,10 +8,6 @@ pub fn codegen_block<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, block: hi
     for stmt in block.stmts {
         codegen_stmt(cg, expect, *stmt);
     }
-    if !cg.insert_bb_terminated() {
-        let defer_range = cg.proc.last_defer_blocks();
-        codegen_defer_blocks(cg, defer_range);
-    }
     cg.proc.block_exit();
 }
 
@@ -20,7 +16,6 @@ fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stm
         hir::Stmt::Break => codegen_break(cg),
         hir::Stmt::Continue => codegen_continue(cg),
         hir::Stmt::Return(expr) => codegen_return(cg, expr),
-        hir::Stmt::Defer(block) => cg.proc.add_defer_block(*block),
         hir::Stmt::For(for_) => codegen_for(cg, for_),
         hir::Stmt::Loop(block) => codegen_loop(cg, block),
         hir::Stmt::Local(local) => codegen_local(cg, local),
@@ -32,40 +27,19 @@ fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stm
 }
 
 fn codegen_break(cg: &mut Codegen) {
-    let (loop_info, defer_range) = cg.proc.last_loop_info();
-    codegen_defer_blocks(cg, defer_range);
+    let loop_info = cg.proc.last_loop_info();
     cg.build.br(loop_info.break_bb);
 }
 
 fn codegen_continue(cg: &mut Codegen) {
-    let (loop_info, defer_range) = cg.proc.last_loop_info();
-    codegen_defer_blocks(cg, defer_range);
+    let loop_info = cg.proc.last_loop_info();
     cg.build.br(loop_info.continue_bb);
 }
 
 fn codegen_return<'c>(cg: &mut Codegen<'c, '_, '_>, expr: Option<&hir::Expr<'c>>) {
-    let defer_range = cg.proc.all_defer_blocks();
-    codegen_defer_blocks(cg, defer_range);
-
     let value =
         if let Some(expr) = expr { emit_expr::codegen_expr_value_opt(cg, expr) } else { None };
     cg.build.ret(value);
-}
-
-fn codegen_defer_blocks(cg: &mut Codegen, defer_range: std::ops::Range<usize>) {
-    if defer_range.is_empty() {
-        return;
-    }
-    for block_idx in defer_range.rev() {
-        let defer_bb = cg.append_bb("defer_bb");
-        cg.build.br(defer_bb);
-        cg.build.position_at_end(defer_bb);
-        let block = cg.proc.defer_block(block_idx);
-        codegen_block(cg, Expect::Value(None), block);
-    }
-    let exit_bb = cg.append_bb("defer_exit");
-    cg.build.br(exit_bb);
-    cg.build.position_at_end(exit_bb);
 }
 
 fn codegen_for<'c>(cg: &mut Codegen<'c, '_, '_>, for_: &hir::For<'c>) {

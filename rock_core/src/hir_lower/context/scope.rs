@@ -59,6 +59,7 @@ pub struct LocalScope<'hir> {
     blocks: Vec<BlockData>,
     variables: Vec<hir::Variable<'hir>>,
     variables_in_scope: Vec<hir::VariableID>,
+    defer_blocks_in_scope: Vec<hir::Block<'hir>>,
 }
 
 #[derive(Copy, Clone)]
@@ -70,6 +71,7 @@ pub enum LocalVariableID {
 #[derive(Copy, Clone)]
 struct BlockData {
     var_count: u32,
+    defer_count: u32,
     status: BlockStatus,
     diverges: Diverges,
 }
@@ -313,6 +315,7 @@ impl<'hir> LocalScope<'hir> {
             blocks: Vec::with_capacity(32),
             variables: Vec::with_capacity(128),
             variables_in_scope: Vec::with_capacity(128),
+            defer_blocks_in_scope: Vec::with_capacity(32),
         }
     }
 
@@ -349,7 +352,7 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn start_block(&mut self, status: BlockStatus) {
         let diverges = self.blocks.last().map(|b| b.diverges).unwrap_or(Diverges::Maybe);
-        let data = BlockData { var_count: 0, status, diverges };
+        let data = BlockData { var_count: 0, defer_count: 0, status, diverges };
         self.blocks.push(data);
     }
 
@@ -357,6 +360,9 @@ impl<'hir> LocalScope<'hir> {
         let curr = self.current_block();
         for _ in 0..curr.var_count {
             self.variables_in_scope.pop();
+        }
+        for _ in 0..curr.defer_count {
+            self.defer_blocks_in_scope.pop();
         }
         self.blocks.pop();
     }
@@ -384,6 +390,11 @@ impl<'hir> LocalScope<'hir> {
             self.current_block_mut().var_count += 1;
         }
         var_id
+    }
+
+    pub fn add_defer_block(&mut self, block: hir::Block<'hir>) {
+        self.defer_blocks_in_scope.push(block);
+        self.current_block_mut().defer_count += 1;
     }
 
     #[must_use]
@@ -440,6 +451,30 @@ impl<'hir> LocalScope<'hir> {
     #[inline]
     pub fn variable(&self, var_id: hir::VariableID) -> &hir::Variable<'hir> {
         &self.variables[var_id.index()]
+    }
+    #[inline]
+    pub fn defer_blocks_all(&self) -> &[hir::Block<'hir>] {
+        &self.defer_blocks_in_scope
+    }
+    #[inline]
+    pub fn defer_blocks_last(&self) -> &[hir::Block<'hir>] {
+        let defer_count = self.current_block().defer_count;
+        let total_count = self.defer_blocks_in_scope.len();
+        let range = (total_count - defer_count as usize)..total_count;
+        &self.defer_blocks_in_scope[range]
+    }
+    #[inline]
+    pub fn defer_blocks_loop(&self) -> &[hir::Block<'hir>] {
+        let mut defer_count = 0;
+        for block in self.blocks.iter().rev() {
+            defer_count += block.defer_count;
+            if let BlockStatus::Loop = block.status {
+                let total_count = self.defer_blocks_in_scope.len();
+                let range = (total_count - defer_count as usize)..total_count;
+                return &self.defer_blocks_in_scope[range];
+            }
+        }
+        unreachable!()
     }
 
     #[inline]

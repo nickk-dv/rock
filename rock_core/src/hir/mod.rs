@@ -185,7 +185,6 @@ pub enum Stmt<'hir> {
     Break,
     Continue,
     Return(Option<&'hir Expr<'hir>>),
-    Defer(&'hir Block<'hir>),
     For(&'hir For<'hir>),
     Loop(&'hir Block<'hir>),
     Local(&'hir Local<'hir>),

@@ -314,34 +314,10 @@ impl<'c> ProcCodegen<'c> {
         self.next_loop_info = Some(loop_info);
     }
 
-    pub fn add_defer_block(&mut self, block: hir::Block<'c>) {
-        self.block_stack.last_mut().unwrap().defer_count += 1;
-        self.defer_blocks.push(block);
-    }
-
-    pub fn defer_block(&self, block_idx: usize) -> hir::Block<'c> {
-        self.defer_blocks[block_idx]
-    }
-
-    pub fn all_defer_blocks(&self) -> std::ops::Range<usize> {
-        let total_count = self.defer_blocks.len();
-        0..total_count
-    }
-
-    pub fn last_defer_blocks(&self) -> std::ops::Range<usize> {
-        let total_count = self.defer_blocks.len();
-        let defer_count = self.block_stack.last().unwrap().defer_count as usize;
-        (total_count - defer_count)..total_count
-    }
-
-    pub fn last_loop_info(&self) -> (LoopInfo, std::ops::Range<usize>) {
-        let total_count = self.defer_blocks.len();
-        let mut defer_count = 0;
-
-        for block_info in self.block_stack.iter().rev() {
-            defer_count += block_info.defer_count as usize;
-            if let Some(loop_info) = block_info.loop_info {
-                return (loop_info, (total_count - defer_count)..total_count);
+    pub fn last_loop_info(&self) -> LoopInfo {
+        for block in self.block_stack.iter().rev() {
+            if let Some(loop_info) = block.loop_info {
+                return loop_info;
             }
         }
         unreachable!()
