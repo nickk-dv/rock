@@ -508,7 +508,12 @@ fn codegen_index<'c>(
     target: &hir::Expr<'c>,
     access: &hir::IndexAccess<'c>,
 ) -> llvm::Value {
-    let target_ptr = codegen_expr_pointer(cg, target);
+    //@also handle slice by value?
+    // sometimes causes proc results to stack allocate.
+    let target_ptr = match access.kind {
+        hir::IndexKind::Multi(_) => codegen_expr_value(cg, target).into_ptr(),
+        hir::IndexKind::Slice(_) | hir::IndexKind::Array(_) => codegen_expr_pointer(cg, target),
+    };
     let target_ptr = if access.deref.is_some() {
         cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
     } else {
