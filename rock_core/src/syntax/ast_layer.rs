@@ -485,13 +485,6 @@ ast_node_impl!(LitFloat, SyntaxKind::LIT_FLOAT);
 ast_node_impl!(LitChar, SyntaxKind::LIT_CHAR);
 ast_node_impl!(LitString, SyntaxKind::LIT_STRING);
 
-ast_node_impl!(RangeFull, SyntaxKind::RANGE_FULL);
-ast_node_impl!(RangeToExclusive, SyntaxKind::RANGE_TO_EXCLUSIVE);
-ast_node_impl!(RangeToInclusive, SyntaxKind::RANGE_TO_INCLUSIVE);
-ast_node_impl!(RangeFrom, SyntaxKind::RANGE_FROM);
-ast_node_impl!(RangeExclusive, SyntaxKind::RANGE_EXCLUSIVE);
-ast_node_impl!(RangeInclusive, SyntaxKind::RANGE_INCLUSIVE);
-
 ast_node_impl!(Name, SyntaxKind::NAME);
 ast_node_impl!(Bind, SyntaxKind::BIND);
 ast_node_impl!(BindList, SyntaxKind::BIND_LIST);
@@ -671,7 +664,6 @@ pub enum Expr<'syn> {
     ArrayRepeat(ExprArrayRepeat<'syn>),
     Deref(ExprDeref<'syn>),
     Address(ExprAddress<'syn>),
-    Range(Range<'syn>),
     Unary(ExprUnary<'syn>),
     Binary(ExprBinary<'syn>),
 }
@@ -681,6 +673,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
+            SyntaxKind::BLOCK => Some(Expr::Block(Block(node))),
             SyntaxKind::EXPR_MATCH => Some(Expr::Match(ExprMatch(node))),
             SyntaxKind::EXPR_FIELD => Some(Expr::Field(ExprField(node))),
             SyntaxKind::EXPR_INDEX => Some(Expr::Index(ExprIndex(node))),
@@ -700,12 +693,8 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             _ => {
                 if let Some(lit) = Lit::cast(node) {
                     Some(Expr::Lit(lit))
-                } else if let Some(block) = Block::cast(node) {
-                    Some(Expr::Block(block))
                 } else if let Some(directive) = Directive::cast(node) {
                     Some(Expr::Directive(directive))
-                } else if let Some(range) = Range::cast(node) {
-                    Some(Expr::Range(range))
                 } else {
                     None
                 }
@@ -733,7 +722,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::ArrayRepeat(expr) => expr.find_range(tree),
             Expr::Deref(expr) => expr.find_range(tree),
             Expr::Address(expr) => expr.find_range(tree),
-            Expr::Range(range) => range.find_range(tree),
             Expr::Unary(expr) => expr.find_range(tree),
             Expr::Binary(expr) => expr.find_range(tree),
         }
@@ -804,40 +792,6 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
             Lit::Float(lit) => lit.find_range(tree),
             Lit::Char(lit) => lit.find_range(tree),
             Lit::String(lit) => lit.find_range(tree),
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub enum Range<'syn> {
-    Full(RangeFull<'syn>),
-    ToExclusive(RangeToExclusive<'syn>),
-    ToInclusive(RangeToInclusive<'syn>),
-    From(RangeFrom<'syn>),
-    Exclusive(RangeExclusive<'syn>),
-    Inclusive(RangeInclusive<'syn>),
-}
-
-impl<'syn> AstNode<'syn> for Range<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Range<'syn>> {
-        match node.kind {
-            SyntaxKind::RANGE_FULL => Some(Range::Full(RangeFull(node))),
-            SyntaxKind::RANGE_TO_EXCLUSIVE => Some(Range::ToExclusive(RangeToExclusive(node))),
-            SyntaxKind::RANGE_TO_INCLUSIVE => Some(Range::ToInclusive(RangeToInclusive(node))),
-            SyntaxKind::RANGE_FROM => Some(Range::From(RangeFrom(node))),
-            SyntaxKind::RANGE_EXCLUSIVE => Some(Range::Exclusive(RangeExclusive(node))),
-            SyntaxKind::RANGE_INCLUSIVE => Some(Range::Inclusive(RangeInclusive(node))),
-            _ => None,
-        }
-    }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
-        match self {
-            Range::Full(range) => range.find_range(tree),
-            Range::ToExclusive(range) => range.find_range(tree),
-            Range::ToInclusive(range) => range.find_range(tree),
-            Range::From(range) => range.find_range(tree),
-            Range::Exclusive(range) => range.find_range(tree),
-            Range::Inclusive(range) => range.find_range(tree),
         }
     }
 }
@@ -1240,32 +1194,6 @@ impl<'syn> LitChar<'syn> {
 
 impl<'syn> LitString<'syn> {
     token_find_id!(t_string_lit_id, T![string_lit]);
-}
-
-//==================== RANGE ====================
-
-impl<'syn> RangeFull<'syn> {}
-
-impl<'syn> RangeToExclusive<'syn> {
-    node_find!(end, Expr);
-}
-
-impl<'syn> RangeToInclusive<'syn> {
-    node_find!(end, Expr);
-}
-
-impl<'syn> RangeFrom<'syn> {
-    node_find!(start, Expr);
-}
-
-impl<'syn> RangeExclusive<'syn> {
-    node_before_token!(start, Expr, T!["..<"]);
-    node_after_token!(end, Expr, T!["..<"]);
-}
-
-impl<'syn> RangeInclusive<'syn> {
-    node_before_token!(start, Expr, T!["..="]);
-    node_after_token!(end, Expr, T!["..="]);
 }
 
 //==================== COMMON ====================

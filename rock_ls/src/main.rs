@@ -839,13 +839,6 @@ fn semantic_visit_node(
                     SyntaxKind::LIT_CHAR => None,
                     SyntaxKind::LIT_STRING => None,
 
-                    SyntaxKind::RANGE_FULL => None,
-                    SyntaxKind::RANGE_TO_EXCLUSIVE => None,
-                    SyntaxKind::RANGE_TO_INCLUSIVE => None,
-                    SyntaxKind::RANGE_FROM => None,
-                    SyntaxKind::RANGE_EXCLUSIVE => None,
-                    SyntaxKind::RANGE_INCLUSIVE => None,
-
                     SyntaxKind::NAME => ident_style, // use pushed style
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
                     SyntaxKind::BIND_LIST => None,

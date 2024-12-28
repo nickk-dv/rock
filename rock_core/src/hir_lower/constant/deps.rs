@@ -814,29 +814,6 @@ fn add_expr_const_dependencies<'ast>(
             error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "address");
             Err(parent_id)
         }
-        ast::ExprKind::Range { range } => {
-            match *range {
-                ast::Range::Full => {}
-                ast::Range::ToExclusive(end) => {
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
-                }
-                ast::Range::ToInclusive(end) => {
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
-                }
-                ast::Range::From(start) => {
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
-                }
-                ast::Range::Exclusive(start, end) => {
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
-                }
-                ast::Range::Inclusive(start, end) => {
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, start)?;
-                    add_expr_const_dependencies(ctx, tree, parent_id, origin_id, end)?;
-                }
-            }
-            Ok(())
-        }
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())

@@ -402,7 +402,6 @@ pub fn typecheck_expr<'hir, 'ast>(
         }
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
-        ast::ExprKind::Range { range } => typecheck_range(ctx, range, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
@@ -1701,95 +1700,7 @@ fn typecheck_address<'hir, 'ast>(
     TypeResult::new(ref_ty, kind)
 }
 
-fn typecheck_range<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    range: &ast::Range<'ast>,
-    expr_range: TextRange,
-) -> TypeResult<'hir> {
-    let struct_name = match range {
-        ast::Range::Full => "RangeFull",
-        ast::Range::ToExclusive(_) => "RangeTo",
-        ast::Range::ToInclusive(_) => "RangeToInclusive",
-        ast::Range::From(_) => "RangeFrom",
-        ast::Range::Exclusive(_, _) => "Range",
-        ast::Range::Inclusive(_, _) => "RangeInclusive",
-    };
-
-    //@improve facilities and error handling of getting things from core library
-    let (struct_id, range_id) = match core_find_struct(ctx, "range", struct_name) {
-        Some(value) => value,
-        None => {
-            let msg = format!("failed to locate struct `{struct_name}` in `core:range`");
-            let src = ctx.src(expr_range);
-            ctx.emit.error(Error::new(msg, src, None));
-            return TypeResult::error();
-        }
-    };
-
-    macro_rules! range_full {
-        () => {{
-            let kind = hir::ExprKind::StructInit { struct_id, input: &[] };
-            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
-        }};
-    }
-
-    macro_rules! range_single {
-        ($one:expr) => {{
-            let one_src = ctx
-                .registry
-                .struct_data(struct_id)
-                .fields
-                .get(0)
-                .map(|f| SourceRange::new(range_id, f.ty_range));
-            let one_res =
-                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, one_src), $one);
-
-            let input = [hir::FieldInit { field_id: hir::FieldID::new(0), expr: one_res.expr }];
-            let kind =
-                hir::ExprKind::StructInit { struct_id, input: ctx.arena.alloc_slice(&input) };
-            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
-        }};
-    }
-
-    macro_rules! range_double {
-        ($one:expr, $two:expr) => {{
-            let one_src = ctx
-                .registry
-                .struct_data(struct_id)
-                .fields
-                .get(0)
-                .map(|f| SourceRange::new(range_id, f.ty_range));
-            let two_src = ctx
-                .registry
-                .struct_data(struct_id)
-                .fields
-                .get(1)
-                .map(|f| SourceRange::new(range_id, f.ty_range));
-            let one_res =
-                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, one_src), $one);
-            let two_res =
-                typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, two_src), $two);
-
-            let input = [
-                hir::FieldInit { field_id: hir::FieldID::new(0), expr: one_res.expr },
-                hir::FieldInit { field_id: hir::FieldID::new(1), expr: two_res.expr },
-            ];
-            let kind =
-                hir::ExprKind::StructInit { struct_id, input: ctx.arena.alloc_slice(&input) };
-            TypeResult::new(hir::Type::Struct(struct_id, &[]), kind)
-        }};
-    }
-
-    match *range {
-        ast::Range::Full => range_full!(),
-        ast::Range::ToExclusive(end) => range_single!(end),
-        ast::Range::ToInclusive(end) => range_single!(end),
-        ast::Range::From(start) => range_single!(start),
-        ast::Range::Exclusive(start, end) => range_double!(start, end),
-        ast::Range::Inclusive(start, end) => range_double!(start, end),
-    }
-}
-
+//@move handling of core dependencies to context
 fn core_find_struct(
     ctx: &HirCtx,
     module_name: &'static str,

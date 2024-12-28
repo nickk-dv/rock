@@ -322,7 +322,6 @@ pub enum ExprKind<'ast> {
     ArrayRepeat { value: &'ast Expr<'ast>, len: ConstExpr<'ast> },
     Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
-    Range       { range: &'ast Range<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },
     Binary      { op: BinOp, op_start: TextOffset, lhs: &'ast Expr<'ast>, rhs: &'ast Expr<'ast> },
 }
@@ -397,16 +396,6 @@ pub enum Lit {
 pub struct StringLit {
     pub id: LitID,
     pub c_string: bool,
-}
-
-#[derive(Copy, Clone)]
-pub enum Range<'ast> {
-    Full,                                          // ..
-    ToExclusive(&'ast Expr<'ast>),                 // ..<2
-    ToInclusive(&'ast Expr<'ast>),                 // ..=2
-    From(&'ast Expr<'ast>),                        // 0..
-    Exclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..<2
-    Inclusive(&'ast Expr<'ast>, &'ast Expr<'ast>), // 0..=2
 }
 
 //==================== COMMON ====================

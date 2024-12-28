@@ -167,12 +167,12 @@ proc test_cannot_ref_temporary(v: s32) void {
 //  │     ^^^^^^^^^
 //  ├─ src/test.rock:3:5
 //  │
-//1 │ const CONSTANT: s32 = 10;
-//  │       ──────── constant defined here
-//  └─ src/test.rock:1:7
+//1 │ CONSTANT: s32 = 10;
+//  │ ──────── constant defined here
+//  └─ src/test.rock:1:1
 //
 //#!
-const CONSTANT: s32 = 10;
+CONSTANT: s32 = 10;
 proc test_cannot_ref_const() void {
     &CONSTANT;
 }

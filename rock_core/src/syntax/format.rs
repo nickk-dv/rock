@@ -1274,7 +1274,6 @@ fn expr<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::Expr<'syn>) {
         cst::Expr::ArrayRepeat(expr) => expr_array_repeat(fmt, expr),
         cst::Expr::Deref(expr) => expr_deref(fmt, expr),
         cst::Expr::Address(expr) => expr_address(fmt, expr),
-        cst::Expr::Range(range_cst) => range(fmt, range_cst),
         cst::Expr::Unary(expr) => expr_unary(fmt, expr),
         cst::Expr::Binary(expr) => expr_binary(fmt, expr),
     }
@@ -1581,34 +1580,6 @@ fn pat_or<'syn>(fmt: &mut Formatter<'syn, '_>, pat_or: cst::PatOr<'syn>) {
 
 fn lit(fmt: &mut Formatter, lit: cst::Lit) {
     fmt.write_range(lit.find_range(fmt.tree));
-}
-
-fn range<'syn>(fmt: &mut Formatter<'syn, '_>, range: cst::Range<'syn>) {
-    match range {
-        cst::Range::Full(_) => fmt.write_str(".."),
-        cst::Range::ToExclusive(range) => {
-            fmt.write_str("..<");
-            expr(fmt, range.end(fmt.tree).unwrap());
-        }
-        cst::Range::ToInclusive(range) => {
-            fmt.write_str("..=");
-            expr(fmt, range.end(fmt.tree).unwrap());
-        }
-        cst::Range::From(range) => {
-            expr(fmt, range.start(fmt.tree).unwrap());
-            fmt.write_str("..");
-        }
-        cst::Range::Exclusive(range) => {
-            expr(fmt, range.start(fmt.tree).unwrap());
-            fmt.write_str("..<");
-            expr(fmt, range.end(fmt.tree).unwrap());
-        }
-        cst::Range::Inclusive(range) => {
-            expr(fmt, range.start(fmt.tree).unwrap());
-            fmt.write_str("..=");
-            expr(fmt, range.end(fmt.tree).unwrap());
-        }
-    }
 }
 
 //==================== COMMON ====================

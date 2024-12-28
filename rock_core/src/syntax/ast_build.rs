@@ -779,12 +779,6 @@ fn expr_kind<'ast>(
 
             ast::ExprKind::Address { mutt, rhs: expr }
         }
-        cst::Expr::Range(range_cst) => {
-            let range = range(ctx, range_cst);
-
-            let range = ctx.arena.alloc(range);
-            ast::ExprKind::Range { range }
-        }
         cst::Expr::Unary(unary) => {
             let (op, op_range) = unary.un_op(ctx.tree).unwrap();
             let rhs = expr(ctx, unary.rhs(ctx.tree).unwrap());
@@ -903,34 +897,6 @@ fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> ast::StringLit {
     let token_id = lit.t_string_lit_id(ctx.tree).unwrap();
     let (id, c_string) = ctx.tree.tokens().string(token_id);
     ast::StringLit { id, c_string }
-}
-
-fn range<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, range: cst::Range) -> ast::Range<'ast> {
-    match range {
-        cst::Range::Full(_) => ast::Range::Full,
-        cst::Range::ToExclusive(range) => {
-            let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::ToExclusive(end)
-        }
-        cst::Range::ToInclusive(range) => {
-            let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::ToInclusive(end)
-        }
-        cst::Range::From(range) => {
-            let start = expr(ctx, range.start(ctx.tree).unwrap());
-            ast::Range::From(start)
-        }
-        cst::Range::Exclusive(range) => {
-            let start = expr(ctx, range.start(ctx.tree).unwrap());
-            let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::Exclusive(start, end)
-        }
-        cst::Range::Inclusive(range) => {
-            let start = expr(ctx, range.start(ctx.tree).unwrap());
-            let end = expr(ctx, range.end(ctx.tree).unwrap());
-            ast::Range::Inclusive(start, end)
-        }
-    }
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {

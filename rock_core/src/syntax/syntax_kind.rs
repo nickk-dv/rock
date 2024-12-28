@@ -93,13 +93,6 @@ pub enum SyntaxKind {
     LIT_CHAR,
     LIT_STRING,
 
-    RANGE_FULL,
-    RANGE_TO_EXCLUSIVE,
-    RANGE_TO_INCLUSIVE,
-    RANGE_FROM,
-    RANGE_EXCLUSIVE,
-    RANGE_INCLUSIVE,
-
     NAME,
     BIND,
     BIND_LIST,

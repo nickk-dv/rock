@@ -774,23 +774,6 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T!['['] => expr_array_init_or_repeat(p),
         T![*] => expr_deref(p),
         T![&] => expr_address(p),
-        T![..] => {
-            let m = p.start();
-            p.bump(T![..]);
-            m.complete(p, SyntaxKind::RANGE_FULL)
-        }
-        T!["..<"] => {
-            let m = p.start();
-            p.bump(T!["..<"]);
-            expr(p);
-            m.complete(p, SyntaxKind::RANGE_TO_EXCLUSIVE)
-        }
-        T!["..="] => {
-            let m = p.start();
-            p.bump(T!["..="]);
-            expr(p);
-            m.complete(p, SyntaxKind::RANGE_TO_INCLUSIVE)
-        }
         _ => p.error_recover("expected expression", TokenSet::empty()),
     };
 
@@ -825,23 +808,6 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
                 let m = p.start_before(mc);
                 args_list(p);
                 mc = m.complete(p, SyntaxKind::EXPR_CALL);
-            }
-            T![..] => {
-                let m = p.start_before(mc);
-                p.bump(T![..]);
-                mc = m.complete(p, SyntaxKind::RANGE_FROM);
-            }
-            T!["..<"] => {
-                let m = p.start_before(mc);
-                p.bump(T!["..<"]);
-                primary_expr(p);
-                mc = m.complete(p, SyntaxKind::RANGE_EXCLUSIVE);
-            }
-            T!["..="] => {
-                let m = p.start_before(mc);
-                p.bump(T!["..="]);
-                primary_expr(p);
-                mc = m.complete(p, SyntaxKind::RANGE_INCLUSIVE);
             }
             _ => return mc,
         }
