@@ -1,6 +1,66 @@
 use crate::error::{Error, ErrorSink, Info, SourceRange, Warning, WarningSink};
 use std::path::PathBuf;
 
+//==================== OPERATING SYSTEM ====================
+
+pub fn os_current_exe_path(io_error: String) -> Error {
+    let msg = format!("failed to obtain current executable path\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_dir_get_current_working(io_error: String) -> Error {
+    let msg = format!("failed to obtain current working directory\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_dir_set_current_working(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to set current working directory: `{path}`\nreason: {io_error}",);
+    Error::message(msg)
+}
+
+pub fn os_dir_create(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to create directory: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_dir_read(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to read directory: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_dir_entry_read(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to read directory entry in: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_file_create(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to create file: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_file_read(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to read file: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
+pub fn os_filename_missing(path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("filename is missing in: `{path}`");
+    Error::message(msg)
+}
+
+pub fn os_filename_non_utf8(path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("filename is not valid UTF-8: `{path}`");
+    Error::message(msg)
+}
+
 //==================== COMMAND ====================
 
 pub fn cmd_name_missing(emit: &mut impl ErrorSink) {

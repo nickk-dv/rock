@@ -4,7 +4,6 @@ pub mod ast;
 pub mod config;
 pub mod error;
 pub mod errors;
-pub mod fs_env;
 pub mod hir;
 pub mod hir_lower;
 pub mod intern;

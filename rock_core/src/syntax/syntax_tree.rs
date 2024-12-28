@@ -3,7 +3,7 @@ use super::syntax_kind::SyntaxKind;
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::session::ModuleID;
-use crate::support::{Arena, BufferOffset, TempBuffer};
+use crate::support::{Arena, TempBuffer, TempOffset};
 use crate::token::{TokenID, TokenList, Trivia, TriviaID};
 
 pub struct SyntaxTree<'syn> {
@@ -100,7 +100,7 @@ struct SyntaxTreeBuild<'syn, 'src> {
     arena: Arena<'syn>,
     nodes: Vec<Node<'syn>>,
     content: TempBuffer<NodeOrToken>,
-    node_stack: Vec<(BufferOffset<NodeOrToken>, NodeID)>,
+    node_stack: Vec<(TempOffset<NodeOrToken>, NodeID)>,
     parent_stack: Vec<SyntaxKind>,
     curr_token: TokenID,
     curr_trivia: TriviaID,

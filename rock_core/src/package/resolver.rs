@@ -1,25 +1,25 @@
 use super::semver::Semver;
 use crate::error::Error;
-use crate::fs_env;
+use crate::support::os;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::process::Command;
 
 //@check status codes or Command's or not?
 pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(), Error> {
-    let cwd = fs_env::dir_get_current_working()?;
-    let root = fs_env::current_exe_path()?;
+    let cwd = os::dir_get_current_working()?;
+    let root = os::current_exe_path()?;
     let registry_dir = root.join("registry");
     let index_dir = registry_dir.join("rock-index");
     let cache_dir = registry_dir.join("cache");
 
-    fs_env::dir_create(&registry_dir, false)?;
-    fs_env::dir_create(&cache_dir, false)?;
+    os::dir_create(&registry_dir, false)?;
+    os::dir_create(&cache_dir, false)?;
 
     //@on errors still set back correct cwd!
     //@dont git pull each time, takes time
     if !index_dir.exists() {
-        fs_env::dir_set_current_working(&registry_dir)?;
+        os::dir_set_current_working(&registry_dir)?;
         const INDEX_LINK: &str = "https://github.com/nickk-dv/rock-index";
         let _ = Command::new("git").args(["clone", INDEX_LINK]).status().map_err(|io_error| {
             Error::message(format!(
@@ -27,13 +27,13 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
                 INDEX_LINK, io_error
             ))
         })?;
-        fs_env::dir_set_current_working(&cwd)?;
+        os::dir_set_current_working(&cwd)?;
     } else {
-        fs_env::dir_set_current_working(&index_dir)?;
+        os::dir_set_current_working(&index_dir)?;
         let _ = Command::new("git").args(["pull"]).status().map_err(|io_error| {
             Error::message(format!("failed command: git pull\nreason: {}", io_error))
         })?;
-        fs_env::dir_set_current_working(&cwd)?;
+        os::dir_set_current_working(&cwd)?;
     }
 
     let mut selected_packages: HashMap<String, Semver> = HashMap::new();
@@ -49,7 +49,7 @@ pub fn resolve_dependencies(dependencies: &BTreeMap<String, Semver>) -> Result<(
             )));
         }
 
-        let index_manifest = fs_env::file_read_to_string(&manifest_path)?;
+        let index_manifest = os::file_read(&manifest_path)?;
         let index_manifests = super::index_manifest_deserialize(index_manifest, &manifest_path)?;
 
         let mut selected_manifest = None;

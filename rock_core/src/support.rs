@@ -1,6 +1,6 @@
 pub use arena::Arena;
 pub use bitset::BitSet;
-pub use temp_buffer::{BufferOffset, TempBuffer};
+pub use temp_buffer::{TempBuffer, TempOffset};
 pub use timer::Timer;
 
 #[allow(unsafe_code)]
@@ -125,7 +125,7 @@ mod temp_buffer {
     }
 
     #[derive(Clone)]
-    pub struct BufferOffset<T> {
+    pub struct TempOffset<T> {
         idx: usize,
         phantom: PhantomData<T>,
     }
@@ -145,8 +145,8 @@ mod temp_buffer {
         }
 
         #[inline]
-        pub fn start(&self) -> BufferOffset<T> {
-            BufferOffset { idx: self.buffer.len(), phantom: PhantomData }
+        pub fn start(&self) -> TempOffset<T> {
+            TempOffset { idx: self.buffer.len(), phantom: PhantomData }
         }
         #[inline]
         pub fn push(&mut self, value: T) {
@@ -154,16 +154,16 @@ mod temp_buffer {
         }
 
         #[inline]
-        pub fn view(&self, offset: BufferOffset<T>) -> &[T] {
+        pub fn view(&self, offset: TempOffset<T>) -> &[T] {
             &self.buffer[offset.idx..]
         }
         #[inline]
-        pub fn pop_view(&mut self, offset: BufferOffset<T>) {
+        pub fn pop_view(&mut self, offset: TempOffset<T>) {
             self.buffer.truncate(offset.idx);
         }
         pub fn take<'arena>(
             &mut self,
-            offset: BufferOffset<T>,
+            offset: TempOffset<T>,
             arena: &mut Arena<'arena>,
         ) -> &'arena [T]
         where
@@ -181,14 +181,16 @@ mod bitset {
 
     #[derive(Copy, Clone)]
     pub struct BitSet<T>
-    where T: Copy + Clone + Into<u32>
+    where
+        T: Copy + Clone + Into<u32>,
     {
         mask: u32,
         phantom: PhantomData<T>,
     }
 
     impl<T> BitSet<T>
-    where T: Copy + Clone + Into<u32>
+    where
+        T: Copy + Clone + Into<u32>,
     {
         #[inline]
         pub fn empty() -> BitSet<T> {
@@ -221,6 +223,81 @@ mod timer {
             let duration = end.duration_since(self.start);
             duration.as_secs_f64() * 1000.0
         }
+    }
+}
+
+pub mod os {
+    use crate::error::Error;
+    use crate::errors as err;
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
+
+    pub fn current_exe_path() -> Result<PathBuf, Error> {
+        let mut current_exe = std::env::current_exe()
+            .map_err(|io_error| err::os_current_exe_path(io_error.to_string()))?;
+        current_exe.pop();
+        Ok(current_exe)
+    }
+
+    pub fn dir_get_current_working() -> Result<PathBuf, Error> {
+        std::env::current_dir()
+            .map_err(|io_error| err::os_dir_get_current_working(io_error.to_string()))
+    }
+
+    pub fn dir_set_current_working(path: &PathBuf) -> Result<(), Error> {
+        std::env::set_current_dir(path)
+            .map_err(|io_error| err::os_dir_set_current_working(io_error.to_string(), path))
+    }
+
+    pub fn dir_create(path: &PathBuf, force: bool) -> Result<(), Error> {
+        if !force && path.exists() {
+            return Ok(());
+        }
+        std::fs::create_dir(path).map_err(|io_error| err::os_dir_create(io_error.to_string(), path))
+    }
+
+    pub fn dir_read(path: &PathBuf) -> Result<std::fs::ReadDir, Error> {
+        std::fs::read_dir(path).map_err(|io_error| err::os_dir_read(io_error.to_string(), path))
+    }
+
+    pub fn dir_entry_read(
+        origin: &PathBuf,
+        entry_result: Result<std::fs::DirEntry, std::io::Error>,
+    ) -> Result<std::fs::DirEntry, Error> {
+        entry_result.map_err(|io_error| err::os_dir_entry_read(io_error.to_string(), origin))
+    }
+
+    pub fn file_create(path: &PathBuf, text: &str) -> Result<(), Error> {
+        std::fs::write(path, text)
+            .map_err(|io_error| err::os_file_create(io_error.to_string(), path))
+    }
+
+    pub fn file_read(path: &PathBuf) -> Result<String, Error> {
+        std::fs::read_to_string(path)
+            .map_err(|io_error| err::os_file_read(io_error.to_string(), path))
+    }
+
+    pub fn file_read_with_sentinel(path: &PathBuf) -> Result<String, Error> {
+        fn inner(path: &Path) -> std::io::Result<String> {
+            let mut file = std::fs::File::open(path)?;
+            let size = file.metadata().map(|m| m.len() as usize).ok();
+            let mut string = String::new();
+            string.try_reserve_exact(size.unwrap_or(0) + 1)?;
+            file.read_to_string(&mut string)?;
+            string.push_str("\0");
+            Ok(string)
+        }
+        inner(path.as_ref()).map_err(|io_error| err::os_file_read(io_error.to_string(), path))
+    }
+
+    pub fn filename(path: &PathBuf) -> Result<&str, Error> {
+        let file_stem = path.file_stem().ok_or(err::os_filename_missing(path))?;
+        file_stem.to_str().ok_or(err::os_filename_non_utf8(path))
+    }
+
+    pub fn file_extension(path: &PathBuf) -> Option<&str> {
+        let extension = path.extension()?;
+        extension.to_str()
     }
 }
 
@@ -282,7 +359,8 @@ macro_rules! define_id {
 /// `fn as_str()` convert enum to string.  
 /// `fn from_str()` try to convert string to an enum.
 pub trait AsStr
-where Self: Sized + 'static
+where
+    Self: Sized + 'static,
 {
     const ALL: &[Self];
     fn as_str(self) -> &'static str;

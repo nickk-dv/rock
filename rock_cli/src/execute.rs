@@ -4,13 +4,12 @@ use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
 use rock_core::error::{Error, ErrorWarningBuffer};
 use rock_core::errors as err;
-use rock_core::fs_env;
 use rock_core::hir_lower;
 use rock_core::package;
 use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
 use rock_core::package::semver::Semver;
 use rock_core::session::{self, BuildStats, Session};
-use rock_core::support::{AsStr, Timer};
+use rock_core::support::{os, AsStr, Timer};
 use rock_core::syntax::ast_build;
 use rock_core::syntax::format;
 use std::collections::BTreeMap;
@@ -35,13 +34,13 @@ pub fn command(command: Command) -> Result<(), Error> {
 }
 
 pub fn new(data: CommandNew) -> Result<(), Error> {
-    let cwd = fs_env::dir_get_current_working()?;
+    let cwd = os::dir_get_current_working()?;
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
 
     package::verify_name(&data.name)?;
-    fs_env::dir_create(&root_dir, true)?;
-    fs_env::dir_create(&src_dir, true)?;
+    os::dir_create(&root_dir, true)?;
+    os::dir_create(&src_dir, true)?;
 
     const IMPORT_PRINTF: &str = "import core:libc.{ printf };\n\n";
     match data.kind {
@@ -50,14 +49,14 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
                 "{IMPORT_PRINTF}proc main() s32 {{\n    let _ = printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
                 data.name
             );
-            fs_env::file_create_or_rewrite(&src_dir.join("main.rock"), &bin_content)?
+            os::file_create(&src_dir.join("main.rock"), &bin_content)?
         }
         PackageKind::Lib => {
             let lib_content = format!(
                 "{IMPORT_PRINTF}proc test() void {{\n    let _ = printf(c\"Lib `{}` works\\n\");\n}}\n",
                 data.name
             );
-            fs_env::file_create_or_rewrite(&src_dir.join("test.rock"), &lib_content)?;
+            os::file_create(&src_dir.join("test.rock"), &lib_content)?;
         }
     }
 
@@ -86,13 +85,13 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
         let manifest = Manifest { package, build, dependencies: BTreeMap::new() };
 
         let manifest_text = package::manifest_serialize(&manifest)?;
-        fs_env::file_create_or_rewrite(&root_dir.join("Rock.toml"), &manifest_text)?;
+        os::file_create(&root_dir.join("Rock.toml"), &manifest_text)?;
     }
 
     if !data.no_git {
-        fs_env::file_create_or_rewrite(&root_dir.join(".gitignore"), "build/\n")?;
-        fs_env::file_create_or_rewrite(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
-        fs_env::dir_set_current_working(&root_dir)?;
+        os::file_create(&root_dir.join(".gitignore"), "build/\n")?;
+        os::file_create(&root_dir.join("README.md"), &format!("# {}\n", data.name))?;
+        os::dir_set_current_working(&root_dir)?;
 
         std::process::Command::new("git")
             .arg("init")
@@ -280,7 +279,7 @@ fn fmt() -> Result<(), Error> {
 
             let tree = module.tree_expect();
             let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
-            fs_env::file_create_or_rewrite(file.path(), &formatted)?;
+            os::file_create(file.path(), &formatted)?;
         }
         Ok(())
     }

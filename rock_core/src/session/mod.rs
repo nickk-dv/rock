@@ -5,10 +5,10 @@ use crate::ast::Ast;
 use crate::config::Config;
 use crate::error::Error;
 use crate::errors as err;
-use crate::fs_env;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
+use crate::support::os;
 use crate::syntax::syntax_tree::SyntaxTree;
 use graph::PackageGraph;
 use std::path::PathBuf;
@@ -238,8 +238,8 @@ impl BuildStats {
 pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
     let mut session = Session {
         vfs: Vfs::new(64),
-        curr_exe_dir: fs_env::current_exe_path()?,
-        curr_work_dir: fs_env::dir_get_current_working()?,
+        curr_exe_dir: os::current_exe_path()?,
+        curr_work_dir: os::dir_get_current_working()?,
         intern_lit: InternPool::new(512),
         intern_name: InternPool::new(1024),
         graph: PackageGraph::new(8),
@@ -282,7 +282,7 @@ fn process_package(
         return Err(err::session_src_not_found(root_dir));
     }
 
-    let manifest = fs_env::file_read_to_string(&manifest_path)?;
+    let manifest = os::file_read(&manifest_path)?;
     let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
     let name_id = session.intern_name.intern(&manifest.package.name);
 
@@ -322,28 +322,27 @@ fn process_directory(
     path: &PathBuf,
     origin: PackageID,
 ) -> Result<Directory, Error> {
-    let filename = fs_env::filename_stem(path)?;
+    let filename = os::filename(path)?;
     let name_id = session.intern_name.intern(filename);
 
     let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
-    let read_dir = fs_env::dir_read(path)?;
+    let read_dir = os::dir_read(path)?;
     for entry_result in read_dir {
-        let entry = fs_env::dir_entry_validate(path, entry_result)?;
+        let entry = os::dir_entry_read(path, entry_result)?;
         let entry_path = entry.path();
 
-        if entry_path.is_file() {
-            let extension = fs_env::file_extension(&entry_path);
-            if matches!(extension, Some("rock")) {
-                let module_id = process_module(session, &entry_path, origin)?;
-                modules.push(module_id);
+        if let Ok(metadata) = std::fs::metadata(&entry_path) {
+            if metadata.is_file() {
+                if os::file_extension(&entry_path) == Some("rock") {
+                    let module_id = process_module(session, &entry_path, origin)?;
+                    modules.push(module_id);
+                }
+            } else if metadata.is_dir() {
+                let sub_dir = process_directory(session, &entry_path, origin)?;
+                sub_dirs.push(sub_dir);
             }
-        } else if entry_path.is_dir() {
-            let sub_dir = process_directory(session, &entry_path, origin)?;
-            sub_dirs.push(sub_dir);
-        } else {
-            panic!("internal: unknown file type")
         }
     }
 
@@ -357,10 +356,10 @@ fn process_module(
     path: &PathBuf,
     origin: PackageID,
 ) -> Result<ModuleID, Error> {
-    let filename = fs_env::filename_stem(path)?;
+    let filename = os::filename(path)?;
     let name_id = session.intern_name.intern(filename);
 
-    let source = fs_env::file_read_to_string_sentinel(path)?;
+    let source = os::file_read_with_sentinel(path)?;
     let file_id = session.vfs.open(path, source);
 
     #[rustfmt::skip]

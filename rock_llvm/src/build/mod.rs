@@ -6,9 +6,9 @@ mod emit_stmt;
 use rock_core::config::{BuildKind, TargetOS};
 use rock_core::error::Error;
 use rock_core::errors as err;
-use rock_core::fs_env;
 use rock_core::hir;
 use rock_core::session::Session;
+use rock_core::support::os;
 use rock_core::support::{AsStr, Timer};
 use std::path::PathBuf;
 
@@ -31,9 +31,9 @@ pub fn build(
 
     // setup build output directories
     let mut build_path = session.curr_work_dir.join("build");
-    fs_env::dir_create(&build_path, false)?;
+    os::dir_create(&build_path, false)?;
     build_path.push(config.build_kind.as_str());
-    fs_env::dir_create(&build_path, false)?;
+    os::dir_create(&build_path, false)?;
     let bin_name = match &root_manifest.build.bin_name {
         Some(name) => name.as_str(),
         None => root_manifest.package.name.as_str(),
@@ -45,10 +45,7 @@ pub fn build(
 
     // emit-llvm & verify module
     if options.emit_llvm {
-        fs_env::file_create_or_rewrite(
-            &build_path.join(format!("{bin_name}.ll")),
-            &module.to_string(),
-        )?;
+        os::file_create(&build_path.join(format!("{bin_name}.ll")), &module.to_string())?;
     }
     if let Err(error) = module.verify() {
         return Err(err::backend_module_verify_failed(error));
@@ -130,7 +127,7 @@ pub fn build(
     }
 
     let timer = Timer::start();
-    let install_bin = fs_env::current_exe_path()?.join("bin");
+    let install_bin = os::current_exe_path()?.join("bin");
     let linker_path = match config.target_os {
         TargetOS::Windows => install_bin.join("lld-link.exe"),
         TargetOS::Linux => install_bin.join("ld.lld"),
