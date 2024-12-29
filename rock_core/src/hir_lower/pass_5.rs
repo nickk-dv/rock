@@ -382,9 +382,7 @@ pub fn typecheck_expr<'hir, 'ast>(
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
-        ast::ExprKind::Slice { target, mutt, range } => {
-            typecheck_slice(ctx, target, mutt, range, expr.range)
-        }
+        ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
@@ -1044,8 +1042,7 @@ fn typecheck_index<'hir, 'ast>(
 fn typecheck_slice<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     target: &ast::Expr<'ast>,
-    mutt: ast::Mut,
-    range: &ast::Expr<'ast>,
+    range: &ast::SliceRange<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let src = ctx.src(expr_range);

@@ -685,9 +685,19 @@ fn expr_kind<'ast>(
         }
         cst::Expr::Slice(slice) => {
             let target = expr(ctx, slice.target(ctx.tree).unwrap());
-            let mutt = mutt(slice.t_mut(ctx.tree));
-            let range = expr(ctx, slice.range_(ctx.tree).unwrap());
-            ast::ExprKind::Slice { target, mutt, range }
+            let range = if slice.t_exclusive(ctx.tree).is_some() {
+                let start = slice.start_exclusive(ctx.tree).map(|e| expr(ctx, e));
+                let end = expr(ctx, slice.end_exclusive(ctx.tree).unwrap());
+                ast::SliceRange { start, end: Some((ast::RangeKind::Exclusive, end)) }
+            } else if slice.t_inclusive(ctx.tree).is_some() {
+                let start = slice.start_inclusive(ctx.tree).map(|e| expr(ctx, e));
+                let end = expr(ctx, slice.end_inclusive(ctx.tree).unwrap());
+                ast::SliceRange { start, end: Some((ast::RangeKind::Inclusive, end)) }
+            } else {
+                let start = slice.start_full(ctx.tree).map(|e| expr(ctx, e));
+                ast::SliceRange { start, end: None }
+            };
+            ast::ExprKind::Slice { target, range: ctx.arena.alloc(range) }
         }
         cst::Expr::Call(call) => {
             let target = expr(ctx, call.target(ctx.tree).unwrap());

@@ -793,15 +793,26 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
                 let m = p.start_before(mc);
                 p.bump(T!['[']);
 
-                if p.eat(T![:]) {
-                    p.eat(T![mut]);
+                if p.eat(T![..]) {
+                    p.expect(T![']']);
+                    mc = m.complete(p, SyntaxKind::EXPR_SLICE);
+                } else if p.eat(T!["..<"]) || p.eat(T!["..="]) {
                     expr(p);
                     p.expect(T![']']);
                     mc = m.complete(p, SyntaxKind::EXPR_SLICE);
                 } else {
                     expr(p);
-                    p.expect(T![']']);
-                    mc = m.complete(p, SyntaxKind::EXPR_INDEX);
+                    if p.eat(T![..]) {
+                        p.expect(T![']']);
+                        mc = m.complete(p, SyntaxKind::EXPR_SLICE);
+                    } else if p.eat(T!["..<"]) || p.eat(T!["..="]) {
+                        expr(p);
+                        p.expect(T![']']);
+                        mc = m.complete(p, SyntaxKind::EXPR_SLICE);
+                    } else {
+                        p.expect(T![']']);
+                        mc = m.complete(p, SyntaxKind::EXPR_INDEX);
+                    }
                 }
             }
             T!['('] => {

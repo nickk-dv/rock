@@ -1362,12 +1362,24 @@ fn expr_index<'syn>(fmt: &mut Formatter<'syn, '_>, index: cst::ExprIndex<'syn>) 
 fn expr_slice<'syn>(fmt: &mut Formatter<'syn, '_>, slice: cst::ExprSlice<'syn>) {
     expr(fmt, slice.target(fmt.tree).unwrap());
     fmt.write('[');
-    fmt.write(':');
-    if slice.t_mut(fmt.tree).is_some() {
-        fmt.write_str("mut");
-        fmt.space();
+    if slice.t_exclusive(fmt.tree).is_some() {
+        if let Some(start) = slice.start_exclusive(fmt.tree) {
+            expr(fmt, start);
+        }
+        fmt.write_str("..<");
+        expr(fmt, slice.end_exclusive(fmt.tree).unwrap());
+    } else if slice.t_inclusive(fmt.tree).is_some() {
+        if let Some(start) = slice.start_inclusive(fmt.tree) {
+            expr(fmt, start);
+        }
+        fmt.write_str("..=");
+        expr(fmt, slice.end_inclusive(fmt.tree).unwrap());
+    } else {
+        if let Some(start) = slice.start_full(fmt.tree) {
+            expr(fmt, start);
+        }
+        fmt.write_str("..");
     }
-    expr(fmt, slice.range_(fmt.tree).unwrap());
     fmt.write(']');
 }
 

@@ -184,6 +184,39 @@ impl<'syn> Node<'syn> {
         None
     }
 
+    fn node_between_tokens<T: AstNode<'syn>>(
+        &self,
+        tree: &'syn SyntaxTree<'syn>,
+        after: Token,
+        before: Token,
+    ) -> Option<T> {
+        let mut found_start = false;
+        for not in self.content.iter().copied() {
+            match not {
+                NodeOrToken::Node(id) => {
+                    if !found_start {
+                        continue;
+                    }
+                    let node = tree.node(id);
+                    if let Some(cst_node) = T::cast(node) {
+                        return Some(cst_node);
+                    }
+                }
+                NodeOrToken::Token(id) => {
+                    let token = tree.tokens().token(id);
+                    if !found_start && token == after {
+                        found_start = true;
+                    }
+                    if token == before {
+                        return None;
+                    }
+                }
+                NodeOrToken::Trivia(_) => {}
+            }
+        }
+        None
+    }
+
     fn token_find(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TextRange> {
         for not in self.content.iter().copied() {
             if let NodeOrToken::Token(id) = not {
@@ -357,6 +390,14 @@ macro_rules! node_before_token_predicate {
     ($fn_name:ident, $find_ty:ident, $predicate:expr) => {
         pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
             self.0.node_before_token_predicate(tree, $predicate)
+        }
+    };
+}
+
+macro_rules! node_between_tokens {
+    ($fn_name:ident, $find_ty:ident, $after:expr, $before:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+            self.0.node_between_tokens(tree, $after, $before)
         }
     };
 }
@@ -1075,9 +1116,15 @@ impl<'syn> ExprIndex<'syn> {
 }
 
 impl<'syn> ExprSlice<'syn> {
-    token_find!(t_mut, T![mut]);
     node_before_token!(target, Expr, T!['[']);
-    node_after_token!(range_, Expr, T!['[']);
+    token_find!(t_full, T![..]);
+    token_find!(t_exclusive, T!["..<"]);
+    token_find!(t_inclusive, T!["..="]);
+    node_between_tokens!(start_full, Expr, T!['['], T![..]);
+    node_between_tokens!(start_exclusive, Expr, T!['['], T!["..<"]);
+    node_between_tokens!(start_inclusive, Expr, T!['['], T!["..="]);
+    node_after_token!(end_exclusive, Expr, T!["..<"]);
+    node_after_token!(end_inclusive, Expr, T!["..="]);
 }
 
 impl<'syn> ExprCall<'syn> {
