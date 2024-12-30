@@ -483,6 +483,7 @@ crate::enum_as_str! {
         F32 "f32",
         F64 "f64",
         Bool "bool",
+        Bool32 "bool32",
         Char "char",
         Rawptr "rawptr",
         Void "void",

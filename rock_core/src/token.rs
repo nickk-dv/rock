@@ -239,8 +239,8 @@ macro_rules! token_gen {
 
         /// lenght in bytes of `normal` tokens,  
         /// `special` tokens will have lenght of 0.
-        const NORMAL_TOKEN_LEN: [u8; 94] = {
-            let mut token_len: [u8; 94] =  [
+        const NORMAL_TOKEN_LEN: [u8; 95] = {
+            let mut token_len: [u8; 95] =  [
                 $($string.len() as u8,)+
             ];
             token_len[T![eof] as usize] = 0;
@@ -408,6 +408,7 @@ token_gen! {
     [f32]      | "f32"      | KwF32      | BASIC[BasicType::F32]
     [f64]      | "f64"      | KwF64      | BASIC[BasicType::F64]
     [bool]     | "bool"     | KwBool     | BASIC[BasicType::Bool]
+    [bool32]   | "bool32"   | KwBool32   | BASIC[BasicType::Bool32]
     [char]     | "char"     | KwChar     | BASIC[BasicType::Char]
     [rawptr]   | "rawptr"   | KwRawptr   | BASIC[BasicType::Rawptr]
     [void]     | "void"     | KwVoid     | BASIC[BasicType::Void]

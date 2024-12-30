@@ -281,7 +281,7 @@ pub enum ExprKind<'hir> {
 pub enum ConstValue<'hir> {
     Void,
     Null,
-    Bool        { val: bool },
+    Bool        { val: bool, bool_ty: BasicBool },
     Int         { val: u64, neg: bool, int_ty: BasicInt },
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
@@ -437,6 +437,8 @@ pub enum CastKind {
     Float_Trunc,
     Float_Extend,
     Bool_to_Int,
+    Bool_to_Bool32,
+    Bool32_to_Bool,
     Char_to_U32,
 }
 
@@ -505,6 +507,14 @@ crate::enum_as_str! {
     pub enum BasicFloat {
         F32 "f32",
         F64 "f64",
+    }
+}
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum BasicBool {
+        Bool "bool",
+        Bool32 "bool32",
     }
 }
 
@@ -942,11 +952,26 @@ impl BasicFloat {
             _ => None,
         }
     }
-
     pub fn into_basic(self) -> ast::BasicType {
         match self {
             BasicFloat::F32 => ast::BasicType::F32,
             BasicFloat::F64 => ast::BasicType::F64,
+        }
+    }
+}
+
+impl BasicBool {
+    pub fn from_basic(basic: ast::BasicType) -> Option<BasicBool> {
+        match basic {
+            ast::BasicType::Bool => Some(BasicBool::Bool),
+            ast::BasicType::Bool32 => Some(BasicBool::Bool32),
+            _ => None,
+        }
+    }
+    pub fn into_basic(self) -> ast::BasicType {
+        match self {
+            BasicBool::Bool => ast::BasicType::Bool,
+            BasicBool::Bool32 => ast::BasicType::Bool32,
         }
     }
 }

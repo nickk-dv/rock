@@ -143,7 +143,7 @@ pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
         hir::ConstValue::Void => codegen_const_void(cg),
         hir::ConstValue::Null => codegen_const_null(cg),
-        hir::ConstValue::Bool { val } => codegen_const_bool(cg, val),
+        hir::ConstValue::Bool { val, bool_ty } => codegen_const_bool(cg, val, bool_ty),
         hir::ConstValue::Int { val, neg, int_ty } => codegen_const_int(cg, val, neg, int_ty),
         hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
         hir::ConstValue::Char { val } => codegen_const_char(cg, val),
@@ -167,8 +167,8 @@ fn codegen_const_null(cg: &Codegen) -> llvm::Value {
 }
 
 #[inline]
-fn codegen_const_bool(cg: &Codegen, val: bool) -> llvm::Value {
-    llvm::const_int(cg.bool_type(), val as u64, false)
+fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BasicBool) -> llvm::Value {
+    llvm::const_int(cg.basic_type(bool_ty.into_basic()), val as u64, false)
 }
 
 #[inline]
@@ -601,6 +601,8 @@ fn codegen_cast<'c>(
         hir::CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "cast"),
         hir::CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "cast"),
         hir::CastKind::Bool_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::Bool_to_Bool32 => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::Bool32_to_Bool => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
         hir::CastKind::Char_to_U32 => val,
     }
 }
@@ -987,7 +989,8 @@ fn codegen_binary_circuit<'c>(
     cg.build.br(exit_bb);
     cg.build.position_at_end(exit_bb);
     let phi = cg.build.phi(cg.bool_type(), value_name);
-    let values = [bin_val, codegen_const_bool(cg, exit_val)];
+    //@bool_ty depends?
+    let values = [bin_val, codegen_const_bool(cg, exit_val, hir::BasicBool::Bool)];
     let blocks = [bin_val_bb, start_bb];
     cg.build.phi_add_incoming(phi, &values, &blocks);
     phi

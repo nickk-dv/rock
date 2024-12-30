@@ -6,7 +6,7 @@ use super::context::HirCtx;
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
-use crate::hir::{self, BasicFloat, BasicInt};
+use crate::hir::{self, BasicBool, BasicFloat, BasicInt};
 use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
@@ -430,6 +430,13 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
         }
     }
 
+    fn infer_bool_type(expect: &Expectation) -> Option<BasicBool> {
+        match expect {
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(*basic),
+            _ => None,
+        }
+    }
+
     let (value, ty) = match lit {
         ast::Lit::Void => {
             let value = hir::ConstValue::Void;
@@ -440,8 +447,10 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Rawptr))
         }
         ast::Lit::Bool(val) => {
-            let value = hir::ConstValue::Bool { val };
-            (value, hir::Type::Basic(BasicType::Bool))
+            const DEFAULT: BasicBool = BasicBool::Bool;
+            let bool_ty = infer_bool_type(&expect).unwrap_or(DEFAULT);
+            let value = hir::ConstValue::Bool { val, bool_ty };
+            (value, hir::Type::Basic(bool_ty.into_basic()))
         }
         ast::Lit::Int(val) => match infer_float_type(&expect) {
             Some(float_ty) => {
@@ -1074,6 +1083,7 @@ enum BasicTypeKind {
     IntU,
     Float,
     Bool,
+    Bool32,
     Char,
     Rawptr,
     Void,
@@ -1093,6 +1103,7 @@ impl BasicTypeKind {
             }
             BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
             BasicType::Bool => BasicTypeKind::Bool,
+            BasicType::Bool32 => BasicTypeKind::Bool32,
             BasicType::Char => BasicTypeKind::Char,
             BasicType::Rawptr => BasicTypeKind::Rawptr,
             BasicType::Void => BasicTypeKind::Void,
@@ -1203,7 +1214,15 @@ fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir:
         },
         BasicTypeKind::Bool => match into_kind {
             BasicTypeKind::Bool => CastKind::NoOp,
+            BasicTypeKind::Bool32 => CastKind::Bool_to_Bool32,
             BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::Bool_to_Int,
+            _ => CastKind::Error,
+        },
+        BasicTypeKind::Bool32 => match into_kind {
+            BasicTypeKind::Bool32 => CastKind::NoOp,
+            BasicTypeKind::Bool => CastKind::Bool32_to_Bool,
+            //@could be Trunc or ZExt or NoOp, disallow for now
+            //BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::Bool32_to_Int,
             _ => CastKind::Error,
         },
         BasicTypeKind::Char => match into {

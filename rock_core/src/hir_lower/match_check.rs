@@ -193,13 +193,13 @@ fn match_cov_bool(
 fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(hir::ConstValue::Bool { val }) => cov.cover(val),
+        hir::Pat::Lit(hir::ConstValue::Bool { val, .. }) => cov.cover(val),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
             let value = eval.resolved_unwrap();
             match value {
-                hir::ConstValue::Bool { val } => cov.cover(val),
+                hir::ConstValue::Bool { val, .. } => cov.cover(val),
                 _ => unreachable!(),
             }
         }
@@ -650,7 +650,8 @@ enum RangeIncDisplay<T> {
 }
 
 impl<T> RangeInc<T>
-where T: Copy + Clone + PartialEq + Ord
+where
+    T: Copy + Clone + PartialEq + Ord,
 {
     fn new(start: T, end: T) -> RangeInc<T> {
         if start < end {
@@ -692,14 +693,16 @@ impl PatCovIncrement<i128> for i128 {
 }
 
 struct PatCovInt<T>
-where T: Copy + Clone + PartialEq + Ord
+where
+    T: Copy + Clone + PartialEq + Ord,
 {
     ranges: Vec<RangeInc<T>>,
     not_covered: Vec<RangeInc<T>>,
 }
 
 impl<T> PatCovInt<T>
-where T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>
+where
+    T: Copy + Clone + PartialEq + Ord + std::fmt::Display + PatCovIncrement<T>,
 {
     fn new() -> PatCovInt<T> {
         PatCovInt { ranges: Vec::with_capacity(64), not_covered: Vec::with_capacity(64) }

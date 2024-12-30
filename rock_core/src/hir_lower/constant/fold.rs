@@ -237,6 +237,14 @@ fn fold_cast<'hir>(
             let int_ty = into_int_ty(into);
             int_range_check(ctx, src, val as i128, int_ty)
         }
+        hir::CastKind::Bool_to_Bool32 => {
+            let val = target.into_bool();
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+        }
+        hir::CastKind::Bool32_to_Bool => {
+            let val = target.into_bool();
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+        }
         hir::CastKind::Char_to_U32 => {
             let val = target.into_char();
             let int_ty = into_int_ty(into);
@@ -379,7 +387,7 @@ fn fold_unary_expr<'hir>(
         }
         hir::UnOp::LogicNot => {
             let val = !rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
     }
 }
@@ -516,59 +524,59 @@ fn fold_binary<'hir>(
         }
         hir::BinOp::IsEq_Int => {
             let val = lhs.into_int() == rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::IsEq_Float => {
             let val = lhs.into_float() == rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::NotEq_Int => {
             let val = lhs.into_int() != rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::NotEq_Float => {
             let val = lhs.into_float() != rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::Less_IntS | hir::BinOp::Less_IntU => {
             let val = lhs.into_int() < rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::Less_Float => {
             let val = lhs.into_float() < rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::LessEq_IntS | hir::BinOp::LessEq_IntU => {
             let val = lhs.into_int() <= rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::LessEq_Float => {
             let val = lhs.into_float() <= rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::Greater_IntS | hir::BinOp::Greater_IntU => {
             let val = lhs.into_int() > rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::Greater_Float => {
             let val = lhs.into_float() > rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::GreaterEq_IntS | hir::BinOp::GreaterEq_IntU => {
             let val = lhs.into_int() >= rhs.into_int();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::GreaterEq_Float => {
             let val = lhs.into_float() >= rhs.into_float();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::LogicAnd => {
             let val = lhs.into_bool() && rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
         hir::BinOp::LogicOr => {
             let val = lhs.into_bool() || rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
     }
 }
@@ -638,7 +646,7 @@ impl<'hir> hir::ConstValue<'hir> {
 
     fn into_bool(&self) -> bool {
         match *self {
-            hir::ConstValue::Bool { val } => val,
+            hir::ConstValue::Bool { val, .. } => val,
             _ => unreachable!(),
         }
     }

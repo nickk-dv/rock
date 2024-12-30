@@ -646,11 +646,11 @@ fn skip_num_digits(lex: &mut Lexer) {
 }
 
 /// generated using `gperf-3.0.1`  
-/// command: `./gperf keywords.txt -G -7 > gperf.h`  
+/// command: `gperf keywords.txt -G -7 > gperf.h`  
 mod gperf {
     use crate::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
-    const MAX_HASH_VALUE: usize = 68;
+    const MAX_HASH_VALUE: usize = 72;
 
     #[inline(always)]
     pub fn lookup(string: &str) -> Token {
@@ -675,24 +675,24 @@ mod gperf {
     }
 
     #[rustfmt::skip]
-    const KEYWORD_TABLE: [Token; 69] = [
+    const KEYWORD_TABLE: [Token; 73] = [
         T![ident], T![_], T![s8], T![ident], T![else], T![ssize], T![rawptr], T![as],
         T![for], T![ident], T![false], T![sizeof], T![u8], T![s64], T![true], T![usize],
         T![struct], T![if], T![f64], T![ident], T![never], T![return], T![ident], T![u64],
-        T![ident], T![ident], T![import], T![in], T![s32], T![ident], T![break], T![string],
-        T![ident], T![f32], T![void], T![defer], T![zeroed], T![ident], T![u32], T![char],
-        T![ident], T![ident], T![ident], T![continue], T![enum], T![match], T![ident], T![ident],
-        T![let], T![undefined], T![ident], T![ident], T![ident], T![mut], T![null], T![ident],
-        T![ident], T![ident], T![s16], T![proc], T![ident], T![ident], T![ident], T![ident],
-        T![bool], T![ident], T![ident], T![cstring], T![u16],
+        T![void], T![defer], T![import], T![in], T![s32], T![ident], T![break], T![string],
+        T![ident], T![f32], T![ident], T![ident], T![zeroed], T![ident], T![u32], T![undefined],
+        T![ident], T![ident], T![ident], T![let], T![char], T![ident], T![ident], T![ident],
+        T![continue], T![null], T![ident], T![ident], T![ident], T![ident], T![enum], T![match],
+        T![bool32], T![ident], T![s16], T![bool], T![ident], T![ident], T![ident], T![mut],
+        T![proc], T![ident], T![ident],  T![ident], T![u16], T![ident], T![ident],  T![ident], T![cstring],
     ];
 
     const ASSOC_TABLE: [u8; 128] = [
-        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 69, 25, 69, 10, 69, 55, 69, 0, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69, 69,
-        69, 69, 69, 0, 69, 5, 25, 35, 30, 0, 5, 25, 0, 10, 69, 0, 35, 40, 15, 69, 20, 69, 0, 0, 10,
-        10, 0, 69, 69, 69, 0, 69, 69, 69, 69, 69,
+        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
+        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
+        73, 73, 73, 73, 25, 73, 10, 73, 55, 73, 0, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
+        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
+        73, 73, 73, 0, 73, 5, 25, 40, 20, 0, 5, 25, 0, 10, 73, 0, 30, 50, 15, 73, 20, 73, 0, 0, 10,
+        10, 0, 73, 73, 73, 10, 73, 73, 73, 73, 73,
     ];
 }
