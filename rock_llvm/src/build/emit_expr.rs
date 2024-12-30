@@ -327,6 +327,12 @@ fn codegen_match<'c>(
         hir::MatchKind::Enum { enum_id, ref_mut } => {
             //@dont always expect a pointer if enum is fieldless (ir quality)
             let enum_ptr = codegen_expr_pointer(cg, match_.on_expr);
+            let enum_ptr = if ref_mut.is_some() {
+                cg.build.load(cg.ptr_type(), enum_ptr, "deref").into_ptr()
+            } else {
+                enum_ptr
+            };
+
             let enum_data = cg.hir.enum_data(enum_id);
             let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
             let on_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
