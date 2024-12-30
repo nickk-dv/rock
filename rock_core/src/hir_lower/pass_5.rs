@@ -1045,8 +1045,17 @@ fn typecheck_slice<'hir, 'ast>(
     range: &ast::SliceRange<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
+
+    if let Some(start) = range.start {
+        let start_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), start);
+    }
+    if let Some((kind, end)) = range.end {
+        let end_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), end);
+    }
+
     let src = ctx.src(expr_range);
-    err::internal_slice_expr_not_implemented(&mut ctx.emit, src);
+    err::internal_not_implemented(&mut ctx.emit, src, "slice expression");
     TypeResult::error()
 }
 

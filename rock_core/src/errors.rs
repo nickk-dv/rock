@@ -1315,12 +1315,11 @@ pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> E
 
 //==================== INTERNAL ====================
 
-pub fn internal_type_args_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "internal: type arguments are not implemented";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn internal_slice_expr_not_implemented(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "internal: slice expression not implemented";
+pub fn internal_not_implemented(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    feature: &'static str,
+) {
+    let msg = format!("internal: {feature} is not implemented");
     emit.error(Error::new(msg, src, None));
 }

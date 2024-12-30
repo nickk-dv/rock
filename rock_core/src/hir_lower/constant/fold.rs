@@ -373,7 +373,10 @@ fn fold_unary_expr<'hir>(
             let val = rhs.into_float();
             float_range_check(ctx, src, val, float_ty)
         }
-        hir::UnOp::BitNot => unimplemented!(),
+        hir::UnOp::BitNot => {
+            err::internal_not_implemented(&mut ctx.emit, src, "unary `~` constant folding");
+            Err(())
+        }
         hir::UnOp::LogicNot => {
             let val = !rhs.into_bool();
             Ok(hir::ConstValue::Bool { val })
@@ -507,9 +510,10 @@ fn fold_binary<'hir>(
                 Ok(hir::ConstValue::from_u64(val, int_ty))
             }
         }
-        hir::BinOp::BitShl => unimplemented!(),
-        hir::BinOp::BitShr_IntS => unimplemented!(),
-        hir::BinOp::BitShr_IntU => unimplemented!(),
+        hir::BinOp::BitShl | hir::BinOp::BitShr_IntS | hir::BinOp::BitShr_IntU => {
+            err::internal_not_implemented(&mut ctx.emit, src, "binary shifts constant folding");
+            Err(())
+        }
         hir::BinOp::IsEq_Int => {
             let val = lhs.into_int() == rhs.into_int();
             Ok(hir::ConstValue::Bool { val })
