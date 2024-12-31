@@ -185,38 +185,12 @@ pub enum Stmt<'hir> {
     Break,
     Continue,
     Return(Option<&'hir Expr<'hir>>),
-    For(&'hir For<'hir>),
     Loop(&'hir Block<'hir>),
     Local(&'hir Local<'hir>),
     Discard(Option<&'hir Expr<'hir>>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
-}
-
-#[derive(Copy, Clone)]
-pub struct For<'hir> {
-    pub value_id: VariableID,
-    pub index_id: VariableID,
-    pub deref: bool,
-    pub by_pointer: bool,
-    pub reverse: bool,
-    pub elem_ty: Type<'hir>,
-    pub kind: ForElemKind,
-    pub expr: &'hir Expr<'hir>,
-    pub block: Block<'hir>,
-}
-
-#[derive(Copy, Clone)]
-pub enum ForElemKind {
-    Slice,
-    Array(ArrayStaticLen),
-}
-
-#[derive(Copy, Clone)]
-pub struct ForPat<'hir> {
-    pub pat: Pat<'hir>,
-    pub expr: &'hir Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]

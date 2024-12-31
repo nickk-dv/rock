@@ -2124,13 +2124,10 @@ fn typecheck_for<'hir, 'ast>(
             //@not checking mutability in cases of & or &mut iteration
             //@not checking runtime indexing (constants cannot be indexed at runtime)
             //@dont instantly return here, check the block also!
-            let (collection, elem_kind) = match type_as_collection(expr_res.ty) {
+            let collection = match type_as_collection(expr_res.ty) {
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
-                    CollectionKind::Slice(_) => (collection, hir::ForElemKind::Slice),
-                    CollectionKind::Array(array) => {
-                        (collection, hir::ForElemKind::Array(array.len))
-                    }
+                    CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
                     CollectionKind::Multi(_) => {
                         let src = ctx.src(expr_res.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
@@ -2177,45 +2174,211 @@ fn typecheck_for<'hir, 'ast>(
             let value_id = ctx.scope.local.add_variable_hack(value_var, header.value.is_some());
             let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
+            // used to not insert index increment in forward iteration
+            let block_diverges = match ctx.scope.local.diverges() {
+                Diverges::Maybe => false,
+                Diverges::Always(_) | Diverges::AlwaysWarned => true,
+            };
             ctx.scope.local.exit_block();
 
-            //@perf: storing iteration value by COPY currently, do `&` for arrays.
+            // iteration local:
+            // let iter = collection;
+            //@perf: storing array copy instead of `&`, for slices always copy?
+            let iter_var_ty = if collection.deref.is_some() {
+                match expr_res.ty {
+                    hir::Type::Reference(_, ref_ty) => *ref_ty,
+                    _ => unreachable!(),
+                }
+            } else {
+                expr_res.ty
+            };
             let iter_var = hir::Variable {
                 mutt: ast::Mut::Mutable, //@doesnt matter so far
                 name: ast::Name { id: NameID::dummy(), range: TextRange::zero() },
-                ty: expr_res.ty,
+                ty: iter_var_ty,
                 was_used: false,
             };
             let iter_id = ctx.scope.local.add_variable_hack(iter_var, false);
-            let iter_local =
-                hir::Local { var_id: iter_id, init: hir::LocalInit::Init(expr_res.expr) };
+
+            let iter_init = if collection.deref.is_some() {
+                let ref_ty = match expr_res.ty {
+                    hir::Type::Reference(_, ref_ty) => ref_ty,
+                    _ => unreachable!(),
+                };
+                ctx.arena.alloc(hir::Expr {
+                    kind: hir::ExprKind::Deref {
+                        rhs: expr_res.expr,
+                        mutt: ast::Mut::Immutable,
+                        ref_ty,
+                    },
+                    range: TextRange::zero(),
+                })
+            } else {
+                expr_res.expr
+            };
+            let iter_local = hir::Local { var_id: iter_id, init: hir::LocalInit::Init(iter_init) };
             let stmt_iter = hir::Stmt::Local(ctx.arena.alloc(iter_local));
 
-            let index_init = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Const {
-                    value: hir::ConstValue::Int {
-                        val: 0,
+            let expr_iter_var = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Variable { var_id: iter_id },
+                range: TextRange::zero(),
+            });
+            let expr_iter_len = match collection.kind {
+                CollectionKind::Array(array) => {
+                    let len_value = hir::ConstValue::Int {
+                        val: array.len.get_resolved(ctx).unwrap_or(0), //@using default 0
                         neg: false,
-                        int_ty: hir::BasicInt::Usize,
+                        int_ty: BasicInt::Usize,
+                    };
+                    ctx.arena.alloc(hir::Expr {
+                        kind: hir::ExprKind::Const { value: len_value },
+                        range: TextRange::zero(),
+                    })
+                }
+                CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr {
+                    kind: hir::ExprKind::SliceField {
+                        target: expr_iter_var,
+                        access: hir::SliceFieldAccess { deref: None, field: hir::SliceField::Len },
                     },
+                    range: TextRange::zero(),
+                }),
+                CollectionKind::Multi(_) => unreachable!(),
+            };
+            let expr_zero_usize = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const {
+                    value: hir::ConstValue::Int { val: 0, neg: false, int_ty: BasicInt::Usize },
                 },
                 range: TextRange::zero(),
             });
-            let idx_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(index_init) };
-            let stmt_index = hir::Stmt::Local(ctx.arena.alloc(iter_local));
+            let expr_one_usize = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const {
+                    value: hir::ConstValue::Int { val: 1, neg: false, int_ty: BasicInt::Usize },
+                },
+                range: TextRange::zero(),
+            });
 
-            let for_ = hir::For {
-                value_id,
-                index_id,
-                deref: collection.deref.is_some(),
-                by_pointer: header.ref_mut.is_some(),
-                reverse: header.reverse,
-                elem_ty: collection.elem_ty,
-                kind: elem_kind,
-                expr: expr_res.expr,
-                block: block_res.block,
+            // index local:
+            // forward: let idx = 0;
+            // reverse: let idx = iter.len;
+            let index_init = if header.reverse { expr_iter_len } else { expr_zero_usize };
+            let index_local =
+                hir::Local { var_id: index_id, init: hir::LocalInit::Init(index_init) };
+            let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
+
+            // loop statement:
+            let expr_index_var = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Variable { var_id: index_id },
+                range: TextRange::zero(),
+            });
+
+            // conditional loop break:
+            let cond_rhs = if header.reverse { expr_zero_usize } else { expr_iter_len };
+            let cond_op =
+                if header.reverse { hir::BinOp::IsEq_Int } else { hir::BinOp::GreaterEq_IntU };
+            let branch_cond = hir::Expr {
+                kind: hir::ExprKind::Binary { op: cond_op, lhs: expr_index_var, rhs: cond_rhs },
+                range: TextRange::zero(),
             };
-            return Some(hir::Stmt::For(ctx.arena.alloc(for_)));
+            let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+            let branch = hir::Branch { cond: ctx.arena.alloc(branch_cond), block: branch_block };
+            let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+            let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
+            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
+            let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
+
+            // @nocheckin do by reference access!
+            // index expression:
+            let index_kind = match collection.kind {
+                CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
+                CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
+                CollectionKind::Multi(_) => unreachable!(),
+            };
+            let index_access = hir::IndexAccess {
+                deref: None, //@might be needed when iter isnt stored by copy
+                elem_ty: collection.elem_ty,
+                kind: index_kind,
+                index: expr_index_var,
+            };
+            let access = ctx.arena.alloc(index_access);
+            let iter_index_expr = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Index { target: expr_iter_var, access },
+                range: TextRange::zero(),
+            });
+            let value_initializer = if header.ref_mut.is_some() {
+                ctx.arena.alloc(hir::Expr {
+                    kind: hir::ExprKind::Address { rhs: iter_index_expr },
+                    range: TextRange::zero(),
+                })
+            } else {
+                iter_index_expr
+            };
+
+            let stmt_value_local = hir::Stmt::Local(ctx.arena.alloc(hir::Local {
+                var_id: value_id,
+                init: hir::LocalInit::Init(value_initializer),
+            }));
+
+            let index_change_op = if header.reverse {
+                hir::AssignOp::Bin(hir::BinOp::Sub_Int)
+            } else {
+                hir::AssignOp::Bin(hir::BinOp::Add_Int)
+            };
+            let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                op: index_change_op,
+                lhs: expr_index_var,
+                rhs: expr_one_usize,
+                lhs_ty: hir::Type::USIZE,
+            }));
+
+            let expr_for_block = hir::Expr {
+                kind: hir::ExprKind::Block { block: block_res.block },
+                range: for_.block.range,
+            };
+            let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
+
+            let loop_block = if header.reverse {
+                hir::Block {
+                    stmts: ctx.arena.alloc_slice(&[
+                        stmt_cond,
+                        stmt_index_change,
+                        stmt_value_local,
+                        stmt_for_block,
+                    ]),
+                }
+            } else {
+                if block_diverges {
+                    hir::Block {
+                        stmts: ctx.arena.alloc_slice(&[
+                            stmt_cond,
+                            stmt_value_local,
+                            stmt_for_block,
+                        ]),
+                    }
+                } else {
+                    hir::Block {
+                        stmts: ctx.arena.alloc_slice(&[
+                            stmt_cond,
+                            stmt_value_local,
+                            stmt_for_block,
+                            stmt_index_change,
+                        ]),
+                    }
+                }
+            };
+            let stmt_loop = hir::Stmt::Loop(ctx.arena.alloc(loop_block));
+
+            let offset = ctx.cache.stmts.start();
+            ctx.cache.stmts.push(stmt_iter);
+            ctx.cache.stmts.push(stmt_index);
+            ctx.cache.stmts.push(stmt_loop);
+            let stmts = ctx.cache.stmts.take(offset, &mut ctx.arena);
+
+            let expr_overall_block = hir::Expr {
+                kind: hir::ExprKind::Block { block: hir::Block { stmts } },
+                range: TextRange::zero(),
+            };
+            let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
+            return Some(overall_block);
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
