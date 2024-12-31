@@ -200,10 +200,8 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
     // for example struct field with some unresolved array len
     for eval_id in ctx.registry.const_eval_ids() {
         let (eval, _) = ctx.registry.const_eval(eval_id);
-
-        if matches!(eval, hir::ConstEval::Unresolved(_)) {
-            let expect = Expectation::HasType(hir::Type::USIZE, None);
-            resolve_and_update_const_eval(ctx, eval_id, expect);
+        if eval.is_unresolved() {
+            resolve_and_update_const_eval(ctx, eval_id, Expectation::USIZE);
         }
     }
 }
@@ -937,8 +935,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 resolve_and_update_const_eval(ctx, eval_id, expect);
             }
             ConstDependency::ArrayLen(eval_id) => {
-                let expect = Expectation::HasType(hir::Type::USIZE, None);
-                resolve_and_update_const_eval(ctx, eval_id, expect);
+                resolve_and_update_const_eval(ctx, eval_id, Expectation::USIZE);
             }
         }
     }

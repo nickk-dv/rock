@@ -344,8 +344,7 @@ pub fn type_resolve<'hir, 'ast>(
                 let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
-                let expect = Expectation::HasType(hir::Type::USIZE, None);
-                match constant::resolve_const_expr(ctx, expect, array.len) {
+                match constant::resolve_const_expr(ctx, Expectation::USIZE, array.len) {
                     Ok(hir::ConstValue::Int { val, .. }) => hir::ArrayStaticLen::Immediate(val),
                     Ok(_) => unreachable!(),
                     Err(_) => return hir::Type::Error,

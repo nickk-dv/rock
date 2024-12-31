@@ -264,6 +264,12 @@ pub enum Expectation<'hir> {
     HasType(hir::Type<'hir>, Option<SourceRange>),
 }
 
+impl<'hir> Expectation<'hir> {
+    pub const USIZE: Expectation<'static> = Expectation::HasType(hir::Type::USIZE, None);
+    pub const BOOL: Expectation<'static> = Expectation::HasType(hir::Type::BOOL, None);
+    pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::VOID, None);
+}
+
 pub fn type_expectation_check(
     ctx: &mut HirCtx,
     from_range: TextRange,
@@ -543,8 +549,7 @@ fn typecheck_branch<'hir, 'ast>(
     if_type: &mut hir::Type<'hir>,
     branch: &ast::Branch<'ast>,
 ) -> hir::Branch<'hir> {
-    let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
-    let cond_res = typecheck_expr(ctx, expect_bool, branch.cond);
+    let cond_res = typecheck_expr(ctx, Expectation::BOOL, branch.cond);
     let block_res = typecheck_block(ctx, *expect, branch.block, BlockStatus::None);
     type_unify_control_flow(if_type, block_res.ty);
 
@@ -1019,7 +1024,7 @@ fn typecheck_index<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let index_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), index);
+    let index_res = typecheck_expr(ctx, Expectation::USIZE, index);
 
     match type_as_collection(target_res.ty) {
         Ok(None) => TypeResult::error(),
@@ -1057,10 +1062,10 @@ fn typecheck_slice<'hir, 'ast>(
     let target_res = typecheck_expr(ctx, Expectation::None, target);
 
     if let Some(start) = range.start {
-        let start_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), start);
+        let start_res = typecheck_expr(ctx, Expectation::USIZE, start);
     }
     if let Some((kind, end)) = range.end {
-        let end_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), end);
+        let end_res = typecheck_expr(ctx, Expectation::USIZE, end);
     }
 
     let src = ctx.src(expr_range);
@@ -1666,8 +1671,7 @@ fn typecheck_array_repeat<'hir, 'ast>(
     let expr_res = typecheck_expr(ctx, expect, value);
 
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let value =
-        constant::resolve_const_expr(ctx, Expectation::HasType(hir::Type::USIZE, None), len);
+    let value = constant::resolve_const_expr(ctx, Expectation::USIZE, len);
     let len = match value {
         Ok(hir::ConstValue::Int { val, .. }) => Some(val),
         _ => None,
@@ -1808,10 +1812,9 @@ fn typecheck_block<'hir, 'ast>(
     status: BlockStatus,
 ) -> BlockResult<'hir> {
     ctx.scope.local.start_block(status);
-
     let offset = ctx.cache.stmts.start();
-    let mut block_ty: Option<hir::Type> = None;
-    let mut tail_range: Option<TextRange> = None;
+    let mut block_tail_ty: Option<hir::Type> = None;
+    let mut block_tail_range: Option<TextRange> = None;
 
     for stmt in block.stmts.iter().copied() {
         let stmt = match stmt.kind {
@@ -1887,7 +1890,7 @@ fn typecheck_block<'hir, 'ast>(
                 let expect = match expr.kind {
                     ast::ExprKind::If { .. }
                     | ast::ExprKind::Block { .. }
-                    | ast::ExprKind::Match { .. } => Expectation::HasType(hir::Type::VOID, None),
+                    | ast::ExprKind::Match { .. } => Expectation::VOID,
                     _ => Expectation::None,
                 };
 
@@ -1908,12 +1911,8 @@ fn typecheck_block<'hir, 'ast>(
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
                 // @seems to fix the problem (still a hack)
                 check_stmt_diverges(ctx, true, stmt.range);
-
-                // only assigned once, any further `ExprTail` are unreachable
-                if block_ty.is_none() {
-                    block_ty = Some(expr_res.ty);
-                    tail_range = Some(expr.range);
-                }
+                block_tail_ty = Some(expr_res.ty);
+                block_tail_range = Some(expr.range);
                 stmt_res
             }
             ast::StmtKind::WithDirective(_) => unreachable!(),
@@ -1957,8 +1956,8 @@ fn typecheck_block<'hir, 'ast>(
     let hir_block = hir::Block { stmts };
 
     //@wip approach, will change 03.07.24
-    let block_result = if let Some(block_ty) = block_ty {
-        BlockResult::new(block_ty, hir_block, tail_range)
+    let block_result = if let Some(block_ty) = block_tail_ty {
+        BlockResult::new(block_ty, hir_block, block_tail_range)
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
@@ -1974,7 +1973,7 @@ fn typecheck_block<'hir, 'ast>(
         }
         //@hack but should be correct
         let block_ty = if diverges { hir::Type::NEVER } else { hir::Type::VOID };
-        BlockResult::new(block_ty, hir_block, tail_range)
+        BlockResult::new(block_ty, hir_block, block_tail_range)
     };
 
     ctx.scope.local.exit_block();
@@ -2080,8 +2079,7 @@ fn typecheck_defer<'hir, 'ast>(
         true
     };
 
-    let expect = Expectation::HasType(hir::Type::VOID, None);
-    let block_res = typecheck_block(ctx, expect, block, BlockStatus::Defer(kw_range));
+    let block_res = typecheck_block(ctx, Expectation::VOID, block, BlockStatus::Defer(kw_range));
     ctx.scope.local.add_defer_block(block_res.block);
     valid
 }
@@ -2092,30 +2090,24 @@ fn typecheck_for<'hir, 'ast>(
 ) -> Option<hir::Stmt<'hir>> {
     match for_.header {
         ast::ForHeader::Loop => {
-            let expect = Expectation::HasType(hir::Type::VOID, None);
-            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+            let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
             let block = ctx.arena.alloc(block_res.block);
             return Some(hir::Stmt::Loop(block));
         }
-        //@some ranges are not correct since those exprs are made up (not_cond, expr_if)
-        // does hir actually need all the expr ranges? probably not?
         ast::ForHeader::Cond(cond) => {
-            let expect_bool = Expectation::HasType(hir::Type::BOOL, None);
-            let expr_res = typecheck_expr(ctx, expect_bool, cond);
+            let cond_res = typecheck_expr(ctx, Expectation::BOOL, cond);
+            let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
-            let expect = Expectation::HasType(hir::Type::VOID, None);
-            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
-
-            let cond_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
-            let not_cond = hir::Expr {
-                kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: expr_res.expr },
-                range: expr_res.expr.range,
+            let branch_cond = hir::Expr {
+                kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: cond_res.expr },
+                range: TextRange::zero(),
             };
-            let branch = hir::Branch { cond: ctx.arena.alloc(not_cond), block: cond_block };
-            let if_ = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
-            let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(if_) };
-            let expr_if = hir::Expr { kind: kind_if, range: cond.range };
+            let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+            let branch = hir::Branch { cond: ctx.arena.alloc(branch_cond), block: branch_block };
+            let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+            let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
+            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
 
             let kind_block = hir::ExprKind::Block { block: block_res.block };
             let expr_block = hir::Expr { kind: kind_block, range: for_.block.range };
@@ -2129,7 +2121,9 @@ fn typecheck_for<'hir, 'ast>(
         ast::ForHeader::Elem(header) => {
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
 
-            //@ignore mutability for now
+            //@not checking mutability in cases of & or &mut iteration
+            //@not checking runtime indexing (constants cannot be indexed at runtime)
+            //@dont instantly return here, check the block also!
             let (collection, elem_kind) = match type_as_collection(expr_res.ty) {
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
@@ -2182,9 +2176,33 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.start_block(BlockStatus::None);
             let value_id = ctx.scope.local.add_variable_hack(value_var, header.value.is_some());
             let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
-            let expect = Expectation::HasType(hir::Type::VOID, None);
-            let block_res = typecheck_block(ctx, expect, for_.block, BlockStatus::Loop);
+            let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
+
+            //@perf: storing iteration value by COPY currently, do `&` for arrays.
+            let iter_var = hir::Variable {
+                mutt: ast::Mut::Mutable, //@doesnt matter so far
+                name: ast::Name { id: NameID::dummy(), range: TextRange::zero() },
+                ty: expr_res.ty,
+                was_used: false,
+            };
+            let iter_id = ctx.scope.local.add_variable_hack(iter_var, false);
+            let iter_local =
+                hir::Local { var_id: iter_id, init: hir::LocalInit::Init(expr_res.expr) };
+            let stmt_iter = hir::Stmt::Local(ctx.arena.alloc(iter_local));
+
+            let index_init = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const {
+                    value: hir::ConstValue::Int {
+                        val: 0,
+                        neg: false,
+                        int_ty: hir::BasicInt::Usize,
+                    },
+                },
+                range: TextRange::zero(),
+            });
+            let idx_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(index_init) };
+            let stmt_index = hir::Stmt::Local(ctx.arena.alloc(iter_local));
 
             let for_ = hir::For {
                 value_id,
@@ -2226,8 +2244,7 @@ fn typecheck_for<'hir, 'ast>(
 
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
-            let expect_void = Expectation::HasType(hir::Type::VOID, None);
-            let block_res = typecheck_block(ctx, expect_void, for_.block, BlockStatus::Loop);
+            let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
 
             let match_kind = match kind_res {
@@ -2874,7 +2891,7 @@ fn binary_rhs_expect(
                 Expectation::None
             }
         }
-        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::HasType(hir::Type::BOOL, None),
+        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::BOOL,
     }
 }
 
