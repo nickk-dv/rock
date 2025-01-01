@@ -1319,9 +1319,8 @@ fn typecheck_directive<'hir, 'ast>(
             )
         }
         _ => {
-            let msg = "unimplemented directive used`";
             let src = ctx.src(directive.range);
-            ctx.emit.error(Error::new(msg, src, None));
+            err::internal_not_implemented(&mut ctx.emit, src, "this directive expression");
             TypeResult::error()
         }
     }
@@ -2183,15 +2182,13 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.exit_block();
 
             // iteration local:
-            // let iter = collection;
-            //@perf: storing array copy instead of `&`, for slices always copy?
+            // let iter = &collection;
+
+            //always storing a `&` to array or slice
             let iter_var_ty = if collection.deref.is_some() {
-                match expr_res.ty {
-                    hir::Type::Reference(_, ref_ty) => *ref_ty,
-                    _ => unreachable!(),
-                }
-            } else {
                 expr_res.ty
+            } else {
+                hir::Type::Reference(ast::Mut::Immutable, ctx.arena.alloc(expr_res.ty))
             };
             let iter_var = hir::Variable {
                 mutt: ast::Mut::Mutable, //@doesnt matter so far
@@ -2202,20 +2199,12 @@ fn typecheck_for<'hir, 'ast>(
             let iter_id = ctx.scope.local.add_variable_hack(iter_var, false);
 
             let iter_init = if collection.deref.is_some() {
-                let ref_ty = match expr_res.ty {
-                    hir::Type::Reference(_, ref_ty) => ref_ty,
-                    _ => unreachable!(),
-                };
+                expr_res.expr
+            } else {
                 ctx.arena.alloc(hir::Expr {
-                    kind: hir::ExprKind::Deref {
-                        rhs: expr_res.expr,
-                        mutt: ast::Mut::Immutable,
-                        ref_ty,
-                    },
+                    kind: hir::ExprKind::Address { rhs: expr_res.expr },
                     range: TextRange::zero(),
                 })
-            } else {
-                expr_res.expr
             };
             let iter_local = hir::Local { var_id: iter_id, init: hir::LocalInit::Init(iter_init) };
             let stmt_iter = hir::Stmt::Local(ctx.arena.alloc(iter_local));
@@ -2237,9 +2226,13 @@ fn typecheck_for<'hir, 'ast>(
                     })
                 }
                 CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr {
+                    //always doing deref since `iter` stores &slice
                     kind: hir::ExprKind::SliceField {
                         target: expr_iter_var,
-                        access: hir::SliceFieldAccess { deref: None, field: hir::SliceField::Len },
+                        access: hir::SliceFieldAccess {
+                            deref: Some(ast::Mut::Immutable),
+                            field: hir::SliceField::Len,
+                        },
                     },
                     range: TextRange::zero(),
                 }),
@@ -2295,7 +2288,8 @@ fn typecheck_for<'hir, 'ast>(
                 CollectionKind::Multi(_) => unreachable!(),
             };
             let index_access = hir::IndexAccess {
-                deref: None, //@might be needed when iter isnt stored by copy
+                //always doing deref since `iter` stores &collection
+                deref: Some(ast::Mut::Immutable),
                 elem_ty: collection.elem_ty,
                 kind: index_kind,
                 index: expr_index_var,
