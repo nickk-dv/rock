@@ -81,6 +81,10 @@ pub fn basic_layout(ctx: &HirCtx, basic: BasicType) -> hir::Layout {
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             hir::Layout::new_equal(ptr_size)
         }
+        BasicType::Any => {
+            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
+            hir::Layout::new(ptr_size * 2, ptr_size)
+        }
         BasicType::Void => hir::Layout::new(0, 1),
         BasicType::Never => hir::Layout::new(0, 1),
         BasicType::String => {

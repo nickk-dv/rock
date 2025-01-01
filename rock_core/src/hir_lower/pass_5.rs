@@ -1111,6 +1111,7 @@ impl BasicTypeKind {
             BasicType::Bool32 => BasicTypeKind::Bool32,
             BasicType::Char => BasicTypeKind::Char,
             BasicType::Rawptr => BasicTypeKind::Rawptr,
+            BasicType::Any => unimplemented!("any type"), //@feature(any) todo
             BasicType::Void => BasicTypeKind::Void,
             BasicType::Never => BasicTypeKind::Never,
             BasicType::String => BasicTypeKind::String,

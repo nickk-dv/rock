@@ -486,6 +486,7 @@ crate::enum_as_str! {
         Bool32 "bool32",
         Char "char",
         Rawptr "rawptr",
+        Any "any",
         Void "void",
         Never "never",
         String "string",

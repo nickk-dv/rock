@@ -114,7 +114,7 @@ fn source_file(lex: &mut Lexer) {
                     lex_ident(lex);
                 } else if c.is_ascii_digit() {
                     lex_number(lex, c);
-                } else if c < 128 {
+                } else if c.is_ascii() {
                     lex_symbol(lex, c)
                 } else {
                     let start = lex.start_range();
@@ -165,7 +165,7 @@ fn lex_whitespace(lex: &mut Lexer) {
                 if c == b'\n' || c == b'\r' || c == SENTINEL {
                     break;
                 }
-                if c < 128 {
+                if c.is_ascii() {
                     lex.bump();
                 } else {
                     let ch = lex.peek_utf8();
@@ -682,7 +682,7 @@ mod gperf {
         T![void], T![defer], T![import], T![in], T![s32], T![ident], T![break], T![string],
         T![ident], T![f32], T![ident], T![ident], T![zeroed], T![ident], T![u32], T![undefined],
         T![ident], T![ident], T![ident], T![let], T![char], T![ident], T![ident], T![ident],
-        T![continue], T![null], T![ident], T![ident], T![ident], T![ident], T![enum], T![match],
+        T![continue], T![null], T![ident], T![ident], T![ident], T![any], T![enum], T![match],
         T![bool32], T![ident], T![s16], T![bool], T![ident], T![ident], T![ident], T![mut],
         T![proc], T![ident], T![ident],  T![ident], T![u16], T![ident], T![ident],  T![ident], T![cstring],
     ];
@@ -693,6 +693,6 @@ mod gperf {
         73, 73, 73, 73, 25, 73, 10, 73, 55, 73, 0, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
         73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
         73, 73, 73, 0, 73, 5, 25, 40, 20, 0, 5, 25, 0, 10, 73, 0, 30, 50, 15, 73, 20, 73, 0, 0, 10,
-        10, 0, 73, 73, 73, 10, 73, 73, 73, 73, 73,
+        10, 0, 73, 73, 45, 10, 73, 73, 73, 73, 73,
     ];
 }

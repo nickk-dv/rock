@@ -159,6 +159,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             ast::BasicType::Bool32 => self.cache.int_32,
             ast::BasicType::Char => self.cache.int_32,
             ast::BasicType::Rawptr => self.cache.ptr_type,
+            ast::BasicType::Any => unimplemented!("any type"), //@feature(any) todo
             ast::BasicType::Void | ast::BasicType::Never => self.cache.void_val_type.as_ty(),
             ast::BasicType::String => self.cache.slice_type.as_ty(),
             ast::BasicType::CString => self.cache.ptr_type,
