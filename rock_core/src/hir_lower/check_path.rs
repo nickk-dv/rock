@@ -40,7 +40,6 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
             names: path.segments.split_at(1).1,
         });
     }
-    //@rename the `poly_def` to poly_param everywhere
     if let Some((poly_def, poly_param_idx)) =
         ctx.scope.poly.find_poly_param(segment_0.name.id, &ctx.registry)
     {

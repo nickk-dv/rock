@@ -8,17 +8,22 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
     match ty {
         hir::Type::Error => Err(()),
         hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
-        hir::Type::InferDef(_, _) => Err(()), //@silent error
+        hir::Type::InferDef(_, _) => {
+            err::internal_not_implemented(&mut ctx.emit, src, "polymorphic param layout");
+            Err(())
+        }
         hir::Type::Enum(id, poly_types) => {
             if !poly_types.is_empty() {
-                return Err(()); //@silent error
+                err::internal_not_implemented(&mut ctx.emit, src, "polymorphic enum layout");
+                return Err(());
             }
             let data = ctx.registry.enum_data(id);
             data.layout.resolved()
         }
         hir::Type::Struct(id, poly_types) => {
             if !poly_types.is_empty() {
-                return Err(()); //@silent error
+                err::internal_not_implemented(&mut ctx.emit, src, "polymorphic struct layout");
+                return Err(());
             }
             let data = ctx.registry.struct_data(id);
             data.layout.resolved()

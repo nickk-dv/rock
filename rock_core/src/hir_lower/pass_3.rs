@@ -80,8 +80,9 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         let poly_params = process_polymorph_params(ctx, poly_params);
         ctx.registry.enum_data_mut(id).poly_params = poly_params;
     }
-    let mut any_constant = false;
     ctx.cache.enum_variants.clear();
+
+    let mut any_constant = false;
 
     for variant in item.variants.iter() {
         let config = check_directive::check_expect_config(ctx, variant.dir_list, "variants");
@@ -214,6 +215,9 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     }
     ctx.cache.struct_fields.clear();
 
+    let struct_vis = ctx.registry.struct_data(id).vis;
+
+    //@process visibility directives, allow stronger vis only
     for field in item.fields.iter() {
         let config = check_directive::check_expect_config(ctx, field.dir_list, "fields");
         if config.disabled() {
@@ -230,7 +234,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
         }
 
         let field = hir::Field {
-            vis: hir::Vis::Public, //@fixme: based on struct data vis and overides from directives
+            vis: struct_vis,
             name: field.name,
             ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,
