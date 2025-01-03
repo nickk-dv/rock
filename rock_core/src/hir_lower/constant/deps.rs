@@ -147,9 +147,13 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
             hir::ConstEval::Unresolved(expr) => {
                 let root_id = tree.root_and_reset(ConstDependency::Const(id));
 
-                if let Err(from_id) =
-                    add_type_usage_const_dependencies(ctx, &mut tree, root_id, data.ty)
-                {
+                if let Err(from_id) = {
+                    if let Some(const_ty) = data.ty {
+                        add_type_usage_const_dependencies(ctx, &mut tree, root_id, const_ty)
+                    } else {
+                        Ok(())
+                    }
+                } {
                     const_dependencies_mark_error_up_to_root(ctx, &tree, from_id);
                 } else if let Err(from_id) =
                     add_expr_const_dependencies(ctx, &mut tree, root_id, origin_id, expr.0)
@@ -464,7 +468,9 @@ fn add_const_var_const_dependency(
             check_const_dependency_cycle(ctx, tree, parent_id, node_id)?;
 
             // @will order of eval be correct? 13.06.24
-            add_type_usage_const_dependencies(ctx, tree, parent_id, const_ty)?;
+            if let Some(const_ty) = const_ty {
+                add_type_usage_const_dependencies(ctx, tree, parent_id, const_ty)?;
+            }
             add_expr_const_dependencies(ctx, tree, node_id, origin_id, expr.0)?;
             Ok(())
         }
@@ -918,8 +924,12 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 let data = ctx.registry.const_data(id);
                 let item = ctx.registry.const_item(id);
 
-                let expect_src = SourceRange::new(data.origin_id, item.ty.range);
-                let expect = Expectation::HasType(data.ty, Some(expect_src));
+                let expect = if let Some(ty) = item.ty {
+                    let expect_src = SourceRange::new(data.origin_id, ty.range);
+                    Expectation::HasType(data.ty.unwrap(), Some(expect_src)) //unwrap since item and data are both typed
+                } else {
+                    Expectation::None
+                };
                 resolve_and_update_const_eval(ctx, data.value, expect);
             }
             ConstDependency::Global(id) => {

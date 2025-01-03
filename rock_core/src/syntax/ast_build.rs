@@ -269,7 +269,7 @@ fn const_item<'ast>(
 ) -> &'ast ast::ConstItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let name = name(ctx, item.name(ctx.tree).unwrap());
-    let ty = ty(ctx, item.ty(ctx.tree).unwrap());
+    let ty = item.ty(ctx.tree).map(|ty_cst| ty(ctx, ty_cst));
     let value = ast::ConstExpr(expr(ctx, item.value(ctx.tree).unwrap()));
 
     #[rustfmt::skip]

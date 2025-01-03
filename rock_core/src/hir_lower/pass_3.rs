@@ -249,8 +249,10 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
 fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
     ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
     let item = ctx.registry.const_item(id);
-    let ty = type_resolve(ctx, item.ty, true);
-    ctx.registry.const_data_mut(id).ty = ty;
+    if let Some(ty) = item.ty {
+        let ty = type_resolve(ctx, ty, true);
+        ctx.registry.const_data_mut(id).ty = Some(ty);
+    }
 }
 
 fn process_global_data(ctx: &mut HirCtx, id: hir::GlobalID) {

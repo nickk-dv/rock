@@ -162,7 +162,7 @@ fn add_const_item<'ast>(
         flag_set: BitSet::empty(),
         vis: scope_vis,
         name: item.name,
-        ty: hir::Type::Error,
+        ty: None,
         value: eval_id,
     };
 

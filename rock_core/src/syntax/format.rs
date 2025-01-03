@@ -744,9 +744,11 @@ fn const_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ConstItem<'syn>) {
     }
 
     name(fmt, item.name(fmt.tree).unwrap());
-    fmt.write(':');
-    fmt.space();
-    ty(fmt, item.ty(fmt.tree).unwrap());
+    if let Some(ty_cst) = item.ty(fmt.tree) {
+        fmt.write(':');
+        fmt.space();
+        ty(fmt, ty_cst);
+    }
     fmt.space();
     fmt.write('=');
     fmt.space();

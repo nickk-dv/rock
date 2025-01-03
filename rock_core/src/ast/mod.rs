@@ -90,7 +90,7 @@ pub struct Field<'ast> {
 pub struct ConstItem<'ast> {
     pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
-    pub ty: Type<'ast>,
+    pub ty: Option<Type<'ast>>,
     pub value: ConstExpr<'ast>,
 }
 

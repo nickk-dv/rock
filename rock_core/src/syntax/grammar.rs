@@ -235,8 +235,9 @@ fn field(p: &mut Parser) {
 
 fn const_item(p: &mut Parser, m: Marker) {
     name_bump(p);
-    p.expect(T![:]);
-    ty(p);
+    if p.eat(T![:]) {
+        ty(p);
+    }
     p.expect(T![=]);
     expr(p);
     p.expect(T![;]);

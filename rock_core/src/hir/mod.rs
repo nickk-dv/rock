@@ -98,7 +98,7 @@ pub struct ConstData<'hir> {
     pub flag_set: BitSet<ConstFlag>,
     pub vis: Vis,
     pub name: ast::Name,
-    pub ty: Type<'hir>,
+    pub ty: Option<Type<'hir>>,
     pub value: ConstEvalID,
 }
 
@@ -473,6 +473,7 @@ crate::enum_as_str! {
         U32 "u32",
         U64 "u64",
         Usize "usize",
+        Untyped "<untyped integer>"
     }
 }
 
@@ -868,6 +869,7 @@ impl BasicInt {
             BasicInt::U32 => ast::BasicType::U32,
             BasicInt::U64 => ast::BasicType::U64,
             BasicInt::Usize => ast::BasicType::Usize,
+            BasicInt::Untyped => unreachable!("untyped int to basic type"),
         }
     }
 
@@ -893,6 +895,7 @@ impl BasicInt {
             BasicInt::U32 => 0,
             BasicInt::U64 => 0,
             BasicInt::Usize => 0,
+            BasicInt::Untyped => unreachable!("untyped int min_128"),
         }
     }
 
@@ -914,6 +917,7 @@ impl BasicInt {
                 TargetPtrWidth::Bit_32 => u32::MAX as i128,
                 TargetPtrWidth::Bit_64 => u64::MAX as i128,
             },
+            BasicInt::Untyped => unreachable!("untyped int max_128"),
         }
     }
 }

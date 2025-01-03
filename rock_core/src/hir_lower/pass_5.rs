@@ -743,7 +743,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             }
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             let data = ctx.registry.const_data(const_id);
-            PatResult::new(hir::Pat::Const(const_id), data.ty)
+            PatResult::new(hir::Pat::Const(const_id), data.ty.expect("typed const var pattern"))
         }
         ValueID::Proc(_)
         | ValueID::Global(_, _)
@@ -1366,7 +1366,7 @@ fn typecheck_item<'hir, 'ast>(
         }
         ValueID::Const(id, fields) => (
             TypeResult::new(
-                ctx.registry.const_data(id).ty,
+                ctx.registry.const_data(id).ty.expect("typed const var item"),
                 hir::ExprKind::ConstVar { const_id: id },
             ),
             fields,
