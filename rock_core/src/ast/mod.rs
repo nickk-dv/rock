@@ -401,13 +401,7 @@ pub enum Lit {
     Int(u64),
     Float(f64),
     Char(char),
-    String(StringLit),
-}
-
-#[derive(Copy, Clone, PartialEq, Hash)]
-pub struct StringLit {
-    pub id: LitID,
-    pub c_string: bool,
+    String(LitID),
 }
 
 //==================== COMMON ====================

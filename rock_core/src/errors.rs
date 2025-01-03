@@ -208,12 +208,6 @@ pub fn lexer_escape_sequence_not_supported(emit: &mut impl ErrorSink, src: Sourc
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn lexer_escape_sequence_cstring_null(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg =
-        "c string literals cannot contain any `\\0`\nnull terminator is automatically included";
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn lexer_escape_hex_wrong_dc(emit: &mut impl ErrorSink, src: SourceRange, digit_count: u32) {
     let msg = format!("expected 1 to 6 hexadecimal digits, found {digit_count}");
     emit.error(Error::new(msg, src, None));

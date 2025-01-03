@@ -96,21 +96,21 @@ fn fold_slice_field<'hir>(
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
-        hir::ConstValue::String { val } => match access.field {
-            //@cannot be constant folded directly, handle it somehow.
+        hir::ConstValue::String { val, string_ty } => match access.field {
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
-                if !val.c_string {
-                    let string = ctx.session.intern_lit.get(val.id);
-                    let len = string.len();
-
-                    Ok(hir::ConstValue::Int {
-                        val: len as u64,
-                        neg: false,
-                        int_ty: hir::BasicInt::Usize,
-                    })
-                } else {
-                    unreachable!()
+                match string_ty {
+                    hir::BasicString::String => {
+                        let string = ctx.session.intern_lit.get(val);
+                        let len = string.len();
+                        //@not range checked usize for 32bit?
+                        Ok(hir::ConstValue::Int {
+                            val: len as u64,
+                            neg: false,
+                            int_ty: hir::BasicInt::Usize,
+                        })
+                    }
+                    hir::BasicString::CString => unreachable!(),
                 }
             }
         },

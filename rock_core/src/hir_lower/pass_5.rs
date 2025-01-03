@@ -6,7 +6,7 @@ use super::context::HirCtx;
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
-use crate::hir::{self, BasicBool, BasicFloat, BasicInt};
+use crate::hir::{self, BasicBool, BasicFloat, BasicInt, BasicString};
 use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
@@ -422,23 +422,30 @@ pub fn typecheck_expr<'hir, 'ast>(
 
 //@not range checked
 fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
-    fn infer_int_type(expect: &Expectation) -> Option<BasicInt> {
+    fn infer_int_type(expect: Expectation) -> Option<BasicInt> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicInt::from_basic(*basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicInt::from_basic(basic),
             _ => None,
         }
     }
 
-    fn infer_float_type(expect: &Expectation) -> Option<BasicFloat> {
+    fn infer_float_type(expect: Expectation) -> Option<BasicFloat> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicFloat::from_basic(*basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicFloat::from_basic(basic),
             _ => None,
         }
     }
 
-    fn infer_bool_type(expect: &Expectation) -> Option<BasicBool> {
+    fn infer_bool_type(expect: Expectation) -> Option<BasicBool> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(*basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(basic),
+            _ => None,
+        }
+    }
+
+    fn infer_string_type(expect: Expectation) -> Option<BasicString> {
+        match expect {
+            Expectation::HasType(hir::Type::Basic(basic), _) => BasicString::from_basic(basic),
             _ => None,
         }
     }
@@ -454,25 +461,25 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
         }
         ast::Lit::Bool(val) => {
             const DEFAULT: BasicBool = BasicBool::Bool;
-            let bool_ty = infer_bool_type(&expect).unwrap_or(DEFAULT);
+            let bool_ty = infer_bool_type(expect).unwrap_or(DEFAULT);
             let value = hir::ConstValue::Bool { val, bool_ty };
             (value, hir::Type::Basic(bool_ty.into_basic()))
         }
-        ast::Lit::Int(val) => match infer_float_type(&expect) {
+        ast::Lit::Int(val) => match infer_float_type(expect) {
             Some(float_ty) => {
                 let value = hir::ConstValue::Float { val: val as f64, float_ty };
                 (value, hir::Type::Basic(float_ty.into_basic()))
             }
             None => {
                 const DEFAULT: BasicInt = BasicInt::S32;
-                let int_ty = infer_int_type(&expect).unwrap_or(DEFAULT);
+                let int_ty = infer_int_type(expect).unwrap_or(DEFAULT);
                 let value = hir::ConstValue::Int { val, neg: false, int_ty };
                 (value, hir::Type::Basic(int_ty.into_basic()))
             }
         },
         ast::Lit::Float(val) => {
             const DEFAULT: BasicFloat = BasicFloat::F64;
-            let float_ty = infer_float_type(&expect).unwrap_or(DEFAULT);
+            let float_ty = infer_float_type(expect).unwrap_or(DEFAULT);
             let value = hir::ConstValue::Float { val, float_ty };
             (value, hir::Type::Basic(float_ty.into_basic()))
         }
@@ -481,13 +488,10 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Char))
         }
         ast::Lit::String(val) => {
-            let value = hir::ConstValue::String { val };
-            let string_ty = if val.c_string {
-                hir::Type::Basic(BasicType::CString)
-            } else {
-                hir::Type::Basic(BasicType::String)
-            };
-            (value, string_ty)
+            const DEFAULT: BasicString = BasicString::String;
+            let string_ty = infer_string_type(expect).unwrap_or(DEFAULT);
+            let value = hir::ConstValue::String { val, string_ty };
+            (value, hir::Type::Basic(string_ty.into_basic()))
         }
     };
 

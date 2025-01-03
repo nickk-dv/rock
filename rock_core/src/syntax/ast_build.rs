@@ -2,7 +2,7 @@ use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
 use crate::error::{ErrorBuffer, ErrorSink};
-use crate::intern::{InternPool, NameID};
+use crate::intern::{InternPool, LitID, NameID};
 use crate::session::Session;
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
@@ -435,7 +435,7 @@ fn directive_param_list<'ast>(
 fn directive_param(ctx: &mut AstBuild, param: cst::DirectiveParam) -> ast::DirectiveParam {
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let lit_string = param.value(ctx.tree).unwrap();
-    let value = string_lit(ctx, lit_string).id;
+    let value = string_lit(ctx, lit_string);
     let value_range = lit_string.find_range(ctx.tree);
 
     ast::DirectiveParam { name, value, value_range }
@@ -903,10 +903,9 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
 }
 
 //@separated due to being used for attr param value
-fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> ast::StringLit {
+fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> LitID {
     let token_id = lit.t_string_lit_id(ctx.tree).unwrap();
-    let (id, c_string) = ctx.tree.tokens().string(token_id);
-    ast::StringLit { id, c_string }
+    ctx.tree.tokens().string(token_id)
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {

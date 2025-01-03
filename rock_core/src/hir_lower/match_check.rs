@@ -14,6 +14,7 @@ pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
             if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
                 Ok(hir::MatchKind::Int { int_ty })
             } else {
+                //@allow bool32 matching aswell?
                 match basic {
                     BasicType::Bool => Ok(hir::MatchKind::Bool),
                     BasicType::Char => Ok(hir::MatchKind::Char),
@@ -309,14 +310,14 @@ fn match_cov_string(
 fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_range: TextRange) {
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
-        hir::Pat::Lit(hir::ConstValue::String { val }) => cov.cover(val.id),
+        hir::Pat::Lit(hir::ConstValue::String { val, .. }) => cov.cover(val),
         hir::Pat::Const(const_id) => {
             let data = ctx.registry.const_data(const_id);
             let (eval, _) = ctx.registry.const_eval(data.value);
             let value = eval.resolved_unwrap();
 
             match value {
-                hir::ConstValue::String { val } => cov.cover(val.id),
+                hir::ConstValue::String { val, .. } => cov.cover(val),
                 _ => unreachable!(),
             }
         }

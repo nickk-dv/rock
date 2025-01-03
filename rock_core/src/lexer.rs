@@ -102,13 +102,8 @@ fn source_file(lex: &mut Lexer) {
         match c {
             SENTINEL => break,
             b'\'' => lex_char(lex),
-            b'"' => lex_string(lex, false),
-            b'`' => lex_string_raw(lex, false),
-            b'c' => match lex.peek_next() {
-                b'"' => lex_string(lex, true),
-                b'`' => lex_string_raw(lex, true),
-                _ => lex_ident(lex),
-            },
+            b'"' => lex_string(lex),
+            b'`' => lex_string_raw(lex),
             _ => {
                 if c.is_ascii_alphabetic() || c == b'_' {
                     lex_ident(lex);
@@ -250,7 +245,7 @@ fn lex_char(lex: &mut Lexer) {
 
     let mut inner_tick = false;
     let char = match fc {
-        b'\\' => lex_escape(lex, false),
+        b'\\' => lex_escape(lex),
         b'\'' => {
             inner_tick = true;
             lex.bump();
@@ -288,11 +283,8 @@ fn lex_char(lex: &mut Lexer) {
     lex.tokens.add_char(char, range);
 }
 
-fn lex_string(lex: &mut Lexer, c_string: bool) {
+fn lex_string(lex: &mut Lexer) {
     let start = lex.start_range();
-    if c_string {
-        lex.bump();
-    }
     lex.bump();
     lex.buffer.clear();
     let mut terminated = false;
@@ -306,7 +298,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
                 break;
             }
             b'\\' => {
-                let escape = lex_escape(lex, c_string);
+                let escape = lex_escape(lex);
                 lex.buffer.push(escape);
             }
             _ => {
@@ -319,7 +311,7 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
 
     let range = lex.make_range(start);
     let id = lex.intern_lit.intern(&lex.buffer);
-    lex.tokens.add_string(id, c_string, range);
+    lex.tokens.add_string(id, range);
 
     if !terminated {
         let src = lex.make_src(start);
@@ -327,11 +319,8 @@ fn lex_string(lex: &mut Lexer, c_string: bool) {
     }
 }
 
-fn lex_string_raw(lex: &mut Lexer, c_string: bool) {
+fn lex_string_raw(lex: &mut Lexer) {
     let start = lex.start_range();
-    if c_string {
-        lex.bump();
-    }
     lex.bump();
     lex.buffer.clear();
     let mut terminated = false;
@@ -354,7 +343,7 @@ fn lex_string_raw(lex: &mut Lexer, c_string: bool) {
 
     let range = lex.make_range(start);
     let id = lex.intern_lit.intern(&lex.buffer);
-    lex.tokens.add_string(id, c_string, range);
+    lex.tokens.add_string(id, range);
 
     if !terminated {
         let src = lex.make_src(start);
@@ -362,7 +351,7 @@ fn lex_string_raw(lex: &mut Lexer, c_string: bool) {
     }
 }
 
-fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
+fn lex_escape(lex: &mut Lexer) -> char {
     let start = lex.start_range();
     lex.bump();
 
@@ -401,10 +390,6 @@ fn lex_escape(lex: &mut Lexer, c_string: bool) -> char {
 
     if !hex_escape {
         lex.bump();
-    }
-    if c_string && escaped == '\0' {
-        let src = lex.make_src(start);
-        err::lexer_escape_sequence_cstring_null(&mut lex.errors, src);
     }
     escaped
 }

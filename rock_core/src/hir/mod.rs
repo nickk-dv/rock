@@ -1,7 +1,7 @@
 use crate::ast;
 use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
-use crate::intern::NameID;
+use crate::intern::{LitID, NameID};
 use crate::session::ModuleID;
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::TextRange;
@@ -259,7 +259,7 @@ pub enum ConstValue<'hir> {
     Int         { val: u64, neg: bool, int_ty: BasicInt },
     Float       { val: f64, float_ty: BasicFloat },
     Char        { val: char },
-    String      { val: ast::StringLit },
+    String      { val: LitID, string_ty: BasicString },
     Procedure   { proc_id: ProcID },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
@@ -490,6 +490,14 @@ crate::enum_as_str! {
     pub enum BasicBool {
         Bool "bool",
         Bool32 "bool32",
+    }
+}
+
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum BasicString {
+        String "string",
+        CString "cstring",
     }
 }
 
@@ -950,6 +958,22 @@ impl BasicBool {
         match self {
             BasicBool::Bool => ast::BasicType::Bool,
             BasicBool::Bool32 => ast::BasicType::Bool32,
+        }
+    }
+}
+
+impl BasicString {
+    pub fn from_basic(basic: ast::BasicType) -> Option<BasicString> {
+        match basic {
+            ast::BasicType::String => Some(BasicString::String),
+            ast::BasicType::CString => Some(BasicString::CString),
+            _ => None,
+        }
+    }
+    pub fn into_basic(self) -> ast::BasicType {
+        match self {
+            BasicString::String => ast::BasicType::String,
+            BasicString::CString => ast::BasicType::CString,
         }
     }
 }

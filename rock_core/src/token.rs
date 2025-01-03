@@ -98,10 +98,10 @@ impl TokenList {
         unsafe { transmute::<u32, char>(decode as u32) }
     }
     #[inline(always)]
-    pub fn string(&self, id: TokenID) -> (LitID, bool) {
+    pub fn string(&self, id: TokenID) -> LitID {
         let index = self.token_data[id.index()];
         let decode = self.token_encode[index as usize + 1];
-        unsafe { transmute::<u64, (LitID, bool)>(decode) }
+        unsafe { transmute::<u64, (LitID, u32)>(decode).0 }
     }
 
     #[inline(always)]
@@ -141,11 +141,11 @@ impl TokenList {
         self.token_encode.push(ch as u64);
     }
     #[inline(always)]
-    pub fn add_string(&mut self, id: LitID, c_string: bool, range: TextRange) {
+    pub fn add_string(&mut self, id: LitID, range: TextRange) {
         self.tokens.push(Token::StringLit);
         self.token_data.push(self.token_encode.len() as u32);
         let encode_range = unsafe { transmute::<TextRange, u64>(range) };
-        let encode_string = unsafe { transmute::<(LitID, bool), u64>((id, c_string)) };
+        let encode_string = unsafe { transmute::<(LitID, u32), u64>((id, 0)) };
         self.token_encode.push(encode_range);
         self.token_encode.push(encode_string);
     }
