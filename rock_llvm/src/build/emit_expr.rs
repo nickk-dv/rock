@@ -127,17 +127,16 @@ fn codegen_expr<'c>(
 }
 
 fn codegen_const_expr(cg: &mut Codegen, expect: Expect, value: hir::ConstValue) -> llvm::Value {
+    //pointer expect examples:
+    // 1) "string".len - @should be const folded instead, `&` on slice fields is not allowed anyways. 04.01.25
+    // 2) &[1, 2, 3] - @currently never can occur, no folding is done in `non-const` blocks. 04.01.25
     let value = codegen_const(cg, value);
-    match expect {
-        Expect::Value(_) | Expect::Store(_) => value,
-        Expect::Pointer => {
-            //@NOTE(8.12.24) testing if this ever happens in real code
-            unreachable!("codegen_const_expr expected pointer!");
-            let temp_ptr = cg.entry_alloca(llvm::typeof_value(value), "temp_const");
-            cg.build.store(value, temp_ptr);
-            temp_ptr.as_val()
-        }
+    if let Expect::Pointer = expect {
+        let temp_ptr = cg.entry_alloca(llvm::typeof_value(value), "temp_const");
+        cg.build.store(value, temp_ptr);
+        return temp_ptr.as_val();
     }
+    value
 }
 
 pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
@@ -650,6 +649,11 @@ fn codegen_variable(cg: &Codegen, expect: Expect, var_id: hir::VariableID) -> ll
     }
 }
 
+//@often broken currently: 04.01.25
+// semantically constant var dont have memory locations
+// so they should not be used in memory operations that require pointers
+// instead they should be inlined by the compiler at usage sites.
+// currently checks and folding for this do not exist in `non-const`` blocks.
 fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
     cg.consts[const_id.index()]
 }

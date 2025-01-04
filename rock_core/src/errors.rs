@@ -859,6 +859,15 @@ pub fn tycheck_field_not_found_slice(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_field_not_found_string(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+) {
+    let msg = format!("no field `{field_name}` exists on string type\ndid you mean `len`?");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_field_not_found_array(
     emit: &mut impl ErrorSink,
     src: SourceRange,

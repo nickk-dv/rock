@@ -862,6 +862,21 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => FieldResult::error(),
+        hir::Type::Basic(BasicType::String) => {
+            let field_name = ctx.name(name.id);
+            match field_name {
+                "len" => {
+                    let kind = FieldKind::ArraySlice { field: hir::SliceField::Len };
+                    let field_ty = hir::Type::USIZE;
+                    FieldResult::new(deref, kind, field_ty)
+                }
+                _ => {
+                    let src = ctx.src(name.range);
+                    err::tycheck_field_not_found_string(&mut ctx.emit, src, field_name);
+                    FieldResult::error()
+                }
+            }
+        }
         //@gen types not handled
         hir::Type::Struct(struct_id, _) => match check_field_from_struct(ctx, struct_id, name) {
             Some((field_id, field)) => {
@@ -3047,6 +3062,8 @@ fn binary_rhs_expect(
         | ast::BinOp::LessEq
         | ast::BinOp::Greater
         | ast::BinOp::GreaterEq => {
+            //@when not compatible or invalid lhs_ty, set expectation to Error?
+            // to prevent cascading enum inference errors. 04.01.25
             if compatible {
                 Expectation::HasType(lhs_ty, Some(expect_src))
             } else {
