@@ -644,7 +644,7 @@ impl<'hir> hir::ConstValue<'hir> {
         }
     }
 
-    fn into_bool(&self) -> bool {
+    pub fn into_bool(&self) -> bool {
         match *self {
             hir::ConstValue::Bool { val, .. } => val,
             _ => unreachable!(),

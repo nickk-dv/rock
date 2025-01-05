@@ -1810,15 +1810,18 @@ impl<'hir> hir::Type<'hir> {
     fn is_untyped_bool(&self) -> bool {
         matches!(self, hir::Type::UntypedBool)
     }
-}
-
-fn expr_kind_into_bool(kind: &hir::ExprKind) -> bool {
-    match kind {
-        hir::ExprKind::Const { value } => match value {
-            hir::ConstValue::Bool { val, .. } => *val,
-            _ => unreachable!("expected const bool expr kind"),
-        },
-        _ => unreachable!("expected const bool expr kind"),
+    fn as_typed_bool(&self) -> Option<BasicBool> {
+        match self {
+            hir::Type::Basic(basic) => BasicBool::from_basic(*basic),
+            _ => None,
+        }
+    }
+    fn from_bool_ty(bool_ty: BasicBool) -> hir::Type<'hir> {
+        if let BasicBool::Untyped = bool_ty {
+            hir::Type::UntypedBool
+        } else {
+            hir::Type::Basic(bool_ty.into_basic())
+        }
     }
 }
 
@@ -1869,23 +1872,54 @@ fn typecheck_binary<'hir, 'ast>(
             return TypeResult::error();
         }
 
-        //@fold if both are constants
-        //@perform type promotion if any is untyped, while other is typed.
+        let bool_ty = lhs_res
+            .ty
+            .as_typed_bool()
+            .unwrap_or_else(|| rhs_res.ty.as_typed_bool().unwrap_or(BasicBool::Untyped));
 
-        if lhs_res.ty.is_untyped_bool() && rhs_res.ty.is_untyped_bool() {
-            let lhs_val = expr_kind_into_bool(&lhs_res.expr.kind);
-            let rhs_val = expr_kind_into_bool(&rhs_res.expr.kind);
-            let val = match op {
-                ast::BinOp::LogicAnd => lhs_val && rhs_val,
-                ast::BinOp::LogicOr => lhs_val || rhs_val,
-                _ => unreachable!("&& or ||"),
-            };
-            let value = hir::ConstValue::Bool { val, bool_ty: BasicBool::Untyped };
-            return TypeResult::new(hir::Type::UntypedBool, hir::ExprKind::Const { value });
+        // both are const values, doing folding:
+        if let hir::ExprKind::Const { value: lhs_val } = lhs_res.expr.kind {
+            if let hir::ExprKind::Const { value: rhs_val } = rhs_res.expr.kind {
+                let lhs_val = lhs_val.into_bool();
+                let rhs_val = rhs_val.into_bool();
+                let val = match op {
+                    ast::BinOp::LogicAnd => lhs_val && rhs_val,
+                    ast::BinOp::LogicOr => lhs_val || rhs_val,
+                    _ => unreachable!("&& or ||"),
+                };
+                let value = hir::ConstValue::Bool { val, bool_ty };
+                return TypeResult::new(
+                    hir::Type::from_bool_ty(bool_ty),
+                    hir::ExprKind::Const { value },
+                );
+            }
         }
 
-        //@todo
-        return TypeResult::error();
+        // promote const values into typed form:
+        //@allocating new Expr always, not checking if promotion is required,
+        // promotion means that value is untyped and becomes typed.
+        let lhs = if let hir::ExprKind::Const { value } = lhs_res.expr.kind {
+            let value = hir::ConstValue::Bool { val: value.into_bool(), bool_ty };
+            let kind = hir::ExprKind::Const { value };
+            ctx.arena.alloc(hir::Expr { kind, range: lhs.range })
+        } else {
+            lhs_res.expr
+        };
+        let rhs = if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
+            let value = hir::ConstValue::Bool { val: value.into_bool(), bool_ty };
+            let kind = hir::ExprKind::Const { value };
+            ctx.arena.alloc(hir::Expr { kind, range: rhs.range })
+        } else {
+            rhs_res.expr
+        };
+
+        let op = match op {
+            ast::BinOp::LogicAnd => hir::BinOp::LogicAnd,
+            ast::BinOp::LogicOr => hir::BinOp::LogicOr,
+            _ => unreachable!(),
+        };
+        let kind = hir::ExprKind::Binary { op, lhs, rhs };
+        return TypeResult::new(hir::Type::from_bool_ty(bool_ty), kind);
     }
 
     let op_offset = op.as_str().len() as u32;
