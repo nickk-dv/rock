@@ -125,6 +125,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         match ty {
             hir::Type::Error => unreachable!(),
             hir::Type::Basic(basic) => self.basic_type(basic),
+            hir::Type::UntypedBool => unreachable!("untyped bool cg type"),
             hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {

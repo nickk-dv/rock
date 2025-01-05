@@ -509,6 +509,7 @@ fn add_type_size_const_dependencies<'hir>(
     match ty {
         hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
+        hir::Type::UntypedBool => unreachable!("untyped bool size deps"),
         hir::Type::InferDef(_, _) => {
             eprintln!("unhandled infer_def in (add_type_size_const_dependencies)");
             return Err(parent_id);
@@ -602,6 +603,7 @@ fn add_type_usage_const_dependencies<'hir>(
     match ty {
         hir::Type::Error => return Err(parent_id),
         hir::Type::Basic(_) => {}
+        hir::Type::UntypedBool => unreachable!("untyped bool type usage deps"),
         hir::Type::InferDef(_, _) => {
             eprintln!("unhandled infer_def in (add_type_usage_const_dependencies)");
             return Err(parent_id);

@@ -1116,6 +1116,29 @@ pub fn tycheck_bin_op_cannot_apply(
     emit.error(Error::new(msg, src, None));
 }
 
+//@second version of the same error, unify.
+pub fn tycheck_bin_op_cannot_apply_2(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    lhs_ty: &str,
+    rhs_ty: &str,
+) {
+    let msg =
+        format!("cannot apply binary operator `{op}` on values of type `{lhs_ty}` and `{rhs_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_bin_type_mismatch(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    lhs_ty: &str,
+    rhs_ty: &str,
+) {
+    let msg = format!("type mismatch in binary expression: `{lhs_ty}` vs `{rhs_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== TYPECHECK ADDRESSABILITY ====================
 
 pub fn tycheck_cannot_ref_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {

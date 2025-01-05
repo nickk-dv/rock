@@ -54,6 +54,12 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     match (ty, ty2) {
         (hir::Type::Error, _) => true,
         (_, hir::Type::Error) => true,
+
+        //@cursed cases for bool type equality checking
+        (hir::Type::UntypedBool, hir::Type::UntypedBool) => true,
+        (hir::Type::UntypedBool, hir::Type::Basic(basic)) => BasicBool::from_basic(basic).is_some(),
+        (hir::Type::Basic(basic), hir::Type::UntypedBool) => BasicBool::from_basic(basic).is_some(),
+
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (
             hir::Type::InferDef(poly_def_id, poly_param_idx),
@@ -152,6 +158,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
         hir::Type::Basic(basic) => basic.as_str().into(),
+        hir::Type::UntypedBool => "untyped bool".into(),
         hir::Type::InferDef(poly_def_id, poly_param_idx) => {
             let name = ctx.poly_param_name(poly_def_id, poly_param_idx);
             ctx.name(name.id).to_string().into()
@@ -410,7 +417,7 @@ pub fn typecheck_expr<'hir, 'ast>(
             typecheck_unary(ctx, expect, op, op_range, rhs)
         }
         ast::ExprKind::Binary { op, op_start, lhs, rhs } => {
-            typecheck_binary(ctx, expect, op, op_start, lhs, rhs)
+            typecheck_binary(ctx, expect, expr.range, op, op_start, lhs, rhs)
         }
     };
 
@@ -460,10 +467,13 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Rawptr))
         }
         ast::Lit::Bool(val) => {
-            const DEFAULT: BasicBool = BasicBool::Bool;
-            let bool_ty = infer_bool_type(expect).unwrap_or(DEFAULT);
+            let bool_ty = infer_bool_type(expect).unwrap_or(BasicBool::Untyped);
+            let ty = match bool_ty {
+                BasicBool::Untyped => hir::Type::UntypedBool,
+                _ => hir::Type::Basic(bool_ty.into_basic()),
+            };
             let value = hir::ConstValue::Bool { val, bool_ty };
-            (value, hir::Type::Basic(bool_ty.into_basic()))
+            (value, ty)
         }
         ast::Lit::Int(val) => match infer_float_type(expect) {
             Some(float_ty) => {
@@ -1788,21 +1798,96 @@ fn typecheck_unary<'hir, 'ast>(
     }
 }
 
-//@experiment with rules for expectation
-// use binary expr expect optionally? when not compatible
-// different rules for cmp and arith?
-//@look into peer type resolution: (this should work)
-// just using lhs leaves default s32 that doesnt match rhs
-// let x = 5 + 10 as u16;
-// let y = 5 as u16 + 10;
+impl<'hir> hir::Type<'hir> {
+    fn is_boolean(&self) -> bool {
+        matches!(
+            self,
+            hir::Type::UntypedBool
+                | hir::Type::Basic(BasicType::Bool)
+                | hir::Type::Basic(BasicType::Bool32)
+        )
+    }
+    fn is_untyped_bool(&self) -> bool {
+        matches!(self, hir::Type::UntypedBool)
+    }
+}
+
+fn expr_kind_into_bool(kind: &hir::ExprKind) -> bool {
+    match kind {
+        hir::ExprKind::Const { value } => match value {
+            hir::ConstValue::Bool { val, .. } => *val,
+            _ => unreachable!("expected const bool expr kind"),
+        },
+        _ => unreachable!("expected const bool expr kind"),
+    }
+}
+
 fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
+    expr_range: TextRange,
     op: ast::BinOp,
     op_start: TextOffset,
     lhs: &ast::Expr<'ast>,
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
+    if matches!(op, ast::BinOp::LogicAnd | ast::BinOp::LogicOr) {
+        let error_count = ctx.emit.error_count();
+        let lhs_res = typecheck_expr(ctx, Expectation::None, lhs);
+        let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
+
+        // reduce error noise?
+        if ctx.emit.did_error(error_count) {
+            return TypeResult::error();
+        }
+        // Type::Error is still possible, return error in that case?
+        if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
+            return TypeResult::error();
+        }
+
+        // check: invalid operator usage
+        if !lhs_res.ty.is_boolean() || !rhs_res.ty.is_boolean() {
+            let src = ctx.src(expr_range);
+            let lhs_ty = type_format(ctx, lhs_res.ty);
+            let rhs_ty = type_format(ctx, rhs_res.ty);
+            err::tycheck_bin_op_cannot_apply_2(
+                &mut ctx.emit,
+                src,
+                op.as_str(),
+                lhs_ty.as_str(),
+                rhs_ty.as_str(),
+            );
+            return TypeResult::error();
+        }
+
+        // check: binary type equality
+        if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
+            let src = ctx.src(expr_range);
+            let lhs_ty = type_format(ctx, lhs_res.ty);
+            let rhs_ty = type_format(ctx, rhs_res.ty);
+            err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
+            return TypeResult::error();
+        }
+
+        //@fold if both are constants
+        //@perform type promotion if any is untyped, while other is typed.
+
+        if lhs_res.ty.is_untyped_bool() && rhs_res.ty.is_untyped_bool() {
+            let lhs_val = expr_kind_into_bool(&lhs_res.expr.kind);
+            let rhs_val = expr_kind_into_bool(&rhs_res.expr.kind);
+            let val = match op {
+                ast::BinOp::LogicAnd => lhs_val && rhs_val,
+                ast::BinOp::LogicOr => lhs_val || rhs_val,
+                _ => unreachable!("&& or ||"),
+            };
+            let value = hir::ConstValue::Bool { val, bool_ty: BasicBool::Untyped };
+            return TypeResult::new(hir::Type::UntypedBool, hir::ExprKind::Const { value });
+        }
+
+        //@todo
+        return TypeResult::error();
+    }
+
     let op_offset = op.as_str().len() as u32;
     let op_range = TextRange::new(op_start, op_start + op_offset.into());
 
@@ -2299,7 +2384,6 @@ fn typecheck_for<'hir, 'ast>(
             let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
             let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
 
-            // @nocheckin do by reference access!
             // index expression:
             let index_kind = match collection.kind {
                 CollectionKind::Array(array) => hir::IndexKind::Array(array.len),

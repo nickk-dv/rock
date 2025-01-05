@@ -8,6 +8,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
     match ty {
         hir::Type::Error => Err(()),
         hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
+        hir::Type::UntypedBool => unreachable!("untyped bool layout"),
         hir::Type::InferDef(_, _) => {
             err::internal_not_implemented(&mut ctx.emit, src, "polymorphic param layout");
             Err(())

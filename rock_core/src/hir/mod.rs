@@ -133,6 +133,7 @@ pub struct Layout {
 pub enum Type<'hir> {
     Error,
     Basic(ast::BasicType),
+    UntypedBool,
     InferDef(PolymorphDefID, u32),
     Enum(EnumID, &'hir [Type<'hir>]),
     Struct(StructID, &'hir [Type<'hir>]),
@@ -473,7 +474,7 @@ crate::enum_as_str! {
         U32 "u32",
         U64 "u64",
         Usize "usize",
-        Untyped "<untyped integer>"
+        Untyped "untyped int"
     }
 }
 
@@ -490,6 +491,7 @@ crate::enum_as_str! {
     pub enum BasicBool {
         Bool "bool",
         Bool32 "bool32",
+        Untyped "untyped bool"
     }
 }
 
@@ -958,6 +960,7 @@ impl BasicBool {
         match self {
             BasicBool::Bool => ast::BasicType::Bool,
             BasicBool::Bool32 => ast::BasicType::Bool32,
+            BasicBool::Untyped => unreachable!("untyped bool to basic type"),
         }
     }
 }
