@@ -307,22 +307,26 @@ pub fn type_expectation_check(
     }
 }
 
+#[must_use]
 pub struct TypeResult<'hir> {
     ty: hir::Type<'hir>,
     kind: hir::ExprKind<'hir>,
     ignore: bool,
 }
 
+#[must_use]
 pub struct ExprResult<'hir> {
     ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
 }
 
+#[must_use]
 struct PatResult<'hir> {
     pat: hir::Pat<'hir>,
     pat_ty: hir::Type<'hir>,
 }
 
+#[must_use]
 struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
@@ -380,13 +384,37 @@ impl<'hir> BlockResult<'hir> {
     }
 }
 
-#[must_use]
 pub fn typecheck_expr<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     expr: &ast::Expr<'ast>,
 ) -> ExprResult<'hir> {
-    let expr_res = match expr.kind {
+    typecheck_expr_impl(ctx, expect, expr, true)
+}
+
+pub fn typecheck_expr_untyped<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    expr: &ast::Expr<'ast>,
+) -> ExprResult<'hir> {
+    typecheck_expr_impl(ctx, expect, expr, false)
+}
+
+//@move somewhere else
+fn infer_bool_type(expect: Expectation) -> Option<BasicBool> {
+    match expect {
+        Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(basic),
+        _ => None,
+    }
+}
+
+pub fn typecheck_expr_impl<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    expr: &ast::Expr<'ast>,
+    untyped_promote: bool,
+) -> ExprResult<'hir> {
+    let mut expr_res = match expr.kind {
         ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
@@ -420,6 +448,26 @@ pub fn typecheck_expr<'hir, 'ast>(
             typecheck_binary(ctx, expect, expr.range, op, op_start, lhs, rhs)
         }
     };
+
+    //@doing this in `typecheck_binary` probably changes semantics?
+    // this promotion should probably happen at the top-most level.
+    if untyped_promote {
+        if expr_res.ty.is_untyped_bool() {
+            if let hir::ExprKind::Const { value } = expr_res.kind {
+                match value {
+                    hir::ConstValue::Bool { val, .. } => {
+                        let bool_ty = infer_bool_type(expect).unwrap_or(BasicBool::Bool);
+                        let value = hir::ConstValue::Bool { val, bool_ty };
+                        expr_res.ty = hir::Type::from_bool_ty(bool_ty);
+                        expr_res.kind = hir::ExprKind::Const { value };
+                    }
+                    _ => unreachable!("promote failed, not a bool const"),
+                }
+            } else {
+                panic!("untyped bool not const value");
+            }
+        }
+    }
 
     if !expr_res.ignore {
         type_expectation_check(ctx, expr.range, expr_res.ty, expect);
@@ -1836,8 +1884,8 @@ fn typecheck_binary<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     if matches!(op, ast::BinOp::LogicAnd | ast::BinOp::LogicOr) {
         let error_count = ctx.emit.error_count();
-        let lhs_res = typecheck_expr(ctx, Expectation::None, lhs);
-        let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
+        let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
+        let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
 
         // reduce error noise?
         if ctx.emit.did_error(error_count) {
