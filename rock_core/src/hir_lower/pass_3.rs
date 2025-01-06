@@ -39,13 +39,14 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.cache.proc_params.clear();
 
     for param in item.params.iter() {
-        //@change error to `shadows` instead of already defined?
-        let _ = ctx.scope.check_already_defined_global(
-            param.name,
-            ctx.session,
-            &ctx.registry,
-            &mut ctx.emit,
-        );
+        if ctx
+            .scope
+            .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err()
+        {
+            let _ = type_resolve(ctx, param.ty, true);
+            continue;
+        }
 
         let existing = ctx.cache.proc_params.iter().find(|&it| it.name.id == param.name.id);
         if let Some(existing) = existing {
@@ -274,13 +275,13 @@ fn process_polymorph_params<'hir>(
     ctx.cache.poly_param_names.clear();
 
     for param in poly_params.names.iter().copied() {
-        //@change error to `shadows` instead of already defined?
-        let _ = ctx.scope.check_already_defined_global(
-            param,
-            ctx.session,
-            &ctx.registry,
-            &mut ctx.emit,
-        );
+        if ctx
+            .scope
+            .check_already_defined_global(param, ctx.session, &ctx.registry, &mut ctx.emit)
+            .is_err()
+        {
+            continue;
+        };
 
         let existing = ctx.cache.poly_param_names.iter().find(|&it| it.id == param.id);
         if let Some(existing) = existing {
