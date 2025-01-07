@@ -677,6 +677,10 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
 pub fn typeof_value(val: Value) -> Type {
     Type(unsafe { core::LLVMTypeOf(val.0) })
 }
+#[inline(always)]
+pub fn type_equals(a: Type, b: Type) -> bool {
+    a.0 == b.0
+}
 
 fn llvm_string_to_owned(llvm_str: *mut c_char) -> String {
     assert!(!llvm_str.is_null());

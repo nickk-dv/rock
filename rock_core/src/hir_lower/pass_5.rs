@@ -1961,11 +1961,20 @@ fn typecheck_binary<'hir, 'ast>(
             rhs_res.expr
         };
 
-        let op = match op {
-            ast::BinOp::LogicAnd => hir::BinOp::LogicAnd,
-            ast::BinOp::LogicOr => hir::BinOp::LogicOr,
-            _ => unreachable!(),
+        let op = if let BasicBool::Bool = bool_ty {
+            match op {
+                ast::BinOp::LogicAnd => hir::BinOp::LogicAnd,
+                ast::BinOp::LogicOr => hir::BinOp::LogicOr,
+                _ => unreachable!(),
+            }
+        } else {
+            match op {
+                ast::BinOp::LogicAnd => hir::BinOp::LogicAnd_32,
+                ast::BinOp::LogicOr => hir::BinOp::LogicOr_32,
+                _ => unreachable!(),
+            }
         };
+
         let kind = hir::ExprKind::Binary { op, lhs, rhs };
         return TypeResult::new(hir::Type::from_bool_ty(bool_ty), kind);
     }

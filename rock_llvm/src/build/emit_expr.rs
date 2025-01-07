@@ -281,6 +281,17 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
         let last_branch = idx + 1 == if_.branches.len() && if_.else_block.is_none();
         branch_bb = if !last_branch { cg.append_bb("if_branch") } else { exit_bb };
 
+        //@bloat, copy pasted in other places
+        let cond = if llvm::type_equals(llvm::typeof_value(cond), cg.cache.int_32) {
+            codegen_binary_op(
+                cg,
+                hir::BinOp::IsEq_Int,
+                cond,
+                llvm::const_int(cg.basic_type(ast::BasicType::S32), 1, false),
+            )
+        } else {
+            cond
+        };
         cg.build.cond_br(cond, body_bb, branch_bb);
         cg.build.position_at_end(body_bb);
         emit_stmt::codegen_block(cg, expect, branch.block);
@@ -965,8 +976,16 @@ fn codegen_binary<'c>(
 ) -> llvm::Value {
     let lhs = codegen_expr_value(cg, lhs);
     match op {
-        hir::BinOp::LogicAnd => codegen_binary_circuit(cg, op, lhs, rhs, false),
-        hir::BinOp::LogicOr => codegen_binary_circuit(cg, op, lhs, rhs, true),
+        hir::BinOp::LogicAnd => {
+            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BasicBool::Bool)
+        }
+        hir::BinOp::LogicAnd_32 => {
+            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BasicBool::Bool32)
+        }
+        hir::BinOp::LogicOr => codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BasicBool::Bool),
+        hir::BinOp::LogicOr_32 => {
+            codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BasicBool::Bool32)
+        }
         _ => {
             let rhs = codegen_expr_value(cg, rhs);
             codegen_binary_op(cg, op, lhs, rhs)
@@ -980,6 +999,7 @@ fn codegen_binary_circuit<'c>(
     lhs: llvm::Value,
     rhs: &hir::Expr<'c>,
     exit_val: bool,
+    bool_ty: hir::BasicBool,
 ) -> llvm::Value {
     let value_name = if exit_val { "logic_or" } else { "logic_and" };
     let next_name = if exit_val { "or_next" } else { "and_next" };
@@ -989,9 +1009,20 @@ fn codegen_binary_circuit<'c>(
     let exit_bb = cg.append_bb(exit_name);
     let start_bb = cg.build.insert_bb();
 
+    //@bloat, copy pasted in other places
+    let lhs_cond = if llvm::type_equals(llvm::typeof_value(lhs), cg.cache.int_32) {
+        codegen_binary_op(
+            cg,
+            hir::BinOp::IsEq_Int,
+            lhs,
+            llvm::const_int(cg.basic_type(ast::BasicType::S32), 1, false),
+        )
+    } else {
+        lhs
+    };
     let then_bb = if exit_val { exit_bb } else { next_bb };
     let else_bb = if exit_val { next_bb } else { exit_bb };
-    cg.build.cond_br(lhs, then_bb, else_bb);
+    cg.build.cond_br(lhs_cond, then_bb, else_bb);
 
     cg.build.position_at_end(next_bb);
     let rhs = codegen_expr_value(cg, rhs);
@@ -1000,9 +1031,9 @@ fn codegen_binary_circuit<'c>(
 
     cg.build.br(exit_bb);
     cg.build.position_at_end(exit_bb);
-    let phi = cg.build.phi(cg.bool_type(), value_name);
-    //@bool_ty depends?
-    let values = [bin_val, codegen_const_bool(cg, exit_val, hir::BasicBool::Bool)];
+
+    let phi = cg.build.phi(cg.bool_basic_type(bool_ty), value_name);
+    let values = [bin_val, codegen_const_bool(cg, exit_val, bool_ty)];
     let blocks = [bin_val_bb, start_bb];
     cg.build.phi_add_incoming(phi, &values, &blocks);
     phi
@@ -1049,7 +1080,11 @@ pub fn codegen_binary_op(
         hir::BinOp::GreaterEq_IntS => cg.build.icmp(IntPred::LLVMIntSGE, lhs, rhs, "bin"),
         hir::BinOp::GreaterEq_IntU => cg.build.icmp(IntPred::LLVMIntUGE, lhs, rhs, "bin"),
         hir::BinOp::GreaterEq_Float => cg.build.fcmp(FloatPred::LLVMRealOGE, lhs, rhs, "bin"),
-        hir::BinOp::LogicAnd => cg.build.bin_op(llvm::OpCode::LLVMAnd, lhs, rhs, "bin"),
-        hir::BinOp::LogicOr => cg.build.bin_op(llvm::OpCode::LLVMOr, lhs, rhs, "bin"),
+        hir::BinOp::LogicAnd | hir::BinOp::LogicAnd_32 => {
+            cg.build.bin_op(llvm::OpCode::LLVMAnd, lhs, rhs, "bin")
+        }
+        hir::BinOp::LogicOr | hir::BinOp::LogicOr_32 => {
+            cg.build.bin_op(llvm::OpCode::LLVMOr, lhs, rhs, "bin")
+        }
     }
 }

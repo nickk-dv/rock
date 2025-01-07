@@ -578,6 +578,14 @@ fn fold_binary<'hir>(
             let val = lhs.into_bool() || rhs.into_bool();
             Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
         }
+        hir::BinOp::LogicAnd_32 => {
+            let val = lhs.into_bool() && rhs.into_bool();
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+        }
+        hir::BinOp::LogicOr_32 => {
+            let val = lhs.into_bool() || rhs.into_bool();
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+        }
     }
 }
 

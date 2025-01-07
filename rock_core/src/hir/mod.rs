@@ -532,8 +532,8 @@ pub enum BinOp {
     LessEq_IntS, LessEq_IntU, LessEq_Float,
     Greater_IntS, Greater_IntU, Greater_Float,
     GreaterEq_IntS, GreaterEq_IntU, GreaterEq_Float,
-    LogicAnd,
-    LogicOr,
+    LogicAnd, LogicAnd_32,
+    LogicOr, LogicOr_32,
 }
 
 #[derive(Copy, Clone)]
@@ -1000,8 +1000,8 @@ impl BinOp {
             BinOp::LessEq_IntS | BinOp::LessEq_IntU | BinOp::LessEq_Float => "<=",
             BinOp::Greater_IntS | BinOp::Greater_IntU | BinOp::Greater_Float => ">",
             BinOp::GreaterEq_IntS | BinOp::GreaterEq_IntU | BinOp::GreaterEq_Float => ">=",
-            BinOp::LogicAnd => "&&",
-            BinOp::LogicOr => "||",
+            BinOp::LogicAnd | BinOp::LogicAnd_32 => "&&",
+            BinOp::LogicOr | BinOp::LogicOr_32 => "||",
         }
     }
 }

@@ -66,7 +66,7 @@ pub struct CodegenCache {
     int_1: llvm::Type,
     int_8: llvm::Type,
     int_16: llvm::Type,
-    int_32: llvm::Type,
+    pub int_32: llvm::Type,
     int_64: llvm::Type,
     float_32: llvm::Type,
     float_64: llvm::Type,
@@ -169,6 +169,14 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
 
     pub fn bool_type(&self) -> llvm::Type {
         self.cache.int_1
+    }
+
+    pub fn bool_basic_type(&self, bool_ty: hir::BasicBool) -> llvm::Type {
+        match bool_ty {
+            hir::BasicBool::Bool => self.cache.int_1,
+            hir::BasicBool::Bool32 => self.cache.int_32,
+            hir::BasicBool::Untyped => unreachable!(),
+        }
     }
 
     pub fn void_type(&self) -> llvm::Type {
