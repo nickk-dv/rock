@@ -167,19 +167,19 @@ fn codegen_const_null(cg: &Codegen) -> llvm::Value {
 }
 
 #[inline]
-fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BasicBool) -> llvm::Value {
+fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BoolType) -> llvm::Value {
     llvm::const_int(cg.basic_type(bool_ty.into_basic()), val as u64, false)
 }
 
 #[inline]
-fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::BasicInt) -> llvm::Value {
+fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::IntType) -> llvm::Value {
     let is_signed = int_ty.is_signed();
     let ext_val = if is_signed && neg { (!val).wrapping_add(1) } else { val };
     llvm::const_int(cg.basic_type(int_ty.into_basic()), ext_val, is_signed)
 }
 
 #[inline]
-fn codegen_const_float(cg: &Codegen, val: f64, float_ty: hir::BasicFloat) -> llvm::Value {
+fn codegen_const_float(cg: &Codegen, val: f64, float_ty: hir::FloatType) -> llvm::Value {
     llvm::const_float(cg.basic_type(float_ty.into_basic()), val)
 }
 
@@ -188,17 +188,17 @@ fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
     llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
 }
 
-fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::BasicString) -> llvm::Value {
+fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) -> llvm::Value {
     let string_idx = val.index();
     let global_ptr = cg.string_lits[string_idx].as_ptr();
 
     match string_ty {
-        hir::BasicString::String => {
+        hir::StringType::String => {
             let string = cg.session.intern_lit.get(val);
             let slice_len = cg.const_usize(string.len() as u64);
             llvm::const_struct_named(cg.slice_type(), &[global_ptr.as_val(), slice_len])
         }
-        hir::BasicString::CString => global_ptr.as_val(),
+        hir::StringType::CString => global_ptr.as_val(),
     }
 }
 
@@ -977,14 +977,14 @@ fn codegen_binary<'c>(
     let lhs = codegen_expr_value(cg, lhs);
     match op {
         hir::BinOp::LogicAnd => {
-            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BasicBool::Bool)
+            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BoolType::Bool)
         }
         hir::BinOp::LogicAnd_32 => {
-            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BasicBool::Bool32)
+            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BoolType::Bool32)
         }
-        hir::BinOp::LogicOr => codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BasicBool::Bool),
+        hir::BinOp::LogicOr => codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BoolType::Bool),
         hir::BinOp::LogicOr_32 => {
-            codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BasicBool::Bool32)
+            codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BoolType::Bool32)
         }
         _ => {
             let rhs = codegen_expr_value(cg, rhs);
@@ -999,7 +999,7 @@ fn codegen_binary_circuit<'c>(
     lhs: llvm::Value,
     rhs: &hir::Expr<'c>,
     exit_val: bool,
-    bool_ty: hir::BasicBool,
+    bool_ty: hir::BoolType,
 ) -> llvm::Value {
     let value_name = if exit_val { "logic_or" } else { "logic_and" };
     let next_name = if exit_val { "or_next" } else { "and_next" };

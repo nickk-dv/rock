@@ -6,7 +6,7 @@ use super::context::HirCtx;
 use crate::ast::{self, BasicType};
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
-use crate::hir::{self, BasicBool, BasicFloat, BasicInt, BasicString};
+use crate::hir::{self, BoolType, FloatType, IntType, StringType};
 use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
@@ -57,8 +57,8 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
 
         //@cursed cases for bool type equality checking
         (hir::Type::UntypedBool, hir::Type::UntypedBool) => true,
-        (hir::Type::UntypedBool, hir::Type::Basic(basic)) => BasicBool::from_basic(basic).is_some(),
-        (hir::Type::Basic(basic), hir::Type::UntypedBool) => BasicBool::from_basic(basic).is_some(),
+        (hir::Type::UntypedBool, hir::Type::Basic(basic)) => BoolType::from_basic(basic).is_some(),
+        (hir::Type::Basic(basic), hir::Type::UntypedBool) => BoolType::from_basic(basic).is_some(),
 
         (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
         (
@@ -401,9 +401,9 @@ pub fn typecheck_expr_untyped<'hir, 'ast>(
 }
 
 //@move somewhere else
-fn infer_bool_type(expect: Expectation) -> Option<BasicBool> {
+fn infer_bool_type(expect: Expectation) -> Option<BoolType> {
     match expect {
-        Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(basic),
+        Expectation::HasType(hir::Type::Basic(basic), _) => BoolType::from_basic(basic),
         _ => None,
     }
 }
@@ -456,7 +456,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
             if let hir::ExprKind::Const { value } = expr_res.kind {
                 match value {
                     hir::ConstValue::Bool { val, .. } => {
-                        let bool_ty = infer_bool_type(expect).unwrap_or(BasicBool::Bool);
+                        let bool_ty = infer_bool_type(expect).unwrap_or(BoolType::Bool);
                         let value = hir::ConstValue::Bool { val, bool_ty };
                         expr_res.ty = hir::Type::from_bool_ty(bool_ty);
                         expr_res.kind = hir::ExprKind::Const { value };
@@ -477,30 +477,30 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
 
 //@not range checked
 fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
-    fn infer_int_type(expect: Expectation) -> Option<BasicInt> {
+    fn infer_int_type(expect: Expectation) -> Option<IntType> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicInt::from_basic(basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => IntType::from_basic(basic),
             _ => None,
         }
     }
 
-    fn infer_float_type(expect: Expectation) -> Option<BasicFloat> {
+    fn infer_float_type(expect: Expectation) -> Option<FloatType> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicFloat::from_basic(basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => FloatType::from_basic(basic),
             _ => None,
         }
     }
 
-    fn infer_bool_type(expect: Expectation) -> Option<BasicBool> {
+    fn infer_bool_type(expect: Expectation) -> Option<BoolType> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicBool::from_basic(basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => BoolType::from_basic(basic),
             _ => None,
         }
     }
 
-    fn infer_string_type(expect: Expectation) -> Option<BasicString> {
+    fn infer_string_type(expect: Expectation) -> Option<StringType> {
         match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BasicString::from_basic(basic),
+            Expectation::HasType(hir::Type::Basic(basic), _) => StringType::from_basic(basic),
             _ => None,
         }
     }
@@ -515,9 +515,9 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Rawptr))
         }
         ast::Lit::Bool(val) => {
-            let bool_ty = infer_bool_type(expect).unwrap_or(BasicBool::Untyped);
+            let bool_ty = infer_bool_type(expect).unwrap_or(BoolType::Untyped);
             let ty = match bool_ty {
-                BasicBool::Untyped => hir::Type::UntypedBool,
+                BoolType::Untyped => hir::Type::UntypedBool,
                 _ => hir::Type::Basic(bool_ty.into_basic()),
             };
             let value = hir::ConstValue::Bool { val, bool_ty };
@@ -529,14 +529,14 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
                 (value, hir::Type::Basic(float_ty.into_basic()))
             }
             None => {
-                const DEFAULT: BasicInt = BasicInt::S32;
+                const DEFAULT: IntType = IntType::S32;
                 let int_ty = infer_int_type(expect).unwrap_or(DEFAULT);
                 let value = hir::ConstValue::Int { val, neg: false, int_ty };
                 (value, hir::Type::Basic(int_ty.into_basic()))
             }
         },
         ast::Lit::Float(val) => {
-            const DEFAULT: BasicFloat = BasicFloat::F64;
+            const DEFAULT: FloatType = FloatType::F64;
             let float_ty = infer_float_type(expect).unwrap_or(DEFAULT);
             let value = hir::ConstValue::Float { val, float_ty };
             (value, hir::Type::Basic(float_ty.into_basic()))
@@ -546,7 +546,7 @@ fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
             (value, hir::Type::Basic(BasicType::Char))
         }
         ast::Lit::String(val) => {
-            const DEFAULT: BasicString = BasicString::String;
+            const DEFAULT: StringType = StringType::String;
             let string_ty = infer_string_type(expect).unwrap_or(DEFAULT);
             let value = hir::ConstValue::String { val, string_ty };
             (value, hir::Type::Basic(string_ty.into_basic()))
@@ -1017,7 +1017,7 @@ fn check_field_from_array<'hir>(
         "len" => {
             let len = match array.len {
                 hir::ArrayStaticLen::Immediate(len) => {
-                    hir::ConstValue::Int { val: len, neg: false, int_ty: hir::BasicInt::Usize }
+                    hir::ConstValue::Int { val: len, neg: false, int_ty: hir::IntType::Usize }
                 }
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
@@ -1361,7 +1361,7 @@ fn typecheck_sizeof<'hir, 'ast>(
     let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
         Ok(layout) => {
             let value =
-                hir::ConstValue::Int { val: layout.size(), neg: false, int_ty: BasicInt::Usize };
+                hir::ConstValue::Int { val: layout.size(), neg: false, int_ty: IntType::Usize };
             hir::ExprKind::Const { value }
         }
         Err(()) => hir::ExprKind::Error,
@@ -1858,14 +1858,14 @@ impl<'hir> hir::Type<'hir> {
     fn is_untyped_bool(&self) -> bool {
         matches!(self, hir::Type::UntypedBool)
     }
-    fn as_typed_bool(&self) -> Option<BasicBool> {
+    fn as_typed_bool(&self) -> Option<BoolType> {
         match self {
-            hir::Type::Basic(basic) => BasicBool::from_basic(*basic),
+            hir::Type::Basic(basic) => BoolType::from_basic(*basic),
             _ => None,
         }
     }
-    fn from_bool_ty(bool_ty: BasicBool) -> hir::Type<'hir> {
-        if let BasicBool::Untyped = bool_ty {
+    fn from_bool_ty(bool_ty: BoolType) -> hir::Type<'hir> {
+        if let BoolType::Untyped = bool_ty {
             hir::Type::UntypedBool
         } else {
             hir::Type::Basic(bool_ty.into_basic())
@@ -1923,7 +1923,7 @@ fn typecheck_binary<'hir, 'ast>(
         let bool_ty = lhs_res
             .ty
             .as_typed_bool()
-            .unwrap_or_else(|| rhs_res.ty.as_typed_bool().unwrap_or(BasicBool::Untyped));
+            .unwrap_or_else(|| rhs_res.ty.as_typed_bool().unwrap_or(BoolType::Untyped));
 
         // both are const values, doing folding:
         if let hir::ExprKind::Const { value: lhs_val } = lhs_res.expr.kind {
@@ -1961,7 +1961,7 @@ fn typecheck_binary<'hir, 'ast>(
             rhs_res.expr
         };
 
-        let op = if let BasicBool::Bool = bool_ty {
+        let op = if let BoolType::Bool = bool_ty {
             match op {
                 ast::BinOp::LogicAnd => hir::BinOp::LogicAnd,
                 ast::BinOp::LogicOr => hir::BinOp::LogicOr,
@@ -2413,7 +2413,7 @@ fn typecheck_for<'hir, 'ast>(
                     let len_value = hir::ConstValue::Int {
                         val: array.len.get_resolved(ctx).unwrap_or(0), //@using default 0
                         neg: false,
-                        int_ty: BasicInt::Usize,
+                        int_ty: IntType::Usize,
                     };
                     ctx.arena.alloc(hir::Expr {
                         kind: hir::ExprKind::Const { value: len_value },
@@ -2435,13 +2435,13 @@ fn typecheck_for<'hir, 'ast>(
             };
             let expr_zero_usize = ctx.arena.alloc(hir::Expr {
                 kind: hir::ExprKind::Const {
-                    value: hir::ConstValue::Int { val: 0, neg: false, int_ty: BasicInt::Usize },
+                    value: hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
                 },
                 range: TextRange::zero(),
             });
             let expr_one_usize = ctx.arena.alloc(hir::Expr {
                 kind: hir::ExprKind::Const {
-                    value: hir::ConstValue::Int { val: 1, neg: false, int_ty: BasicInt::Usize },
+                    value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
                 },
                 range: TextRange::zero(),
             });

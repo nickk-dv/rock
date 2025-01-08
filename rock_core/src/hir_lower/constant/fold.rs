@@ -100,17 +100,17 @@ fn fold_slice_field<'hir>(
             hir::SliceField::Ptr => unreachable!(),
             hir::SliceField::Len => {
                 match string_ty {
-                    hir::BasicString::String => {
+                    hir::StringType::String => {
                         let string = ctx.session.intern_lit.get(val);
                         let len = string.len();
                         //@not range checked usize for 32bit?
                         Ok(hir::ConstValue::Int {
                             val: len as u64,
                             neg: false,
-                            int_ty: hir::BasicInt::Usize,
+                            int_ty: hir::IntType::Usize,
                         })
                     }
-                    hir::BasicString::CString => unreachable!(),
+                    hir::StringType::CString => unreachable!(),
                 }
             }
         },
@@ -171,16 +171,16 @@ fn fold_cast<'hir>(
     into: hir::Type,
     kind: hir::CastKind,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    fn into_int_ty(into: hir::Type) -> hir::BasicInt {
+    fn into_int_ty(into: hir::Type) -> hir::IntType {
         match into {
-            hir::Type::Basic(basic) => hir::BasicInt::from_basic(basic).unwrap(),
+            hir::Type::Basic(basic) => hir::IntType::from_basic(basic).unwrap(),
             _ => unreachable!(),
         }
     }
 
-    fn into_float_ty(into: hir::Type) -> hir::BasicFloat {
+    fn into_float_ty(into: hir::Type) -> hir::FloatType {
         match into {
-            hir::Type::Basic(basic) => hir::BasicFloat::from_basic(basic).unwrap(),
+            hir::Type::Basic(basic) => hir::FloatType::from_basic(basic).unwrap(),
             _ => unreachable!(),
         }
     }
@@ -239,11 +239,11 @@ fn fold_cast<'hir>(
         }
         hir::CastKind::Bool_to_Bool32 => {
             let val = target.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool32 })
         }
         hir::CastKind::Bool32_to_Bool => {
             let val = target.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::CastKind::Char_to_U32 => {
             let val = target.into_char();
@@ -387,7 +387,7 @@ fn fold_unary_expr<'hir>(
         }
         hir::UnOp::LogicNot => {
             let val = !rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
     }
 }
@@ -524,67 +524,67 @@ fn fold_binary<'hir>(
         }
         hir::BinOp::IsEq_Int => {
             let val = lhs.into_int() == rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::IsEq_Float => {
             let val = lhs.into_float() == rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::NotEq_Int => {
             let val = lhs.into_int() != rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::NotEq_Float => {
             let val = lhs.into_float() != rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::Less_IntS | hir::BinOp::Less_IntU => {
             let val = lhs.into_int() < rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::Less_Float => {
             let val = lhs.into_float() < rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::LessEq_IntS | hir::BinOp::LessEq_IntU => {
             let val = lhs.into_int() <= rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::LessEq_Float => {
             let val = lhs.into_float() <= rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::Greater_IntS | hir::BinOp::Greater_IntU => {
             let val = lhs.into_int() > rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::Greater_Float => {
             let val = lhs.into_float() > rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::GreaterEq_IntS | hir::BinOp::GreaterEq_IntU => {
             let val = lhs.into_int() >= rhs.into_int();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::GreaterEq_Float => {
             let val = lhs.into_float() >= rhs.into_float();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::LogicAnd => {
             let val = lhs.into_bool() && rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::LogicOr => {
             let val = lhs.into_bool() || rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool })
         }
         hir::BinOp::LogicAnd_32 => {
             let val = lhs.into_bool() && rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool32 })
         }
         hir::BinOp::LogicOr_32 => {
             let val = lhs.into_bool() || rhs.into_bool();
-            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BasicBool::Bool32 })
+            Ok(hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool32 })
         }
     }
 }
@@ -593,7 +593,7 @@ pub fn int_range_check<'hir>(
     ctx: &mut HirCtx,
     src: SourceRange,
     val: i128,
-    int_ty: hir::BasicInt,
+    int_ty: hir::IntType,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let ptr_width = ctx.session.config.target_ptr_width;
     let min = int_ty.min_128(ptr_width);
@@ -618,11 +618,11 @@ fn float_range_check<'hir>(
     ctx: &mut HirCtx,
     src: SourceRange,
     val: f64,
-    float_ty: hir::BasicFloat,
+    float_ty: hir::FloatType,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let (min, max) = match float_ty {
-        hir::BasicFloat::F32 => (f32::MIN as f64, f32::MAX as f64),
-        hir::BasicFloat::F64 => (f64::MIN, f64::MAX),
+        hir::FloatType::F32 => (f32::MIN as f64, f32::MAX as f64),
+        hir::FloatType::F64 => (f64::MIN, f64::MAX),
     };
 
     if val.is_nan() {
@@ -641,10 +641,10 @@ fn float_range_check<'hir>(
 }
 
 impl<'hir> hir::ConstValue<'hir> {
-    fn from_u64(val: u64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
+    fn from_u64(val: u64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
         hir::ConstValue::Int { val, neg: false, int_ty }
     }
-    fn from_i64(val: i64, int_ty: hir::BasicInt) -> hir::ConstValue<'hir> {
+    fn from_i64(val: i64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
         if val < 0 {
             hir::ConstValue::Int { val: -val as u64, neg: true, int_ty }
         } else {
@@ -694,7 +694,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_int_ty(&self) -> hir::BasicInt {
+    fn into_int_ty(&self) -> hir::IntType {
         match *self {
             hir::ConstValue::Int { int_ty, .. } => int_ty,
             _ => unreachable!(),
@@ -706,7 +706,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_float_ty(&self) -> hir::BasicFloat {
+    fn into_float_ty(&self) -> hir::FloatType {
         match *self {
             hir::ConstValue::Float { float_ty, .. } => float_ty,
             _ => unreachable!(),

@@ -11,7 +11,7 @@ pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
         hir::Type::Basic(basic) => {
-            if let Some(int_ty) = hir::BasicInt::from_basic(basic) {
+            if let Some(int_ty) = hir::IntType::from_basic(basic) {
                 Ok(hir::MatchKind::Int { int_ty })
             } else {
                 //@allow bool32 matching aswell?
@@ -75,7 +75,7 @@ fn match_cov_int(
     arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
-    int_ty: hir::BasicInt,
+    int_ty: hir::IntType,
 ) {
     for (arm_idx, arm) in arms.iter().enumerate() {
         let pat_ast = &arms_ast[arm_idx].pat;
@@ -118,7 +118,7 @@ fn pat_cov_int(
     cov: &mut PatCovInt<i128>,
     pat: hir::Pat,
     pat_range: TextRange,
-    int_ty: hir::BasicInt,
+    int_ty: hir::IntType,
 ) {
     let ptr_width = ctx.session.config.target_ptr_width;
 

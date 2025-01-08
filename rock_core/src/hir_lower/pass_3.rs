@@ -150,7 +150,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     let mut tag_ty = hir::Eval::Unresolved(());
 
     if let Some(tag) = item.tag_ty {
-        if let Some(int_ty) = hir::BasicInt::from_basic(tag.basic) {
+        if let Some(int_ty) = hir::IntType::from_basic(tag.basic) {
             tag_ty = hir::Eval::Resolved(int_ty);
         } else {
             let tag_src = ctx.src(tag.range);
@@ -164,13 +164,13 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     if tag_ty.is_unresolved() && !any_constant {
         let variant_count = ctx.cache.enum_variants.len() as u64;
         let int_ty = if variant_count <= u8::MAX as u64 {
-            hir::BasicInt::U8
+            hir::IntType::U8
         } else if variant_count <= u16::MAX as u64 {
-            hir::BasicInt::U16
+            hir::IntType::U16
         } else if variant_count <= u32::MAX as u64 {
-            hir::BasicInt::U32
+            hir::IntType::U32
         } else {
-            hir::BasicInt::U64
+            hir::IntType::U64
         };
         tag_ty = hir::Eval::Resolved(int_ty);
     }

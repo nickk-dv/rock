@@ -171,11 +171,11 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         self.cache.int_1
     }
 
-    pub fn bool_basic_type(&self, bool_ty: hir::BasicBool) -> llvm::Type {
+    pub fn bool_basic_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
         match bool_ty {
-            hir::BasicBool::Bool => self.cache.int_1,
-            hir::BasicBool::Bool32 => self.cache.int_32,
-            hir::BasicBool::Untyped => unreachable!(),
+            hir::BoolType::Bool => self.cache.int_1,
+            hir::BoolType::Bool32 => self.cache.int_32,
+            hir::BoolType::Untyped => unreachable!(),
         }
     }
 

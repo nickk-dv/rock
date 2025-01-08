@@ -52,7 +52,7 @@ pub struct EnumData<'hir> {
     pub name: ast::Name,
     pub poly_params: Option<&'hir [ast::Name]>,
     pub variants: &'hir [Variant<'hir>],
-    pub tag_ty: Eval<(), BasicInt>,
+    pub tag_ty: Eval<(), IntType>,
     pub layout: Eval<(), Layout>,
 }
 
@@ -256,11 +256,11 @@ pub enum ExprKind<'hir> {
 pub enum ConstValue<'hir> {
     Void,
     Null,
-    Bool        { val: bool, bool_ty: BasicBool },
-    Int         { val: u64, neg: bool, int_ty: BasicInt },
-    Float       { val: f64, float_ty: BasicFloat },
+    Bool        { val: bool, bool_ty: BoolType },
+    Int         { val: u64, neg: bool, int_ty: IntType },
+    Float       { val: f64, float_ty: FloatType },
     Char        { val: char },
-    String      { val: LitID, string_ty: BasicString },
+    String      { val: LitID, string_ty: StringType },
     Procedure   { proc_id: ProcID },
     Variant     { variant: &'hir ConstVariant<'hir> },
     Struct      { struct_: &'hir ConstStruct<'hir> },
@@ -307,7 +307,7 @@ pub struct Branch<'hir> {
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 pub enum MatchKind {
-    Int { int_ty: BasicInt },
+    Int { int_ty: IntType },
     Bool,
     Char,
     String,
@@ -463,7 +463,7 @@ where
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
-    pub enum BasicInt {
+    pub enum IntType {
         S8 "s8",
         S16 "s16",
         S32 "s32",
@@ -480,7 +480,7 @@ crate::enum_as_str! {
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
-    pub enum BasicFloat {
+    pub enum FloatType {
         F32 "f32",
         F64 "f64",
     }
@@ -488,7 +488,7 @@ crate::enum_as_str! {
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
-    pub enum BasicBool {
+    pub enum BoolType {
         Bool "bool",
         Bool32 "bool32",
         Untyped "untyped bool"
@@ -497,7 +497,7 @@ crate::enum_as_str! {
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
-    pub enum BasicString {
+    pub enum StringType {
         String "string",
         CString "cstring",
     }
@@ -834,149 +834,130 @@ where
     }
 }
 
-impl BasicInt {
-    pub fn from_str(string: &str) -> Option<BasicInt> {
-        match string {
-            "s8" => Some(BasicInt::S8),
-            "s16" => Some(BasicInt::S16),
-            "s32" => Some(BasicInt::S32),
-            "s64" => Some(BasicInt::S64),
-            "ssize" => Some(BasicInt::Ssize),
-            "u8" => Some(BasicInt::U8),
-            "u16" => Some(BasicInt::U16),
-            "u32" => Some(BasicInt::U32),
-            "u64" => Some(BasicInt::U64),
-            "usize" => Some(BasicInt::Usize),
-            _ => None,
-        }
-    }
-
-    pub fn from_basic(basic: ast::BasicType) -> Option<BasicInt> {
+impl IntType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<IntType> {
         match basic {
-            ast::BasicType::S8 => Some(BasicInt::S8),
-            ast::BasicType::S16 => Some(BasicInt::S16),
-            ast::BasicType::S32 => Some(BasicInt::S32),
-            ast::BasicType::S64 => Some(BasicInt::S64),
-            ast::BasicType::Ssize => Some(BasicInt::Ssize),
-            ast::BasicType::U8 => Some(BasicInt::U8),
-            ast::BasicType::U16 => Some(BasicInt::U16),
-            ast::BasicType::U32 => Some(BasicInt::U32),
-            ast::BasicType::U64 => Some(BasicInt::U64),
-            ast::BasicType::Usize => Some(BasicInt::Usize),
+            ast::BasicType::S8 => Some(IntType::S8),
+            ast::BasicType::S16 => Some(IntType::S16),
+            ast::BasicType::S32 => Some(IntType::S32),
+            ast::BasicType::S64 => Some(IntType::S64),
+            ast::BasicType::Ssize => Some(IntType::Ssize),
+            ast::BasicType::U8 => Some(IntType::U8),
+            ast::BasicType::U16 => Some(IntType::U16),
+            ast::BasicType::U32 => Some(IntType::U32),
+            ast::BasicType::U64 => Some(IntType::U64),
+            ast::BasicType::Usize => Some(IntType::Usize),
             _ => None,
         }
     }
 
     pub fn into_basic(self) -> ast::BasicType {
         match self {
-            BasicInt::S8 => ast::BasicType::S8,
-            BasicInt::S16 => ast::BasicType::S16,
-            BasicInt::S32 => ast::BasicType::S32,
-            BasicInt::S64 => ast::BasicType::S64,
-            BasicInt::Ssize => ast::BasicType::Ssize,
-            BasicInt::U8 => ast::BasicType::U8,
-            BasicInt::U16 => ast::BasicType::U16,
-            BasicInt::U32 => ast::BasicType::U32,
-            BasicInt::U64 => ast::BasicType::U64,
-            BasicInt::Usize => ast::BasicType::Usize,
-            BasicInt::Untyped => unreachable!("untyped int to basic type"),
+            IntType::S8 => ast::BasicType::S8,
+            IntType::S16 => ast::BasicType::S16,
+            IntType::S32 => ast::BasicType::S32,
+            IntType::S64 => ast::BasicType::S64,
+            IntType::Ssize => ast::BasicType::Ssize,
+            IntType::U8 => ast::BasicType::U8,
+            IntType::U16 => ast::BasicType::U16,
+            IntType::U32 => ast::BasicType::U32,
+            IntType::U64 => ast::BasicType::U64,
+            IntType::Usize => ast::BasicType::Usize,
+            IntType::Untyped => unreachable!("untyped int to basic type"),
         }
     }
 
     pub fn is_signed(self) -> bool {
-        matches!(
-            self,
-            BasicInt::S8 | BasicInt::S16 | BasicInt::S32 | BasicInt::S64 | BasicInt::Ssize
-        )
+        matches!(self, IntType::S8 | IntType::S16 | IntType::S32 | IntType::S64 | IntType::Ssize)
     }
 
     pub fn min_128(self, ptr_width: TargetPtrWidth) -> i128 {
         match self {
-            BasicInt::S8 => i8::MIN as i128,
-            BasicInt::S16 => i16::MIN as i128,
-            BasicInt::S32 => i32::MIN as i128,
-            BasicInt::S64 => i64::MIN as i128,
-            BasicInt::Ssize => match ptr_width {
+            IntType::S8 => i8::MIN as i128,
+            IntType::S16 => i16::MIN as i128,
+            IntType::S32 => i32::MIN as i128,
+            IntType::S64 => i64::MIN as i128,
+            IntType::Ssize => match ptr_width {
                 TargetPtrWidth::Bit_32 => i32::MIN as i128,
                 TargetPtrWidth::Bit_64 => i64::MIN as i128,
             },
-            BasicInt::U8 => 0,
-            BasicInt::U16 => 0,
-            BasicInt::U32 => 0,
-            BasicInt::U64 => 0,
-            BasicInt::Usize => 0,
-            BasicInt::Untyped => unreachable!("untyped int min_128"),
+            IntType::U8 => 0,
+            IntType::U16 => 0,
+            IntType::U32 => 0,
+            IntType::U64 => 0,
+            IntType::Usize => 0,
+            IntType::Untyped => unreachable!("untyped int min_128"),
         }
     }
 
     pub fn max_128(self, ptr_width: TargetPtrWidth) -> i128 {
         match self {
-            BasicInt::S8 => i8::MAX as i128,
-            BasicInt::S16 => i16::MAX as i128,
-            BasicInt::S32 => i32::MAX as i128,
-            BasicInt::S64 => i64::MAX as i128,
-            BasicInt::Ssize => match ptr_width {
+            IntType::S8 => i8::MAX as i128,
+            IntType::S16 => i16::MAX as i128,
+            IntType::S32 => i32::MAX as i128,
+            IntType::S64 => i64::MAX as i128,
+            IntType::Ssize => match ptr_width {
                 TargetPtrWidth::Bit_32 => i32::MAX as i128,
                 TargetPtrWidth::Bit_64 => i64::MAX as i128,
             },
-            BasicInt::U8 => u8::MAX as i128,
-            BasicInt::U16 => u16::MAX as i128,
-            BasicInt::U32 => u32::MAX as i128,
-            BasicInt::U64 => u64::MAX as i128,
-            BasicInt::Usize => match ptr_width {
+            IntType::U8 => u8::MAX as i128,
+            IntType::U16 => u16::MAX as i128,
+            IntType::U32 => u32::MAX as i128,
+            IntType::U64 => u64::MAX as i128,
+            IntType::Usize => match ptr_width {
                 TargetPtrWidth::Bit_32 => u32::MAX as i128,
                 TargetPtrWidth::Bit_64 => u64::MAX as i128,
             },
-            BasicInt::Untyped => unreachable!("untyped int max_128"),
+            IntType::Untyped => unreachable!("untyped int max_128"),
         }
     }
 }
 
-impl BasicFloat {
-    pub fn from_basic(basic: ast::BasicType) -> Option<BasicFloat> {
+impl FloatType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<FloatType> {
         match basic {
-            ast::BasicType::F32 => Some(BasicFloat::F32),
-            ast::BasicType::F64 => Some(BasicFloat::F64),
+            ast::BasicType::F32 => Some(FloatType::F32),
+            ast::BasicType::F64 => Some(FloatType::F64),
             _ => None,
         }
     }
     pub fn into_basic(self) -> ast::BasicType {
         match self {
-            BasicFloat::F32 => ast::BasicType::F32,
-            BasicFloat::F64 => ast::BasicType::F64,
+            FloatType::F32 => ast::BasicType::F32,
+            FloatType::F64 => ast::BasicType::F64,
         }
     }
 }
 
-impl BasicBool {
-    pub fn from_basic(basic: ast::BasicType) -> Option<BasicBool> {
+impl BoolType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<BoolType> {
         match basic {
-            ast::BasicType::Bool => Some(BasicBool::Bool),
-            ast::BasicType::Bool32 => Some(BasicBool::Bool32),
+            ast::BasicType::Bool => Some(BoolType::Bool),
+            ast::BasicType::Bool32 => Some(BoolType::Bool32),
             _ => None,
         }
     }
     pub fn into_basic(self) -> ast::BasicType {
         match self {
-            BasicBool::Bool => ast::BasicType::Bool,
-            BasicBool::Bool32 => ast::BasicType::Bool32,
-            BasicBool::Untyped => unreachable!("untyped bool to basic type"),
+            BoolType::Bool => ast::BasicType::Bool,
+            BoolType::Bool32 => ast::BasicType::Bool32,
+            BoolType::Untyped => unreachable!("untyped bool to basic type"),
         }
     }
 }
 
-impl BasicString {
-    pub fn from_basic(basic: ast::BasicType) -> Option<BasicString> {
+impl StringType {
+    pub fn from_basic(basic: ast::BasicType) -> Option<StringType> {
         match basic {
-            ast::BasicType::String => Some(BasicString::String),
-            ast::BasicType::CString => Some(BasicString::CString),
+            ast::BasicType::String => Some(StringType::String),
+            ast::BasicType::CString => Some(StringType::CString),
             _ => None,
         }
     }
     pub fn into_basic(self) -> ast::BasicType {
         match self {
-            BasicString::String => ast::BasicType::String,
-            BasicString::CString => ast::BasicType::CString,
+            StringType::String => ast::BasicType::String,
+            StringType::CString => ast::BasicType::CString,
         }
     }
 }
