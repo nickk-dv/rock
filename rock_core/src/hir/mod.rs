@@ -132,6 +132,10 @@ pub struct Layout {
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
+    Int(IntType),
+    Float(FloatType),
+    Bool(BoolType),
+    String(StringType),
     Basic(ast::BasicType),
     UntypedBool,
     InferDef(PolymorphDefID, u32),
@@ -474,7 +478,7 @@ crate::enum_as_str! {
         U32 "u32",
         U64 "u64",
         Usize "usize",
-        Untyped "untyped int"
+        Untyped "untyped int",
     }
 }
 
@@ -491,7 +495,7 @@ crate::enum_as_str! {
     pub enum BoolType {
         Bool "bool",
         Bool32 "bool32",
-        Untyped "untyped bool"
+        Untyped "untyped bool",
     }
 }
 

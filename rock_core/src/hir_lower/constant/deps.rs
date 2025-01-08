@@ -508,6 +508,10 @@ fn add_type_size_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Int(_) => {}
+        hir::Type::Float(_) => {}
+        hir::Type::Bool(_) => {}
+        hir::Type::String(_) => {}
         hir::Type::Basic(_) => {}
         hir::Type::UntypedBool => unreachable!("untyped bool size deps"),
         hir::Type::InferDef(_, _) => {
@@ -602,6 +606,10 @@ fn add_type_usage_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Int(_) => {}
+        hir::Type::Float(_) => {}
+        hir::Type::Bool(_) => {}
+        hir::Type::String(_) => {}
         hir::Type::Basic(_) => {}
         hir::Type::UntypedBool => unreachable!("untyped bool type usage deps"),
         hir::Type::InferDef(_, _) => {
