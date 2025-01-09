@@ -7,6 +7,15 @@ use crate::hir_lower::context::HirCtx;
 pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<hir::Layout, ()> {
     match ty {
         hir::Type::Error => Err(()),
+        hir::Type::Any => {
+            Ok(hir::Layout::new_equal(2 * ctx.session.config.target_ptr_width.ptr_size()))
+        }
+        hir::Type::Char => Ok(hir::Layout::new_equal(4)),
+        hir::Type::Void => Ok(hir::Layout::new(0, 1)),
+        hir::Type::Never => Ok(hir::Layout::new(0, 1)),
+        hir::Type::Rawptr => {
+            Ok(hir::Layout::new_equal(ctx.session.config.target_ptr_width.ptr_size()))
+        }
         hir::Type::Int(int_ty) => match int_ty {
             hir::IntType::S8 | hir::IntType::U8 => Ok(hir::Layout::new_equal(1)),
             hir::IntType::S16 | hir::IntType::U16 => Ok(hir::Layout::new_equal(2)),
@@ -20,6 +29,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         hir::Type::Float(float_ty) => match float_ty {
             hir::FloatType::F32 => Ok(hir::Layout::new_equal(4)),
             hir::FloatType::F64 => Ok(hir::Layout::new_equal(8)),
+            hir::FloatType::Untyped => unreachable!(),
         },
         hir::Type::Bool(bool_ty) => match bool_ty {
             hir::BoolType::Bool => Ok(hir::Layout::new_equal(1)),
@@ -33,6 +43,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
             hir::StringType::CString => {
                 Ok(hir::Layout::new_equal(ctx.session.config.target_ptr_width.ptr_size()))
             }
+            hir::StringType::Untyped => unreachable!(),
         },
         hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
         hir::Type::UntypedBool => unreachable!("untyped bool layout"),

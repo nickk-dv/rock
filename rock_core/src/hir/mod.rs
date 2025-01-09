@@ -132,6 +132,11 @@ pub struct Layout {
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
+    Any,
+    Char,
+    Void,
+    Never,
+    Rawptr,
     Int(IntType),
     Float(FloatType),
     Bool(BoolType),
@@ -487,6 +492,7 @@ crate::enum_as_str! {
     pub enum FloatType {
         F32 "f32",
         F64 "f64",
+        Untyped "untyped float",
     }
 }
 
@@ -504,6 +510,7 @@ crate::enum_as_str! {
     pub enum StringType {
         String "string",
         CString "cstring",
+        Untyped "untyped string",
     }
 }
 
@@ -929,6 +936,7 @@ impl FloatType {
         match self {
             FloatType::F32 => ast::BasicType::F32,
             FloatType::F64 => ast::BasicType::F64,
+            FloatType::Untyped => unreachable!(),
         }
     }
 }
@@ -962,6 +970,7 @@ impl StringType {
         match self {
             StringType::String => ast::BasicType::String,
             StringType::CString => ast::BasicType::CString,
+            StringType::Untyped => unreachable!(),
         }
     }
 }

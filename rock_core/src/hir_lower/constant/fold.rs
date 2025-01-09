@@ -111,6 +111,7 @@ fn fold_slice_field<'hir>(
                         })
                     }
                     hir::StringType::CString => unreachable!(),
+                    hir::StringType::Untyped => unreachable!(),
                 }
             }
         },
@@ -623,6 +624,7 @@ fn float_range_check<'hir>(
     let (min, max) = match float_ty {
         hir::FloatType::F32 => (f32::MIN as f64, f32::MAX as f64),
         hir::FloatType::F64 => (f64::MIN, f64::MAX),
+        hir::FloatType::Untyped => unreachable!(),
     };
 
     if val.is_nan() {

@@ -157,6 +157,11 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
 pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
+        hir::Type::Any => "any".into(),
+        hir::Type::Char => "char".into(),
+        hir::Type::Void => "void".into(),
+        hir::Type::Never => "never".into(),
+        hir::Type::Rawptr => "rawptr".into(),
         hir::Type::Int(int_ty) => int_ty.as_str().into(),
         hir::Type::Float(float_ty) => float_ty.as_str().into(),
         hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),

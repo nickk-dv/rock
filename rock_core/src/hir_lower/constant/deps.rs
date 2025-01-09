@@ -508,6 +508,11 @@ fn add_type_size_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Any => {}
+        hir::Type::Char => {}
+        hir::Type::Void => {}
+        hir::Type::Never => {}
+        hir::Type::Rawptr => {}
         hir::Type::Int(_) => {}
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
@@ -606,6 +611,11 @@ fn add_type_usage_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Any => {}
+        hir::Type::Char => {}
+        hir::Type::Void => {}
+        hir::Type::Never => {}
+        hir::Type::Rawptr => {}
         hir::Type::Int(_) => {}
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}

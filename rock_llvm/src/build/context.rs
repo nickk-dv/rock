@@ -124,6 +124,11 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn ty(&self, ty: hir::Type) -> llvm::Type {
         match ty {
             hir::Type::Error => unreachable!(),
+            hir::Type::Any => self.cache.slice_type.as_ty(),
+            hir::Type::Char => self.cache.int_32,
+            hir::Type::Void => self.cache.void_val_type.as_ty(),
+            hir::Type::Never => self.cache.void_val_type.as_ty(),
+            hir::Type::Rawptr => self.cache.ptr_type,
             hir::Type::Int(int_ty) => match int_ty {
                 hir::IntType::S8 | hir::IntType::U8 => self.cache.int_8,
                 hir::IntType::S16 | hir::IntType::U16 => self.cache.int_16,
@@ -135,6 +140,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::Float(float_ty) => match float_ty {
                 hir::FloatType::F32 => self.cache.float_32,
                 hir::FloatType::F64 => self.cache.float_64,
+                hir::FloatType::Untyped => unreachable!(),
             },
             hir::Type::Bool(bool_ty) => match bool_ty {
                 hir::BoolType::Bool => self.cache.int_1,
@@ -144,6 +150,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::String(string_ty) => match string_ty {
                 hir::StringType::String => self.cache.slice_type.as_ty(),
                 hir::StringType::CString => self.cache.ptr_type,
+                hir::StringType::Untyped => unreachable!(),
             },
             hir::Type::Basic(basic) => self.basic_type(basic),
             hir::Type::UntypedBool => unreachable!("untyped bool cg type"),

@@ -199,6 +199,7 @@ fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) ->
             llvm::const_struct_named(cg.slice_type(), &[global_ptr.as_val(), slice_len])
         }
         hir::StringType::CString => global_ptr.as_val(),
+        hir::StringType::Untyped => unreachable!(),
     }
 }
 
