@@ -660,6 +660,12 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
+    pub fn into_bool_type(&self) -> (bool, hir::BoolType) {
+        match *self {
+            hir::ConstValue::Bool { val, bool_ty } => (val, bool_ty),
+            _ => unreachable!(),
+        }
+    }
     fn into_char(&self) -> char {
         match *self {
             hir::ConstValue::Char { val } => val,

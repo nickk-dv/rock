@@ -124,8 +124,8 @@ pub struct ImportData {
 
 #[derive(Copy, Clone)]
 pub struct Layout {
-    size: u64,
-    align: u64,
+    pub size: u64,
+    pub align: u64,
 }
 
 #[must_use]
@@ -778,14 +778,8 @@ impl Layout {
     pub fn new(size: u64, align: u64) -> Layout {
         Layout { size, align }
     }
-    pub fn new_equal(size_align: u64) -> Layout {
-        Layout { size: size_align, align: size_align }
-    }
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-    pub fn align(&self) -> u64 {
-        self.align
+    pub fn equal(value: u64) -> Layout {
+        Layout { size: value, align: value }
     }
 }
 

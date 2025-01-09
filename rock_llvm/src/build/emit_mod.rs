@@ -43,7 +43,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
             let layout = enum_data.layout.resolved_unwrap();
             //@bad api, forced to create hir::ArrayStatic
             let array_ty = hir::ArrayStatic {
-                len: hir::ArrayStaticLen::Immediate(layout.size()),
+                len: hir::ArrayStaticLen::Immediate(layout.size),
                 elem_ty: hir::Type::Basic(ast::BasicType::U8),
             };
             let array_ty = cg.array_type(&array_ty);
@@ -357,7 +357,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 pub fn win64_abi_pass_by_pointer(cg: &Codegen, ty: hir::Type) -> bool {
     if let hir::Type::Struct(id, poly) = ty {
         let data = cg.hir.struct_data(id);
-        let size = data.layout.resolved_unwrap().size();
+        let size = data.layout.resolved_unwrap().size;
         if size != 1 && size != 2 && size != 4 && size != 8 {
             return true;
         }

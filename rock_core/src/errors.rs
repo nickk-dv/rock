@@ -791,10 +791,10 @@ pub fn tycheck_type_mismatch(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     expect_src: Option<SourceRange>,
-    expected_ty_fmt: &str,
-    found_ty_fmt: &str,
+    expected_ty: &str,
+    found_ty: &str,
 ) {
-    let msg = format!("type mismatch: expected `{expected_ty_fmt}`, found `{found_ty_fmt}`");
+    let msg = format!("type mismatch: expected `{expected_ty}`, found `{found_ty}`");
     let info = expect_src.map(|src| Info::new_val("expected due to this", src));
     emit.error(Error::new(msg, src, info));
 }
@@ -804,8 +804,8 @@ pub fn tycheck_if_missing_else(emit: &mut impl ErrorSink, src: SourceRange) {
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_match_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
-    let msg = format!("cannot match on value of type `{ty_fmt}`");
+pub fn tycheck_cannot_match_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot match on value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -844,9 +844,9 @@ pub fn tycheck_field_not_found_ty(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     field_name: &str,
-    ty_fmt: &str,
+    ty: &str,
 ) {
-    let msg = format!("no field `{field_name}` exists on value of type `{ty_fmt}`");
+    let msg = format!("no field `{field_name}` exists on value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -877,8 +877,8 @@ pub fn tycheck_field_not_found_array(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_index_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
-    let msg = format!("cannot index value of type `{ty_fmt}`");
+pub fn tycheck_cannot_index_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot index value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -935,8 +935,8 @@ pub fn tycheck_field_init_out_of_order(
     emit.warning(Warning::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
-    let msg = format!("cannot dereference value of type `{ty_fmt}`");
+pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot dereference value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -988,8 +988,8 @@ pub fn tycheck_defer_in_defer(emit: &mut impl ErrorSink, src: SourceRange, defer
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_cannot_iter_on_type(emit: &mut impl ErrorSink, src: SourceRange, ty_fmt: &str) {
-    let msg = format!("cannot iterate on value of type `{ty_fmt}`\nonly arrays and slices support by element iteration");
+pub fn tycheck_cannot_iter_on_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot iterate on value of type `{ty}`\nonly arrays and slices support by element iteration");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1024,12 +1024,8 @@ pub fn tycheck_cannot_infer_empty_array(emit: &mut impl ErrorSink, src: SourceRa
 
 //==================== TYPECHECK CALL & INPUT ====================
 
-pub fn tycheck_cannot_call_value_of_type(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    ty_fmt: &str,
-) {
-    let msg = format!("cannot call value of type `{ty_fmt}`");
+pub fn tycheck_cannot_call_value_of_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot call value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1100,9 +1096,9 @@ pub fn tycheck_un_op_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,
-    rhs_ty_fmt: &str,
+    rhs_ty: &str,
 ) {
-    let msg = format!("cannot apply unary operator `{op}` on value of type `{rhs_ty_fmt}`");
+    let msg = format!("cannot apply unary operator `{op}` on value of type `{rhs_ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1110,9 +1106,9 @@ pub fn tycheck_bin_op_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,
-    lhs_ty_fmt: &str,
+    lhs_ty: &str,
 ) {
-    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty_fmt}`");
+    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty}`");
     emit.error(Error::new(msg, src, None));
 }
 

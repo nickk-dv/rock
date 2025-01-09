@@ -1272,8 +1272,8 @@ fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir:
 
     let from_kind = BasicTypeKind::new(from);
     let into_kind = BasicTypeKind::new(into);
-    let from_size = constant::basic_layout(ctx, from).size();
-    let into_size = constant::basic_layout(ctx, into).size();
+    let from_size = constant::basic_layout(ctx, from).size;
+    let into_size = constant::basic_layout(ctx, into).size;
 
     match from_kind {
         BasicTypeKind::IntS => match into_kind {
@@ -1370,7 +1370,7 @@ fn typecheck_sizeof<'hir, 'ast>(
     let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
         Ok(layout) => {
             let value =
-                hir::ConstValue::Int { val: layout.size(), neg: false, int_ty: IntType::Usize };
+                hir::ConstValue::Int { val: layout.size, neg: false, int_ty: IntType::Usize };
             hir::ExprKind::Const { value }
         }
         Err(()) => hir::ExprKind::Error,
@@ -1835,6 +1835,48 @@ fn core_find_struct(
     struct_id.map(|id| (id, target_id))
 }
 
+fn typecheck_unary_2<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    op: ast::UnOp,
+    op_range: TextRange,
+    rhs: &ast::Expr<'ast>,
+) -> TypeResult<'hir> {
+    fn cannot_apply<'h>(
+        ctx: &mut HirCtx<'h, '_, '_>,
+        op: ast::UnOp,
+        rhs: &ast::Expr,
+        rhs_res: ExprResult,
+    ) -> TypeResult<'h> {
+        let src = ctx.src(rhs.range);
+        let ty_fmt = type_format(ctx, rhs_res.ty);
+        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), ty_fmt.as_str());
+        return TypeResult::error();
+    }
+
+    let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+    if rhs_res.ty.is_error() {
+        return TypeResult::error();
+    }
+
+    match op {
+        ast::UnOp::Neg => todo!(),
+        ast::UnOp::BitNot => todo!(),
+        ast::UnOp::LogicNot => {
+            if !rhs_res.ty.is_boolean() {
+                return cannot_apply(ctx, op, rhs, rhs_res);
+            }
+            if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
+                let (val, bool_ty) = value.into_bool_type();
+                let value = hir::ConstValue::Bool { val, bool_ty };
+                return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
+            }
+            let unary = hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: rhs_res.expr };
+            TypeResult::new(rhs_res.ty, unary)
+        }
+    }
+}
+
 fn typecheck_unary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -1892,15 +1934,9 @@ fn typecheck_binary<'hir, 'ast>(
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
     if matches!(op, ast::BinOp::LogicAnd | ast::BinOp::LogicOr) {
-        let error_count = ctx.emit.error_count();
         let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
         let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
 
-        // reduce error noise?
-        if ctx.emit.did_error(error_count) {
-            return TypeResult::error();
-        }
-        // Type::Error is still possible, return error in that case?
         if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
             return TypeResult::error();
         }
