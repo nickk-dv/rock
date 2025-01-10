@@ -379,7 +379,7 @@ fn fold_unary_expr<'hir>(
         }
         hir::UnOp::Neg_Float => {
             let float_ty = rhs.into_float_ty();
-            let val = rhs.into_float();
+            let val = -rhs.into_float();
             float_range_check(ctx, src, val, float_ty)
         }
         hir::UnOp::BitNot => {
@@ -654,15 +654,22 @@ impl<'hir> hir::ConstValue<'hir> {
         }
     }
 
-    pub fn into_bool(&self) -> bool {
-        match *self {
-            hir::ConstValue::Bool { val, .. } => val,
+    pub fn expect_int(self) -> (u64, bool, hir::IntType) {
+        match self {
+            hir::ConstValue::Int { val, neg, int_ty } => (val, neg, int_ty),
             _ => unreachable!(),
         }
     }
-    pub fn into_bool_type(&self) -> (bool, hir::BoolType) {
-        match *self {
+    pub fn expect_bool(self) -> (bool, hir::BoolType) {
+        match self {
             hir::ConstValue::Bool { val, bool_ty } => (val, bool_ty),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn into_bool(&self) -> bool {
+        match *self {
+            hir::ConstValue::Bool { val, .. } => val,
             _ => unreachable!(),
         }
     }

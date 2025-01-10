@@ -1859,22 +1859,59 @@ fn typecheck_unary_2<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    match op {
-        ast::UnOp::Neg => todo!(),
-        ast::UnOp::BitNot => todo!(),
+    let op = match op {
+        ast::UnOp::Neg => {
+            if rhs_res.ty.is_int() {
+                //@fold, range check
+                hir::UnOp::Neg_Int
+            } else if rhs_res.ty.is_float() {
+                //@fold, range check
+                hir::UnOp::Neg_Float
+            } else {
+                return cannot_apply(ctx, op, rhs, rhs_res);
+            }
+        }
+        ast::UnOp::BitNot => {
+            if rhs_res.ty.is_int_untyped() || !rhs_res.ty.is_int() {
+                return cannot_apply(ctx, op, rhs, rhs_res);
+            }
+            if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
+                let (val, neg, int_ty) = value.expect_int();
+                if int_ty.is_signed() {
+                    unimplemented!("signed unary ~ fold"); //@
+                }
+                let bit_count = match int_ty {
+                    IntType::S8 | IntType::U8 => 8,
+                    IntType::S16 | IntType::U16 => 16,
+                    IntType::S32 | IntType::U32 => 32,
+                    IntType::S64 | IntType::U64 => 64,
+                    IntType::Ssize | IntType::Usize => {
+                        8 * ctx.session.config.target_ptr_width.ptr_size()
+                    }
+                    IntType::Untyped => unreachable!(),
+                };
+                let mut invert = !val;
+                invert &= u64::MAX >> (64 - bit_count);
+                let value = hir::ConstValue::Int { val: invert, neg: !neg, int_ty };
+                return TypeResult::new(hir::Type::Int(int_ty), hir::ExprKind::Const { value });
+            }
+            hir::UnOp::BitNot
+        }
         ast::UnOp::LogicNot => {
             if !rhs_res.ty.is_boolean() {
                 return cannot_apply(ctx, op, rhs, rhs_res);
             }
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-                let (val, bool_ty) = value.into_bool_type();
+                let (val, bool_ty) = value.expect_bool();
                 let value = hir::ConstValue::Bool { val, bool_ty };
                 return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
             }
-            let unary = hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: rhs_res.expr };
-            TypeResult::new(rhs_res.ty, unary)
+            hir::UnOp::LogicNot
         }
-    }
+    };
+
+    let unary = hir::ExprKind::Unary { op, rhs: rhs_res.expr };
+    TypeResult::new(rhs_res.ty, unary)
 }
 
 fn typecheck_unary<'hir, 'ast>(
@@ -1898,6 +1935,18 @@ fn typecheck_unary<'hir, 'ast>(
 }
 
 impl<'hir> hir::Type<'hir> {
+    fn is_int(&self) -> bool {
+        matches!(self, hir::Type::Int(_))
+    }
+    fn is_int_untyped(&self) -> bool {
+        matches!(self, hir::Type::Int(IntType::Untyped))
+    }
+    fn is_float(&self) -> bool {
+        matches!(self, hir::Type::Float(_))
+    }
+    fn is_float_untyped(&self) -> bool {
+        matches!(self, hir::Type::Float(FloatType::Untyped))
+    }
     fn is_boolean(&self) -> bool {
         matches!(
             self,
