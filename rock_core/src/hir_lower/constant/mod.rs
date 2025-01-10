@@ -1,5 +1,5 @@
 mod deps;
-mod fold;
+pub mod fold;
 mod layout;
 
 pub use deps::{resolve_const_dependencies, resolve_const_expr};

@@ -606,16 +606,14 @@ pub fn int_range_check<'hir>(
         Err(())
     } else if val >= 0 {
         let val: u64 = val.try_into().unwrap();
-        let neg = false;
-        Ok(hir::ConstValue::Int { val, neg, int_ty })
+        Ok(hir::ConstValue::Int { val, neg: false, int_ty })
     } else {
         let val: u64 = (-val).try_into().unwrap();
-        let neg = true;
-        Ok(hir::ConstValue::Int { val, neg, int_ty })
+        Ok(hir::ConstValue::Int { val, neg: true, int_ty })
     }
 }
 
-fn float_range_check<'hir>(
+pub fn float_range_check<'hir>(
     ctx: &mut HirCtx,
     src: SourceRange,
     val: f64,
@@ -657,6 +655,12 @@ impl<'hir> hir::ConstValue<'hir> {
     pub fn expect_int(self) -> (u64, bool, hir::IntType) {
         match self {
             hir::ConstValue::Int { val, neg, int_ty } => (val, neg, int_ty),
+            _ => unreachable!(),
+        }
+    }
+    pub fn expect_float(self) -> (f64, hir::FloatType) {
+        match self {
+            hir::ConstValue::Float { val, float_ty } => (val, float_ty),
             _ => unreachable!(),
         }
     }
@@ -709,7 +713,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_int_ty(&self) -> hir::IntType {
+    pub fn into_int_ty(&self) -> hir::IntType {
         match *self {
             hir::ConstValue::Int { int_ty, .. } => int_ty,
             _ => unreachable!(),

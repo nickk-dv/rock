@@ -891,7 +891,7 @@ impl IntType {
             IntType::U32 => 0,
             IntType::U64 => 0,
             IntType::Usize => 0,
-            IntType::Untyped => unreachable!("untyped int min_128"),
+            IntType::Untyped => -(u64::MAX as i128), // u64 magnitude
         }
     }
 
@@ -913,7 +913,7 @@ impl IntType {
                 TargetPtrWidth::Bit_32 => u32::MAX as i128,
                 TargetPtrWidth::Bit_64 => u64::MAX as i128,
             },
-            IntType::Untyped => unreachable!("untyped int max_128"),
+            IntType::Untyped => u64::MAX as i128, // u64 magnitude
         }
     }
 }

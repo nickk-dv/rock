@@ -1,6 +1,7 @@
 use super::check_directive;
 use super::check_path::{self, ValueID};
 use super::constant;
+use super::constant::fold;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
@@ -1841,44 +1842,70 @@ fn typecheck_unary_2<'hir, 'ast>(
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr<'ast>,
+    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     fn cannot_apply<'h>(
         ctx: &mut HirCtx<'h, '_, '_>,
         op: ast::UnOp,
-        rhs: &ast::Expr,
         rhs_res: ExprResult,
+        expr_range: TextRange,
     ) -> TypeResult<'h> {
-        let src = ctx.src(rhs.range);
+        let src = ctx.src(expr_range);
         let ty_fmt = type_format(ctx, rhs_res.ty);
         err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), ty_fmt.as_str());
         return TypeResult::error();
     }
 
     let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+
     if rhs_res.ty.is_error() {
         return TypeResult::error();
     }
 
     let op = match op {
         ast::UnOp::Neg => {
-            if rhs_res.ty.is_int() {
-                //@fold, range check
+            if rhs_res.ty.is_int_signed() {
+                if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
+                    let int_ty = value.into_int_ty();
+                    let src = ctx.src(expr_range);
+                    if let Ok(value) = fold::int_range_check(ctx, src, -value.into_int(), int_ty) {
+                        return TypeResult::new(
+                            hir::Type::Int(int_ty),
+                            hir::ExprKind::Const { value },
+                        );
+                    } else {
+                        return TypeResult::error();
+                    }
+                }
                 hir::UnOp::Neg_Int
             } else if rhs_res.ty.is_float() {
-                //@fold, range check
+                if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
+                    let (val, float_ty) = value.expect_float();
+                    let src = ctx.src(expr_range);
+                    if let Ok(value) = fold::float_range_check(ctx, src, -val, float_ty) {
+                        return TypeResult::new(
+                            hir::Type::Float(float_ty),
+                            hir::ExprKind::Const { value },
+                        );
+                    } else {
+                        return TypeResult::error();
+                    }
+                }
                 hir::UnOp::Neg_Float
             } else {
-                return cannot_apply(ctx, op, rhs, rhs_res);
+                return cannot_apply(ctx, op, rhs_res, expr_range);
             }
         }
         ast::UnOp::BitNot => {
             if rhs_res.ty.is_int_untyped() || !rhs_res.ty.is_int() {
-                return cannot_apply(ctx, op, rhs, rhs_res);
+                return cannot_apply(ctx, op, rhs_res, expr_range);
             }
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                 let (val, neg, int_ty) = value.expect_int();
                 if int_ty.is_signed() {
-                    unimplemented!("signed unary ~ fold"); //@
+                    let src = ctx.src(expr_range);
+                    err::internal_not_implemented(&mut ctx.emit, src, "unary `~` on signed int");
+                    return TypeResult::error();
                 }
                 let bit_count = match int_ty {
                     IntType::S8 | IntType::U8 => 8,
@@ -1892,18 +1919,18 @@ fn typecheck_unary_2<'hir, 'ast>(
                 };
                 let mut invert = !val;
                 invert &= u64::MAX >> (64 - bit_count);
-                let value = hir::ConstValue::Int { val: invert, neg: !neg, int_ty };
+                let value = hir::ConstValue::Int { val: invert, neg, int_ty };
                 return TypeResult::new(hir::Type::Int(int_ty), hir::ExprKind::Const { value });
             }
             hir::UnOp::BitNot
         }
         ast::UnOp::LogicNot => {
             if !rhs_res.ty.is_boolean() {
-                return cannot_apply(ctx, op, rhs, rhs_res);
+                return cannot_apply(ctx, op, rhs_res, expr_range);
             }
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                 let (val, bool_ty) = value.expect_bool();
-                let value = hir::ConstValue::Bool { val, bool_ty };
+                let value = hir::ConstValue::Bool { val: !val, bool_ty };
                 return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
             }
             hir::UnOp::LogicNot
@@ -1937,6 +1964,9 @@ fn typecheck_unary<'hir, 'ast>(
 impl<'hir> hir::Type<'hir> {
     fn is_int(&self) -> bool {
         matches!(self, hir::Type::Int(_))
+    }
+    fn is_int_signed(&self) -> bool {
+        matches!(self, hir::Type::Int(int_ty) if int_ty.is_signed())
     }
     fn is_int_untyped(&self) -> bool {
         matches!(self, hir::Type::Int(IntType::Untyped))
