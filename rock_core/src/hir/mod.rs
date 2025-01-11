@@ -141,8 +141,6 @@ pub enum Type<'hir> {
     Float(FloatType),
     Bool(BoolType),
     String(StringType),
-    Basic(ast::BasicType),
-    UntypedBool,
     InferDef(PolymorphDefID, u32),
     Enum(EnumID, &'hir [Type<'hir>]),
     Struct(StructID, &'hir [Type<'hir>]),
@@ -784,10 +782,9 @@ impl Layout {
 }
 
 impl<'hir> Type<'hir> {
-    pub const USIZE: Type<'static> = Type::Basic(ast::BasicType::Usize);
-    pub const BOOL: Type<'static> = Type::Basic(ast::BasicType::Bool);
-    pub const VOID: Type<'static> = Type::Basic(ast::BasicType::Void);
-    pub const NEVER: Type<'static> = Type::Basic(ast::BasicType::Never);
+    //@remove
+    pub const USIZE: Type<'static> = Type::Int(IntType::Usize);
+    pub const BOOL: Type<'static> = Type::Bool(BoolType::Bool);
 
     #[inline(always)]
     pub fn is_error(&self) -> bool {
@@ -795,11 +792,11 @@ impl<'hir> Type<'hir> {
     }
     #[inline(always)]
     pub fn is_void(&self) -> bool {
-        matches!(self, Type::Basic(ast::BasicType::Void))
+        matches!(self, Type::Void)
     }
     #[inline(always)]
     pub fn is_never(&self) -> bool {
-        matches!(self, Type::Basic(ast::BasicType::Never))
+        matches!(self, Type::Never)
     }
 }
 

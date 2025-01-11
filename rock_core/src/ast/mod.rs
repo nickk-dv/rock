@@ -461,6 +461,7 @@ pub enum Mut {
     Immutable,
 }
 
+//@reorder same as hir::Type?
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum BasicType {

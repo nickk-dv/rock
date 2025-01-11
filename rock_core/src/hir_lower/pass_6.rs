@@ -65,7 +65,7 @@ fn check_main_procedure(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     }
     if !data.return_ty.is_error()
         && !data.return_ty.is_never()
-        && !matches!(data.return_ty, hir::Type::Basic(ast::BasicType::S32))
+        && !matches!(data.return_ty, hir::Type::Int(hir::IntType::S32))
     {
         let ret_src = ctx.src(item.return_ty.range);
         err::entry_main_wrong_return_ty(&mut ctx.emit, ret_src);

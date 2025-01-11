@@ -174,14 +174,14 @@ fn fold_cast<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     fn into_int_ty(into: hir::Type) -> hir::IntType {
         match into {
-            hir::Type::Basic(basic) => hir::IntType::from_basic(basic).unwrap(),
+            hir::Type::Int(int_ty) => int_ty,
             _ => unreachable!(),
         }
     }
 
     fn into_float_ty(into: hir::Type) -> hir::FloatType {
         match into {
-            hir::Type::Basic(basic) => hir::FloatType::from_basic(basic).unwrap(),
+            hir::Type::Float(float_ty) => float_ty,
             _ => unreachable!(),
         }
     }

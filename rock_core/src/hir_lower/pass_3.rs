@@ -303,7 +303,29 @@ pub fn type_resolve<'hir, 'ast>(
     in_definition: bool,
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
-        ast::TypeKind::Basic(basic) => hir::Type::Basic(basic),
+        ast::TypeKind::Basic(basic) => match basic {
+            ast::BasicType::Any => hir::Type::Any,
+            ast::BasicType::Char => hir::Type::Char,
+            ast::BasicType::Void => hir::Type::Void,
+            ast::BasicType::Never => hir::Type::Never,
+            ast::BasicType::Rawptr => hir::Type::Rawptr,
+            ast::BasicType::S8 => hir::Type::Int(hir::IntType::S8),
+            ast::BasicType::S16 => hir::Type::Int(hir::IntType::S16),
+            ast::BasicType::S32 => hir::Type::Int(hir::IntType::S32),
+            ast::BasicType::S64 => hir::Type::Int(hir::IntType::S64),
+            ast::BasicType::Ssize => hir::Type::Int(hir::IntType::Ssize),
+            ast::BasicType::U8 => hir::Type::Int(hir::IntType::U8),
+            ast::BasicType::U16 => hir::Type::Int(hir::IntType::U16),
+            ast::BasicType::U32 => hir::Type::Int(hir::IntType::U32),
+            ast::BasicType::U64 => hir::Type::Int(hir::IntType::U64),
+            ast::BasicType::Usize => hir::Type::Int(hir::IntType::Usize),
+            ast::BasicType::F32 => hir::Type::Float(hir::FloatType::F32),
+            ast::BasicType::F64 => hir::Type::Float(hir::FloatType::F64),
+            ast::BasicType::Bool => hir::Type::Bool(hir::BoolType::Bool),
+            ast::BasicType::Bool32 => hir::Type::Bool(hir::BoolType::Bool32),
+            ast::BasicType::String => hir::Type::String(hir::StringType::String),
+            ast::BasicType::CString => hir::Type::String(hir::StringType::CString),
+        },
         ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, in_definition),
         ast::TypeKind::Reference(mutt, ref_ty) => {
             let ref_ty = type_resolve(ctx, *ref_ty, in_definition);

@@ -52,80 +52,48 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
 }
 
 pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
+    if ty.is_error() || ty2.is_error() {
+        return true;
+    }
+
     match (ty, ty2) {
-        (hir::Type::Error, _) => true,
-        (_, hir::Type::Error) => true,
-
-        //@cursed cases for bool type equality checking
-        (hir::Type::UntypedBool, hir::Type::UntypedBool) => true,
-        (hir::Type::UntypedBool, hir::Type::Basic(basic)) => BoolType::from_basic(basic).is_some(),
-        (hir::Type::Basic(basic), hir::Type::UntypedBool) => BoolType::from_basic(basic).is_some(),
-
-        (hir::Type::Basic(basic), hir::Type::Basic(basic2)) => basic == basic2,
-        (
-            hir::Type::InferDef(poly_def_id, poly_param_idx),
-            hir::Type::InferDef(poly_def_id2, poly_param_idx2),
-        ) => poly_def_id == poly_def_id2 && poly_param_idx == poly_param_idx2,
+        (hir::Type::Any, hir::Type::Any) => true,
+        (hir::Type::Char, hir::Type::Char) => true,
+        (hir::Type::Void, hir::Type::Void) => true,
+        (hir::Type::Never, hir::Type::Never) => true,
+        (hir::Type::Rawptr, hir::Type::Rawptr) => true,
+        (hir::Type::Int(ty), hir::Type::Int(ty2)) => ty == ty2,
+        (hir::Type::Float(ty), hir::Type::Float(ty2)) => ty == ty2,
+        (hir::Type::Bool(ty), hir::Type::Bool(ty2)) => ty == ty2,
+        (hir::Type::String(ty), hir::Type::String(ty2)) => ty == ty2,
+        (hir::Type::InferDef(id, param_idx), hir::Type::InferDef(id2, param_idx2)) => {
+            id == id2 && param_idx == param_idx2
+        }
         (hir::Type::Enum(id, poly_types), hir::Type::Enum(id2, poly_types2)) => {
-            if id != id2 {
-                return false;
-            }
-            //@not stable will always panic
-            //@add deep error ty search to return `true`
-            //when something errored (preserve false on different id?)
-            //assert_eq!(poly_types.len(), poly_types2.len());
-            //for idx in 0..poly_types.len() {
-            //    if !type_matches(ctx, poly_types[idx], poly_types2[idx]) {
-            //        return false;
-            //    }
-            //}
-            true
+            id == id2
+                && (0..poly_types.len())
+                    .all(|idx| type_matches(ctx, poly_types[idx], poly_types2[idx]))
         }
         (hir::Type::Struct(id, poly_types), hir::Type::Struct(id2, poly_types2)) => {
-            if id != id2 {
-                return false;
-            }
-            //@not stable will always panic
-            //@add deep error ty search to return `true`
-            //when something errored (preserve false on different id?)
-            //assert_eq!(poly_types.len(), poly_types2.len());
-            //for idx in 0..poly_types.len() {
-            //    if !type_matches(ctx, poly_types[idx], poly_types2[idx]) {
-            //        return false;
-            //    }
-            //}
-            true
+            id == id2
+                && (0..poly_types.len())
+                    .all(|idx| type_matches(ctx, poly_types[idx], poly_types2[idx]))
         }
         (hir::Type::Reference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
-            if mutt2 == ast::Mut::Mutable {
-                type_matches(ctx, *ref_ty, *ref_ty2)
-            } else {
-                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
-            }
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
         (hir::Type::MultiReference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
-            if mutt2 == ast::Mut::Mutable {
-                type_matches(ctx, *ref_ty, *ref_ty2)
-            } else {
-                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
-            }
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
-        // [&]T -> &T (@does apply recursively!)
+        // implicit conversion: [&]T -> &T
         (hir::Type::Reference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
-            if mutt2 == ast::Mut::Mutable {
-                type_matches(ctx, *ref_ty, *ref_ty2)
-            } else {
-                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
-            }
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
-        // &T -> [&]T (@does apply recursively!)
+        // implicit conversion: &T -> [&]T
         (hir::Type::MultiReference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
-            if mutt2 == ast::Mut::Mutable {
-                type_matches(ctx, *ref_ty, *ref_ty2)
-            } else {
-                mutt == mutt2 && type_matches(ctx, *ref_ty, *ref_ty2)
-            }
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
+        //@also check the calling convention? 11.01.25 using fastcc and ccall.
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
                 && (proc_ty.variadic == proc_ty2.variadic)
@@ -135,11 +103,8 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
                 })
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
-            if slice2.mutt == ast::Mut::Mutable {
-                type_matches(ctx, slice.elem_ty, slice2.elem_ty)
-            } else {
-                slice.mutt == slice2.mutt && type_matches(ctx, slice.elem_ty, slice2.elem_ty)
-            }
+            (slice2.mutt == ast::Mut::Mutable || slice.mutt == slice2.mutt)
+                && type_matches(ctx, slice.elem_ty, slice2.elem_ty)
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
             if let Ok(len) = array.len.get_resolved(ctx) {
@@ -149,6 +114,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             }
             true
         }
+        // prevent arrays with error sizes from erroring
         (hir::Type::ArrayStatic(array), _) => array.len.get_resolved(ctx).is_err(),
         (_, hir::Type::ArrayStatic(array2)) => array2.len.get_resolved(ctx).is_err(),
         _ => false,
@@ -167,8 +133,6 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Float(float_ty) => float_ty.as_str().into(),
         hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),
         hir::Type::String(string_ty) => string_ty.as_str().into(),
-        hir::Type::Basic(basic) => basic.as_str().into(),
-        hir::Type::UntypedBool => "untyped bool".into(),
         hir::Type::InferDef(poly_def_id, poly_param_idx) => {
             let name = ctx.poly_param_name(poly_def_id, poly_param_idx);
             ctx.name(name.id).to_string().into()
@@ -284,7 +248,7 @@ pub enum Expectation<'hir> {
 impl<'hir> Expectation<'hir> {
     pub const USIZE: Expectation<'static> = Expectation::HasType(hir::Type::USIZE, None);
     pub const BOOL: Expectation<'static> = Expectation::HasType(hir::Type::BOOL, None);
-    pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::VOID, None);
+    pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::Void, None);
 }
 
 pub fn type_expectation_check(
@@ -413,7 +377,7 @@ pub fn typecheck_expr_untyped<'hir, 'ast>(
 //@move somewhere else
 fn infer_bool_type(expect: Expectation) -> Option<BoolType> {
     match expect {
-        Expectation::HasType(hir::Type::Basic(basic), _) => BoolType::from_basic(basic),
+        Expectation::HasType(hir::Type::Bool(bool_ty), _) => Some(bool_ty),
         _ => None,
     }
 }
@@ -425,7 +389,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
     untyped_promote: bool,
 ) -> ExprResult<'hir> {
     let mut expr_res = match expr.kind {
-        ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
+        ast::ExprKind::Lit { lit } => typecheck_lit(lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(ctx, expect, *block, BlockStatus::None).into_type_result()
@@ -452,7 +416,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
-            typecheck_unary(ctx, expect, op, op_range, rhs)
+            typecheck_unary(ctx, op, op_range, rhs, expr.range)
         }
         ast::ExprKind::Binary { op, op_start, lhs, rhs } => {
             typecheck_binary(ctx, expect, expr.range, op, op_start, lhs, rhs)
@@ -485,86 +449,29 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
     expr_res.into_expr_result(ctx, expr.range)
 }
 
-//@not range checked
-fn typecheck_lit<'hir>(expect: Expectation, lit: ast::Lit) -> TypeResult<'hir> {
-    fn infer_int_type(expect: Expectation) -> Option<IntType> {
-        match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => IntType::from_basic(basic),
-            _ => None,
-        }
-    }
-
-    fn infer_float_type(expect: Expectation) -> Option<FloatType> {
-        match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => FloatType::from_basic(basic),
-            _ => None,
-        }
-    }
-
-    fn infer_bool_type(expect: Expectation) -> Option<BoolType> {
-        match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => BoolType::from_basic(basic),
-            _ => None,
-        }
-    }
-
-    fn infer_string_type(expect: Expectation) -> Option<StringType> {
-        match expect {
-            Expectation::HasType(hir::Type::Basic(basic), _) => StringType::from_basic(basic),
-            _ => None,
-        }
-    }
-
-    let (value, ty) = match lit {
-        ast::Lit::Void => {
-            let value = hir::ConstValue::Void;
-            (value, hir::Type::Basic(BasicType::Void))
-        }
-        ast::Lit::Null => {
-            let value = hir::ConstValue::Null;
-            (value, hir::Type::Basic(BasicType::Rawptr))
-        }
-        ast::Lit::Bool(val) => {
-            let bool_ty = infer_bool_type(expect).unwrap_or(BoolType::Untyped);
-            let ty = match bool_ty {
-                BoolType::Untyped => hir::Type::UntypedBool,
-                _ => hir::Type::Basic(bool_ty.into_basic()),
-            };
-            let value = hir::ConstValue::Bool { val, bool_ty };
-            (value, ty)
-        }
-        ast::Lit::Int(val) => match infer_float_type(expect) {
-            Some(float_ty) => {
-                let value = hir::ConstValue::Float { val: val as f64, float_ty };
-                (value, hir::Type::Basic(float_ty.into_basic()))
-            }
-            None => {
-                const DEFAULT: IntType = IntType::S32;
-                let int_ty = infer_int_type(expect).unwrap_or(DEFAULT);
-                let value = hir::ConstValue::Int { val, neg: false, int_ty };
-                (value, hir::Type::Basic(int_ty.into_basic()))
-            }
-        },
-        ast::Lit::Float(val) => {
-            const DEFAULT: FloatType = FloatType::F64;
-            let float_ty = infer_float_type(expect).unwrap_or(DEFAULT);
-            let value = hir::ConstValue::Float { val, float_ty };
-            (value, hir::Type::Basic(float_ty.into_basic()))
-        }
-        ast::Lit::Char(val) => {
-            let value = hir::ConstValue::Char { val };
-            (value, hir::Type::Basic(BasicType::Char))
-        }
-        ast::Lit::String(val) => {
-            const DEFAULT: StringType = StringType::String;
-            let string_ty = infer_string_type(expect).unwrap_or(DEFAULT);
-            let value = hir::ConstValue::String { val, string_ty };
-            (value, hir::Type::Basic(string_ty.into_basic()))
-        }
+fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
+    let (ty, value) = match lit {
+        ast::Lit::Void => (hir::Type::Void, hir::ConstValue::Void),
+        ast::Lit::Null => (hir::Type::Rawptr, hir::ConstValue::Null),
+        ast::Lit::Bool(val) => (
+            hir::Type::Bool(BoolType::Untyped),
+            hir::ConstValue::Bool { val, bool_ty: BoolType::Untyped },
+        ),
+        ast::Lit::Int(val) => (
+            hir::Type::Int(IntType::Untyped),
+            hir::ConstValue::Int { val, neg: false, int_ty: IntType::Untyped },
+        ),
+        ast::Lit::Float(val) => (
+            hir::Type::Float(FloatType::Untyped),
+            hir::ConstValue::Float { val, float_ty: FloatType::Untyped },
+        ),
+        ast::Lit::Char(val) => (hir::Type::Char, hir::ConstValue::Char { val }),
+        ast::Lit::String(val) => (
+            hir::Type::String(StringType::Untyped),
+            hir::ConstValue::String { val, string_ty: StringType::Untyped },
+        ),
     };
-
-    let kind = hir::ExprKind::Const { value };
-    TypeResult::new(ty, kind)
+    TypeResult::new(ty, hir::ExprKind::Const { value })
 }
 
 /// unify type across braches:  
@@ -582,7 +489,7 @@ fn typecheck_if<'hir, 'ast>(
     if_: &ast::If<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let mut if_type = hir::Type::NEVER;
+    let mut if_type = hir::Type::Never;
 
     let offset = ctx.cache.branches.start();
     for branch in if_.branches {
@@ -601,7 +508,7 @@ fn typecheck_if<'hir, 'ast>(
     };
 
     if else_block.is_none() && if_type.is_never() {
-        if_type = hir::Type::VOID;
+        if_type = hir::Type::Void;
     }
 
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
@@ -641,7 +548,7 @@ fn typecheck_match<'hir, 'ast>(
     match_: &ast::Match<'ast>,
     match_range: TextRange,
 ) -> TypeResult<'hir> {
-    let mut match_type = hir::Type::NEVER;
+    let mut match_type = hir::Type::Never;
     let error_count = ctx.emit.error_count();
 
     let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
@@ -930,7 +837,7 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => FieldResult::error(),
-        hir::Type::Basic(BasicType::String) => {
+        hir::Type::String(StringType::String) => {
             let field_name = ctx.name(name.id);
             match field_name {
                 "len" => {
@@ -1357,9 +1264,7 @@ fn cast_enum_into_basic(ctx: &HirCtx, from: hir::EnumID, into: BasicType) -> hir
     }
 }
 
-//@resulting layout sizes are not checked to fit in usize
-// this can be partially adressed if each hir::Expr
-// is folded, thus range being range checked for `usize`
+//@always range check int value, for 32bit targets to be correct
 fn typecheck_sizeof<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     ty: ast::Type<'ast>,
@@ -1377,7 +1282,7 @@ fn typecheck_sizeof<'hir, 'ast>(
         Err(()) => hir::ExprKind::Error,
     };
 
-    TypeResult::new(hir::Type::Basic(BasicType::Usize), kind)
+    TypeResult::new(hir::Type::Int(IntType::Usize), kind)
 }
 
 fn typecheck_directive<'hir, 'ast>(
@@ -1836,26 +1741,13 @@ fn core_find_struct(
     struct_id.map(|id| (id, target_id))
 }
 
-fn typecheck_unary_2<'hir, 'ast>(
+fn typecheck_unary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
-    expect: Expectation<'hir>,
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    fn cannot_apply<'h>(
-        ctx: &mut HirCtx<'h, '_, '_>,
-        op: ast::UnOp,
-        rhs_res: ExprResult,
-        expr_range: TextRange,
-    ) -> TypeResult<'h> {
-        let src = ctx.src(expr_range);
-        let ty_fmt = type_format(ctx, rhs_res.ty);
-        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), ty_fmt.as_str());
-        return TypeResult::error();
-    }
-
     let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
 
     if rhs_res.ty.is_error() {
@@ -1893,12 +1785,12 @@ fn typecheck_unary_2<'hir, 'ast>(
                 }
                 hir::UnOp::Neg_Float
             } else {
-                return cannot_apply(ctx, op, rhs_res, expr_range);
+                return cannot_apply(ctx, op, op_range, rhs_res.ty);
             }
         }
         ast::UnOp::BitNot => {
             if rhs_res.ty.is_int_untyped() || !rhs_res.ty.is_int() {
-                return cannot_apply(ctx, op, rhs_res, expr_range);
+                return cannot_apply(ctx, op, op_range, rhs_res.ty);
             }
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                 let (val, neg, int_ty) = value.expect_int();
@@ -1925,8 +1817,8 @@ fn typecheck_unary_2<'hir, 'ast>(
             hir::UnOp::BitNot
         }
         ast::UnOp::LogicNot => {
-            if !rhs_res.ty.is_boolean() {
-                return cannot_apply(ctx, op, rhs_res, expr_range);
+            if !rhs_res.ty.is_bool() {
+                return cannot_apply(ctx, op, op_range, rhs_res.ty);
             }
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                 let (val, bool_ty) = value.expect_bool();
@@ -1938,26 +1830,18 @@ fn typecheck_unary_2<'hir, 'ast>(
     };
 
     let unary = hir::ExprKind::Unary { op, rhs: rhs_res.expr };
-    TypeResult::new(rhs_res.ty, unary)
-}
+    return TypeResult::new(rhs_res.ty, unary);
 
-fn typecheck_unary<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    expect: Expectation<'hir>,
-    op: ast::UnOp,
-    op_range: TextRange,
-    rhs: &ast::Expr<'ast>,
-) -> TypeResult<'hir> {
-    let rhs_expect = unary_rhs_expect(ctx, op, op_range, expect);
-    let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
-    let un_op = unary_op_check(ctx, op, op_range, rhs_res.ty);
-
-    if let Some(un_op) = un_op {
-        let unary_type = unary_output_type(op, rhs_res.ty);
-        let kind = hir::ExprKind::Unary { op: un_op, rhs: rhs_res.expr };
-        TypeResult::new_ignore(unary_type, kind)
-    } else {
-        TypeResult::error()
+    fn cannot_apply<'h>(
+        ctx: &mut HirCtx<'h, '_, '_>,
+        op: ast::UnOp,
+        op_range: TextRange,
+        rhs_ty: hir::Type,
+    ) -> TypeResult<'h> {
+        let src = ctx.src(op_range);
+        let rhs_ty = type_format(ctx, rhs_ty);
+        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
+        return TypeResult::error();
     }
 }
 
@@ -1977,29 +1861,11 @@ impl<'hir> hir::Type<'hir> {
     fn is_float_untyped(&self) -> bool {
         matches!(self, hir::Type::Float(FloatType::Untyped))
     }
-    fn is_boolean(&self) -> bool {
-        matches!(
-            self,
-            hir::Type::UntypedBool
-                | hir::Type::Basic(BasicType::Bool)
-                | hir::Type::Basic(BasicType::Bool32)
-        )
+    fn is_bool(&self) -> bool {
+        matches!(self, hir::Type::Bool(_))
     }
-    fn is_untyped_bool(&self) -> bool {
-        matches!(self, hir::Type::UntypedBool)
-    }
-    fn as_typed_bool(&self) -> Option<BoolType> {
-        match self {
-            hir::Type::Basic(basic) => BoolType::from_basic(*basic),
-            _ => None,
-        }
-    }
-    fn from_bool_ty(bool_ty: BoolType) -> hir::Type<'hir> {
-        if let BoolType::Untyped = bool_ty {
-            hir::Type::UntypedBool
-        } else {
-            hir::Type::Basic(bool_ty.into_basic())
-        }
+    fn is_bool_untyped(&self) -> bool {
+        matches!(self, hir::Type::Bool(BoolType::Untyped))
     }
 }
 
@@ -2021,7 +1887,7 @@ fn typecheck_binary<'hir, 'ast>(
         }
 
         // check: invalid operator usage
-        if !lhs_res.ty.is_boolean() || !rhs_res.ty.is_boolean() {
+        if !lhs_res.ty.is_bool() || !rhs_res.ty.is_bool() {
             let src = ctx.src(expr_range);
             let lhs_ty = type_format(ctx, lhs_res.ty);
             let rhs_ty = type_format(ctx, rhs_res.ty);
@@ -2044,10 +1910,19 @@ fn typecheck_binary<'hir, 'ast>(
             return TypeResult::error();
         }
 
-        let bool_ty = lhs_res
-            .ty
-            .as_typed_bool()
-            .unwrap_or_else(|| rhs_res.ty.as_typed_bool().unwrap_or(BoolType::Untyped));
+        //@move this logic
+        //@invariant: both are checked to be same!
+        fn unify_bool_type(lhs: hir::Type, rhs: hir::Type) -> BoolType {
+            if let (hir::Type::Bool(lhs), hir::Type::Bool(rhs)) = (lhs, rhs) {
+                if lhs == BoolType::Untyped {
+                    return rhs; // right is maybe typed
+                }
+                return lhs; // both are same
+            }
+            unreachable!()
+        }
+
+        let bool_ty = unify_bool_type(lhs_res.ty, rhs_res.ty);
 
         // both are const values, doing folding:
         if let hir::ExprKind::Const { value: lhs_val } = lhs_res.expr.kind {
@@ -2060,10 +1935,7 @@ fn typecheck_binary<'hir, 'ast>(
                     _ => unreachable!("&& or ||"),
                 };
                 let value = hir::ConstValue::Bool { val, bool_ty };
-                return TypeResult::new(
-                    hir::Type::from_bool_ty(bool_ty),
-                    hir::ExprKind::Const { value },
-                );
+                return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
             }
         }
 
@@ -2100,7 +1972,7 @@ fn typecheck_binary<'hir, 'ast>(
         };
 
         let kind = hir::ExprKind::Binary { op, lhs, rhs };
-        return TypeResult::new(hir::Type::from_bool_ty(bool_ty), kind);
+        return TypeResult::new(hir::Type::Bool(bool_ty), kind);
     }
 
     let op_offset = op.as_str().len() as u32;
@@ -2288,10 +2160,10 @@ fn typecheck_block<'hir, 'ast>(
         //@change to last `}` range?
         // verify that all block are actual blocks in that case
         if !diverges {
-            type_expectation_check(ctx, block.range, hir::Type::VOID, expect);
+            type_expectation_check(ctx, block.range, hir::Type::Void, expect);
         }
         //@hack but should be correct
-        let block_ty = if diverges { hir::Type::NEVER } else { hir::Type::VOID };
+        let block_ty = if diverges { hir::Type::Never } else { hir::Type::Void };
         BlockResult::new(block_ty, hir_block, block_tail_range)
     };
 
@@ -2375,7 +2247,7 @@ fn typecheck_return<'hir, 'ast>(
         }
         None => {
             let kw_range = TextRange::new(stmt_range.start(), stmt_range.start() + 6.into());
-            type_expectation_check(ctx, kw_range, hir::Type::VOID, expect);
+            type_expectation_check(ctx, kw_range, hir::Type::Void, expect);
             None
         }
     };
@@ -2846,37 +2718,30 @@ fn typecheck_assign<'hir, 'ast>(
 //==================== UNUSED ====================
 
 fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRange) {
-    enum UnusedExpr {
-        No,
-        Yes(&'static str),
-    }
-
-    fn unused_return_type(ty: hir::Type, kind: &'static str) -> UnusedExpr {
+    fn unused_return_type(ty: hir::Type, kind: &'static str) -> Option<&'static str> {
         match ty {
-            hir::Type::Error => UnusedExpr::No,
-            hir::Type::Basic(BasicType::Void) => UnusedExpr::No,
-            hir::Type::Basic(BasicType::Never) => UnusedExpr::No,
-            _ => UnusedExpr::Yes(kind),
+            hir::Type::Error | hir::Type::Void | hir::Type::Never => None,
+            _ => Some(kind),
         }
     }
 
     let unused = match expr.kind {
-        hir::ExprKind::Error => UnusedExpr::No, // already errored
-        hir::ExprKind::Const { .. } => UnusedExpr::Yes("constant value"),
-        hir::ExprKind::If { .. } => UnusedExpr::No, // expected `void`
-        hir::ExprKind::Block { .. } => UnusedExpr::No, // expected `void`
-        hir::ExprKind::Match { .. } => UnusedExpr::No, // expected `void`
-        hir::ExprKind::StructField { .. } => UnusedExpr::Yes("field access"),
-        hir::ExprKind::SliceField { .. } => UnusedExpr::Yes("field access"),
-        hir::ExprKind::Index { .. } => UnusedExpr::Yes("index access"),
-        hir::ExprKind::Slice { .. } => UnusedExpr::Yes("slice value"),
-        hir::ExprKind::Cast { .. } => UnusedExpr::Yes("cast value"),
-        hir::ExprKind::CallerLocation { .. } => UnusedExpr::Yes("caller location"),
-        hir::ExprKind::ParamVar { .. } => UnusedExpr::Yes("parameter value"),
-        hir::ExprKind::Variable { .. } => UnusedExpr::Yes("variable value"),
-        hir::ExprKind::ConstVar { .. } => UnusedExpr::Yes("constant value"),
-        hir::ExprKind::GlobalVar { .. } => UnusedExpr::Yes("global value"),
-        hir::ExprKind::Variant { .. } => UnusedExpr::Yes("variant value"),
+        hir::ExprKind::Error => None, // already errored
+        hir::ExprKind::Const { .. } => Some("constant value"),
+        hir::ExprKind::If { .. } => None,    // expected `void`
+        hir::ExprKind::Block { .. } => None, // expected `void`
+        hir::ExprKind::Match { .. } => None, // expected `void`
+        hir::ExprKind::StructField { .. } => Some("field access"),
+        hir::ExprKind::SliceField { .. } => Some("field access"),
+        hir::ExprKind::Index { .. } => Some("index access"),
+        hir::ExprKind::Slice { .. } => Some("slice value"),
+        hir::ExprKind::Cast { .. } => Some("cast value"),
+        hir::ExprKind::CallerLocation { .. } => Some("caller location"),
+        hir::ExprKind::ParamVar { .. } => Some("parameter value"),
+        hir::ExprKind::Variable { .. } => Some("variable value"),
+        hir::ExprKind::ConstVar { .. } => Some("constant value"),
+        hir::ExprKind::GlobalVar { .. } => Some("global value"),
+        hir::ExprKind::Variant { .. } => Some("variant value"),
         hir::ExprKind::CallDirect { proc_id, .. } => {
             let ty = ctx.registry.proc_data(proc_id).return_ty;
             unused_return_type(ty, "procedure return value")
@@ -2885,16 +2750,16 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
             let ty = indirect.proc_ty.return_ty;
             unused_return_type(ty, "indirect call return value")
         }
-        hir::ExprKind::StructInit { .. } => UnusedExpr::Yes("struct value"),
-        hir::ExprKind::ArrayInit { .. } => UnusedExpr::Yes("array value"),
-        hir::ExprKind::ArrayRepeat { .. } => UnusedExpr::Yes("array value"),
-        hir::ExprKind::Deref { .. } => UnusedExpr::Yes("dereference"),
-        hir::ExprKind::Address { .. } => UnusedExpr::Yes("address value"),
-        hir::ExprKind::Unary { .. } => UnusedExpr::Yes("unary operation"),
-        hir::ExprKind::Binary { .. } => UnusedExpr::Yes("binary operation"),
+        hir::ExprKind::StructInit { .. } => Some("struct value"),
+        hir::ExprKind::ArrayInit { .. } => Some("array value"),
+        hir::ExprKind::ArrayRepeat { .. } => Some("array value"),
+        hir::ExprKind::Deref { .. } => Some("dereference"),
+        hir::ExprKind::Address { .. } => Some("address value"),
+        hir::ExprKind::Unary { .. } => Some("unary operation"),
+        hir::ExprKind::Binary { .. } => Some("binary operation"),
     };
 
-    if let UnusedExpr::Yes(kind) = unused {
+    if let Some(kind) = unused {
         let src = ctx.src(expr_range);
         err::tycheck_unused_expr(&mut ctx.emit, src, kind);
     }
@@ -3241,72 +3106,6 @@ fn check_variant_bind_list<'hir>(
 }
 
 //==================== OPERATOR ====================
-
-fn unary_rhs_expect<'hir>(
-    ctx: &HirCtx,
-    op: ast::UnOp,
-    op_range: TextRange,
-    expect: Expectation<'hir>,
-) -> Expectation<'hir> {
-    match op {
-        ast::UnOp::Neg | ast::UnOp::BitNot => expect,
-        ast::UnOp::LogicNot => {
-            let expect_src = ctx.src(op_range);
-            Expectation::HasType(hir::Type::BOOL, Some(expect_src))
-        }
-    }
-}
-
-fn unary_output_type(op: ast::UnOp, rhs_ty: hir::Type) -> hir::Type {
-    match op {
-        ast::UnOp::Neg | ast::UnOp::BitNot => rhs_ty,
-        ast::UnOp::LogicNot => hir::Type::BOOL,
-    }
-}
-
-//@make error better (reference the expr)
-fn unary_op_check(
-    ctx: &mut HirCtx,
-    op: ast::UnOp,
-    op_range: TextRange,
-    rhs_ty: hir::Type,
-) -> Option<hir::UnOp> {
-    if rhs_ty.is_error() {
-        return None;
-    }
-
-    let un_op = match op {
-        ast::UnOp::Neg => match rhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::UnOp::Neg_Int),
-                BasicTypeKind::Float => Some(hir::UnOp::Neg_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::UnOp::BitNot => match rhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::UnOp::BitNot),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::UnOp::LogicNot => match rhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::Bool => Some(hir::UnOp::LogicNot),
-                _ => None,
-            },
-            _ => None,
-        },
-    };
-
-    if un_op.is_none() {
-        let src = ctx.src(op_range);
-        let rhs_ty = type_format(ctx, rhs_ty);
-        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
-    }
-    un_op
-}
 
 fn binary_lhs_expect<'hir>(
     ctx: &HirCtx,

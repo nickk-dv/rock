@@ -45,8 +45,6 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
             }
             hir::StringType::Untyped => unreachable!(),
         },
-        hir::Type::Basic(basic) => Ok(basic_layout(ctx, basic)),
-        hir::Type::UntypedBool => unreachable!("untyped bool layout"),
         hir::Type::InferDef(_, _) => {
             err::internal_not_implemented(&mut ctx.emit, src, "polymorphic param layout");
             Err(())
@@ -178,11 +176,12 @@ fn resolve_variant_layout(
     let src = SourceRange::new(data.origin_id, variant.name.range);
 
     let tag_ty = data.tag_ty.resolved()?;
-    let tag_ty = [hir::Type::Basic(tag_ty.into_basic())];
+    let tag_ty = [hir::Type::Int(tag_ty)];
     let mut types = tag_ty.iter().copied().chain(variant.fields.iter().map(|f| &f.ty).copied());
     resolve_aggregate_layout(ctx, src, "variant", &mut types)
 }
 
+//@avoid dyn trait if possible
 fn resolve_aggregate_layout(
     ctx: &mut HirCtx,
     src: SourceRange,

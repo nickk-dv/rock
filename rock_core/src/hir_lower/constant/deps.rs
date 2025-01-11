@@ -517,8 +517,6 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::Basic(_) => {}
-        hir::Type::UntypedBool => unreachable!("untyped bool size deps"),
         hir::Type::InferDef(_, _) => {
             eprintln!("unhandled infer_def in (add_type_size_const_dependencies)");
             return Err(parent_id);
@@ -620,8 +618,6 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::Basic(_) => {}
-        hir::Type::UntypedBool => unreachable!("untyped bool type usage deps"),
         hir::Type::InferDef(_, _) => {
             eprintln!("unhandled infer_def in (add_type_usage_const_dependencies)");
             return Err(parent_id);
@@ -886,7 +882,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
 
                 //@variant is set to `ResolvedError` if tag_ty is not known (safe to unwrap)
                 let tag_ty = data.tag_ty.resolved_unwrap();
-                let expect = Expectation::HasType(hir::Type::Basic(tag_ty.into_basic()), None);
+                let expect = Expectation::HasType(hir::Type::Int(tag_ty), None);
 
                 match variant.kind {
                     hir::VariantKind::Default(eval_id) => {

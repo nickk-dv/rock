@@ -6,23 +6,16 @@ use crate::intern::LitID;
 use crate::text::TextRange;
 use std::collections::HashSet;
 
+//@report error here instead of returning weird boolean result values?
 //@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
+//@review potential bool32 support
 pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
-        hir::Type::Basic(basic) => {
-            if let Some(int_ty) = hir::IntType::from_basic(basic) {
-                Ok(hir::MatchKind::Int { int_ty })
-            } else {
-                //@allow bool32 matching aswell?
-                match basic {
-                    BasicType::Bool => Ok(hir::MatchKind::Bool),
-                    BasicType::Char => Ok(hir::MatchKind::Char),
-                    BasicType::String => Ok(hir::MatchKind::String),
-                    _ => Err(true),
-                }
-            }
-        }
+        hir::Type::Char => Ok(hir::MatchKind::Char),
+        hir::Type::Int(int_ty) => Ok(hir::MatchKind::Int { int_ty }),
+        hir::Type::Bool(hir::BoolType::Bool) => Ok(hir::MatchKind::Bool),
+        hir::Type::String(hir::StringType::String) => Ok(hir::MatchKind::String),
         //@gen types not handled
         hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum { enum_id, ref_mut: None }),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
