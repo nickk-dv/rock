@@ -1,4 +1,3 @@
-use crate::ast::BasicType;
 use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
@@ -15,36 +14,10 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
         hir::Type::Rawptr => Ok(hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size())),
-        hir::Type::Int(int_ty) => match int_ty {
-            hir::IntType::S8 | hir::IntType::U8 => Ok(hir::Layout::equal(1)),
-            hir::IntType::S16 | hir::IntType::U16 => Ok(hir::Layout::equal(2)),
-            hir::IntType::S32 | hir::IntType::U32 => Ok(hir::Layout::equal(4)),
-            hir::IntType::S64 | hir::IntType::U64 => Ok(hir::Layout::equal(8)),
-            hir::IntType::Ssize | hir::IntType::Usize => {
-                Ok(hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size()))
-            }
-            hir::IntType::Untyped => unreachable!(),
-        },
-        hir::Type::Float(float_ty) => match float_ty {
-            hir::FloatType::F32 => Ok(hir::Layout::equal(4)),
-            hir::FloatType::F64 => Ok(hir::Layout::equal(8)),
-            hir::FloatType::Untyped => unreachable!(),
-        },
-        hir::Type::Bool(bool_ty) => match bool_ty {
-            hir::BoolType::Bool => Ok(hir::Layout::equal(1)),
-            hir::BoolType::Bool32 => Ok(hir::Layout::equal(4)),
-            hir::BoolType::Untyped => unreachable!(),
-        },
-        hir::Type::String(string_ty) => match string_ty {
-            hir::StringType::String => {
-                let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-                Ok(hir::Layout::new(ptr_size * 2, ptr_size))
-            }
-            hir::StringType::CString => {
-                Ok(hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size()))
-            }
-            hir::StringType::Untyped => unreachable!(),
-        },
+        hir::Type::Int(int_ty) => Ok(int_layout(ctx, int_ty)),
+        hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
+        hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
+        hir::Type::String(string_ty) => Ok(string_layout(ctx, string_ty)),
         hir::Type::InferDef(_, _) => {
             err::internal_not_implemented(&mut ctx.emit, src, "polymorphic param layout");
             Err(())
@@ -79,7 +52,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         }
         hir::Type::ArraySlice(_) => {
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            Ok(hir::Layout::new(ptr_size * 2, ptr_size))
+            Ok(hir::Layout::new(2 * ptr_size, ptr_size))
         }
         hir::Type::ArrayStatic(array) => {
             let len = array.len.get_resolved(ctx)?;
@@ -96,47 +69,45 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
     }
 }
 
-pub fn basic_layout(ctx: &HirCtx, basic: BasicType) -> hir::Layout {
-    match basic {
-        BasicType::S8 => hir::Layout::equal(1),
-        BasicType::S16 => hir::Layout::equal(2),
-        BasicType::S32 => hir::Layout::equal(4),
-        BasicType::S64 => hir::Layout::equal(8),
-        BasicType::Ssize => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::equal(ptr_size)
+#[inline]
+pub fn int_layout(ctx: &HirCtx, int_ty: hir::IntType) -> hir::Layout {
+    match int_ty {
+        hir::IntType::S8 | hir::IntType::U8 => hir::Layout::equal(1),
+        hir::IntType::S16 | hir::IntType::U16 => hir::Layout::equal(2),
+        hir::IntType::S32 | hir::IntType::U32 => hir::Layout::equal(4),
+        hir::IntType::S64 | hir::IntType::U64 => hir::Layout::equal(8),
+        hir::IntType::Ssize | hir::IntType::Usize => {
+            hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size())
         }
-        BasicType::U8 => hir::Layout::equal(1),
-        BasicType::U16 => hir::Layout::equal(2),
-        BasicType::U32 => hir::Layout::equal(4),
-        BasicType::U64 => hir::Layout::equal(8),
-        BasicType::Usize => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::equal(ptr_size)
-        }
-        BasicType::F32 => hir::Layout::equal(4),
-        BasicType::F64 => hir::Layout::equal(8),
-        BasicType::Bool => hir::Layout::equal(1),
-        BasicType::Bool32 => hir::Layout::equal(4),
-        BasicType::Char => hir::Layout::equal(4),
-        BasicType::Rawptr => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::equal(ptr_size)
-        }
-        BasicType::Any => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::new(ptr_size * 2, ptr_size)
-        }
-        BasicType::Void => hir::Layout::new(0, 1),
-        BasicType::Never => hir::Layout::new(0, 1),
-        BasicType::String => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::new(ptr_size * 2, ptr_size)
-        }
-        BasicType::CString => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            hir::Layout::equal(ptr_size)
-        }
+        hir::IntType::Untyped => unreachable!(),
+    }
+}
+
+#[inline]
+pub fn float_layout(float_ty: hir::FloatType) -> hir::Layout {
+    match float_ty {
+        hir::FloatType::F32 => hir::Layout::equal(4),
+        hir::FloatType::F64 => hir::Layout::equal(8),
+        hir::FloatType::Untyped => unreachable!(),
+    }
+}
+
+#[inline]
+pub fn bool_layout(bool_ty: hir::BoolType) -> hir::Layout {
+    match bool_ty {
+        hir::BoolType::Bool => hir::Layout::equal(1),
+        hir::BoolType::Bool32 => hir::Layout::equal(4),
+        hir::BoolType::Untyped => unreachable!(),
+    }
+}
+
+#[inline]
+pub fn string_layout(ctx: &HirCtx, string_ty: hir::StringType) -> hir::Layout {
+    let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
+    match string_ty {
+        hir::StringType::String => hir::Layout::new(2 * ptr_size, ptr_size),
+        hir::StringType::CString => hir::Layout::equal(ptr_size),
+        hir::StringType::Untyped => unreachable!(),
     }
 }
 

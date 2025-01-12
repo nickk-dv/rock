@@ -421,6 +421,8 @@ pub enum CastKind {
     Bool_to_Int,
     Bool_to_Bool32,
     Bool32_to_Bool,
+    Bool_Extend,
+    Bool_Trunc,
     Char_to_U32,
 }
 

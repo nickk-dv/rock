@@ -2,6 +2,7 @@ use super::check_directive;
 use super::check_path::{self, ValueID};
 use super::constant;
 use super::constant::fold;
+use super::constant::layout;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
 use crate::ast::{self, BasicType};
@@ -1112,6 +1113,81 @@ impl BasicTypeKind {
             BasicType::CString => BasicTypeKind::Cstring,
         }
     }
+}
+
+fn typecheck_cast_2<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: TextRange,
+    target: &ast::Expr<'ast>,
+    into: &ast::Type<'ast>,
+) -> TypeResult<'hir> {
+    use hir::CastKind;
+    use std::cmp::Ordering;
+
+    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let from = target_res.ty;
+    let into = super::pass_3::type_resolve(ctx, *into, false);
+
+    if from.is_error() || into.is_error() {
+        return TypeResult::error();
+    }
+
+    let kind = match (from, into) {
+        (hir::Type::Int(from_ty), hir::Type::Int(into_ty)) => {
+            let from_size = layout::int_layout(ctx, from_ty).size;
+            let into_size = layout::int_layout(ctx, into_ty).size;
+            match from_size.cmp(&into_size) {
+                Ordering::Less => {
+                    if from_ty.is_signed() {
+                        CastKind::IntS_Sign_Extend
+                    } else {
+                        CastKind::IntU_Zero_Extend
+                    }
+                }
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Greater => CastKind::Int_Trunc,
+            }
+        }
+        (hir::Type::Int(from_ty), hir::Type::Float(_)) => {
+            if from_ty.is_signed() {
+                CastKind::IntS_to_Float
+            } else {
+                CastKind::IntU_to_Float
+            }
+        }
+        (hir::Type::Float(from_ty), hir::Type::Float(into_ty)) => {
+            let from_size = layout::float_layout(from_ty).size;
+            let into_size = layout::float_layout(into_ty).size;
+            match from_size.cmp(&into_size) {
+                Ordering::Less => CastKind::Float_Extend,
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Greater => CastKind::Float_Trunc,
+            }
+        }
+        (hir::Type::Float(_), hir::Type::Int(into_ty)) => {
+            if into_ty.is_signed() {
+                CastKind::Float_to_IntS
+            } else {
+                CastKind::Float_to_IntU
+            }
+        }
+        (hir::Type::Bool(from_ty), hir::Type::Bool(into_ty)) => {
+            let from_size = layout::bool_layout(from_ty).size;
+            let into_size = layout::bool_layout(into_ty).size;
+            match from_size.cmp(&into_size) {
+                Ordering::Less => CastKind::Bool_Extend,
+                Ordering::Equal => CastKind::NoOp,
+                Ordering::Greater => CastKind::Bool_Trunc,
+            }
+        }
+        _ => CastKind::Error,
+    };
+
+    if let CastKind::NoOp = kind {
+        //@error
+    }
+
+    todo!()
 }
 
 fn typecheck_cast<'hir, 'ast>(
