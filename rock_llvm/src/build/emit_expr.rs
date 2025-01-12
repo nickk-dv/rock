@@ -608,21 +608,31 @@ fn codegen_cast<'c>(
 
     match kind {
         hir::CastKind::Error => unreachable!(),
-        hir::CastKind::NoOp => val,
-        hir::CastKind::NoOpUnchecked => val,
+        hir::CastKind::Char_NoOp => val,
+        hir::CastKind::Rawptr_NoOp => val,
+
+        hir::CastKind::Int_NoOp => val,
         hir::CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::IntS_Sign_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
-        hir::CastKind::IntU_Zero_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::IntS_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
+        hir::CastKind::IntU_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
         hir::CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into_ty, "cast"),
         hir::CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into_ty, "cast"),
-        hir::CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "cast"),
-        hir::CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "cast"),
+
         hir::CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "cast"),
         hir::CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "cast"),
-        hir::CastKind::Bool_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
-        hir::CastKind::Bool_to_Bool32 => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
-        hir::CastKind::Bool32_to_Bool => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::Char_to_U32 => val,
+        hir::CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "cast"),
+        hir::CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "cast"),
+
+        hir::CastKind::Bool_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
+        hir::CastKind::Bool_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        hir::CastKind::Bool_NoOp_to_Int => val,
+        hir::CastKind::Bool_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
+        hir::CastKind::Bool_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+
+        hir::CastKind::Enum_NoOp_to_Int => val,
+        hir::CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
+        hir::CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
+        hir::CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
     }
 }
 

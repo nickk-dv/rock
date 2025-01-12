@@ -400,7 +400,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
-        ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, target, into, expr.range),
+        ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
         ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
         ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
@@ -1115,7 +1115,7 @@ impl BasicTypeKind {
     }
 }
 
-fn typecheck_cast_2<'hir, 'ast>(
+fn typecheck_cast<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     range: TextRange,
     target: &ast::Expr<'ast>,
@@ -1133,18 +1133,27 @@ fn typecheck_cast_2<'hir, 'ast>(
     }
 
     let kind = match (from, into) {
+        (hir::Type::Char, hir::Type::Int(IntType::U32)) => CastKind::Char_NoOp,
+
+        (hir::Type::Rawptr, hir::Type::Reference(_, _))
+        | (hir::Type::Rawptr, hir::Type::MultiReference(_, _))
+        | (hir::Type::Rawptr, hir::Type::Procedure(_))
+        | (hir::Type::Reference(_, _), hir::Type::Rawptr)
+        | (hir::Type::MultiReference(_, _), hir::Type::Rawptr)
+        | (hir::Type::Procedure(_), hir::Type::Rawptr) => CastKind::Rawptr_NoOp,
+
         (hir::Type::Int(from_ty), hir::Type::Int(into_ty)) => {
             let from_size = layout::int_layout(ctx, from_ty).size;
             let into_size = layout::int_layout(ctx, into_ty).size;
             match from_size.cmp(&into_size) {
                 Ordering::Less => {
                     if from_ty.is_signed() {
-                        CastKind::IntS_Sign_Extend
+                        CastKind::IntS_Extend
                     } else {
-                        CastKind::IntU_Zero_Extend
+                        CastKind::IntU_Extend
                     }
                 }
-                Ordering::Equal => CastKind::NoOp,
+                Ordering::Equal => CastKind::Int_NoOp,
                 Ordering::Greater => CastKind::Int_Trunc,
             }
         }
@@ -1155,12 +1164,13 @@ fn typecheck_cast_2<'hir, 'ast>(
                 CastKind::IntU_to_Float
             }
         }
+
         (hir::Type::Float(from_ty), hir::Type::Float(into_ty)) => {
             let from_size = layout::float_layout(from_ty).size;
             let into_size = layout::float_layout(into_ty).size;
             match from_size.cmp(&into_size) {
                 Ordering::Less => CastKind::Float_Extend,
-                Ordering::Equal => CastKind::NoOp,
+                Ordering::Equal => CastKind::Error,
                 Ordering::Greater => CastKind::Float_Trunc,
             }
         }
@@ -1171,53 +1181,65 @@ fn typecheck_cast_2<'hir, 'ast>(
                 CastKind::Float_to_IntU
             }
         }
+
         (hir::Type::Bool(from_ty), hir::Type::Bool(into_ty)) => {
             let from_size = layout::bool_layout(from_ty).size;
             let into_size = layout::bool_layout(into_ty).size;
             match from_size.cmp(&into_size) {
                 Ordering::Less => CastKind::Bool_Extend,
-                Ordering::Equal => CastKind::NoOp,
+                Ordering::Equal => CastKind::Error,
                 Ordering::Greater => CastKind::Bool_Trunc,
             }
         }
-        _ => CastKind::Error,
-    };
+        (hir::Type::Bool(from_ty), hir::Type::Int(into_ty)) => {
+            let from_size = layout::bool_layout(from_ty).size;
+            let into_size = layout::int_layout(ctx, into_ty).size;
+            match from_size.cmp(&into_size) {
+                Ordering::Less => CastKind::Bool_Extend_to_Int,
+                Ordering::Equal => {
+                    if from_size == 1 {
+                        // llvm uses i1, emit extend for `bool`
+                        CastKind::Bool_Extend_to_Int
+                    } else {
+                        CastKind::Bool_NoOp_to_Int
+                    }
+                }
+                Ordering::Greater => CastKind::Bool_Trunc_to_Int,
+            }
+        }
 
-    if let CastKind::NoOp = kind {
-        //@error
-    }
+        (hir::Type::Enum(enum_id, _), hir::Type::Int(into_ty)) => {
+            let enum_data = ctx.registry.enum_data(enum_id);
+            let from_ty = if let Ok(tag_ty) = enum_data.tag_ty.resolved() {
+                tag_ty
+            } else {
+                return TypeResult::error();
+            };
 
-    todo!()
-}
+            let from_size = layout::int_layout(ctx, from_ty).size;
+            let into_size = layout::int_layout(ctx, into_ty).size;
 
-fn typecheck_cast<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    target: &ast::Expr<'ast>,
-    into: &ast::Type<'ast>,
-    expr_range: TextRange,
-) -> TypeResult<'hir> {
-    use hir::CastKind;
-    let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let from = target_res.ty;
-    let into = super::pass_3::type_resolve(ctx, *into, false);
+            if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
+                CastKind::Error //@maybe have custom message for this case
+            } else {
+                match from_size.cmp(&into_size) {
+                    Ordering::Less => {
+                        if from_ty.is_signed() {
+                            CastKind::EnumS_Extend_to_Int
+                        } else {
+                            CastKind::EnumU_Extend_to_Int
+                        }
+                    }
+                    Ordering::Equal => CastKind::Enum_NoOp_to_Int,
+                    Ordering::Greater => CastKind::Enum_Trunc_to_Int,
+                }
+            }
+        }
 
-    if from.is_error() || into.is_error() {
-        return TypeResult::error();
-    }
-
-    let cast_kind = match (from, into) {
-        (hir::Type::Basic(from), hir::Type::Basic(into)) => cast_basic_into_basic(ctx, from, into),
-        (hir::Type::Enum(from, _), hir::Type::Basic(into)) => cast_enum_into_basic(ctx, from, into),
-        (hir::Type::Basic(BasicType::Rawptr), hir::Type::Reference(_, _))
-        | (hir::Type::Basic(BasicType::Rawptr), hir::Type::MultiReference(_, _))
-        | (hir::Type::Basic(BasicType::Rawptr), hir::Type::Procedure(_))
-        | (hir::Type::Reference(_, _), hir::Type::Basic(BasicType::Rawptr))
-        | (hir::Type::MultiReference(_, _), hir::Type::Basic(BasicType::Rawptr))
-        | (hir::Type::Procedure(_), hir::Type::Basic(BasicType::Rawptr)) => CastKind::NoOp,
         (hir::Type::Reference(_, _), hir::Type::MultiReference(_, _))
         | (hir::Type::MultiReference(_, _), hir::Type::Reference(_, _)) => {
             if type_matches(ctx, into, from) {
-                CastKind::NoOpUnchecked
+                CastKind::Rawptr_NoOp
             } else {
                 CastKind::Error
             }
@@ -1225,118 +1247,17 @@ fn typecheck_cast<'hir, 'ast>(
         _ => CastKind::Error,
     };
 
-    if let CastKind::Error = cast_kind {
-        let src = ctx.src(expr_range);
+    if kind == CastKind::Error || (kind == CastKind::Int_NoOp && type_matches(ctx, into, from)) {
+        let src = ctx.src(range);
         let from_ty = type_format(ctx, from);
         let into_ty = type_format(ctx, into);
         err::tycheck_cast_invalid(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
-        return TypeResult::error();
-    }
-
-    if let CastKind::NoOp = cast_kind {
-        if type_matches(ctx, into, from) {
-            let src = ctx.src(expr_range);
-            let from_ty = type_format(ctx, from);
-            let into_ty = type_format(ctx, into);
-            err::tycheck_cast_redundant(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
-        }
-    }
-
-    let kind = hir::ExprKind::Cast {
-        target: target_res.expr,
-        into: ctx.arena.alloc(into),
-        kind: cast_kind,
-    };
-    TypeResult::new(into, kind)
-}
-
-fn cast_basic_into_basic(ctx: &HirCtx, from: BasicType, into: BasicType) -> hir::CastKind {
-    use hir::CastKind;
-    use std::cmp::Ordering;
-
-    let from_kind = BasicTypeKind::new(from);
-    let into_kind = BasicTypeKind::new(into);
-    let from_size = constant::basic_layout(ctx, from).size;
-    let into_size = constant::basic_layout(ctx, into).size;
-
-    match from_kind {
-        BasicTypeKind::IntS => match into_kind {
-            BasicTypeKind::IntS | BasicTypeKind::IntU => match from_size.cmp(&into_size) {
-                Ordering::Equal => CastKind::NoOp,
-                Ordering::Less => CastKind::IntS_Sign_Extend,
-                Ordering::Greater => CastKind::Int_Trunc,
-            },
-            BasicTypeKind::Float => CastKind::IntS_to_Float,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::IntU => match into_kind {
-            BasicTypeKind::IntS | BasicTypeKind::IntU => match from_size.cmp(&into_size) {
-                Ordering::Equal => CastKind::NoOp,
-                Ordering::Less => CastKind::IntU_Zero_Extend,
-                Ordering::Greater => CastKind::Int_Trunc,
-            },
-            BasicTypeKind::Float => CastKind::IntU_to_Float,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Float => match into_kind {
-            BasicTypeKind::IntS => CastKind::Float_to_IntS,
-            BasicTypeKind::IntU => CastKind::Float_to_IntU,
-            BasicTypeKind::Float => match from_size.cmp(&into_size) {
-                Ordering::Equal => CastKind::NoOp,
-                Ordering::Less => CastKind::Float_Extend,
-                Ordering::Greater => CastKind::Float_Trunc,
-            },
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Bool => match into_kind {
-            BasicTypeKind::Bool => CastKind::NoOp,
-            BasicTypeKind::Bool32 => CastKind::Bool_to_Bool32,
-            BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::Bool_to_Int,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Bool32 => match into_kind {
-            BasicTypeKind::Bool32 => CastKind::NoOp,
-            BasicTypeKind::Bool => CastKind::Bool32_to_Bool,
-            //@could be Trunc or ZExt or NoOp, disallow for now
-            //BasicTypeKind::IntS | BasicTypeKind::IntU => CastKind::Bool32_to_Int,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Char => match into {
-            BasicType::Char => CastKind::NoOp,
-            BasicType::U32 => CastKind::Char_to_U32,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Rawptr => match into {
-            BasicType::Rawptr => CastKind::NoOp,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Void => match into {
-            BasicType::Void => CastKind::NoOp,
-            _ => CastKind::Error,
-        },
-        BasicTypeKind::Never => CastKind::Error,
-        BasicTypeKind::String => CastKind::Error,
-        BasicTypeKind::Cstring => CastKind::Error,
-    }
-}
-
-fn cast_enum_into_basic(ctx: &HirCtx, from: hir::EnumID, into: BasicType) -> hir::CastKind {
-    use hir::CastKind;
-    let enum_data = ctx.registry.enum_data(from);
-    let into_kind = BasicTypeKind::new(into);
-
-    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-        return CastKind::Error;
-    }
-
-    if let BasicTypeKind::IntS | BasicTypeKind::IntU = into_kind {
-        if let Ok(tag_ty) = enum_data.tag_ty.resolved() {
-            cast_basic_into_basic(ctx, tag_ty.into_basic(), into)
-        } else {
-            CastKind::NoOpUnchecked
-        }
+        TypeResult::error()
     } else {
-        CastKind::Error
+        //@todo: constant fold
+        let kind =
+            hir::ExprKind::Cast { target: target_res.expr, into: ctx.arena.alloc(into), kind };
+        TypeResult::new(into, kind)
     }
 }
 

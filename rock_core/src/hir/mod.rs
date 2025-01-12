@@ -404,26 +404,34 @@ pub enum SliceRangeEnd<'hir> {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum CastKind {
     Error,
-    NoOp,
-    NoOpUnchecked,
+    Char_NoOp,
+    Rawptr_NoOp,
+
+    Int_NoOp,
     Int_Trunc,
-    IntS_Sign_Extend,
-    IntU_Zero_Extend,
+    IntS_Extend,
+    IntU_Extend,
     IntS_to_Float,
     IntU_to_Float,
-    Float_to_IntS,
-    Float_to_IntU,
+
     Float_Trunc,
     Float_Extend,
-    Bool_to_Int,
-    Bool_to_Bool32,
-    Bool32_to_Bool,
-    Bool_Extend,
+    Float_to_IntS,
+    Float_to_IntU,
+
     Bool_Trunc,
-    Char_to_U32,
+    Bool_Extend,
+    Bool_NoOp_to_Int,
+    Bool_Trunc_to_Int,
+    Bool_Extend_to_Int,
+
+    Enum_NoOp_to_Int,
+    Enum_Trunc_to_Int,
+    EnumS_Extend_to_Int,
+    EnumU_Extend_to_Int,
 }
 
 #[derive(Copy, Clone)]
