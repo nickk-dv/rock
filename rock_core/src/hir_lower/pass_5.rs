@@ -375,14 +375,6 @@ pub fn typecheck_expr_untyped<'hir, 'ast>(
     typecheck_expr_impl(ctx, expect, expr, false)
 }
 
-//@move somewhere else
-fn infer_bool_type(expect: Expectation) -> Option<BoolType> {
-    match expect {
-        Expectation::HasType(hir::Type::Bool(bool_ty), _) => Some(bool_ty),
-        _ => None,
-    }
-}
-
 pub fn typecheck_expr_impl<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -417,29 +409,45 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
         ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
         ast::ExprKind::Unary { op, op_range, rhs } => {
-            typecheck_unary(ctx, op, op_range, rhs, expr.range)
+            typecheck_unary(ctx, expr.range, op, op_range, rhs)
         }
         ast::ExprKind::Binary { op, op_start, lhs, rhs } => {
             typecheck_binary(ctx, expect, expr.range, op, op_start, lhs, rhs)
         }
     };
 
-    //@doing this in `typecheck_binary` probably changes semantics?
-    // this promotion should probably happen at the top-most level.
     if untyped_promote {
-        if expr_res.ty.is_untyped_bool() {
-            if let hir::ExprKind::Const { value } = expr_res.kind {
-                match value {
-                    hir::ConstValue::Bool { val, .. } => {
-                        let bool_ty = infer_bool_type(expect).unwrap_or(BoolType::Bool);
-                        let value = hir::ConstValue::Bool { val, bool_ty };
-                        expr_res.ty = hir::Type::from_bool_ty(bool_ty);
-                        expr_res.kind = hir::ExprKind::Const { value };
-                    }
-                    _ => unreachable!("promote failed, not a bool const"),
+        if let hir::ExprKind::Const { value } = &mut expr_res.kind {
+            expr_res.ty = match value {
+                hir::ConstValue::Bool { bool_ty, .. } => {
+                    *bool_ty = match expect {
+                        Expectation::HasType(hir::Type::Bool(infer), _) => infer,
+                        _ => BoolType::Bool,
+                    };
+                    hir::Type::Bool(*bool_ty)
                 }
-            } else {
-                panic!("untyped bool not const value");
+                hir::ConstValue::Int { int_ty, .. } => {
+                    *int_ty = match expect {
+                        Expectation::HasType(hir::Type::Int(infer), _) => infer,
+                        _ => IntType::S32,
+                    };
+                    hir::Type::Int(*int_ty)
+                }
+                hir::ConstValue::Float { float_ty, .. } => {
+                    *float_ty = match expect {
+                        Expectation::HasType(hir::Type::Float(infer), _) => infer,
+                        _ => FloatType::F64,
+                    };
+                    hir::Type::Float(*float_ty)
+                }
+                hir::ConstValue::String { string_ty, .. } => {
+                    *string_ty = match expect {
+                        Expectation::HasType(hir::Type::String(infer), _) => infer,
+                        _ => StringType::String,
+                    };
+                    hir::Type::String(*string_ty)
+                }
+                _ => expr_res.ty,
             }
         }
     }
@@ -1077,44 +1085,6 @@ fn typecheck_call<'hir, 'ast>(
     check_call_indirect(ctx, target_res, args_list)
 }
 
-#[derive(Copy, Clone)]
-enum BasicTypeKind {
-    IntS,
-    IntU,
-    Float,
-    Bool,
-    Bool32,
-    Char,
-    Rawptr,
-    Void,
-    Never,
-    String,
-    Cstring,
-}
-
-impl BasicTypeKind {
-    fn new(basic: BasicType) -> BasicTypeKind {
-        match basic {
-            BasicType::S8 | BasicType::S16 | BasicType::S32 | BasicType::S64 | BasicType::Ssize => {
-                BasicTypeKind::IntS
-            }
-            BasicType::U8 | BasicType::U16 | BasicType::U32 | BasicType::U64 | BasicType::Usize => {
-                BasicTypeKind::IntU
-            }
-            BasicType::F32 | BasicType::F64 => BasicTypeKind::Float,
-            BasicType::Bool => BasicTypeKind::Bool,
-            BasicType::Bool32 => BasicTypeKind::Bool32,
-            BasicType::Char => BasicTypeKind::Char,
-            BasicType::Rawptr => BasicTypeKind::Rawptr,
-            BasicType::Any => unimplemented!("any type"), //@feature(any) todo
-            BasicType::Void => BasicTypeKind::Void,
-            BasicType::Never => BasicTypeKind::Never,
-            BasicType::String => BasicTypeKind::String,
-            BasicType::CString => BasicTypeKind::Cstring,
-        }
-    }
-}
-
 fn typecheck_cast<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     range: TextRange,
@@ -1740,10 +1710,10 @@ fn core_find_struct(
 
 fn typecheck_unary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: TextRange,
     op: ast::UnOp,
     op_range: TextRange,
     rhs: &ast::Expr<'ast>,
-    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
 
@@ -1756,7 +1726,7 @@ fn typecheck_unary<'hir, 'ast>(
             if rhs_res.ty.is_int_signed() {
                 if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                     let int_ty = value.into_int_ty();
-                    let src = ctx.src(expr_range);
+                    let src = ctx.src(range);
                     if let Ok(value) = fold::int_range_check(ctx, src, -value.into_int(), int_ty) {
                         return TypeResult::new(
                             hir::Type::Int(int_ty),
@@ -1770,7 +1740,7 @@ fn typecheck_unary<'hir, 'ast>(
             } else if rhs_res.ty.is_float() {
                 if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                     let (val, float_ty) = value.expect_float();
-                    let src = ctx.src(expr_range);
+                    let src = ctx.src(range);
                     if let Ok(value) = fold::float_range_check(ctx, src, -val, float_ty) {
                         return TypeResult::new(
                             hir::Type::Float(float_ty),
@@ -1792,7 +1762,7 @@ fn typecheck_unary<'hir, 'ast>(
             if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
                 let (val, neg, int_ty) = value.expect_int();
                 if int_ty.is_signed() {
-                    let src = ctx.src(expr_range);
+                    let src = ctx.src(range);
                     err::internal_not_implemented(&mut ctx.emit, src, "unary `~` on signed int");
                     return TypeResult::error();
                 }
@@ -1846,11 +1816,11 @@ impl<'hir> hir::Type<'hir> {
     fn is_int(&self) -> bool {
         matches!(self, hir::Type::Int(_))
     }
-    fn is_int_signed(&self) -> bool {
-        matches!(self, hir::Type::Int(int_ty) if int_ty.is_signed())
-    }
     fn is_int_untyped(&self) -> bool {
         matches!(self, hir::Type::Int(IntType::Untyped))
+    }
+    fn is_int_signed(&self) -> bool {
+        matches!(self, hir::Type::Int(int_ty) if int_ty.is_signed())
     }
     fn is_float(&self) -> bool {
         matches!(self, hir::Type::Float(_))
@@ -3102,288 +3072,8 @@ fn check_variant_bind_list<'hir>(
     ctx.cache.var_ids.take(offset, &mut ctx.arena)
 }
 
-//==================== OPERATOR ====================
-
-fn binary_lhs_expect<'hir>(
-    ctx: &HirCtx,
-    op: ast::BinOp,
-    op_range: TextRange,
-    expect: Expectation<'hir>,
-) -> Expectation<'hir> {
-    match op {
-        ast::BinOp::Add
-        | ast::BinOp::Sub
-        | ast::BinOp::Mul
-        | ast::BinOp::Div
-        | ast::BinOp::Rem
-        | ast::BinOp::BitAnd
-        | ast::BinOp::BitOr
-        | ast::BinOp::BitXor
-        | ast::BinOp::BitShl
-        | ast::BinOp::BitShr => expect,
-        ast::BinOp::IsEq
-        | ast::BinOp::NotEq
-        | ast::BinOp::Less
-        | ast::BinOp::LessEq
-        | ast::BinOp::Greater
-        | ast::BinOp::GreaterEq => Expectation::None,
-        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => {
-            let expect_src = ctx.src(op_range);
-            Expectation::HasType(hir::Type::BOOL, Some(expect_src))
-        }
-    }
-}
-
-fn binary_rhs_expect(
-    op: ast::BinOp,
-    lhs_ty: hir::Type,
-    compatible: bool,
-    expect_src: SourceRange,
-) -> Expectation {
-    match op {
-        ast::BinOp::Add
-        | ast::BinOp::Sub
-        | ast::BinOp::Mul
-        | ast::BinOp::Div
-        | ast::BinOp::Rem
-        | ast::BinOp::BitAnd
-        | ast::BinOp::BitOr
-        | ast::BinOp::BitXor
-        | ast::BinOp::BitShl
-        | ast::BinOp::BitShr
-        | ast::BinOp::IsEq
-        | ast::BinOp::NotEq
-        | ast::BinOp::Less
-        | ast::BinOp::LessEq
-        | ast::BinOp::Greater
-        | ast::BinOp::GreaterEq => {
-            //@when not compatible or invalid lhs_ty, set expectation to Error?
-            // to prevent cascading enum inference errors. 04.01.25
-            if compatible {
-                Expectation::HasType(lhs_ty, Some(expect_src))
-            } else {
-                Expectation::None
-            }
-        }
-        ast::BinOp::LogicAnd | ast::BinOp::LogicOr => Expectation::BOOL,
-    }
-}
-
-fn binary_output_type(op: ast::BinOp, lhs_ty: hir::Type) -> hir::Type {
-    match op {
-        ast::BinOp::Add
-        | ast::BinOp::Sub
-        | ast::BinOp::Mul
-        | ast::BinOp::Div
-        | ast::BinOp::Rem
-        | ast::BinOp::BitAnd
-        | ast::BinOp::BitOr
-        | ast::BinOp::BitXor
-        | ast::BinOp::BitShl
-        | ast::BinOp::BitShr => lhs_ty,
-        ast::BinOp::IsEq
-        | ast::BinOp::NotEq
-        | ast::BinOp::Less
-        | ast::BinOp::LessEq
-        | ast::BinOp::Greater
-        | ast::BinOp::GreaterEq
-        | ast::BinOp::LogicAnd
-        | ast::BinOp::LogicOr => hir::Type::BOOL,
-    }
-}
-
-//@make error better (reference the expr)
-fn binary_op_check(
-    ctx: &mut HirCtx,
-    op: ast::BinOp,
-    op_range: TextRange,
-    lhs_ty: hir::Type,
-) -> Option<hir::BinOp> {
-    if lhs_ty.is_error() {
-        return None;
-    }
-
-    let bin_op = match op {
-        ast::BinOp::Add => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::Add_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::Add_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::Sub => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::Sub_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::Sub_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::Mul => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::Mul_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::Mul_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::Div => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::Div_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::Div_IntU),
-                BasicTypeKind::Float => Some(hir::BinOp::Div_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::Rem => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::Rem_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::Rem_IntU),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::BitAnd => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::BitAnd),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::BitOr => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::BitOr),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::BitXor => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::BitXor),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::BitShl => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS | BasicTypeKind::IntU => Some(hir::BinOp::BitShl),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::BitShr => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::BitShr_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::BitShr_IntU),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::IsEq => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS
-                | BasicTypeKind::IntU
-                | BasicTypeKind::Bool
-                | BasicTypeKind::Char
-                | BasicTypeKind::Rawptr => Some(hir::BinOp::IsEq_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::IsEq_Float),
-                _ => None,
-            },
-            hir::Type::Enum(enum_id, _) => {
-                let enum_data = ctx.registry.enum_data(enum_id);
-                if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-                    None
-                } else {
-                    Some(hir::BinOp::IsEq_Int)
-                }
-            }
-            _ => None,
-        },
-        ast::BinOp::NotEq => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS
-                | BasicTypeKind::IntU
-                | BasicTypeKind::Bool
-                | BasicTypeKind::Char
-                | BasicTypeKind::Rawptr => Some(hir::BinOp::NotEq_Int),
-                BasicTypeKind::Float => Some(hir::BinOp::NotEq_Float),
-                _ => None,
-            },
-            hir::Type::Enum(enum_id, _) => {
-                let enum_data = ctx.registry.enum_data(enum_id);
-                if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-                    None
-                } else {
-                    Some(hir::BinOp::NotEq_Int)
-                }
-            }
-            _ => None,
-        },
-        ast::BinOp::Less => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::Less_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::Less_IntU),
-                BasicTypeKind::Float => Some(hir::BinOp::Less_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::LessEq => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::LessEq_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::LessEq_IntU),
-                BasicTypeKind::Float => Some(hir::BinOp::LessEq_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::Greater => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::Greater_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::Greater_IntU),
-                BasicTypeKind::Float => Some(hir::BinOp::Greater_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::GreaterEq => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::IntS => Some(hir::BinOp::GreaterEq_IntS),
-                BasicTypeKind::IntU => Some(hir::BinOp::GreaterEq_IntU),
-                BasicTypeKind::Float => Some(hir::BinOp::GreaterEq_Float),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::LogicAnd => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::Bool => Some(hir::BinOp::LogicAnd),
-                _ => None,
-            },
-            _ => None,
-        },
-        ast::BinOp::LogicOr => match lhs_ty {
-            hir::Type::Basic(basic) => match BasicTypeKind::new(basic) {
-                BasicTypeKind::Bool => Some(hir::BinOp::LogicOr),
-                _ => None,
-            },
-            _ => None,
-        },
-    };
-
-    //@have specific error for enums with fields?
-    if bin_op.is_none() {
-        let src = ctx.src(op_range);
-        let lhs_ty = type_format(ctx, lhs_ty);
-        err::tycheck_bin_op_cannot_apply(&mut ctx.emit, src, op.as_str(), lhs_ty.as_str());
-    }
-    bin_op
-}
-
 //==================== ADDRESSABILITY ====================
-// Addressability allows us to check whether expression
+// Addressability allows to check whether expression
 // can be addressed (in <address> expr or <assign> stmt).
 // The mutability rules and constraints are also checked here.
 
