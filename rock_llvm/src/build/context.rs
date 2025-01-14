@@ -278,14 +278,6 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn const_usize(&self, val: u64) -> llvm::Value {
         llvm::const_int(self.ptr_sized_int(), val, false)
     }
-    #[inline]
-    pub fn const_usize_zero(&self) -> llvm::Value {
-        llvm::const_int(self.ptr_sized_int(), 0, false)
-    }
-    #[inline]
-    pub fn const_usize_one(&self) -> llvm::Value {
-        llvm::const_int(self.ptr_sized_int(), 1, false)
-    }
 }
 
 impl<'c> ProcCodegen<'c> {

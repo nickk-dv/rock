@@ -141,12 +141,15 @@ fn codegen_const_expr(cg: &mut Codegen, expect: Expect, value: hir::ConstValue) 
 
 pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
     match value {
-        hir::ConstValue::Void => codegen_const_void(cg),
-        hir::ConstValue::Null => codegen_const_null(cg),
+        hir::ConstValue::Void => llvm::const_struct_named(cg.void_val_type(), &[]),
+        hir::ConstValue::Null => llvm::const_zeroed(cg.ptr_type()),
         hir::ConstValue::Bool { val, bool_ty } => codegen_const_bool(cg, val, bool_ty),
-        hir::ConstValue::Int { val, neg, int_ty } => codegen_const_int(cg, val, neg, int_ty),
-        hir::ConstValue::Float { val, float_ty } => codegen_const_float(cg, val, float_ty),
-        hir::ConstValue::Char { val } => codegen_const_char(cg, val),
+        hir::ConstValue::Int { val, neg, int_ty } => {
+            let ext_val = if neg { (!val).wrapping_add(1) } else { val };
+            llvm::const_int(cg.int_type(int_ty), ext_val, int_ty.is_signed())
+        }
+        hir::ConstValue::Float { val, float_ty } => llvm::const_float(cg.float_type(float_ty), val),
+        hir::ConstValue::Char { val } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
@@ -156,42 +159,12 @@ pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
     }
 }
 
-#[inline]
-fn codegen_const_void(cg: &Codegen) -> llvm::Value {
-    llvm::const_struct_named(cg.void_val_type(), &[])
-}
-
-#[inline]
-fn codegen_const_null(cg: &Codegen) -> llvm::Value {
-    llvm::const_all_zero(cg.ptr_type())
-}
-
-#[inline]
 fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BoolType) -> llvm::Value {
     llvm::const_int(cg.bool_type(bool_ty), val as u64, false)
 }
 
-#[inline]
-fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::IntType) -> llvm::Value {
-    let is_signed = int_ty.is_signed();
-    let ext_val = if is_signed && neg { (!val).wrapping_add(1) } else { val };
-    llvm::const_int(cg.int_type(int_ty), ext_val, is_signed)
-}
-
-#[inline]
-fn codegen_const_float(cg: &Codegen, val: f64, float_ty: hir::FloatType) -> llvm::Value {
-    llvm::const_float(cg.float_type(float_ty), val)
-}
-
-#[inline]
-fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
-    llvm::const_int(cg.char_type(), val as u64, false)
-}
-
 fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) -> llvm::Value {
-    let string_idx = val.index();
-    let global_ptr = cg.string_lits[string_idx].as_ptr();
-
+    let global_ptr = cg.string_lits[val.index()].as_ptr();
     match string_ty {
         hir::StringType::String => {
             let string = cg.session.intern_lit.get(val);
@@ -578,13 +551,7 @@ fn codegen_index<'c>(
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
             let array_ty = llvm::array_type(elem_ty, len);
-
-            cg.build.gep(
-                array_ty,
-                target_ptr,
-                &[cg.const_usize_zero(), index_val],
-                "array_elem_ptr",
-            )
+            cg.build.gep(array_ty, target_ptr, &[cg.const_usize(0), index_val], "array_elem_ptr")
         }
     };
 
@@ -886,7 +853,7 @@ fn codegen_array_init<'c>(
         Expect::Store(ptr_val) => ptr_val,
     };
 
-    let mut indices = [cg.const_usize_zero(), cg.const_usize_zero()];
+    let mut indices = [cg.const_usize(0), cg.const_usize(0)];
     for (idx, &expr) in array_init.input.iter().enumerate() {
         indices[1] = cg.const_usize(idx as u64);
         let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
@@ -914,7 +881,7 @@ fn codegen_array_repeat<'c>(
 
     let copied_val = codegen_expr_value(cg, array_repeat.value);
     let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
-    cg.build.store(cg.const_usize_zero(), count_ptr);
+    cg.build.store(cg.const_usize(0), count_ptr);
 
     let entry_bb = cg.append_bb("rep_entry");
     let body_bb = cg.append_bb("rep_body");
@@ -928,11 +895,11 @@ fn codegen_array_repeat<'c>(
     cg.build.cond_br(cond, body_bb, exit_bb);
 
     cg.build.position_at_end(body_bb);
-    let indices = [cg.const_usize_zero(), count_val];
+    let indices = [cg.const_usize(0), count_val];
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(copied_val, elem_ptr);
 
-    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize_one());
+    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize(1));
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);

@@ -169,7 +169,7 @@ fn codegen_globals(cg: &mut Codegen) {
             hir::GlobalInit::Init(eval_id) => {
                 emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
             }
-            hir::GlobalInit::Zeroed => llvm::const_all_zero(global_ty),
+            hir::GlobalInit::Zeroed => llvm::const_zeroed(global_ty),
         };
 
         let global = cg.module.add_global(&cg.string_buf, value, global_ty, constant, false);

@@ -607,7 +607,7 @@ impl TypeStruct {
     }
 }
 
-pub fn const_all_zero(ty: Type) -> Value {
+pub fn const_zeroed(ty: Type) -> Value {
     Value(unsafe { core::LLVMConstNull(ty.0) })
 }
 pub fn const_int(int_ty: Type, val: u64, sign_extend: bool) -> Value {

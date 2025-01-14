@@ -65,7 +65,7 @@ fn codegen_local<'c>(cg: &mut Codegen<'c, '_, '_>, local: &hir::Local<'c>) {
             emit_expr::codegen_expr_store(cg, expr, var_ptr);
         }
         hir::LocalInit::Zeroed => {
-            let zero_init = llvm::const_all_zero(cg.ty(var.ty));
+            let zero_init = llvm::const_zeroed(cg.ty(var.ty));
             cg.build.store(zero_init, var_ptr);
         }
         hir::LocalInit::Undefined => {}
