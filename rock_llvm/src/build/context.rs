@@ -129,31 +129,14 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::Void => self.cache.void_val_type.as_ty(),
             hir::Type::Never => self.cache.void_val_type.as_ty(),
             hir::Type::Rawptr => self.cache.ptr_type,
-            hir::Type::Int(int_ty) => match int_ty {
-                hir::IntType::S8 | hir::IntType::U8 => self.cache.int_8,
-                hir::IntType::S16 | hir::IntType::U16 => self.cache.int_16,
-                hir::IntType::S32 | hir::IntType::U32 => self.cache.int_32,
-                hir::IntType::S64 | hir::IntType::U64 => self.cache.int_64,
-                hir::IntType::Ssize | hir::IntType::Usize => self.cache.ptr_sized_int,
-                hir::IntType::Untyped => unreachable!(),
-            },
-            hir::Type::Float(float_ty) => match float_ty {
-                hir::FloatType::F32 => self.cache.float_32,
-                hir::FloatType::F64 => self.cache.float_64,
-                hir::FloatType::Untyped => unreachable!(),
-            },
-            hir::Type::Bool(bool_ty) => match bool_ty {
-                hir::BoolType::Bool => self.cache.int_1,
-                hir::BoolType::Bool32 => self.cache.int_32,
-                hir::BoolType::Untyped => unreachable!(),
-            },
+            hir::Type::Int(int_ty) => self.int_type(int_ty),
+            hir::Type::Float(float_ty) => self.float_type(float_ty),
+            hir::Type::Bool(bool_ty) => self.bool_type(bool_ty),
             hir::Type::String(string_ty) => match string_ty {
                 hir::StringType::String => self.cache.slice_type.as_ty(),
                 hir::StringType::CString => self.cache.ptr_type,
                 hir::StringType::Untyped => unreachable!(),
             },
-            hir::Type::Basic(basic) => self.basic_type(basic),
-            hir::Type::UntypedBool => unreachable!("untyped bool cg type"),
             hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {
@@ -175,31 +158,30 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         }
     }
 
-    pub fn basic_type(&self, basic: ast::BasicType) -> llvm::Type {
-        match basic {
-            ast::BasicType::S8 | ast::BasicType::U8 => self.cache.int_8,
-            ast::BasicType::S16 | ast::BasicType::U16 => self.cache.int_16,
-            ast::BasicType::S32 | ast::BasicType::U32 => self.cache.int_32,
-            ast::BasicType::S64 | ast::BasicType::U64 => self.cache.int_64,
-            ast::BasicType::Ssize | ast::BasicType::Usize => self.cache.ptr_sized_int,
-            ast::BasicType::F32 => self.cache.float_32,
-            ast::BasicType::F64 => self.cache.float_64,
-            ast::BasicType::Bool => self.cache.int_1,
-            ast::BasicType::Bool32 => self.cache.int_32,
-            ast::BasicType::Char => self.cache.int_32,
-            ast::BasicType::Rawptr => self.cache.ptr_type,
-            ast::BasicType::Any => unimplemented!("any type"), //@feature(any) todo
-            ast::BasicType::Void | ast::BasicType::Never => self.cache.void_val_type.as_ty(),
-            ast::BasicType::String => self.cache.slice_type.as_ty(),
-            ast::BasicType::CString => self.cache.ptr_type,
+    pub fn char_type(&self) -> llvm::Type {
+        self.cache.int_32
+    }
+
+    pub fn int_type(&self, int_ty: hir::IntType) -> llvm::Type {
+        match int_ty {
+            hir::IntType::S8 | hir::IntType::U8 => self.cache.int_8,
+            hir::IntType::S16 | hir::IntType::U16 => self.cache.int_16,
+            hir::IntType::S32 | hir::IntType::U32 => self.cache.int_32,
+            hir::IntType::S64 | hir::IntType::U64 => self.cache.int_64,
+            hir::IntType::Ssize | hir::IntType::Usize => self.cache.ptr_sized_int,
+            hir::IntType::Untyped => unreachable!(),
         }
     }
 
-    pub fn bool_type(&self) -> llvm::Type {
-        self.cache.int_1
+    pub fn float_type(&self, float_ty: hir::FloatType) -> llvm::Type {
+        match float_ty {
+            hir::FloatType::F32 => self.cache.float_32,
+            hir::FloatType::F64 => self.cache.float_64,
+            hir::FloatType::Untyped => unreachable!(),
+        }
     }
 
-    pub fn bool_basic_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
+    pub fn bool_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
         match bool_ty {
             hir::BoolType::Bool => self.cache.int_1,
             hir::BoolType::Bool32 => self.cache.int_32,

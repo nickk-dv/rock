@@ -1839,12 +1839,24 @@ impl<'hir> hir::Type<'hir> {
 fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
-    expr_range: TextRange,
+    range: TextRange,
     op: ast::BinOp,
     op_start: TextOffset,
     lhs: &ast::Expr<'ast>,
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
+    let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
+    let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+
+    if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
+        return TypeResult::error();
+    }
+
+    let src = ctx.src(range);
+    err::internal_not_implemented(&mut ctx.emit, src, "binary typecheck");
+    return TypeResult::error();
+
+    /*
     if matches!(op, ast::BinOp::LogicAnd | ast::BinOp::LogicOr) {
         let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
         let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
@@ -1961,6 +1973,7 @@ fn typecheck_binary<'hir, 'ast>(
     } else {
         TypeResult::error()
     }
+    */
 }
 
 fn typecheck_block<'hir, 'ast>(
@@ -2669,9 +2682,11 @@ fn typecheck_assign<'hir, 'ast>(
 
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
-        ast::AssignOp::Bin(op) => binary_op_check(ctx, op, assign.op_range, lhs_res.ty)
-            .map(hir::AssignOp::Bin)
-            .unwrap_or(hir::AssignOp::Assign),
+        ast::AssignOp::Bin(op) => {
+            let src = ctx.src(assign.op_range);
+            err::internal_not_implemented(&mut ctx.emit, src, "binary typecheck in assignment");
+            hir::AssignOp::Assign
+        }
     };
 
     let rhs_expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));

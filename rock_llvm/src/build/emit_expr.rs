@@ -168,24 +168,24 @@ fn codegen_const_null(cg: &Codegen) -> llvm::Value {
 
 #[inline]
 fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BoolType) -> llvm::Value {
-    llvm::const_int(cg.basic_type(bool_ty.into_basic()), val as u64, false)
+    llvm::const_int(cg.bool_type(bool_ty), val as u64, false)
 }
 
 #[inline]
 fn codegen_const_int(cg: &Codegen, val: u64, neg: bool, int_ty: hir::IntType) -> llvm::Value {
     let is_signed = int_ty.is_signed();
     let ext_val = if is_signed && neg { (!val).wrapping_add(1) } else { val };
-    llvm::const_int(cg.basic_type(int_ty.into_basic()), ext_val, is_signed)
+    llvm::const_int(cg.int_type(int_ty), ext_val, is_signed)
 }
 
 #[inline]
 fn codegen_const_float(cg: &Codegen, val: f64, float_ty: hir::FloatType) -> llvm::Value {
-    llvm::const_float(cg.basic_type(float_ty.into_basic()), val)
+    llvm::const_float(cg.float_type(float_ty), val)
 }
 
 #[inline]
 fn codegen_const_char(cg: &Codegen, val: char) -> llvm::Value {
-    llvm::const_int(cg.basic_type(ast::BasicType::U32), val as u64, false)
+    llvm::const_int(cg.char_type(), val as u64, false)
 }
 
 fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) -> llvm::Value {
@@ -288,7 +288,7 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
                 cg,
                 hir::BinOp::IsEq_Int,
                 cond,
-                llvm::const_int(cg.basic_type(ast::BasicType::S32), 1, false),
+                llvm::const_int(cg.int_type(hir::IntType::S32), 1, false),
             )
         } else {
             cond
@@ -347,7 +347,7 @@ fn codegen_match<'c>(
             };
 
             let enum_data = cg.hir.enum_data(enum_id);
-            let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
+            let tag_ty = cg.int_type(enum_data.tag_ty.resolved_unwrap());
             let on_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
             (on_value, Some(enum_ptr), ref_mut.is_some())
         }
@@ -602,37 +602,39 @@ fn codegen_cast<'c>(
     into: &hir::Type,
     kind: hir::CastKind,
 ) -> llvm::Value {
+    use hir::CastKind;
     use llvm::OpCode;
+
     let val = codegen_expr_value(cg, target);
     let into_ty = cg.ty(*into);
 
     match kind {
-        hir::CastKind::Error => unreachable!(),
-        hir::CastKind::Char_NoOp => val,
-        hir::CastKind::Rawptr_NoOp => val,
+        CastKind::Error => unreachable!(),
+        CastKind::Char_NoOp => val,
+        CastKind::Rawptr_NoOp => val,
 
-        hir::CastKind::Int_NoOp => val,
-        hir::CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::IntS_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
-        hir::CastKind::IntU_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
-        hir::CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into_ty, "cast"),
-        hir::CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into_ty, "cast"),
+        CastKind::Int_NoOp => val,
+        CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "icast"),
+        CastKind::IntS_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "icast"),
+        CastKind::IntU_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "icast"),
+        CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into_ty, "icast"),
+        CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into_ty, "icast"),
 
-        hir::CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "cast"),
-        hir::CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "cast"),
-        hir::CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "cast"),
-        hir::CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "cast"),
+        CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "fcast"),
+        CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "fcast"),
+        CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "fcast"),
+        CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "fcast"),
 
-        hir::CastKind::Bool_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::Bool_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
-        hir::CastKind::Bool_NoOp_to_Int => val,
-        hir::CastKind::Bool_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::Bool_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        CastKind::Bool_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "bcast"),
+        CastKind::Bool_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "bcast"),
+        CastKind::Bool_NoOp_to_Int => val,
+        CastKind::Bool_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "bcast"),
+        CastKind::Bool_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "bcast"),
 
-        hir::CastKind::Enum_NoOp_to_Int => val,
-        hir::CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "cast"),
-        hir::CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "cast"),
-        hir::CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "cast"),
+        CastKind::Enum_NoOp_to_Int => val,
+        CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "ecast"),
+        CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "ecast"),
+        CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "ecast"),
     }
 }
 
@@ -782,9 +784,8 @@ fn codegen_call_direct<'c>(
         let call_file = cg.session.vfs.file(call_origin.file_id());
         let location =
             text::find_text_location(&call_file.source, expr_range.start(), &call_file.line_ranges);
-        let line =
-            llvm::const_int(cg.basic_type(ast::BasicType::U32), location.line() as u64, false);
-        let col = llvm::const_int(cg.basic_type(ast::BasicType::U32), location.col() as u64, false);
+        let line = llvm::const_int(cg.int_type(hir::IntType::U32), location.line() as u64, false);
+        let col = llvm::const_int(cg.int_type(hir::IntType::U32), location.col() as u64, false);
 
         let path = call_file.path().to_str().unwrap();
         let string_val = llvm::const_string(&cg.context, path, true);
@@ -1026,7 +1027,7 @@ fn codegen_binary_circuit<'c>(
             cg,
             hir::BinOp::IsEq_Int,
             lhs,
-            llvm::const_int(cg.basic_type(ast::BasicType::S32), 1, false),
+            llvm::const_int(cg.int_type(hir::IntType::S32), 1, false),
         )
     } else {
         lhs
@@ -1043,7 +1044,7 @@ fn codegen_binary_circuit<'c>(
     cg.build.br(exit_bb);
     cg.build.position_at_end(exit_bb);
 
-    let phi = cg.build.phi(cg.bool_basic_type(bool_ty), value_name);
+    let phi = cg.build.phi(cg.bool_type(bool_ty), value_name);
     let values = [bin_val, codegen_const_bool(cg, exit_val, bool_ty)];
     let blocks = [bin_val_bb, start_bb];
     cg.build.phi_add_incoming(phi, &values, &blocks);

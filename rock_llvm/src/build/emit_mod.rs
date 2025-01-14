@@ -44,7 +44,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
             //@bad api, forced to create hir::ArrayStatic
             let array_ty = hir::ArrayStatic {
                 len: hir::ArrayStaticLen::Immediate(layout.size),
-                elem_ty: hir::Type::Basic(ast::BasicType::U8),
+                elem_ty: hir::Type::Int(hir::IntType::U8),
             };
             let array_ty = cg.array_type(&array_ty);
 
@@ -62,8 +62,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
             cg.context.struct_set_body(enum_ty, &[array_ty], false);
             enum_ty.as_ty()
         } else {
-            let tag_ty = enum_data.tag_ty.resolved_unwrap();
-            cg.basic_type(tag_ty.into_basic())
+            cg.int_type(enum_data.tag_ty.resolved_unwrap())
         };
 
         cg.enums.push(enum_ty);
@@ -113,7 +112,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
                     variant_types.push(None);
                 } else {
                     let mut field_types = Vec::with_capacity(variant.fields.len());
-                    let tag_ty = cg.basic_type(enum_data.tag_ty.resolved_unwrap().into_basic());
+                    let tag_ty = cg.int_type(enum_data.tag_ty.resolved_unwrap());
                     field_types.push(tag_ty);
                     for field in variant.fields {
                         field_types.push(cg.ty(field.ty));
@@ -226,7 +225,7 @@ fn codegen_function_values(cg: &mut Codegen) {
         };
 
         let return_ty = match data.return_ty {
-            hir::Type::Basic(ast::BasicType::Void | ast::BasicType::Never) => cg.void_type(),
+            hir::Type::Void | hir::Type::Never => cg.void_type(),
             _ => cg.ty(data.return_ty),
         };
 

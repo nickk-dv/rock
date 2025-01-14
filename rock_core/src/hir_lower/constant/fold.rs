@@ -21,7 +21,7 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::SliceField { target, access } => fold_slice_field(ctx, src, target, &access),
         hir::ExprKind::Index { target, access } => fold_index(ctx, src, target, access),
         hir::ExprKind::Slice { .. } => unreachable!(),
-        hir::ExprKind::Cast { target, into, kind } => fold_cast(ctx, src, target, *into, kind),
+        hir::ExprKind::Cast { target, into, kind } => unreachable!(),
         hir::ExprKind::CallerLocation { .. } => unreachable!(),
         hir::ExprKind::ParamVar { .. } => unreachable!(),
         hir::ExprKind::Variable { .. } => unreachable!(),
@@ -165,6 +165,7 @@ fn fold_index<'hir>(
     }
 }
 
+/*
 fn fold_cast<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
@@ -253,6 +254,7 @@ fn fold_cast<'hir>(
         }
     }
 }
+*/
 
 fn fold_const_var<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,

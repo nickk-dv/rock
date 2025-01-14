@@ -711,8 +711,10 @@ fn add_expr_const_dependencies<'ast>(
             Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
-            Ok(())
+            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "cast");
+            Err(parent_id)
+            //@add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
+            //Ok(())
         }
         ast::ExprKind::Sizeof { ty } => {
             let ty = pass_3::type_resolve(ctx, *ty, true);
@@ -839,9 +841,16 @@ fn add_expr_const_dependencies<'ast>(
             Ok(())
         }
         ast::ExprKind::Binary { lhs, rhs, .. } => {
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, lhs)?;
-            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
-            Ok(())
+            error_cannot_use_in_constants(
+                &mut ctx.emit,
+                origin_id,
+                expr.range,
+                "binary expr (temp)",
+            );
+            Err(parent_id)
+            //add_expr_const_dependencies(ctx, tree, parent_id, origin_id, lhs)?;
+            //add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
+            //Ok(())
         }
     }
 }
