@@ -1,5 +1,4 @@
 use crate::llvm;
-use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;

@@ -2,7 +2,6 @@ use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
 use crate::llvm;
-use rock_core::ast;
 use rock_core::hir;
 use rock_core::intern::LitID;
 use rock_core::text::{self, TextRange};

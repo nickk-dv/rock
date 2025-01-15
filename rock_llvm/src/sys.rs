@@ -31,7 +31,7 @@ pub enum LLVMOpcode {
     LLVMCallBr = 67,
     // unary operators
     LLVMFNeg = 66,
-    // binary Operators
+    // binary operators
     LLVMAdd = 8,
     LLVMFAdd = 9,
     LLVMSub = 10,
@@ -154,9 +154,9 @@ pub enum LLVMLinkage {
 #[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum LLVMUnnamedAddr {
-    LLVMNoUnnamedAddr,     // address of the global is significant
-    LLVMLocalUnnamedAddr,  // address of the global is locally insignificant.
-    LLVMGlobalUnnamedAddr, // address of the global is globally insignificant.
+    LLVMNoUnnamedAddr,     // address is significant
+    LLVMLocalUnnamedAddr,  // address is locally insignificant.
+    LLVMGlobalUnnamedAddr, // address is globally insignificant.
 }
 
 #[repr(C)]
@@ -649,18 +649,14 @@ pub mod target {
             error_msg: *mut *mut c_char,
         ) -> LLVMBool;
 
-        pub fn LLVMInitializeX86AsmParser();
-        pub fn LLVMInitializeX86AsmPrinter();
-        pub fn LLVMInitializeX86Disassembler();
         pub fn LLVMInitializeX86Target();
-        pub fn LLVMInitializeX86TargetInfo();
         pub fn LLVMInitializeX86TargetMC();
+        pub fn LLVMInitializeX86TargetInfo();
+        pub fn LLVMInitializeX86AsmPrinter();
 
-        pub fn LLVMInitializeAArch64AsmParser();
-        pub fn LLVMInitializeAArch64AsmPrinter();
-        pub fn LLVMInitializeAArch64Disassembler();
         pub fn LLVMInitializeAArch64Target();
-        pub fn LLVMInitializeAArch64TargetInfo();
         pub fn LLVMInitializeAArch64TargetMC();
+        pub fn LLVMInitializeAArch64TargetInfo();
+        pub fn LLVMInitializeAArch64AsmPrinter();
     }
 }

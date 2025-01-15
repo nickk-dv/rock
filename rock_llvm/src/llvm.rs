@@ -1,7 +1,4 @@
-//! `llvm` module provides safe api on top  
-//! of `sys` bindings to LLVM-C api.  
-//! It does not aim to fully safeguard  
-//! against type and value mismatch errors.
+//! api on top of `sys` bindings to LLVM-C api.
 
 use crate::sys;
 use crate::sys::analysis;
@@ -70,20 +67,16 @@ impl IRTarget {
     pub fn new(triple: TargetTriple) -> IRTarget {
         match triple.arch() {
             TargetArch::x86_64 => unsafe {
-                target::LLVMInitializeX86AsmParser();
-                target::LLVMInitializeX86AsmPrinter();
-                target::LLVMInitializeX86Disassembler();
                 target::LLVMInitializeX86Target();
-                target::LLVMInitializeX86TargetInfo();
                 target::LLVMInitializeX86TargetMC();
+                target::LLVMInitializeX86TargetInfo();
+                target::LLVMInitializeX86AsmPrinter();
             },
             TargetArch::Arm_64 => unsafe {
-                target::LLVMInitializeAArch64AsmParser();
-                target::LLVMInitializeAArch64AsmPrinter();
-                target::LLVMInitializeAArch64Disassembler();
                 target::LLVMInitializeAArch64Target();
-                target::LLVMInitializeAArch64TargetInfo();
                 target::LLVMInitializeAArch64TargetMC();
+                target::LLVMInitializeAArch64TargetInfo();
+                target::LLVMInitializeAArch64AsmPrinter();
             },
         }
 
