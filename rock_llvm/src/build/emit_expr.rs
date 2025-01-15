@@ -156,6 +156,7 @@ pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
+        hir::ConstValue::ArrayEmpty { elem_ty } => llvm::const_array(cg.ty(*elem_ty), &[]),
     }
 }
 
@@ -177,18 +178,15 @@ fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) ->
 }
 
 fn codegen_const_variant(cg: &mut Codegen, variant: &hir::ConstVariant) -> llvm::Value {
-    let enum_data = cg.hir.enum_data(variant.enum_id);
-    let hir_variant = enum_data.variant(variant.variant_id);
-
-    if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
+    let data = cg.hir.enum_data(variant.enum_id);
+    if data.flag_set.contains(hir::EnumFlag::WithFields) {
         unimplemented!("constant variant with fields");
     }
-
-    let variant_tag = match hir_variant.kind {
+    let tag = match data.variant(variant.variant_id).kind {
         hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
-    codegen_const(cg, variant_tag)
+    codegen_const(cg, tag)
 }
 
 fn codegen_const_struct(cg: &mut Codegen, struct_: &hir::ConstStruct) -> llvm::Value {
@@ -197,8 +195,8 @@ fn codegen_const_struct(cg: &mut Codegen, struct_: &hir::ConstStruct) -> llvm::V
         let value = codegen_const(cg, *value);
         cg.cache.values.push(value);
     }
-
     let values = cg.cache.values.view(offset.clone());
+
     let struct_ty = cg.struct_type(struct_.struct_id);
     let struct_ = llvm::const_struct_named(struct_ty, values);
     cg.cache.values.pop_view(offset);
@@ -211,14 +209,9 @@ fn codegen_const_array(cg: &mut Codegen, array: &hir::ConstArray) -> llvm::Value
         let value = codegen_const(cg, *value);
         cg.cache.values.push(value);
     }
-
     let values = cg.cache.values.view(offset.clone());
-    let elem_ty = if let Some(val) = values.get(0) {
-        llvm::typeof_value(*val)
-    } else {
-        //@FIX(8.12.24) empty array type not available, causes llvm type errors.
-        cg.void_val_type().as_ty()
-    };
+
+    let elem_ty = llvm::typeof_value(values[0]);
     let array = llvm::const_array(elem_ty, &values);
     cg.cache.values.pop_view(offset);
     array
@@ -232,12 +225,7 @@ fn codegen_const_array_repeat(cg: &mut Codegen, array: &hir::ConstArrayRepeat) -
     }
     let values = cg.cache.values.view(offset.clone());
 
-    let elem_ty = if let Some(val) = values.get(0) {
-        llvm::typeof_value(*val)
-    } else {
-        //@FIX(8.12.24) empty array type not available, causes llvm type errors.
-        cg.void_val_type().as_ty()
-    };
+    let elem_ty = llvm::typeof_value(values[0]);
     let array = llvm::const_array(elem_ty, &values);
     cg.cache.values.pop_view(offset);
     array

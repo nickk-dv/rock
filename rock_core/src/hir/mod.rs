@@ -273,6 +273,7 @@ pub enum ConstValue<'hir> {
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
+    ArrayEmpty  { elem_ty: &'hir Type<'hir> }, //@not created anywhere yet
 }
 
 #[derive(Copy, Clone)]

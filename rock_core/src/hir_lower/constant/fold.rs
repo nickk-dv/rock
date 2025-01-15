@@ -61,7 +61,8 @@ fn fold_const<'hir>(
         | hir::ConstValue::Variant { .. }
         | hir::ConstValue::Struct { .. }
         | hir::ConstValue::Array { .. }
-        | hir::ConstValue::ArrayRepeat { .. } => Ok(value),
+        | hir::ConstValue::ArrayRepeat { .. }
+        | hir::ConstValue::ArrayEmpty { .. } => Ok(value),
     }
 }
 
