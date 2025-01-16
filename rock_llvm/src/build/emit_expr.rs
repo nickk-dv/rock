@@ -103,7 +103,7 @@ fn codegen_expr<'c>(
         hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::ExprKind::Variant { enum_id, variant_id, input } => {
-            Some(codegen_variant(cg, expect, enum_id, variant_id, input))
+            codegen_variant(cg, expect, enum_id, variant_id, input)
         }
         hir::ExprKind::CallDirect { proc_id, input } => {
             codegen_call_direct(cg, expect, proc_id, input, expr.range)
@@ -649,31 +649,32 @@ fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) ->
     }
 }
 
-//@after use same opts as struct_init
-// expect store to avoid another alloca
 fn codegen_variant<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
     input: &&[&hir::Expr<'c>],
-) -> llvm::Value {
-    let enum_data = cg.hir.enum_data(enum_id);
-    let variant = enum_data.variant(variant_id);
-    let enum_with_fields = enum_data.flag_set.contains(hir::EnumFlag::WithFields);
+) -> Option<llvm::Value> {
+    let data = cg.hir.enum_data(enum_id);
+    let variant = data.variant(variant_id);
+    let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
 
     //@generating each time
-    let tag_value = match variant.kind {
+    let tag = match variant.kind {
         hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
-    let tag_value = codegen_const(cg, tag_value);
+    let tag = codegen_const(cg, tag);
 
-    if enum_with_fields {
+    if with_fields {
         let enum_ty = cg.enum_type(enum_id);
-        let enum_ptr = cg.entry_alloca(enum_ty, "enum_init");
-        cg.build.store(tag_value, enum_ptr);
+        let enum_ptr = match expect {
+            Expect::Value(_) | Expect::Pointer => cg.entry_alloca(enum_ty, "enum_init"),
+            Expect::Store(into_ptr) => into_ptr,
+        };
 
+        cg.build.store(tag, enum_ptr);
         if !variant.fields.is_empty() {
             let variant_ty = &cg.variants[enum_id.index()];
             let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
@@ -686,16 +687,17 @@ fn codegen_variant<'c>(
         }
 
         match expect {
-            Expect::Value(_) | Expect::Store(_) => cg.build.load(enum_ty, enum_ptr, "enum_value"),
-            Expect::Pointer => enum_ptr.as_val(),
+            Expect::Value(_) => Some(cg.build.load(enum_ty, enum_ptr, "enum_value")),
+            Expect::Pointer => Some(enum_ptr.as_val()),
+            Expect::Store(_) => None,
         }
     } else {
         match expect {
-            Expect::Value(_) | Expect::Store(_) => tag_value,
+            Expect::Value(_) | Expect::Store(_) => Some(tag),
             Expect::Pointer => {
-                let enum_ptr = cg.entry_alloca(llvm::typeof_value(tag_value), "enum_init");
-                cg.build.store(tag_value, enum_ptr);
-                enum_ptr.as_val()
+                let enum_ptr = cg.entry_alloca(llvm::typeof_value(tag), "enum_init");
+                cg.build.store(tag, enum_ptr);
+                Some(enum_ptr.as_val())
             }
         }
     }
