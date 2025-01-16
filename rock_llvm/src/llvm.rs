@@ -6,17 +6,16 @@ use crate::sys::core;
 use crate::sys::target;
 use rock_core::config::{TargetArch, TargetTriple};
 use rock_core::support::AsStr;
-use std::cell::UnsafeCell;
 use std::ffi::c_char;
-
-pub struct IRTarget {
-    target_data: target::LLVMTargetDataRef,
-    target_machine: target::LLVMTargetMachineRef,
-}
 
 pub struct IRContext {
     context: sys::LLVMContextRef,
     cstr_buf: CStrBuffer,
+}
+
+pub struct IRTarget {
+    target_data: target::LLVMTargetDataRef,
+    target_machine: target::LLVMTargetMachineRef,
 }
 
 pub struct IRModule {
@@ -27,17 +26,22 @@ pub struct IRModule {
 pub struct IRBuilder {
     builder: sys::LLVMBuilderRef,
     cstr_buf: CStrBuffer,
-    rock_void: TypeStruct, // cached for `ret`
+    void_val_type: TypeStruct,
 }
 
-struct CStrBuffer(UnsafeCell<String>);
+struct CStrBuffer(String);
+pub type OpCode = sys::LLVMOpcode;
+pub type Linkage = sys::LLVMLinkage;
+pub type CallConv = sys::LLVMCallConv;
+pub type IntPred = sys::LLVMIntPredicate;
+pub type FloatPred = sys::LLVMRealPredicate;
 
 #[derive(Copy, Clone)]
-pub struct BasicBlock(sys::LLVMBasicBlockRef);
+pub struct Type(sys::LLVMTypeRef);
 #[derive(Copy, Clone)]
-pub struct AttributeKindID(u32);
+pub struct TypeFn(sys::LLVMTypeRef);
 #[derive(Copy, Clone)]
-pub struct Attribute(sys::LLVMAttributeRef);
+pub struct TypeStruct(sys::LLVMTypeRef);
 
 #[derive(Copy, Clone)]
 pub struct Value(sys::LLVMValueRef);
@@ -51,99 +55,13 @@ pub struct ValueGlobal(sys::LLVMValueRef);
 pub struct ValueInstr(sys::LLVMValueRef);
 
 #[derive(Copy, Clone)]
-pub struct Type(sys::LLVMTypeRef);
+pub struct Attribute(sys::LLVMAttributeRef);
 #[derive(Copy, Clone)]
-pub struct TypeFn(sys::LLVMTypeRef);
-#[derive(Copy, Clone)]
-pub struct TypeStruct(sys::LLVMTypeRef);
-
-pub type OpCode = sys::LLVMOpcode;
-pub type Linkage = sys::LLVMLinkage;
-pub type CallConv = sys::LLVMCallConv;
-pub type IntPred = sys::LLVMIntPredicate;
-pub type FloatPred = sys::LLVMRealPredicate;
-
-impl IRTarget {
-    pub fn new(triple: TargetTriple) -> IRTarget {
-        match triple.arch() {
-            TargetArch::x86_64 => unsafe {
-                target::LLVMInitializeX86Target();
-                target::LLVMInitializeX86TargetMC();
-                target::LLVMInitializeX86TargetInfo();
-                target::LLVMInitializeX86AsmPrinter();
-            },
-            TargetArch::Arm_64 => unsafe {
-                target::LLVMInitializeAArch64Target();
-                target::LLVMInitializeAArch64TargetMC();
-                target::LLVMInitializeAArch64TargetInfo();
-                target::LLVMInitializeAArch64AsmPrinter();
-            },
-        }
-
-        let ctriple = cstring_from_str(triple.as_str());
-        let mut target = std::mem::MaybeUninit::uninit();
-        let mut err_str = std::mem::MaybeUninit::uninit();
-        let code = unsafe {
-            target::LLVMGetTargetFromTriple(
-                ctriple.as_ptr(),
-                target.as_mut_ptr(),
-                err_str.as_mut_ptr(),
-            )
-        };
-        if code == 1 {
-            let err_str = unsafe { err_str.assume_init() };
-            panic!(
-                "failed to create target from triple `{}`:\n{}",
-                triple.as_str(),
-                llvm_string_to_owned(err_str)
-            );
-        }
-        let target = unsafe { target.assume_init() };
-        assert!(!target.is_null());
-
-        let target_machine = unsafe {
-            target::LLVMCreateTargetMachine(
-                target,
-                ctriple.as_ptr(),
-                cstring_empty(),
-                cstring_empty(),
-                target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone, //@base on options (debug / release)
-                target::LLVMRelocMode::LLVMRelocDefault,
-                target::LLVMCodeModel::LLVMCodeModelDefault,
-            )
-        };
-        let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
-
-        IRTarget { target_data, target_machine }
-    }
-
-    pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
-        Type(unsafe { target::LLVMIntPtrTypeInContext(context.context, self.target_data) })
-    }
-}
-
-impl Drop for IRTarget {
-    fn drop(&mut self) {
-        unsafe { target::LLVMDisposeTargetData(self.target_data) }
-        unsafe { target::LLVMDisposeTargetMachine(self.target_machine) }
-    }
-}
+pub struct BasicBlock(sys::LLVMBasicBlockRef);
 
 impl IRContext {
     pub fn new() -> IRContext {
         IRContext { context: unsafe { core::LLVMContextCreate() }, cstr_buf: CStrBuffer::new() }
-    }
-
-    pub fn attr_kind_id(&self, name: &str) -> AttributeKindID {
-        unsafe {
-            AttributeKindID(core::LLVMGetEnumAttributeKindForName(
-                self.cstr_buf.cstr(name),
-                name.len(),
-            ))
-        }
-    }
-    pub fn attr_create(&self, kind_id: AttributeKindID) -> Attribute {
-        unsafe { Attribute(core::LLVMCreateEnumAttribute(self.context, kind_id.0, 0)) }
     }
 
     pub fn int_1(&self) -> Type {
@@ -174,7 +92,19 @@ impl IRContext {
         Type(unsafe { core::LLVMPointerTypeInContext(self.context, 0) })
     }
 
-    pub fn struct_create_named(&self, name: &str) -> TypeStruct {
+    pub fn append_bb(&mut self, fn_val: ValueFn, name: &str) -> BasicBlock {
+        BasicBlock(unsafe {
+            core::LLVMAppendBasicBlockInContext(self.context, fn_val.0, self.cstr_buf.cstr(name))
+        })
+    }
+    pub fn attr_create(&mut self, name: &str) -> Attribute {
+        unsafe {
+            let id = core::LLVMGetEnumAttributeKindForName(name.as_ptr() as *const i8, name.len());
+            Attribute(core::LLVMCreateEnumAttribute(self.context, id, 0))
+        }
+    }
+
+    pub fn struct_create_named(&mut self, name: &str) -> TypeStruct {
         TypeStruct(unsafe { core::LLVMStructCreateNamed(self.context, self.cstr_buf.cstr(name)) })
     }
     pub fn struct_set_body(&self, struct_ty: TypeStruct, field_types: &[Type], packed: bool) {
@@ -197,16 +127,77 @@ impl IRContext {
             )
         })
     }
-    pub fn append_bb(&self, fn_val: ValueFn, name: &str) -> BasicBlock {
-        BasicBlock(unsafe {
-            core::LLVMAppendBasicBlockInContext(self.context, fn_val.0, self.cstr_buf.cstr(name))
-        })
+}
+
+impl IRTarget {
+    pub fn new(triple: TargetTriple) -> IRTarget {
+        match triple.arch() {
+            TargetArch::x86_64 => unsafe {
+                target::LLVMInitializeX86Target();
+                target::LLVMInitializeX86TargetMC();
+                target::LLVMInitializeX86TargetInfo();
+                target::LLVMInitializeX86AsmPrinter();
+            },
+            TargetArch::Arm_64 => unsafe {
+                target::LLVMInitializeAArch64Target();
+                target::LLVMInitializeAArch64TargetMC();
+                target::LLVMInitializeAArch64TargetInfo();
+                target::LLVMInitializeAArch64AsmPrinter();
+            },
+        }
+
+        let ctriple = std::ffi::CString::new(triple.as_str()).unwrap();
+        let mut target = std::mem::MaybeUninit::uninit();
+        let mut err_str = std::mem::MaybeUninit::uninit();
+        let code = unsafe {
+            target::LLVMGetTargetFromTriple(
+                ctriple.as_ptr(),
+                target.as_mut_ptr(),
+                err_str.as_mut_ptr(),
+            )
+        };
+        if code == 1 {
+            let err_str = unsafe { err_str.assume_init() };
+            panic!(
+                "failed to create target from triple `{}`:\n{}",
+                triple.as_str(),
+                llvm_string_to_owned(err_str)
+            );
+        }
+        let target = unsafe { target.assume_init() };
+        assert!(!target.is_null());
+
+        let target_machine = unsafe {
+            target::LLVMCreateTargetMachine(
+                target,
+                ctriple.as_ptr(),
+                "\0".as_ptr() as *const c_char,
+                "\0".as_ptr() as *const c_char,
+                target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone, //@base on options (debug / release)
+                target::LLVMRelocMode::LLVMRelocDefault,
+                target::LLVMCodeModel::LLVMCodeModelDefault,
+            )
+        };
+        let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
+
+        IRTarget { target_data, target_machine }
+    }
+
+    pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
+        Type(unsafe { target::LLVMIntPtrTypeInContext(context.context, self.target_data) })
+    }
+}
+
+impl Drop for IRTarget {
+    fn drop(&mut self) {
+        unsafe { target::LLVMDisposeTargetData(self.target_data) }
+        unsafe { target::LLVMDisposeTargetMachine(self.target_machine) }
     }
 }
 
 impl IRModule {
     pub fn new(context: &IRContext, target: &IRTarget, name: &str) -> IRModule {
-        let cstr_buf = CStrBuffer::new();
+        let mut cstr_buf = CStrBuffer::new();
         let name = cstr_buf.cstr(name);
         let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
         unsafe { target::LLVMSetModuleDataLayout(module, target.target_data) };
@@ -214,7 +205,7 @@ impl IRModule {
     }
 
     #[must_use]
-    pub fn add_function(&self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
+    pub fn add_function(&mut self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
         let name = self.cstr_buf.cstr(name);
         let fn_val = unsafe { core::LLVMAddFunction(self.module, name, fn_ty.0) };
 
@@ -224,7 +215,7 @@ impl IRModule {
 
     #[must_use]
     pub fn add_global(
-        &self,
+        &mut self,
         name: &str,
         value: Value,
         global_ty: Type,
@@ -265,7 +256,7 @@ impl IRModule {
         }
     }
 
-    pub fn emit_to_file(&self, target: &IRTarget, filename: &str) -> Result<(), String> {
+    pub fn emit_to_file(&mut self, target: &IRTarget, filename: &str) -> Result<(), String> {
         let mut err_str = std::mem::MaybeUninit::uninit();
         let codegen = target::LLVMCodeGenFileType::LLVMObjectFile;
         let code = unsafe {
@@ -294,11 +285,11 @@ impl Drop for IRModule {
 }
 
 impl IRBuilder {
-    pub fn new(context: &IRContext, rock_void: TypeStruct) -> IRBuilder {
+    pub fn new(context: &IRContext, void_val_type: TypeStruct) -> IRBuilder {
         IRBuilder {
             builder: unsafe { core::LLVMCreateBuilderInContext(context.context) },
             cstr_buf: CStrBuffer::new(),
-            rock_void,
+            void_val_type,
         }
     }
 
@@ -314,8 +305,7 @@ impl IRBuilder {
 
     pub fn ret(&self, val: Option<Value>) {
         if let Some(val) = val {
-            // ret `%rock.void` => ret void
-            if typeof_value(val).0 == self.rock_void.0 {
+            if typeof_value(val).0 == self.void_val_type.0 {
                 let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
             } else {
                 let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };
@@ -340,25 +330,25 @@ impl IRBuilder {
         let _ = unsafe { core::LLVMBuildUnreachable(self.builder) };
     }
 
-    pub fn bin_op(&self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn bin_op(&mut self, op: OpCode, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildBinOp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn neg(&self, val: Value, name: &str) -> Value {
+    pub fn neg(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn fneg(&self, val: Value, name: &str) -> Value {
+    pub fn fneg(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildFNeg(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn not(&self, val: Value, name: &str) -> Value {
+    pub fn not(&mut self, val: Value, name: &str) -> Value {
         Value(unsafe { core::LLVMBuildNot(self.builder, val.0, self.cstr_buf.cstr(name)) })
     }
 
-    pub fn alloca(&self, ty: Type, name: &str) -> ValuePtr {
+    pub fn alloca(&mut self, ty: Type, name: &str) -> ValuePtr {
         ValuePtr(unsafe { core::LLVMBuildAlloca(self.builder, ty.0, self.cstr_buf.cstr(name)) })
     }
-    pub fn load(&self, ptr_ty: Type, ptr_val: ValuePtr, name: &str) -> Value {
+    pub fn load(&mut self, ptr_ty: Type, ptr_val: ValuePtr, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
@@ -367,7 +357,13 @@ impl IRBuilder {
         unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) };
     }
 
-    pub fn gep(&self, ptr_ty: Type, ptr_val: ValuePtr, indices: &[Value], name: &str) -> ValuePtr {
+    pub fn gep(
+        &mut self,
+        ptr_ty: Type,
+        ptr_val: ValuePtr,
+        indices: &[Value],
+        name: &str,
+    ) -> ValuePtr {
         ValuePtr(unsafe {
             core::LLVMBuildGEP2(
                 self.builder,
@@ -381,7 +377,7 @@ impl IRBuilder {
     }
 
     pub fn gep_inbounds(
-        &self,
+        &mut self,
         ptr_ty: Type,
         ptr_val: ValuePtr,
         indices: &[Value],
@@ -400,7 +396,7 @@ impl IRBuilder {
     }
 
     pub fn gep_struct(
-        &self,
+        &mut self,
         ptr_ty: TypeStruct,
         ptr_val: ValuePtr,
         idx: u32,
@@ -417,23 +413,23 @@ impl IRBuilder {
         })
     }
 
-    pub fn cast(&self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
+    pub fn cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildCast(self.builder, op, val.0, into_ty.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn icmp(&self, op: IntPred, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn icmp(&mut self, op: IntPred, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildICmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn fcmp(&self, op: FloatPred, lhs: Value, rhs: Value, name: &str) -> Value {
+    pub fn fcmp(&mut self, op: FloatPred, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildFCmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
         })
     }
 
-    pub fn phi(&self, ty: Type, name: &str) -> Value {
+    pub fn phi(&mut self, ty: Type, name: &str) -> Value {
         let name = self.cstr_buf.cstr(name);
         Value(unsafe { core::LLVMBuildPhi(self.builder, ty.0, name) })
     }
@@ -447,7 +443,7 @@ impl IRBuilder {
     }
 
     pub fn call(
-        &self,
+        &mut self,
         fn_ty: TypeFn,
         fn_val: ValueFn,
         args: &[Value],
@@ -457,7 +453,7 @@ impl IRBuilder {
         let return_kind = unsafe { core::LLVMGetTypeKind(return_ty) };
 
         let name = match return_kind {
-            sys::LLVMTypeKind::LLVMVoidTypeKind => cstring_empty(),
+            sys::LLVMTypeKind::LLVMVoidTypeKind => self.cstr_buf.cstr(""),
             _ => self.cstr_buf.cstr(name),
         };
 
@@ -478,7 +474,7 @@ impl IRBuilder {
         }
     }
 
-    pub fn extract_value(&self, agg_val: Value, index: u32, name: &str) -> Value {
+    pub fn extract_value(&mut self, agg_val: Value, index: u32, name: &str) -> Value {
         unsafe {
             Value(core::LLVMBuildExtractValue(
                 self.builder,
@@ -498,14 +494,13 @@ impl Drop for IRBuilder {
 
 impl CStrBuffer {
     fn new() -> CStrBuffer {
-        CStrBuffer(UnsafeCell::new(String::with_capacity(64)))
+        CStrBuffer(String::with_capacity(256))
     }
-    fn cstr(&self, name: &str) -> *const c_char {
-        let string = unsafe { &mut *self.0.get() };
-        string.clear();
-        string.push_str(name);
-        string.push('\0');
-        string.as_ptr() as *const c_char
+    fn cstr(&mut self, name: &str) -> *const c_char {
+        self.0.clear();
+        self.0.push_str(name);
+        self.0.push('\0');
+        self.0.as_ptr() as *const c_char
     }
 }
 
@@ -681,12 +676,4 @@ fn llvm_string_to_owned(llvm_str: *mut c_char) -> String {
     let string = cstr.to_string_lossy().into_owned();
     unsafe { core::LLVMDisposeMessage(llvm_str) };
     string
-}
-
-fn cstring_from_str(string: &str) -> std::ffi::CString {
-    std::ffi::CString::new(string).unwrap()
-}
-
-fn cstring_empty() -> *const c_char {
-    "\0".as_ptr() as *const c_char
 }

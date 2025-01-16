@@ -278,7 +278,7 @@ fn codegen_match<'c>(
 ) {
     #[inline]
     fn extract_slice_len_if_needed(
-        cg: &Codegen,
+        cg: &mut Codegen,
         kind: hir::MatchKind,
         value: llvm::Value,
     ) -> llvm::Value {
@@ -327,11 +327,13 @@ fn codegen_match<'c>(
             hir::Pat::Wild => wild_bb = Some(arm_bb),
             hir::Pat::Lit(value) => {
                 let pat_value = codegen_const(cg, value);
-                cg.cache.cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                cg.cache.cases.push((v, arm_bb));
             }
             hir::Pat::Const(const_id) => {
                 let pat_value = codegen_const_var(cg, const_id);
-                cg.cache.cases.push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                cg.cache.cases.push((v, arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
@@ -376,15 +378,13 @@ fn codegen_match<'c>(
                         hir::Pat::Wild => wild_bb = Some(arm_bb),
                         hir::Pat::Lit(value) => {
                             let pat_value = codegen_const(cg, value);
-                            cg.cache
-                                .cases
-                                .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                            let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                            cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Const(const_id) => {
                             let pat_value = codegen_const_var(cg, const_id);
-                            cg.cache
-                                .cases
-                                .push((extract_slice_len_if_needed(cg, kind, pat_value), arm_bb));
+                            let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                            cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
                             let enum_data = cg.hir.enum_data(enum_id);
@@ -592,7 +592,7 @@ fn codegen_cast<'c>(
     }
 }
 
-fn codegen_caller_location(cg: &Codegen, expect: Expect) -> llvm::Value {
+fn codegen_caller_location(cg: &mut Codegen, expect: Expect) -> llvm::Value {
     let param_ptr = cg.proc.param_ptrs.last().copied().unwrap();
 
     match expect {
@@ -603,7 +603,7 @@ fn codegen_caller_location(cg: &Codegen, expect: Expect) -> llvm::Value {
     }
 }
 
-fn codegen_param_var(cg: &Codegen, expect: Expect, param_id: hir::ParamID) -> llvm::Value {
+fn codegen_param_var(cg: &mut Codegen, expect: Expect, param_id: hir::ParamID) -> llvm::Value {
     let param_ptr = cg.proc.param_ptrs[param_id.index()];
 
     match expect {
@@ -615,7 +615,7 @@ fn codegen_param_var(cg: &Codegen, expect: Expect, param_id: hir::ParamID) -> ll
     }
 }
 
-fn codegen_variable(cg: &Codegen, expect: Expect, var_id: hir::VariableID) -> llvm::Value {
+fn codegen_variable(cg: &mut Codegen, expect: Expect, var_id: hir::VariableID) -> llvm::Value {
     let var_ptr = cg.proc.variable_ptrs[var_id.index()];
 
     match expect {
@@ -636,7 +636,7 @@ fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
     cg.consts[const_id.index()]
 }
 
-fn codegen_global_var(cg: &Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {
+fn codegen_global_var(cg: &mut Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {
     let global_ptr = cg.globals[global_id.index()].as_ptr();
 
     match expect {
@@ -1008,7 +1008,7 @@ fn codegen_binary_circuit<'c>(
 }
 
 pub fn codegen_binary_op(
-    cg: &Codegen,
+    cg: &mut Codegen,
     op: hir::BinOp,
     lhs: llvm::Value,
     rhs: llvm::Value,

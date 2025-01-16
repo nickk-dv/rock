@@ -5,9 +5,9 @@ use rock_core::session::Session;
 use rock_core::support::TempBuffer;
 
 pub struct Codegen<'c, 's, 's_ref> {
-    pub proc: ProcCodegen<'c>,
-    pub target: llvm::IRTarget,
+    pub proc: ProcCodegen,
     pub context: llvm::IRContext,
+    pub target: llvm::IRTarget,
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
@@ -21,23 +21,20 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub session: &'s_ref Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
-    pub attr_cache: CodegenAttrCache,
     pub location_ty: llvm::TypeStruct,
 }
 
-pub struct ProcCodegen<'c> {
+pub struct ProcCodegen {
     pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub variable_ptrs: Vec<llvm::ValuePtr>,
     tail_values: Vec<Option<TailValue>>,
     block_stack: Vec<BlockInfo>,
-    defer_blocks: Vec<hir::Block<'c>>,
     next_loop_info: Option<LoopInfo>,
 }
 
 struct BlockInfo {
-    defer_count: u32,
     loop_info: Option<LoopInfo>,
 }
 
@@ -69,18 +66,15 @@ pub struct CodegenCache {
     int_64: llvm::Type,
     float_32: llvm::Type,
     float_64: llvm::Type,
-    ptr_type: llvm::Type,
     void_type: llvm::Type,
+    ptr_type: llvm::Type,
     ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
     void_val_type: llvm::TypeStruct,
+    pub noreturn: llvm::Attribute,
+    pub inlinehint: llvm::Attribute,
     pub values: TempBuffer<llvm::Value>,
     pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
-}
-
-pub struct CodegenAttrCache {
-    pub inlinehint: llvm::Attribute,
-    pub noreturn: llvm::Attribute,
 }
 
 impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
@@ -89,19 +83,18 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         triple: TargetTriple,
         session: &'s_ref Session<'s>,
     ) -> Codegen<'c, 's, 's_ref> {
+        let mut context = llvm::IRContext::new();
         let target = llvm::IRTarget::new(triple);
-        let context = llvm::IRContext::new();
         let module = llvm::IRModule::new(&context, &target, "rock_module");
-        let cache = CodegenCache::new(&context, &target);
-        let attr_cache = CodegenAttrCache::new(&context);
+        let cache = CodegenCache::new(&mut context, &target);
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
         let location_ty = context
             .struct_type_inline(&[cache.int_32, cache.int_32, cache.slice_type.as_ty()], false);
 
         Codegen {
             proc: ProcCodegen::new(),
-            target,
             context,
+            target,
             module,
             build,
             procs: Vec::with_capacity(hir.procs.len()),
@@ -115,7 +108,6 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             session,
             string_buf: String::with_capacity(256),
             cache,
-            attr_cache,
             location_ty,
         }
     }
@@ -244,7 +236,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     }
 
     #[inline]
-    pub fn append_bb(&self, name: &str) -> llvm::BasicBlock {
+    pub fn append_bb(&mut self, name: &str) -> llvm::BasicBlock {
         self.context.append_bb(self.proc.fn_val, name)
     }
     #[inline]
@@ -258,7 +250,7 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
         }
     }
     #[must_use]
-    pub fn entry_alloca(&self, ty: llvm::Type, name: &str) -> llvm::ValuePtr {
+    pub fn entry_alloca(&mut self, ty: llvm::Type, name: &str) -> llvm::ValuePtr {
         let insert_bb = self.build.insert_bb();
         let entry_bb = self.proc.fn_val.entry_bb();
 
@@ -279,8 +271,8 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     }
 }
 
-impl<'c> ProcCodegen<'c> {
-    pub fn new() -> ProcCodegen<'c> {
+impl ProcCodegen {
+    pub fn new() -> ProcCodegen {
         ProcCodegen {
             proc_id: hir::ProcID::dummy(),
             fn_val: llvm::ValueFn::null(),
@@ -288,7 +280,6 @@ impl<'c> ProcCodegen<'c> {
             variable_ptrs: Vec::with_capacity(128),
             tail_values: Vec::with_capacity(32),
             block_stack: Vec::with_capacity(16),
-            defer_blocks: Vec::with_capacity(8),
             next_loop_info: None,
         }
     }
@@ -300,20 +291,15 @@ impl<'c> ProcCodegen<'c> {
         self.variable_ptrs.clear();
         self.tail_values.clear();
         self.block_stack.clear();
-        self.defer_blocks.clear();
         self.next_loop_info = None;
     }
 
     pub fn block_enter(&mut self) {
-        let block_info = BlockInfo { defer_count: 0, loop_info: self.next_loop_info.take() };
+        let block_info = BlockInfo { loop_info: self.next_loop_info.take() };
         self.block_stack.push(block_info);
     }
 
     pub fn block_exit(&mut self) {
-        let defer_count = self.block_stack.last().unwrap().defer_count;
-        for _ in 0..defer_count {
-            self.defer_blocks.pop();
-        }
         self.block_stack.pop();
     }
 
@@ -357,7 +343,7 @@ impl<'c> ProcCodegen<'c> {
 }
 
 impl CodegenCache {
-    fn new(context: &llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
+    fn new(context: &mut llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
         let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
         let slice_type = context.struct_create_named("rock.slice");
@@ -373,22 +359,15 @@ impl CodegenCache {
             int_64: context.int_64(),
             float_32: context.float_32(),
             float_64: context.float_64(),
-            ptr_type,
             void_type: context.void_type(),
+            ptr_type,
             ptr_sized_int,
             slice_type,
             void_val_type,
-            values: TempBuffer::new(64),
-            cases: TempBuffer::new(64),
-        }
-    }
-}
-
-impl CodegenAttrCache {
-    fn new(context: &llvm::IRContext) -> CodegenAttrCache {
-        CodegenAttrCache {
-            inlinehint: context.attr_create(context.attr_kind_id("inlinehint")),
-            noreturn: context.attr_create(context.attr_kind_id("noreturn")),
+            noreturn: context.attr_create("noreturn"),
+            inlinehint: context.attr_create("inlinehint"),
+            values: TempBuffer::new(128),
+            cases: TempBuffer::new(128),
         }
     }
 }

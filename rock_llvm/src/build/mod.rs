@@ -26,7 +26,7 @@ pub fn build(
 
     // generate the single ir module
     let timer = Timer::start();
-    let (target, module) = emit_mod::codegen_module(hir, config.target, session);
+    let (target, mut module) = emit_mod::codegen_module(hir, config.target, session);
     session.stats.llvm_ir_ms = timer.measure_ms();
 
     // setup build output directories

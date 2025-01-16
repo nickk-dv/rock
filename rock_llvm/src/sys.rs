@@ -5,8 +5,8 @@ pub type LLVMModuleRef = *mut LLVMModule;
 pub type LLVMBuilderRef = *mut LLVMBuilder;
 pub type LLVMTypeRef = *mut LLVMType;
 pub type LLVMValueRef = *mut LLVMValue;
-pub type LLVMBasicBlockRef = *mut LLVMBasicBlock;
 pub type LLVMAttributeRef = *mut LLVMAttribute;
+pub type LLVMBasicBlockRef = *mut LLVMBasicBlock;
 pub type LLVMBool = std::ffi::c_int;
 
 pub enum LLVMContext {}
@@ -243,8 +243,9 @@ pub enum LLVMRealPredicate {
     LLVMRealTrue = 15, // always true
 }
 
-/// or a parameter number from 1 to N.
+/// `LLVM_ATTR_RETURN_INDEX`, `LLVM_ATTR_FUNCTION_INDEX` or a parameter number from 1 to N.
 pub type LLVMAttributeIndex = u32;
+#[allow(unused)]
 pub const LLVM_ATTR_RETURN_INDEX: LLVMAttributeIndex = 0;
 pub const LLVM_ATTR_FUNCTION_INDEX: LLVMAttributeIndex = !0;
 
@@ -282,6 +283,7 @@ pub mod core {
     // context
     extern "C" {
         pub fn LLVMContextCreate() -> LLVMContextRef;
+
         pub fn LLVMGetEnumAttributeKindForName(name: *const c_char, len: usize) -> c_uint;
         pub fn LLVMCreateEnumAttribute(
             ctx: LLVMContextRef,

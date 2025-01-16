@@ -238,10 +238,10 @@ fn codegen_function_values(cg: &mut Codegen) {
             fn_val.set_call_conv(llvm::CallConv::LLVMFastCallConv);
         }
         if data.flag_set.contains(hir::ProcFlag::Inline) {
-            fn_val.set_attr(cg.attr_cache.inlinehint);
+            fn_val.set_attr(cg.cache.inlinehint);
         }
         if data.return_ty.is_never() {
-            fn_val.set_attr(cg.attr_cache.noreturn);
+            fn_val.set_attr(cg.cache.noreturn);
         }
 
         cg.procs.push((fn_val, fn_ty));
