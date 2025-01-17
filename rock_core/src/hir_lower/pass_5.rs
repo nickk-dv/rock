@@ -2546,9 +2546,204 @@ fn typecheck_for<'hir, 'ast>(
             return Some(overall_block);
         }
         ast::ForHeader::Range(header) => {
-            let src = ctx.src(header.start.range);
-            err::internal_not_implemented(&mut ctx.emit, src, "for range loop");
-            return None;
+            if let Some(start) = header.ref_start {
+                let src = ctx.src(TextRange::new(start, start + 1.into()));
+                err::tycheck_for_range_ref(&mut ctx.emit, src);
+            }
+            if let Some(start) = header.reverse_start {
+                let src = ctx.src(TextRange::new(start, start + 2.into()));
+                err::tycheck_for_range_reverse(&mut ctx.emit, src);
+            }
+
+            //@use untyped and unify the integer types
+            let start_res = typecheck_expr(ctx, Expectation::None, header.start);
+            let end_res = typecheck_expr(ctx, Expectation::None, header.end);
+
+            let start_int_ty = match start_res.ty {
+                hir::Type::Error => Err(()),
+                hir::Type::Int(int_ty) => Ok(int_ty),
+                _ => {
+                    let src = ctx.src(header.start.range);
+                    let ty = type_format(ctx, start_res.ty);
+                    err::tycheck_for_range_expected_int(&mut ctx.emit, src, ty.as_str());
+                    Err(())
+                }
+            };
+            let end_int_ty = match end_res.ty {
+                hir::Type::Error => Err(()),
+                hir::Type::Int(int_ty) => Ok(int_ty),
+                _ => {
+                    let src = ctx.src(header.end.range);
+                    let ty = type_format(ctx, end_res.ty);
+                    err::tycheck_for_range_expected_int(&mut ctx.emit, src, ty.as_str());
+                    Err(())
+                }
+            };
+            let int_ty = if let (Ok(lhs), Ok(rhs)) = (start_int_ty, end_int_ty) {
+                if lhs != rhs {
+                    let range = TextRange::new(header.start.range.start(), header.end.range.end());
+                    let src = ctx.src(range);
+                    err::tycheck_for_range_type_mismatch(
+                        &mut ctx.emit,
+                        src,
+                        lhs.as_str(),
+                        rhs.as_str(),
+                    );
+                }
+                lhs //@could be wrong to always use lhs
+            } else {
+                IntType::S32 //default
+            };
+
+            let start_var = hir::Variable {
+                mutt: ast::Mut::Immutable,
+                name: header
+                    .value
+                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                ty: hir::Type::Int(int_ty),
+                was_used: false,
+            };
+            let end_var = hir::Variable {
+                mutt: ast::Mut::Immutable,
+                name: ast::Name { id: NameID::dummy(), range: TextRange::zero() },
+                ty: hir::Type::Int(int_ty),
+                was_used: false,
+            };
+            let index_var = hir::Variable {
+                mutt: ast::Mut::Immutable,
+                name: header
+                    .index
+                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                ty: hir::Type::USIZE,
+                was_used: false,
+            };
+
+            ctx.scope.local.start_block(BlockStatus::None);
+            let start_id = ctx.scope.local.add_variable_hack(start_var, header.value.is_some());
+            let end_id = ctx.scope.local.add_variable_hack(end_var, false);
+            let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
+            let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
+            // used to not insert index increment
+            let block_diverges = match ctx.scope.local.diverges() {
+                Diverges::Maybe => false,
+                Diverges::Always(_) | Diverges::AlwaysWarned => true,
+            };
+            ctx.scope.local.exit_block();
+
+            // start, end, index locals:
+            let start_local =
+                hir::Local { var_id: start_id, init: hir::LocalInit::Init(start_res.expr) };
+            let stmt_start = hir::Stmt::Local(ctx.arena.alloc(start_local));
+
+            let end_local = hir::Local { var_id: end_id, init: hir::LocalInit::Init(end_res.expr) };
+            let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
+
+            let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
+            let zero = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const { value: zero },
+                range: TextRange::zero(),
+            });
+            let index_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(zero) };
+            let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
+
+            // loop body block:
+            let expr_start_var = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Variable { var_id: start_id },
+                range: TextRange::zero(),
+            });
+            let expr_end_var = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Variable { var_id: end_id },
+                range: TextRange::zero(),
+            });
+            let expr_index_var = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Variable { var_id: index_id },
+                range: TextRange::zero(),
+            });
+
+            let cond_op = match header.kind {
+                ast::RangeKind::Exclusive => {
+                    if int_ty.is_signed() {
+                        hir::BinOp::Less_IntS
+                    } else {
+                        hir::BinOp::Less_IntU
+                    }
+                }
+                ast::RangeKind::Inclusive => {
+                    if int_ty.is_signed() {
+                        hir::BinOp::LessEq_IntS
+                    } else {
+                        hir::BinOp::LessEq_IntU
+                    }
+                }
+            };
+            let continue_cond = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Binary { op: cond_op, lhs: expr_start_var, rhs: expr_end_var },
+                range: TextRange::zero(),
+            });
+            let break_cond = hir::Expr {
+                kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: continue_cond },
+                range: TextRange::zero(),
+            };
+            let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+            let branch = hir::Branch { cond: ctx.arena.alloc(break_cond), block: branch_block };
+            let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+            let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
+            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
+            let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
+
+            let expr_one_iter = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const {
+                    value: hir::ConstValue::Int { val: 1, neg: false, int_ty },
+                },
+                range: TextRange::zero(),
+            });
+            let stmt_value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                lhs: expr_start_var,
+                rhs: expr_one_iter,
+                lhs_ty: hir::Type::Int(int_ty),
+            }));
+            let expr_one_usize = ctx.arena.alloc(hir::Expr {
+                kind: hir::ExprKind::Const {
+                    value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                },
+                range: TextRange::zero(),
+            });
+            let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                lhs: expr_index_var,
+                rhs: expr_one_usize,
+                lhs_ty: hir::Type::USIZE,
+            }));
+
+            let expr_for_block = hir::Expr {
+                kind: hir::ExprKind::Block { block: block_res.block },
+                range: for_.block.range,
+            };
+            let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
+
+            let loop_block = if block_diverges {
+                hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_for_block]) }
+            } else {
+                hir::Block {
+                    stmts: ctx.arena.alloc_slice(&[
+                        stmt_cond,
+                        stmt_for_block,
+                        stmt_value_change,
+                        stmt_index_change,
+                    ]),
+                }
+            };
+            let stmt_loop = hir::Stmt::Loop(ctx.arena.alloc(loop_block));
+
+            // overall block for entire loop:
+            let stmts = ctx.arena.alloc_slice(&[stmt_start, stmt_end, stmt_index, stmt_loop]);
+            let expr_overall_block = hir::Expr {
+                kind: hir::ExprKind::Block { block: hir::Block { stmts } },
+                range: TextRange::zero(),
+            };
+            let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
+            return Some(overall_block);
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);

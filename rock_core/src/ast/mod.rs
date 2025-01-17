@@ -262,9 +262,10 @@ pub struct ForHeaderRange<'ast> {
     pub ref_start: Option<TextOffset>,
     pub value: Option<Name>,
     pub index: Option<Name>,
-    pub rev_start: Option<TextOffset>,
+    pub reverse_start: Option<TextOffset>,
     pub start: &'ast Expr<'ast>,
     pub end: &'ast Expr<'ast>,
+    pub kind: RangeKind,
 }
 
 #[derive(Copy, Clone)]

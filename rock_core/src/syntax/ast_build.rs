@@ -574,16 +574,25 @@ fn stmt_for<'ast>(
         let value = for_bind(ctx, header.value(ctx.tree).unwrap());
         let index =
             if let Some(bind) = header.index(ctx.tree) { for_bind(ctx, bind) } else { None };
-        let rev_start = header.t_rev(ctx.tree).map(|range| range.start());
-        let (start, end) = if header.t_exclusive(ctx.tree).is_some() {
-            (header.start_exclusive(ctx.tree).unwrap(), header.end_exclusive(ctx.tree).unwrap())
+        let reverse_start = header.t_rev(ctx.tree).map(|range| range.start());
+        let (start, end, kind) = if header.t_exclusive(ctx.tree).is_some() {
+            (
+                header.start_exclusive(ctx.tree).unwrap(),
+                header.end_exclusive(ctx.tree).unwrap(),
+                ast::RangeKind::Exclusive,
+            )
         } else {
-            (header.start_inclusive(ctx.tree).unwrap(), header.end_inclusive(ctx.tree).unwrap())
+            (
+                header.start_inclusive(ctx.tree).unwrap(),
+                header.end_inclusive(ctx.tree).unwrap(),
+                ast::RangeKind::Inclusive,
+            )
         };
         let start = expr(ctx, start);
         let end = expr(ctx, end);
 
-        let header = ast::ForHeaderRange { ref_start, value, index, rev_start, start, end };
+        let header =
+            ast::ForHeaderRange { ref_start, value, index, reverse_start, start, end, kind };
         ast::ForHeader::Range(ctx.arena.alloc(header))
     } else if let Some(header) = for_.header_pat(ctx.tree) {
         let pat = pat(ctx, header.pat(ctx.tree).unwrap());

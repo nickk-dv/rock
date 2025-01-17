@@ -715,7 +715,7 @@ fn codegen_call_direct<'c>(
     for (idx, expr) in input.iter().copied().enumerate() {
         let proc_data = cg.hir.proc_data(proc_id);
         //@hack for variadics
-        if proc_data.params.len() >= idx {
+        if idx >= proc_data.params.len() {
             let value = codegen_expr_value(cg, expr);
             cg.cache.values.push(value);
             continue;

@@ -993,8 +993,33 @@ pub fn tycheck_cannot_iter_on_type(emit: &mut impl ErrorSink, src: SourceRange, 
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_for_range_ref(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("for range loops don't support by reference iteration");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_for_range_reverse(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("for range loops don't support reverse iteration");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_for_range_expected_int(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("expected integer type, found `{ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_for_range_type_mismatch(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    lhs_ty: &str,
+    rhs_ty: &str,
+) {
+    let msg = format!("type mismatch in for range loop: `{lhs_ty}` vs `{rhs_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_cannot_infer_local_type(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot infer local type";
+    let msg = "cannot infer local variable type";
     emit.error(Error::new(msg, src, None));
 }
 
