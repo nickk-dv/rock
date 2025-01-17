@@ -2545,6 +2545,11 @@ fn typecheck_for<'hir, 'ast>(
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
             return Some(overall_block);
         }
+        ast::ForHeader::Range(header) => {
+            let src = ctx.src(header.start.range);
+            err::internal_not_implemented(&mut ctx.emit, src, "for range loop");
+            return None;
+        }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
             let kind_res = super::match_check::match_kind(on_res.ty);

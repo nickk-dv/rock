@@ -1166,6 +1166,37 @@ fn stmt_for<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtFor<'syn>) {
             fmt.space();
         }
         expr(fmt, header.expr(fmt.tree).unwrap());
+    } else if let Some(header) = stmt.header_range(fmt.tree) {
+        fmt.space();
+        if header.t_ampersand(fmt.tree).is_some() {
+            fmt.write('&');
+            if header.t_mut(fmt.tree).is_some() {
+                fmt.write_str("mut");
+                fmt.space();
+            }
+        }
+        for_bind(fmt, header.value(fmt.tree).unwrap());
+        if let Some(bind) = header.index(fmt.tree) {
+            fmt.write(',');
+            fmt.space();
+            for_bind(fmt, bind);
+        }
+        fmt.space();
+        fmt.write_str("in");
+        fmt.space();
+        if header.t_rev(fmt.tree).is_some() {
+            fmt.write_str("<<");
+            fmt.space();
+        }
+        if header.t_exclusive(fmt.tree).is_some() {
+            expr(fmt, header.start_exclusive(fmt.tree).unwrap());
+            fmt.write_str("..<");
+            expr(fmt, header.end_exclusive(fmt.tree).unwrap());
+        } else {
+            expr(fmt, header.start_inclusive(fmt.tree).unwrap());
+            fmt.write_str("..=");
+            expr(fmt, header.end_inclusive(fmt.tree).unwrap());
+        }
     } else if let Some(header) = stmt.header_pat(fmt.tree) {
         fmt.space();
         fmt.write_str("let");

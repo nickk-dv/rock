@@ -48,6 +48,7 @@ pub enum SyntaxKind {
     FOR_BIND,
     FOR_HEADER_COND,
     FOR_HEADER_ELEM,
+    FOR_HEADER_RANGE,
     FOR_HEADER_PAT,
     STMT_LOCAL,
     STMT_ASSIGN,

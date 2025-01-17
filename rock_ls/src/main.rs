@@ -794,6 +794,7 @@ fn semantic_visit_node(
                     SyntaxKind::FOR_BIND => Some(SemanticToken::Variable),
                     SyntaxKind::FOR_HEADER_COND => None,
                     SyntaxKind::FOR_HEADER_ELEM => None,
+                    SyntaxKind::FOR_HEADER_RANGE => None,
                     SyntaxKind::FOR_HEADER_PAT => None,
                     SyntaxKind::STMT_LOCAL => None,
                     SyntaxKind::STMT_ASSIGN => None,

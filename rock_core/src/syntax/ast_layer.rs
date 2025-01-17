@@ -481,6 +481,7 @@ ast_node_impl!(StmtFor, SyntaxKind::STMT_FOR);
 ast_node_impl!(ForBind, SyntaxKind::FOR_BIND);
 ast_node_impl!(ForHeaderCond, SyntaxKind::FOR_HEADER_COND);
 ast_node_impl!(ForHeaderElem, SyntaxKind::FOR_HEADER_ELEM);
+ast_node_impl!(ForHeaderRange, SyntaxKind::FOR_HEADER_RANGE);
 ast_node_impl!(ForHeaderPat, SyntaxKind::FOR_HEADER_PAT);
 ast_node_impl!(StmtLocal, SyntaxKind::STMT_LOCAL);
 ast_node_impl!(StmtAssign, SyntaxKind::STMT_ASSIGN);
@@ -1020,6 +1021,7 @@ impl<'syn> StmtDefer<'syn> {
 impl<'syn> StmtFor<'syn> {
     node_find!(header_cond, ForHeaderCond);
     node_find!(header_elem, ForHeaderElem);
+    node_find!(header_range, ForHeaderRange);
     node_find!(header_pat, ForHeaderPat);
     node_find!(block, Block);
 }
@@ -1040,6 +1042,20 @@ impl<'syn> ForHeaderElem<'syn> {
     node_after_token!(index, ForBind, T![,]);
     token_find!(t_rev, T![<<]);
     node_find!(expr, Expr);
+}
+
+impl<'syn> ForHeaderRange<'syn> {
+    token_find!(t_ampersand, T![&]);
+    token_find!(t_mut, T![mut]);
+    node_before_token!(value, ForBind, T![,]);
+    node_after_token!(index, ForBind, T![,]);
+    token_find!(t_rev, T![<<]);
+    token_find!(t_exclusive, T!["..<"]);
+    token_find!(t_inclusive, T!["..="]);
+    node_before_token!(start_exclusive, Expr, T!["..<"]);
+    node_before_token!(start_inclusive, Expr, T!["..="]);
+    node_after_token!(end_exclusive, Expr, T!["..<"]);
+    node_after_token!(end_inclusive, Expr, T!["..="]);
 }
 
 impl<'syn> ForHeaderPat<'syn> {

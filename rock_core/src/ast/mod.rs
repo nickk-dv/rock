@@ -244,6 +244,7 @@ pub enum ForHeader<'ast> {
     Loop,
     Cond(&'ast Expr<'ast>),
     Elem(&'ast ForHeaderElem<'ast>),
+    Range(&'ast ForHeaderRange<'ast>),
     Pat(&'ast ForHeaderPat<'ast>),
 }
 
@@ -254,6 +255,16 @@ pub struct ForHeaderElem<'ast> {
     pub index: Option<Name>,
     pub reverse: bool,
     pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ForHeaderRange<'ast> {
+    pub ref_start: Option<TextOffset>,
+    pub value: Option<Name>,
+    pub index: Option<Name>,
+    pub rev_start: Option<TextOffset>,
+    pub start: &'ast Expr<'ast>,
+    pub end: &'ast Expr<'ast>,
 }
 
 #[derive(Copy, Clone)]

@@ -569,6 +569,22 @@ fn stmt_for<'ast>(
 
         let header = ast::ForHeaderElem { ref_mut, value, index, reverse, expr };
         ast::ForHeader::Elem(ctx.arena.alloc(header))
+    } else if let Some(header) = for_.header_range(ctx.tree) {
+        let ref_start = header.t_ampersand(ctx.tree).map(|range| range.start());
+        let value = for_bind(ctx, header.value(ctx.tree).unwrap());
+        let index =
+            if let Some(bind) = header.index(ctx.tree) { for_bind(ctx, bind) } else { None };
+        let rev_start = header.t_rev(ctx.tree).map(|range| range.start());
+        let (start, end) = if header.t_exclusive(ctx.tree).is_some() {
+            (header.start_exclusive(ctx.tree).unwrap(), header.end_exclusive(ctx.tree).unwrap())
+        } else {
+            (header.start_inclusive(ctx.tree).unwrap(), header.end_inclusive(ctx.tree).unwrap())
+        };
+        let start = expr(ctx, start);
+        let end = expr(ctx, end);
+
+        let header = ast::ForHeaderRange { ref_start, value, index, rev_start, start, end };
+        ast::ForHeader::Range(ctx.arena.alloc(header))
     } else if let Some(header) = for_.header_pat(ctx.tree) {
         let pat = pat(ctx, header.pat(ctx.tree).unwrap());
         let expr = expr(ctx, header.expr(ctx.tree).unwrap());

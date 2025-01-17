@@ -621,7 +621,12 @@ fn stmt_for(p: &mut Parser) {
             p.expect(T![in]);
             p.eat(T![<<]);
             expr(p);
-            mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+            if p.eat(T!["..<"]) || p.eat(T!["..="]) {
+                expr(p);
+                mh.complete(p, SyntaxKind::FOR_HEADER_RANGE);
+            } else {
+                mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+            }
         }
         T![ident] | T![_] => {
             if p.at_next(T![,]) || p.at_next(T![in]) {
@@ -633,7 +638,12 @@ fn stmt_for(p: &mut Parser) {
                 p.expect(T![in]);
                 p.eat(T![<<]);
                 expr(p);
-                mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+                if p.eat(T!["..<"]) || p.eat(T!["..="]) {
+                    expr(p);
+                    mh.complete(p, SyntaxKind::FOR_HEADER_RANGE);
+                } else {
+                    mh.complete(p, SyntaxKind::FOR_HEADER_ELEM);
+                }
             } else {
                 let mh = p.start();
                 expr(p);
