@@ -58,8 +58,8 @@ fn codegen_enum_types(cg: &mut Codegen) {
             cg.string_buf.push(':');
             cg.string_buf.push_str(enum_name);
 
-            let enum_ty = cg.context.struct_create_named(&cg.string_buf);
-            cg.context.struct_set_body(enum_ty, &[array_ty], false);
+            let enum_ty = cg.context.struct_named_create(&cg.string_buf);
+            cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
             enum_ty.as_ty()
         } else {
             cg.int_type(enum_data.tag_ty.resolved_unwrap())
@@ -82,7 +82,7 @@ fn codegen_struct_types(cg: &mut Codegen) {
         cg.string_buf.push(':');
         cg.string_buf.push_str(struct_name);
 
-        let opaque = cg.context.struct_create_named(&cg.string_buf);
+        let opaque = cg.context.struct_named_create(&cg.string_buf);
         cg.structs.push(opaque);
     }
 
@@ -94,7 +94,7 @@ fn codegen_struct_types(cg: &mut Codegen) {
             field_types.push(cg.ty(field.ty));
         }
         let opaque = cg.structs[idx];
-        cg.context.struct_set_body(opaque, &field_types, false)
+        cg.context.struct_named_set_body(opaque, &field_types, false)
     }
 }
 
@@ -130,8 +130,8 @@ fn codegen_variant_types(cg: &mut Codegen) {
                     cg.string_buf.push('.');
                     cg.string_buf.push_str(variant_name);
 
-                    let variant_ty = cg.context.struct_create_named(&cg.string_buf);
-                    cg.context.struct_set_body(variant_ty, &field_types, false);
+                    let variant_ty = cg.context.struct_named_create(&cg.string_buf);
+                    cg.context.struct_named_set_body(variant_ty, &field_types, false);
                     variant_types.push(Some(variant_ty));
                 }
             }

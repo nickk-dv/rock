@@ -1127,18 +1127,7 @@ pub fn tycheck_un_op_cannot_apply(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_bin_op_cannot_apply(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    op: &'static str,
-    lhs_ty: &str,
-) {
-    let msg = format!("cannot apply binary operator `{op}` on value of type `{lhs_ty}`");
-    emit.error(Error::new(msg, src, None));
-}
-
-//@second version of the same error, unify.
-pub fn tycheck_bin_op_cannot_apply_2(
+pub fn tycheck_bin_cannot_apply(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,

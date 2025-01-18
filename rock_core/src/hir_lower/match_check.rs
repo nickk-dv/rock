@@ -1,5 +1,5 @@
 use super::context::HirCtx;
-use crate::ast::{self, BasicType};
+use crate::ast;
 use crate::error::{Error, ErrorSink};
 use crate::hir;
 use crate::intern::LitID;

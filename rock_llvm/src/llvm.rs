@@ -10,7 +10,7 @@ use std::ffi::c_char;
 
 pub struct IRContext {
     context: sys::LLVMContextRef,
-    cstr_buf: CStrBuffer,
+    cstr_buf: CStringBuffer,
 }
 
 pub struct IRTarget {
@@ -20,16 +20,16 @@ pub struct IRTarget {
 
 pub struct IRModule {
     module: sys::LLVMModuleRef,
-    cstr_buf: CStrBuffer,
+    cstr_buf: CStringBuffer,
 }
 
 pub struct IRBuilder {
     builder: sys::LLVMBuilderRef,
-    cstr_buf: CStrBuffer,
+    cstr_buf: CStringBuffer,
     void_val_type: TypeStruct,
 }
 
-struct CStrBuffer(String);
+struct CStringBuffer(String);
 pub type OpCode = sys::LLVMOpcode;
 pub type Linkage = sys::LLVMLinkage;
 pub type CallConv = sys::LLVMCallConv;
@@ -61,7 +61,7 @@ pub struct BasicBlock(sys::LLVMBasicBlockRef);
 
 impl IRContext {
     pub fn new() -> IRContext {
-        IRContext { context: unsafe { core::LLVMContextCreate() }, cstr_buf: CStrBuffer::new() }
+        IRContext { context: unsafe { core::LLVMContextCreate() }, cstr_buf: CStringBuffer::new() }
     }
 
     pub fn int_1(&self) -> Type {
@@ -104,10 +104,10 @@ impl IRContext {
         }
     }
 
-    pub fn struct_create_named(&mut self, name: &str) -> TypeStruct {
+    pub fn struct_named_create(&mut self, name: &str) -> TypeStruct {
         TypeStruct(unsafe { core::LLVMStructCreateNamed(self.context, self.cstr_buf.cstr(name)) })
     }
-    pub fn struct_set_body(&self, struct_ty: TypeStruct, field_types: &[Type], packed: bool) {
+    pub fn struct_named_set_body(&self, struct_ty: TypeStruct, field_types: &[Type], packed: bool) {
         unsafe {
             core::LLVMStructSetBody(
                 struct_ty.0,
@@ -197,7 +197,7 @@ impl Drop for IRTarget {
 
 impl IRModule {
     pub fn new(context: &IRContext, target: &IRTarget, name: &str) -> IRModule {
-        let mut cstr_buf = CStrBuffer::new();
+        let mut cstr_buf = CStringBuffer::new();
         let name = cstr_buf.cstr(name);
         let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
         unsafe { target::LLVMSetModuleDataLayout(module, target.target_data) };
@@ -288,7 +288,7 @@ impl IRBuilder {
     pub fn new(context: &IRContext, void_val_type: TypeStruct) -> IRBuilder {
         IRBuilder {
             builder: unsafe { core::LLVMCreateBuilderInContext(context.context) },
-            cstr_buf: CStrBuffer::new(),
+            cstr_buf: CStringBuffer::new(),
             void_val_type,
         }
     }
@@ -492,9 +492,9 @@ impl Drop for IRBuilder {
     }
 }
 
-impl CStrBuffer {
-    fn new() -> CStrBuffer {
-        CStrBuffer(String::with_capacity(256))
+impl CStringBuffer {
+    fn new() -> CStringBuffer {
+        CStringBuffer(String::with_capacity(256))
     }
     fn cstr(&mut self, name: &str) -> *const c_char {
         self.0.clear();

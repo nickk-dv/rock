@@ -1,6 +1,5 @@
 use super::check_directive;
 use super::context::HirCtx;
-use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;

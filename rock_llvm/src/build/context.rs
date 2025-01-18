@@ -346,10 +346,10 @@ impl CodegenCache {
     fn new(context: &mut llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
         let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
-        let slice_type = context.struct_create_named("rock.slice");
-        let void_val_type = context.struct_create_named("rock.void");
-        context.struct_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
-        context.struct_set_body(void_val_type, &[], false);
+        let slice_type = context.struct_named_create("rock.slice");
+        let void_val_type = context.struct_named_create("rock.void");
+        context.struct_named_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
+        context.struct_named_set_body(void_val_type, &[], false);
 
         CodegenCache {
             int_1: context.int_1(),
