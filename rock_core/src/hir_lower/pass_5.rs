@@ -1848,8 +1848,32 @@ fn promote_untyped_constant<'hir>(
     };
 
     let promoted = match value {
-        hir::ConstValue::Int { val, neg, int_ty } => todo!(),
-        hir::ConstValue::Float { val, float_ty } => todo!(),
+        hir::ConstValue::Int { val, neg, int_ty } => {
+            if int_ty != IntType::Untyped {
+                return;
+            }
+            //@range check
+            match with {
+                hir::Type::Int(IntType::Untyped) => return,
+                hir::Type::Int(with) => hir::ConstValue::Int { val, neg, int_ty: with },
+                hir::Type::Float(with) => {
+                    let val = if neg { -(val as f64) } else { val as f64 };
+                    hir::ConstValue::Float { val, float_ty: with }
+                }
+                _ => return,
+            }
+        }
+        hir::ConstValue::Float { val, float_ty } => {
+            if float_ty != FloatType::Untyped {
+                return;
+            }
+            //@range check
+            match with {
+                hir::Type::Float(FloatType::Untyped) => return,
+                hir::Type::Float(with) => hir::ConstValue::Float { val, float_ty: with },
+                _ => return,
+            }
+        }
         hir::ConstValue::Bool { val, bool_ty } => {
             if bool_ty != BoolType::Untyped {
                 return;
@@ -1898,128 +1922,109 @@ fn typecheck_binary<'hir, 'ast>(
     promote_untyped_constant(ctx, &mut lhs_res, rhs_res.ty);
     promote_untyped_constant(ctx, &mut rhs_res, lhs_res.ty);
 
-    let src = ctx.src(range);
-    err::internal_not_implemented(&mut ctx.emit, src, "binary typecheck");
-    return TypeResult::error();
+    //@change this rule for bitshifts?
+    if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
+        let op_len = op.as_str().len() as u32;
+        let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
+        let lhs_ty = type_format(ctx, lhs_res.ty);
+        let rhs_ty = type_format(ctx, rhs_res.ty);
+        err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
+        return TypeResult::error();
+    }
 
-    /*
-    if matches!(op, ast::BinOp::LogicAnd | ast::BinOp::LogicOr) {
-        let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
-        let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+    let bin_res = match op {
+        ast::BinOp::Add => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::Add_Int, lhs_res.ty)),
+            hir::Type::Float(_) => Ok((hir::BinOp::Add_Float, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::Sub => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::Sub_Int, lhs_res.ty)),
+            hir::Type::Float(_) => Ok((hir::BinOp::Sub_Float, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::Mul => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::Mul_Int, lhs_res.ty)),
+            hir::Type::Float(_) => Ok((hir::BinOp::Mul_Float, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::Div => match lhs_res.ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    Ok((hir::BinOp::Div_IntS, lhs_res.ty))
+                } else {
+                    Ok((hir::BinOp::Div_IntU, lhs_res.ty))
+                }
+            }
+            hir::Type::Float(_) => Ok((hir::BinOp::Div_Float, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::Rem => match lhs_res.ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    Ok((hir::BinOp::Rem_IntS, lhs_res.ty))
+                } else {
+                    Ok((hir::BinOp::Rem_IntU, lhs_res.ty))
+                }
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::BitAnd => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::BitAnd, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::BitOr => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::BitOr, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::BitXor => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::BitXor, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::BitShl => match lhs_res.ty {
+            hir::Type::Int(_) => Ok((hir::BinOp::BitShl, lhs_res.ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::BitShr => match lhs_res.ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    Ok((hir::BinOp::BitShr_IntS, lhs_res.ty))
+                } else {
+                    Ok((hir::BinOp::BitShr_IntU, lhs_res.ty))
+                }
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::IsEq => todo!(),
+        ast::BinOp::NotEq => todo!(),
+        ast::BinOp::Less => todo!(),
+        ast::BinOp::LessEq => todo!(),
+        ast::BinOp::Greater => todo!(),
+        ast::BinOp::GreaterEq => todo!(),
+        ast::BinOp::LogicAnd => todo!(),
+        ast::BinOp::LogicOr => todo!(),
+    };
 
-        if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
-            return TypeResult::error();
+    match bin_res {
+        Ok((op, res_ty)) => {
+            let kind = hir::ExprKind::Binary { op, lhs: lhs_res.expr, rhs: rhs_res.expr };
+            TypeResult::new(res_ty, kind)
         }
-
-        // check: invalid operator usage
-        if !lhs_res.ty.is_bool() || !rhs_res.ty.is_bool() {
-            let src = ctx.src(expr_range);
+        Err(()) => {
+            let op_len = op.as_str().len() as u32;
+            let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
             let lhs_ty = type_format(ctx, lhs_res.ty);
             let rhs_ty = type_format(ctx, rhs_res.ty);
-            err::tycheck_bin_op_cannot_apply_2(
+            err::tycheck_bin_cannot_apply(
                 &mut ctx.emit,
                 src,
                 op.as_str(),
                 lhs_ty.as_str(),
                 rhs_ty.as_str(),
             );
-            return TypeResult::error();
+            TypeResult::error()
         }
-
-        // check: binary type equality
-        if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
-            let src = ctx.src(expr_range);
-            let lhs_ty = type_format(ctx, lhs_res.ty);
-            let rhs_ty = type_format(ctx, rhs_res.ty);
-            err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
-            return TypeResult::error();
-        }
-
-        //@move this logic
-        //@invariant: both are checked to be same!
-        fn unify_bool_type(lhs: hir::Type, rhs: hir::Type) -> BoolType {
-            if let (hir::Type::Bool(lhs), hir::Type::Bool(rhs)) = (lhs, rhs) {
-                if lhs == BoolType::Untyped {
-                    return rhs; // right is maybe typed
-                }
-                return lhs; // both are same
-            }
-            unreachable!()
-        }
-
-        let bool_ty = unify_bool_type(lhs_res.ty, rhs_res.ty);
-
-        // both are const values, doing folding:
-        if let hir::ExprKind::Const { value: lhs_val } = lhs_res.expr.kind {
-            if let hir::ExprKind::Const { value: rhs_val } = rhs_res.expr.kind {
-                let lhs_val = lhs_val.into_bool();
-                let rhs_val = rhs_val.into_bool();
-                let val = match op {
-                    ast::BinOp::LogicAnd => lhs_val && rhs_val,
-                    ast::BinOp::LogicOr => lhs_val || rhs_val,
-                    _ => unreachable!("&& or ||"),
-                };
-                let value = hir::ConstValue::Bool { val, bool_ty };
-                return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
-            }
-        }
-
-        // promote const values into typed form:
-        //@allocating new Expr always, not checking if promotion is required,
-        // promotion means that value is untyped and becomes typed.
-        let lhs = if let hir::ExprKind::Const { value } = lhs_res.expr.kind {
-            let value = hir::ConstValue::Bool { val: value.into_bool(), bool_ty };
-            let kind = hir::ExprKind::Const { value };
-            ctx.arena.alloc(hir::Expr { kind, range: lhs.range })
-        } else {
-            lhs_res.expr
-        };
-        let rhs = if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-            let value = hir::ConstValue::Bool { val: value.into_bool(), bool_ty };
-            let kind = hir::ExprKind::Const { value };
-            ctx.arena.alloc(hir::Expr { kind, range: rhs.range })
-        } else {
-            rhs_res.expr
-        };
-
-        let op = if let BoolType::Bool = bool_ty {
-            match op {
-                ast::BinOp::LogicAnd => hir::BinOp::LogicAnd,
-                ast::BinOp::LogicOr => hir::BinOp::LogicOr,
-                _ => unreachable!(),
-            }
-        } else {
-            match op {
-                ast::BinOp::LogicAnd => hir::BinOp::LogicAnd_32,
-                ast::BinOp::LogicOr => hir::BinOp::LogicOr_32,
-                _ => unreachable!(),
-            }
-        };
-
-        let kind = hir::ExprKind::Binary { op, lhs, rhs };
-        return TypeResult::new(hir::Type::Bool(bool_ty), kind);
     }
-
-    let op_offset = op.as_str().len() as u32;
-    let op_range = TextRange::new(op_start, op_start + op_offset.into());
-
-    let lhs_expect = binary_lhs_expect(ctx, op, op_range, expect);
-    let lhs_res = typecheck_expr(ctx, lhs_expect, lhs);
-    let bin_op = binary_op_check(ctx, op, op_range, lhs_res.ty);
-
-    let expect_src = ctx.src(lhs.range);
-    let rhs_expect = binary_rhs_expect(op, lhs_res.ty, bin_op.is_some(), expect_src);
-    let rhs_res = typecheck_expr(ctx, rhs_expect, rhs);
-    let _ = binary_op_check(ctx, op, op_range, rhs_res.ty);
-
-    if let Some(bin_op) = bin_op {
-        let binary_ty = binary_output_type(op, lhs_res.ty);
-        let kind = hir::ExprKind::Binary { op: bin_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
-        TypeResult::new(binary_ty, kind)
-    } else {
-        TypeResult::error()
-    }
-    */
 }
 
 fn typecheck_block<'hir, 'ast>(
