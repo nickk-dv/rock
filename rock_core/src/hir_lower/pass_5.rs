@@ -5,7 +5,7 @@ use super::constant::fold;
 use super::constant::layout;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
-use crate::ast::{self, BasicType};
+use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, FloatType, IntType, StringType};
@@ -416,6 +416,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         }
     };
 
+    //@not range checked, int to float not handled
     if untyped_promote {
         if let hir::ExprKind::Const { value } = &mut expr_res.kind {
             expr_res.ty = match value {
@@ -1836,6 +1837,48 @@ impl<'hir> hir::Type<'hir> {
     }
 }
 
+fn promote_untyped_constant<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    res: &mut ExprResult<'hir>,
+    with: hir::Type<'hir>,
+) {
+    let value = match res.expr.kind {
+        hir::ExprKind::Const { value } => value,
+        _ => return,
+    };
+
+    let promoted = match value {
+        hir::ConstValue::Int { val, neg, int_ty } => todo!(),
+        hir::ConstValue::Float { val, float_ty } => todo!(),
+        hir::ConstValue::Bool { val, bool_ty } => {
+            if bool_ty != BoolType::Untyped {
+                return;
+            }
+            match with {
+                hir::Type::Bool(BoolType::Untyped) => return,
+                hir::Type::Bool(with) => hir::ConstValue::Bool { val, bool_ty: with },
+                _ => return,
+            }
+        }
+        hir::ConstValue::String { val, string_ty } => {
+            if string_ty != StringType::Untyped {
+                return;
+            }
+            match with {
+                hir::Type::String(StringType::Untyped) => return,
+                hir::Type::String(with) => hir::ConstValue::String { val, string_ty: with },
+                _ => return,
+            }
+        }
+        _ => return,
+    };
+
+    res.ty = with;
+    res.expr = ctx
+        .arena
+        .alloc(hir::Expr { kind: hir::ExprKind::Const { value: promoted }, range: res.expr.range });
+}
+
 fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -1845,12 +1888,15 @@ fn typecheck_binary<'hir, 'ast>(
     lhs: &ast::Expr<'ast>,
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
-    let lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
-    let rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+    let mut lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
+    let mut rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
 
     if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
         return TypeResult::error();
     }
+
+    promote_untyped_constant(ctx, &mut lhs_res, rhs_res.ty);
+    promote_untyped_constant(ctx, &mut rhs_res, lhs_res.ty);
 
     let src = ctx.src(range);
     err::internal_not_implemented(&mut ctx.emit, src, "binary typecheck");
