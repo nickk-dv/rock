@@ -644,10 +644,10 @@ pub fn float_range_check<'hir>(
 }
 
 impl<'hir> hir::ConstValue<'hir> {
-    fn from_u64(val: u64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
+    pub fn from_u64(val: u64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
         hir::ConstValue::Int { val, neg: false, int_ty }
     }
-    fn from_i64(val: i64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
+    pub fn from_i64(val: i64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
         if val < 0 {
             hir::ConstValue::Int { val: -val as u64, neg: true, int_ty }
         } else {
@@ -680,7 +680,7 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_char(&self) -> char {
+    pub fn into_char(&self) -> char {
         match *self {
             hir::ConstValue::Char { val } => val,
             _ => unreachable!(),
@@ -722,15 +722,21 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    fn into_float(&self) -> f64 {
+    pub fn into_float(&self) -> f64 {
         match *self {
             hir::ConstValue::Float { val, .. } => val,
             _ => unreachable!(),
         }
     }
-    fn into_float_ty(&self) -> hir::FloatType {
+    pub fn into_float_ty(&self) -> hir::FloatType {
         match *self {
             hir::ConstValue::Float { float_ty, .. } => float_ty,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_enum(&self) -> &hir::ConstVariant {
+        match *self {
+            hir::ConstValue::Variant { variant } => variant,
             _ => unreachable!(),
         }
     }
