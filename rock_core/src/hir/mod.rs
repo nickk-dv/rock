@@ -523,37 +523,42 @@ crate::enum_as_str! {
     }
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Copy, Clone)]
 #[rustfmt::skip]
+#[derive(Copy, Clone)]
+#[allow(non_camel_case_types)]
 pub enum UnOp {
     Neg_Int, Neg_Float,
     BitNot,
     LogicNot,
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Copy, Clone)]
 #[rustfmt::skip]
+#[derive(Copy, Clone)]
+#[allow(non_camel_case_types)]
 pub enum BinOp {
     Add_Int, Add_Float,
     Sub_Int, Sub_Float,
     Mul_Int, Mul_Float,
-    Div_IntS, Div_IntU, Div_Float,
-    Rem_IntS, Rem_IntU,
-    BitAnd,
-    BitOr,
-    BitXor,
-    BitShl,
-    BitShr_IntS, BitShr_IntU,
-    IsEq_Int, IsEq_Float,
-    NotEq_Int, NotEq_Float,
-    Less_IntS, Less_IntU, Less_Float,
-    LessEq_IntS, LessEq_IntU, LessEq_Float,
-    Greater_IntS, Greater_IntU, Greater_Float,
-    GreaterEq_IntS, GreaterEq_IntU, GreaterEq_Float,
-    LogicAnd, LogicAnd_32,
-    LogicOr, LogicOr_32,
+    Div_Int(IntType), Div_Float,
+    Rem_Int(IntType),
+    BitAnd, BitOr, BitXor,
+    BitShl, BitShr(IntType),
+    Eq_Int_Other(BoolType),
+    NotEq_Int_Other(BoolType),
+    Cmp_Int(CmpPred, BoolType, IntType),
+    Cmp_Float(CmpPred, BoolType, FloatType),
+    LogicAnd(BoolType),
+    LogicOr(BoolType),
+}
+
+#[derive(Copy, Clone)]
+pub enum CmpPred {
+    Eq,
+    NotEq,
+    Less,
+    LessEq,
+    Greater,
+    GreaterEq,
 }
 
 #[derive(Copy, Clone)]
@@ -983,21 +988,32 @@ impl BinOp {
             BinOp::Add_Int | BinOp::Add_Float => "+",
             BinOp::Sub_Int | BinOp::Sub_Float => "-",
             BinOp::Mul_Int | BinOp::Mul_Float => "*",
-            BinOp::Div_IntS | BinOp::Div_IntU | BinOp::Div_Float => "/",
-            BinOp::Rem_IntS | BinOp::Rem_IntU => "%",
+            BinOp::Div_Int(_) | BinOp::Div_Float => "/",
+            BinOp::Rem_Int(_) => "%",
             BinOp::BitAnd => "&",
             BinOp::BitOr => "|",
             BinOp::BitXor => "^",
             BinOp::BitShl => "<<",
-            BinOp::BitShr_IntS | BinOp::BitShr_IntU => ">>",
-            BinOp::IsEq_Int | BinOp::IsEq_Float => "==",
-            BinOp::NotEq_Int | BinOp::NotEq_Float => "!=",
-            BinOp::Less_IntS | BinOp::Less_IntU | BinOp::Less_Float => "<",
-            BinOp::LessEq_IntS | BinOp::LessEq_IntU | BinOp::LessEq_Float => "<=",
-            BinOp::Greater_IntS | BinOp::Greater_IntU | BinOp::Greater_Float => ">",
-            BinOp::GreaterEq_IntS | BinOp::GreaterEq_IntU | BinOp::GreaterEq_Float => ">=",
-            BinOp::LogicAnd | BinOp::LogicAnd_32 => "&&",
-            BinOp::LogicOr | BinOp::LogicOr_32 => "||",
+            BinOp::BitShr(_) => ">>",
+            BinOp::Eq_Int_Other(_) => "==",
+            BinOp::NotEq_Int_Other(_) => "!=",
+            BinOp::Cmp_Int(pred, _, _) => pred.as_str(),
+            BinOp::Cmp_Float(pred, _, _) => pred.as_str(),
+            BinOp::LogicAnd(_) => "&&",
+            BinOp::LogicOr(_) => "||",
+        }
+    }
+}
+
+impl CmpPred {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CmpPred::Eq => "==",
+            CmpPred::NotEq => "!=",
+            CmpPred::Less => "<",
+            CmpPred::LessEq => "<=",
+            CmpPred::Greater => ">",
+            CmpPred::GreaterEq => ">=",
         }
     }
 }

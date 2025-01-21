@@ -62,7 +62,7 @@ pub struct CodegenCache {
     int_1: llvm::Type,
     int_8: llvm::Type,
     int_16: llvm::Type,
-    pub int_32: llvm::Type,
+    int_32: llvm::Type,
     int_64: llvm::Type,
     float_32: llvm::Type,
     float_64: llvm::Type,

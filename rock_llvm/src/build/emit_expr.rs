@@ -237,22 +237,12 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
     for (idx, branch) in if_.branches.iter().enumerate() {
         cg.build.position_at_end(branch_bb);
         let cond = codegen_expr_value(cg, branch.cond);
+        let cond = convert_bool_to_i1(cg, cond);
 
         let body_bb = cg.append_bb("if_body");
         let last_branch = idx + 1 == if_.branches.len() && if_.else_block.is_none();
         branch_bb = if !last_branch { cg.append_bb("if_branch") } else { exit_bb };
 
-        //@bloat, copy pasted in other places
-        let cond = if llvm::type_equals(llvm::typeof_value(cond), cg.cache.int_32) {
-            codegen_binary_op(
-                cg,
-                hir::BinOp::IsEq_Int,
-                cond,
-                llvm::const_int(cg.int_type(hir::IntType::S32), 1, false),
-            )
-        } else {
-            cond
-        };
         cg.build.cond_br(cond, body_bb, branch_bb);
         cg.build.position_at_end(body_bb);
         emit_stmt::codegen_block(cg, expect, branch.block);
@@ -518,7 +508,12 @@ fn codegen_index<'c>(
     if let Some(bound) = bound {
         let check_bb = cg.append_bb("bounds_check");
         let exit_bb = cg.append_bb("bounds_exit");
-        let cond = codegen_binary_op(cg, hir::BinOp::GreaterEq_IntU, index_val, bound);
+        let cond = codegen_binary_op(
+            cg,
+            hir::BinOp::Cmp_Int(hir::CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::Usize),
+            index_val,
+            bound,
+        );
         cg.build.cond_br(cond, check_bb, exit_bb);
         cg.build.position_at_end(check_bb);
         //@insert panic call (cannot get reference to it currently)
@@ -880,7 +875,12 @@ fn codegen_array_repeat<'c>(
     cg.build.position_at_end(entry_bb);
     let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
     let repeat_val = cg.const_usize(array_repeat.len);
-    let cond = codegen_binary_op(cg, hir::BinOp::Less_IntU, count_val, repeat_val);
+    let cond = codegen_binary_op(
+        cg,
+        hir::BinOp::Cmp_Int(hir::CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
+        count_val,
+        repeat_val,
+    );
     cg.build.cond_br(cond, body_bb, exit_bb);
 
     cg.build.position_at_end(body_bb);
@@ -944,16 +944,8 @@ fn codegen_binary<'c>(
 ) -> llvm::Value {
     let lhs = codegen_expr_value(cg, lhs);
     match op {
-        hir::BinOp::LogicAnd => {
-            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BoolType::Bool)
-        }
-        hir::BinOp::LogicAnd_32 => {
-            codegen_binary_circuit(cg, op, lhs, rhs, false, hir::BoolType::Bool32)
-        }
-        hir::BinOp::LogicOr => codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BoolType::Bool),
-        hir::BinOp::LogicOr_32 => {
-            codegen_binary_circuit(cg, op, lhs, rhs, true, hir::BoolType::Bool32)
-        }
+        hir::BinOp::LogicAnd(bool_ty) => codegen_binary_circuit(cg, op, lhs, rhs, false, bool_ty),
+        hir::BinOp::LogicOr(bool_ty) => codegen_binary_circuit(cg, op, lhs, rhs, true, bool_ty),
         _ => {
             let rhs = codegen_expr_value(cg, rhs);
             codegen_binary_op(cg, op, lhs, rhs)
@@ -973,21 +965,11 @@ fn codegen_binary_circuit<'c>(
     let next_name = if exit_val { "or_next" } else { "and_next" };
     let exit_name = if exit_val { "or_exit" } else { "and_exit" };
 
+    let start_bb = cg.build.insert_bb();
     let next_bb = cg.append_bb(next_name);
     let exit_bb = cg.append_bb(exit_name);
-    let start_bb = cg.build.insert_bb();
 
-    //@bloat, copy pasted in other places
-    let lhs_cond = if llvm::type_equals(llvm::typeof_value(lhs), cg.cache.int_32) {
-        codegen_binary_op(
-            cg,
-            hir::BinOp::IsEq_Int,
-            lhs,
-            llvm::const_int(cg.int_type(hir::IntType::S32), 1, false),
-        )
-    } else {
-        lhs
-    };
+    let lhs_cond = convert_bool_to_i1(cg, lhs);
     let then_bb = if exit_val { exit_bb } else { next_bb };
     let else_bb = if exit_val { next_bb } else { exit_bb };
     cg.build.cond_br(lhs_cond, then_bb, else_bb);
@@ -1013,7 +995,7 @@ pub fn codegen_binary_op(
     lhs: llvm::Value,
     rhs: llvm::Value,
 ) -> llvm::Value {
-    use llvm::{FloatPred, IntPred, OpCode};
+    use llvm::{IntPred, OpCode};
     match op {
         hir::BinOp::Add_Int => cg.build.bin_op(OpCode::LLVMAdd, lhs, rhs, "bin"),
         hir::BinOp::Add_Float => cg.build.bin_op(OpCode::LLVMFAdd, lhs, rhs, "bin"),
@@ -1021,38 +1003,109 @@ pub fn codegen_binary_op(
         hir::BinOp::Sub_Float => cg.build.bin_op(OpCode::LLVMFSub, lhs, rhs, "bin"),
         hir::BinOp::Mul_Int => cg.build.bin_op(OpCode::LLVMMul, lhs, rhs, "bin"),
         hir::BinOp::Mul_Float => cg.build.bin_op(OpCode::LLVMFMul, lhs, rhs, "bin"),
-        hir::BinOp::Div_IntS => cg.build.bin_op(OpCode::LLVMSDiv, lhs, rhs, "bin"),
-        hir::BinOp::Div_IntU => cg.build.bin_op(OpCode::LLVMUDiv, lhs, rhs, "bin"),
+        hir::BinOp::Div_Int(int_ty) => {
+            let op = if int_ty.is_signed() { OpCode::LLVMSDiv } else { OpCode::LLVMUDiv };
+            cg.build.bin_op(op, lhs, rhs, "bin")
+        }
         hir::BinOp::Div_Float => cg.build.bin_op(OpCode::LLVMFDiv, lhs, rhs, "bin"),
-        hir::BinOp::Rem_IntS => cg.build.bin_op(OpCode::LLVMSRem, lhs, rhs, "bin"),
-        hir::BinOp::Rem_IntU => cg.build.bin_op(OpCode::LLVMURem, lhs, rhs, "bin"),
+        hir::BinOp::Rem_Int(int_ty) => {
+            let op = if int_ty.is_signed() { OpCode::LLVMSRem } else { OpCode::LLVMURem };
+            cg.build.bin_op(op, lhs, rhs, "bin")
+        }
         hir::BinOp::BitAnd => cg.build.bin_op(OpCode::LLVMAnd, lhs, rhs, "bin"),
         hir::BinOp::BitOr => cg.build.bin_op(OpCode::LLVMOr, lhs, rhs, "bin"),
         hir::BinOp::BitXor => cg.build.bin_op(OpCode::LLVMXor, lhs, rhs, "bin"),
         hir::BinOp::BitShl => cg.build.bin_op(OpCode::LLVMShl, lhs, rhs, "bin"),
-        hir::BinOp::BitShr_IntS => cg.build.bin_op(OpCode::LLVMAShr, lhs, rhs, "bin"),
-        hir::BinOp::BitShr_IntU => cg.build.bin_op(OpCode::LLVMLShr, lhs, rhs, "bin"),
-        hir::BinOp::IsEq_Int => cg.build.icmp(IntPred::LLVMIntEQ, lhs, rhs, "bin"),
-        hir::BinOp::IsEq_Float => cg.build.fcmp(FloatPred::LLVMRealOEQ, lhs, rhs, "bin"),
-        hir::BinOp::NotEq_Int => cg.build.icmp(IntPred::LLVMIntNE, lhs, rhs, "bin"),
-        hir::BinOp::NotEq_Float => cg.build.fcmp(FloatPred::LLVMRealONE, lhs, rhs, "bin"),
-        hir::BinOp::Less_IntS => cg.build.icmp(IntPred::LLVMIntSLT, lhs, rhs, "bin"),
-        hir::BinOp::Less_IntU => cg.build.icmp(IntPred::LLVMIntULT, lhs, rhs, "bin"),
-        hir::BinOp::Less_Float => cg.build.fcmp(FloatPred::LLVMRealOLT, lhs, rhs, "bin"),
-        hir::BinOp::LessEq_IntS => cg.build.icmp(IntPred::LLVMIntSLE, lhs, rhs, "bin"),
-        hir::BinOp::LessEq_IntU => cg.build.icmp(IntPred::LLVMIntULE, lhs, rhs, "bin"),
-        hir::BinOp::LessEq_Float => cg.build.fcmp(FloatPred::LLVMRealOLE, lhs, rhs, "bin"),
-        hir::BinOp::Greater_IntS => cg.build.icmp(IntPred::LLVMIntSGT, lhs, rhs, "bin"),
-        hir::BinOp::Greater_IntU => cg.build.icmp(IntPred::LLVMIntUGT, lhs, rhs, "bin"),
-        hir::BinOp::Greater_Float => cg.build.fcmp(FloatPred::LLVMRealOGT, lhs, rhs, "bin"),
-        hir::BinOp::GreaterEq_IntS => cg.build.icmp(IntPred::LLVMIntSGE, lhs, rhs, "bin"),
-        hir::BinOp::GreaterEq_IntU => cg.build.icmp(IntPred::LLVMIntUGE, lhs, rhs, "bin"),
-        hir::BinOp::GreaterEq_Float => cg.build.fcmp(FloatPred::LLVMRealOGE, lhs, rhs, "bin"),
-        hir::BinOp::LogicAnd | hir::BinOp::LogicAnd_32 => {
-            cg.build.bin_op(llvm::OpCode::LLVMAnd, lhs, rhs, "bin")
+        hir::BinOp::BitShr(int_ty) => {
+            let op = if int_ty.is_signed() { OpCode::LLVMAShr } else { OpCode::LLVMLShr };
+            cg.build.bin_op(op, lhs, rhs, "bin")
         }
-        hir::BinOp::LogicOr | hir::BinOp::LogicOr_32 => {
-            cg.build.bin_op(llvm::OpCode::LLVMOr, lhs, rhs, "bin")
+        hir::BinOp::Eq_Int_Other(bool_ty) => {
+            let value = cg.build.icmp(IntPred::LLVMIntEQ, lhs, rhs, "bin");
+            convert_i1_to_bool(cg, value, bool_ty)
+        }
+        hir::BinOp::NotEq_Int_Other(bool_ty) => {
+            let value = cg.build.icmp(IntPred::LLVMIntNE, lhs, rhs, "bin");
+            convert_i1_to_bool(cg, value, bool_ty)
+        }
+        hir::BinOp::Cmp_Int(pred, bool_ty, int_ty) => {
+            let pred = cmp_int_predicate(pred, int_ty);
+            let value = cg.build.icmp(pred, lhs, rhs, "bin");
+            convert_i1_to_bool(cg, value, bool_ty)
+        }
+        hir::BinOp::Cmp_Float(pred, bool_ty, _) => {
+            let pred = cmp_float_predicate(pred);
+            let value = cg.build.fcmp(pred, lhs, rhs, "bin");
+            convert_i1_to_bool(cg, value, bool_ty)
+        }
+        hir::BinOp::LogicAnd(_) => cg.build.bin_op(llvm::OpCode::LLVMAnd, lhs, rhs, "bin"),
+        hir::BinOp::LogicOr(_) => cg.build.bin_op(llvm::OpCode::LLVMOr, lhs, rhs, "bin"),
+    }
+}
+
+fn cmp_int_predicate(pred: hir::CmpPred, int_ty: hir::IntType) -> llvm::IntPred {
+    use hir::CmpPred;
+    use llvm::IntPred;
+    match pred {
+        CmpPred::Eq => IntPred::LLVMIntEQ,
+        CmpPred::NotEq => IntPred::LLVMIntNE,
+        CmpPred::Less => {
+            if int_ty.is_signed() {
+                IntPred::LLVMIntSLT
+            } else {
+                IntPred::LLVMIntULT
+            }
+        }
+        CmpPred::LessEq => {
+            if int_ty.is_signed() {
+                IntPred::LLVMIntSLE
+            } else {
+                IntPred::LLVMIntULE
+            }
+        }
+        CmpPred::Greater => {
+            if int_ty.is_signed() {
+                IntPred::LLVMIntSGT
+            } else {
+                IntPred::LLVMIntUGT
+            }
+        }
+        CmpPred::GreaterEq => {
+            if int_ty.is_signed() {
+                IntPred::LLVMIntSGE
+            } else {
+                IntPred::LLVMIntUGE
+            }
         }
     }
+}
+
+fn cmp_float_predicate(pred: hir::CmpPred) -> llvm::FloatPred {
+    use hir::CmpPred;
+    use llvm::FloatPred;
+    match pred {
+        CmpPred::Eq => FloatPred::LLVMRealOEQ,
+        CmpPred::NotEq => FloatPred::LLVMRealONE,
+        CmpPred::Less => FloatPred::LLVMRealOLT,
+        CmpPred::LessEq => FloatPred::LLVMRealOLE,
+        CmpPred::Greater => FloatPred::LLVMRealOGT,
+        CmpPred::GreaterEq => FloatPred::LLVMRealOGE,
+    }
+}
+
+fn convert_i1_to_bool(cg: &mut Codegen, val: llvm::Value, bool_ty: hir::BoolType) -> llvm::Value {
+    if bool_ty == hir::BoolType::Bool {
+        return val;
+    }
+    let into_ty = cg.bool_type(bool_ty);
+    cg.build.cast(llvm::OpCode::LLVMZExt, val, into_ty, "i1_to_bool")
+}
+
+fn convert_bool_to_i1(cg: &mut Codegen, val: llvm::Value) -> llvm::Value {
+    let into_ty = llvm::typeof_value(val);
+    if llvm::type_equals(into_ty, cg.bool_type(hir::BoolType::Bool)) {
+        return val;
+    }
+    let one = llvm::const_int(into_ty, 1, false);
+    cg.build.icmp(llvm::IntPred::LLVMIntEQ, val, one, "bool_to_i1")
 }
