@@ -453,7 +453,7 @@ token_gen! {
     [^]      | "^"      | Caret        | BIN[BinOp::BitXor]
     [<<]     | "<<"     | Shl          | BIN[BinOp::BitShl]
     [>>]     | ">>"     | Shr          | BIN[BinOp::BitShr]
-    [==]     | "=="     | IsEq         | BIN[BinOp::IsEq]
+    [==]     | "=="     | Eq           | BIN[BinOp::Eq]
     [!=]     | "!="     | NotEq        | BIN[BinOp::NotEq]
     [<]      | "<"      | Less         | BIN[BinOp::Less]
     [<=]     | "<="     | LessEq       | BIN[BinOp::LessEq]

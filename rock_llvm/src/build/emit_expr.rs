@@ -927,12 +927,15 @@ fn codegen_unary<'c>(
     rhs: &hir::Expr<'c>,
 ) -> llvm::Value {
     let rhs = codegen_expr_value(cg, rhs);
-
     match op {
         hir::UnOp::Neg_Int => cg.build.neg(rhs, "un"),
         hir::UnOp::Neg_Float => cg.build.fneg(rhs, "un"),
         hir::UnOp::BitNot => cg.build.not(rhs, "un"),
-        hir::UnOp::LogicNot => cg.build.not(rhs, "un"),
+        hir::UnOp::LogicNot => {
+            let int_ty = llvm::typeof_value(rhs);
+            let one = llvm::const_int(int_ty, 1, false);
+            cg.build.bin_op(llvm::OpCode::LLVMXor, rhs, one, "un")
+        }
     }
 }
 

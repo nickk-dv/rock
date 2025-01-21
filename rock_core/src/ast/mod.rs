@@ -523,7 +523,7 @@ crate::enum_as_str! {
         BitXor "^",
         BitShl "<<",
         BitShr ">>",
-        IsEq "==",
+        Eq "==",
         NotEq "!=",
         Less "<",
         LessEq "<=",
@@ -572,7 +572,7 @@ impl BinOp {
         match self {
             BinOp::LogicOr => 1,
             BinOp::LogicAnd => 2,
-            BinOp::IsEq
+            BinOp::Eq
             | BinOp::NotEq
             | BinOp::Less
             | BinOp::LessEq

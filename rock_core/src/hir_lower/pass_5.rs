@@ -289,18 +289,24 @@ pub fn type_expectation_check(
 }
 
 pub fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
-    if !ty.is_error() && !ty.is_int() {
-        let src = ctx.src(range);
-        let ty = type_format(ctx, ty);
-        err::tycheck_expected_integer(&mut ctx.emit, src, ty.as_str());
+    match ty {
+        hir::Type::Error | hir::Type::Int(_) => {}
+        _ => {
+            let src = ctx.src(range);
+            let ty = type_format(ctx, ty);
+            err::tycheck_expected_integer(&mut ctx.emit, src, ty.as_str());
+        }
     }
 }
 
 pub fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
-    if !ty.is_error() && !ty.is_bool() {
-        let src = ctx.src(range);
-        let ty = type_format(ctx, ty);
-        err::tycheck_expected_boolean(&mut ctx.emit, src, ty.as_str());
+    match ty {
+        hir::Type::Error | hir::Type::Bool(_) => {}
+        _ => {
+            let src = ctx.src(range);
+            let ty = type_format(ctx, ty);
+            err::tycheck_expected_boolean(&mut ctx.emit, src, ty.as_str());
+        }
     }
 }
 
@@ -1746,118 +1752,67 @@ fn typecheck_unary<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    let op = match op {
-        ast::UnOp::Neg => {
-            if rhs_res.ty.is_int_signed() {
-                if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-                    let int_ty = value.into_int_ty();
-                    let src = ctx.src(range);
-                    if let Ok(value) = fold::int_range_check(ctx, src, -value.into_int(), int_ty) {
-                        return TypeResult::new(
-                            hir::Type::Int(int_ty),
-                            hir::ExprKind::Const { value },
-                        );
-                    } else {
-                        return TypeResult::error();
-                    }
-                }
-                hir::UnOp::Neg_Int
-            } else if rhs_res.ty.is_float() {
-                if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-                    let (val, float_ty) = value.expect_float();
-                    let src = ctx.src(range);
-                    if let Ok(value) = fold::float_range_check(ctx, src, -val, float_ty) {
-                        return TypeResult::new(
-                            hir::Type::Float(float_ty),
-                            hir::ExprKind::Const { value },
-                        );
-                    } else {
-                        return TypeResult::error();
-                    }
-                }
-                hir::UnOp::Neg_Float
-            } else {
-                return cannot_apply(ctx, op, op_range, rhs_res.ty);
-            }
-        }
-        ast::UnOp::BitNot => {
-            if rhs_res.ty.is_int_untyped() || !rhs_res.ty.is_int() {
-                return cannot_apply(ctx, op, op_range, rhs_res.ty);
-            }
-            if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-                let (val, neg, int_ty) = value.expect_int();
-                if int_ty.is_signed() {
-                    let src = ctx.src(range);
-                    err::internal_not_implemented(&mut ctx.emit, src, "unary `~` on signed int");
-                    return TypeResult::error();
-                }
-                let bit_count = match int_ty {
-                    IntType::S8 | IntType::U8 => 8,
-                    IntType::S16 | IntType::U16 => 16,
-                    IntType::S32 | IntType::U32 => 32,
-                    IntType::S64 | IntType::U64 => 64,
-                    IntType::Ssize | IntType::Usize => {
-                        8 * ctx.session.config.target_ptr_width.ptr_size()
-                    }
-                    IntType::Untyped => unreachable!(),
-                };
-                let mut invert = !val;
-                invert &= u64::MAX >> (64 - bit_count);
-                let value = hir::ConstValue::Int { val: invert, neg, int_ty };
-                return TypeResult::new(hir::Type::Int(int_ty), hir::ExprKind::Const { value });
-            }
-            hir::UnOp::BitNot
-        }
-        ast::UnOp::LogicNot => {
-            if !rhs_res.ty.is_bool() {
-                return cannot_apply(ctx, op, op_range, rhs_res.ty);
-            }
-            if let hir::ExprKind::Const { value } = rhs_res.expr.kind {
-                let (val, bool_ty) = value.expect_bool();
-                let value = hir::ConstValue::Bool { val: !val, bool_ty };
-                return TypeResult::new(hir::Type::Bool(bool_ty), hir::ExprKind::Const { value });
-            }
-            hir::UnOp::LogicNot
-        }
+    let hir_op = match op {
+        ast::UnOp::Neg => match rhs_res.ty {
+            hir::Type::Int(int_ty) if int_ty.is_signed() => Ok(hir::UnOp::Neg_Int),
+            hir::Type::Float(_) => Ok(hir::UnOp::Neg_Float),
+            _ => Err(()),
+        },
+        ast::UnOp::BitNot => match rhs_res.ty {
+            hir::Type::Int(IntType::Untyped) => Err(()),
+            hir::Type::Int(_) => Ok(hir::UnOp::BitNot),
+            _ => Err(()),
+        },
+        ast::UnOp::LogicNot => match rhs_res.ty {
+            hir::Type::Bool(_) => Ok(hir::UnOp::LogicNot),
+            _ => Err(()),
+        },
     };
 
-    let unary = hir::ExprKind::Unary { op, rhs: rhs_res.expr };
-    return TypeResult::new(rhs_res.ty, unary);
-
-    fn cannot_apply<'h>(
-        ctx: &mut HirCtx<'h, '_, '_>,
-        op: ast::UnOp,
-        op_range: TextRange,
-        rhs_ty: hir::Type,
-    ) -> TypeResult<'h> {
+    if let Ok(hir_op) = hir_op {
+        if let hir::ExprKind::Const { value: rhs } = rhs_res.expr.kind {
+            if let Ok(value) = constfold_unary(ctx, range, hir_op, rhs) {
+                return TypeResult::new(rhs_res.ty, hir::ExprKind::Const { value });
+            } else {
+                return TypeResult::error();
+            }
+        }
+        let unary = hir::ExprKind::Unary { op: hir_op, rhs: rhs_res.expr };
+        TypeResult::new(rhs_res.ty, unary)
+    } else {
         let src = ctx.src(op_range);
-        let rhs_ty = type_format(ctx, rhs_ty);
+        let rhs_ty = type_format(ctx, rhs_res.ty);
         err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
-        return TypeResult::error();
+        TypeResult::error()
     }
 }
 
-impl<'hir> hir::Type<'hir> {
-    fn is_int(&self) -> bool {
-        matches!(self, hir::Type::Int(_))
-    }
-    fn is_int_untyped(&self) -> bool {
-        matches!(self, hir::Type::Int(IntType::Untyped))
-    }
-    fn is_int_signed(&self) -> bool {
-        matches!(self, hir::Type::Int(int_ty) if int_ty.is_signed())
-    }
-    fn is_float(&self) -> bool {
-        matches!(self, hir::Type::Float(_))
-    }
-    fn is_float_untyped(&self) -> bool {
-        matches!(self, hir::Type::Float(FloatType::Untyped))
-    }
-    fn is_bool(&self) -> bool {
-        matches!(self, hir::Type::Bool(_))
-    }
-    fn is_bool_untyped(&self) -> bool {
-        matches!(self, hir::Type::Bool(BoolType::Untyped))
+fn constfold_unary<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    range: TextRange,
+    op: hir::UnOp,
+    rhs: hir::ConstValue<'hir>,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let src = ctx.src(range);
+    match op {
+        hir::UnOp::Neg_Int => {
+            let int_ty = rhs.into_int_ty();
+            let val = -rhs.into_int();
+            fold::int_range_check(ctx, src, val, int_ty)
+        }
+        hir::UnOp::Neg_Float => {
+            let float_ty = rhs.into_float_ty();
+            let val = -rhs.into_float();
+            fold::float_range_check(ctx, src, val, float_ty)
+        }
+        hir::UnOp::BitNot => {
+            err::internal_not_implemented(&mut ctx.emit, src, "unary `~` constant folding");
+            Err(())
+        }
+        hir::UnOp::LogicNot => {
+            let (val, bool_ty) = rhs.expect_bool();
+            Ok(hir::ConstValue::Bool { val: !val, bool_ty })
+        }
     }
 }
 
@@ -1865,6 +1820,7 @@ fn promote_untyped_constant<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     res: &mut ExprResult<'hir>,
     with: hir::Type<'hir>,
+    default: bool,
 ) {
     let value = match res.expr.kind {
         hir::ExprKind::Const { value } => value,
@@ -1945,8 +1901,8 @@ fn typecheck_binary<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    promote_untyped_constant(ctx, &mut lhs_res, rhs_res.ty);
-    promote_untyped_constant(ctx, &mut rhs_res, lhs_res.ty);
+    promote_untyped_constant(ctx, &mut lhs_res, rhs_res.ty, false);
+    promote_untyped_constant(ctx, &mut rhs_res, lhs_res.ty, false);
 
     //@change this rule for bitshifts?
     if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
@@ -1958,7 +1914,7 @@ fn typecheck_binary<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    let bin_res = match op {
+    let hir_op = match op {
         ast::BinOp::Add => match lhs_res.ty {
             hir::Type::Int(_) => Ok(hir::BinOp::Add_Int),
             hir::Type::Float(_) => Ok(hir::BinOp::Add_Float),
@@ -2003,7 +1959,7 @@ fn typecheck_binary<'hir, 'ast>(
             hir::Type::Int(int_ty) => Ok(hir::BinOp::BitShr(int_ty)),
             _ => Err(()),
         },
-        ast::BinOp::IsEq => match lhs_res.ty {
+        ast::BinOp::Eq => match lhs_res.ty {
             hir::Type::Char | hir::Type::Bool(_) => {
                 Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
             }
@@ -2089,50 +2045,42 @@ fn typecheck_binary<'hir, 'ast>(
         },
     };
 
-    match bin_res {
-        Ok(hir_op) => {
-            let res_ty = match op {
-                ast::BinOp::IsEq
-                | ast::BinOp::NotEq
-                | ast::BinOp::Less
-                | ast::BinOp::LessEq
-                | ast::BinOp::Greater
-                | ast::BinOp::GreaterEq => match expect {
-                    Expectation::HasType(hir::Type::Bool(bool_ty), None) => {
-                        hir::Type::Bool(bool_ty)
-                    }
-                    _ => hir::Type::Bool(BoolType::Bool),
-                },
-                _ => lhs_res.ty,
-            };
+    if let Ok(hir_op) = hir_op {
+        let res_ty = match op {
+            ast::BinOp::Eq
+            | ast::BinOp::NotEq
+            | ast::BinOp::Less
+            | ast::BinOp::LessEq
+            | ast::BinOp::Greater
+            | ast::BinOp::GreaterEq => hir::Type::Bool(expect.infer_bool()),
+            _ => lhs_res.ty,
+        };
 
-            if let hir::ExprKind::Const { value: lhs } = lhs_res.expr.kind {
-                if let hir::ExprKind::Const { value: rhs } = rhs_res.expr.kind {
-                    if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhs) {
-                        return TypeResult::new(res_ty, hir::ExprKind::Const { value });
-                    } else {
-                        return TypeResult::error();
-                    }
+        if let hir::ExprKind::Const { value: lhs } = lhs_res.expr.kind {
+            if let hir::ExprKind::Const { value: rhs } = rhs_res.expr.kind {
+                if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhs) {
+                    return TypeResult::new(res_ty, hir::ExprKind::Const { value });
+                } else {
+                    return TypeResult::error();
                 }
             }
+        }
 
-            let kind = hir::ExprKind::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
-            TypeResult::new(res_ty, kind)
-        }
-        Err(()) => {
-            let op_len = op.as_str().len() as u32;
-            let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
-            let lhs_ty = type_format(ctx, lhs_res.ty);
-            let rhs_ty = type_format(ctx, rhs_res.ty);
-            err::tycheck_bin_cannot_apply(
-                &mut ctx.emit,
-                src,
-                op.as_str(),
-                lhs_ty.as_str(),
-                rhs_ty.as_str(),
-            );
-            TypeResult::error()
-        }
+        let binary = hir::ExprKind::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
+        TypeResult::new(res_ty, binary)
+    } else {
+        let op_len = op.as_str().len() as u32;
+        let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
+        let lhs_ty = type_format(ctx, lhs_res.ty);
+        let rhs_ty = type_format(ctx, rhs_res.ty);
+        err::tycheck_bin_cannot_apply(
+            &mut ctx.emit,
+            src,
+            op.as_str(),
+            lhs_ty.as_str(),
+            rhs_ty.as_str(),
+        );
+        TypeResult::error()
     }
 }
 
@@ -2144,7 +2092,6 @@ fn constfold_binary<'hir>(
     rhs: hir::ConstValue<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let src = ctx.src(range);
-
     match op {
         hir::BinOp::Add_Int => {
             let int_ty = lhs.into_int_ty();
