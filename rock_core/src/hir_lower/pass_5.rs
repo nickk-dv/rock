@@ -248,7 +248,6 @@ pub enum Expectation<'hir> {
 
 impl<'hir> Expectation<'hir> {
     pub const USIZE: Expectation<'static> = Expectation::HasType(hir::Type::USIZE, None);
-    pub const BOOL: Expectation<'static> = Expectation::HasType(hir::Type::BOOL, None);
     pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::Void, None);
 
     fn infer_bool(&self) -> BoolType {
@@ -286,6 +285,22 @@ pub fn type_expectation_check(
                 found_ty.as_str(),
             );
         }
+    }
+}
+
+pub fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
+    if !ty.is_error() && !ty.is_int() {
+        let src = ctx.src(range);
+        let ty = type_format(ctx, ty);
+        err::tycheck_expected_integer(&mut ctx.emit, src, ty.as_str());
+    }
+}
+
+pub fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
+    if !ty.is_error() && !ty.is_bool() {
+        let src = ctx.src(range);
+        let ty = type_format(ctx, ty);
+        err::tycheck_expected_boolean(&mut ctx.emit, src, ty.as_str());
     }
 }
 
@@ -546,7 +561,8 @@ fn typecheck_branch<'hir, 'ast>(
     if_type: &mut hir::Type<'hir>,
     branch: &ast::Branch<'ast>,
 ) -> hir::Branch<'hir> {
-    let cond_res = typecheck_expr(ctx, Expectation::BOOL, branch.cond);
+    let cond_res = typecheck_expr(ctx, Expectation::None, branch.cond);
+    check_expect_boolean(ctx, branch.cond.range, cond_res.ty);
     let block_res = typecheck_block(ctx, *expect, branch.block, BlockStatus::None);
     type_unify_control_flow(if_type, block_res.ty);
 
@@ -2594,7 +2610,8 @@ fn typecheck_for<'hir, 'ast>(
             return Some(hir::Stmt::Loop(block));
         }
         ast::ForHeader::Cond(cond) => {
-            let cond_res = typecheck_expr(ctx, Expectation::BOOL, cond);
+            let cond_res = typecheck_expr(ctx, Expectation::None, cond);
+            check_expect_boolean(ctx, cond.range, cond_res.ty);
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
             let branch_cond = hir::Expr {
@@ -2887,29 +2904,13 @@ fn typecheck_for<'hir, 'ast>(
 
             //@use untyped and unify the integer types
             let start_res = typecheck_expr(ctx, Expectation::None, header.start);
+            check_expect_integer(ctx, header.start.range, start_res.ty);
             let end_res = typecheck_expr(ctx, Expectation::None, header.end);
+            check_expect_integer(ctx, header.end.range, end_res.ty);
 
-            let start_int_ty = match start_res.ty {
-                hir::Type::Error => Err(()),
-                hir::Type::Int(int_ty) => Ok(int_ty),
-                _ => {
-                    let src = ctx.src(header.start.range);
-                    let ty = type_format(ctx, start_res.ty);
-                    err::tycheck_for_range_expected_int(&mut ctx.emit, src, ty.as_str());
-                    Err(())
-                }
-            };
-            let end_int_ty = match end_res.ty {
-                hir::Type::Error => Err(()),
-                hir::Type::Int(int_ty) => Ok(int_ty),
-                _ => {
-                    let src = ctx.src(header.end.range);
-                    let ty = type_format(ctx, end_res.ty);
-                    err::tycheck_for_range_expected_int(&mut ctx.emit, src, ty.as_str());
-                    Err(())
-                }
-            };
-            let int_ty = if let (Ok(lhs), Ok(rhs)) = (start_int_ty, end_int_ty) {
+            let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) =
+                (start_res.ty, end_res.ty)
+            {
                 if lhs != rhs {
                     let range = TextRange::new(header.start.range.start(), header.end.range.end());
                     let src = ctx.src(range);

@@ -799,6 +799,16 @@ pub fn tycheck_type_mismatch(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_expected_integer(emit: &mut impl ErrorSink, src: SourceRange, found_ty: &str) {
+    let msg = format!("expected integer type, found `{found_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_expected_boolean(emit: &mut impl ErrorSink, src: SourceRange, found_ty: &str) {
+    let msg = format!("expected boolean type, found `{found_ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_if_missing_else(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "`if` expression is missing an `else` block\n`if` without `else` evaluates to `void` and cannot return a value";
     emit.error(Error::new(msg, src, None));
@@ -1000,11 +1010,6 @@ pub fn tycheck_for_range_ref(emit: &mut impl ErrorSink, src: SourceRange) {
 
 pub fn tycheck_for_range_reverse(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = format!("for range loops don't support reverse iteration");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_for_range_expected_int(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
-    let msg = format!("expected integer type, found `{ty}`");
     emit.error(Error::new(msg, src, None));
 }
 
