@@ -250,6 +250,12 @@ impl<'hir> Expectation<'hir> {
     pub const USIZE: Expectation<'static> = Expectation::HasType(hir::Type::USIZE, None);
     pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::Void, None);
 
+    fn inner_type(&self) -> Option<hir::Type<'hir>> {
+        match self {
+            Expectation::None => None,
+            Expectation::HasType(ty, _) => Some(*ty),
+        }
+    }
     fn infer_bool(&self) -> BoolType {
         match self {
             Expectation::HasType(hir::Type::Bool(bool_ty), _) => *bool_ty,
@@ -444,41 +450,12 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         }
     };
 
-    //@not range checked, int to float not handled
-    //@should only work on untyped!
     if untyped_promote {
-        if let hir::ExprKind::Const { value } = &mut expr_res.kind {
-            expr_res.ty = match value {
-                hir::ConstValue::Bool { bool_ty, .. } => {
-                    *bool_ty = match expect {
-                        Expectation::HasType(hir::Type::Bool(infer), _) => infer,
-                        _ => BoolType::Bool,
-                    };
-                    hir::Type::Bool(*bool_ty)
-                }
-                hir::ConstValue::Int { int_ty, .. } => {
-                    *int_ty = match expect {
-                        Expectation::HasType(hir::Type::Int(infer), _) => infer,
-                        _ => IntType::S32,
-                    };
-                    hir::Type::Int(*int_ty)
-                }
-                hir::ConstValue::Float { float_ty, .. } => {
-                    *float_ty = match expect {
-                        Expectation::HasType(hir::Type::Float(infer), _) => infer,
-                        _ => FloatType::F64,
-                    };
-                    hir::Type::Float(*float_ty)
-                }
-                hir::ConstValue::String { string_ty, .. } => {
-                    *string_ty = match expect {
-                        Expectation::HasType(hir::Type::String(infer), _) => infer,
-                        _ => StringType::String,
-                    };
-                    hir::Type::String(*string_ty)
-                }
-                _ => expr_res.ty,
-            }
+        if let Some((value, ty)) =
+            promote_untyped_constant(ctx, expr.range, expr_res.kind, expect.inner_type(), true)
+        {
+            expr_res.ty = ty;
+            expr_res.kind = hir::ExprKind::Const { value };
         }
     }
 
@@ -1754,7 +1731,9 @@ fn typecheck_unary<'hir, 'ast>(
 
     let hir_op = match op {
         ast::UnOp::Neg => match rhs_res.ty {
-            hir::Type::Int(int_ty) if int_ty.is_signed() => Ok(hir::UnOp::Neg_Int),
+            hir::Type::Int(int_ty) if int_ty.is_signed() || int_ty == IntType::Untyped => {
+                Ok(hir::UnOp::Neg_Int)
+            }
             hir::Type::Float(_) => Ok(hir::UnOp::Neg_Float),
             _ => Err(()),
         },
@@ -1816,71 +1795,89 @@ fn constfold_unary<'hir>(
     }
 }
 
+//@when value range check failed, still return the type
+#[must_use]
 fn promote_untyped_constant<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    res: &mut ExprResult<'hir>,
-    with: hir::Type<'hir>,
+    range: TextRange,
+    expr: hir::ExprKind<'hir>,
+    with: Option<hir::Type<'hir>>,
     default: bool,
-) {
-    let value = match res.expr.kind {
+) -> Option<(hir::ConstValue<'hir>, hir::Type<'hir>)> {
+    let value = match expr {
         hir::ExprKind::Const { value } => value,
-        _ => return,
+        _ => return None,
     };
+    let src = ctx.src(range);
 
     let promoted = match value {
         hir::ConstValue::Int { val, neg, int_ty } => {
             if int_ty != IntType::Untyped {
-                return;
+                return None;
             }
-            //@range check
             match with {
-                hir::Type::Int(IntType::Untyped) => return,
-                hir::Type::Int(with) => hir::ConstValue::Int { val, neg, int_ty: with },
-                hir::Type::Float(with) => {
-                    let val = if neg { -(val as f64) } else { val as f64 };
-                    hir::ConstValue::Float { val, float_ty: with }
+                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
+                    fold::int_range_check(ctx, src, value.into_int(), with)
                 }
-                _ => return,
+                Some(hir::Type::Float(with)) => {
+                    let val = if neg { -(val as f64) } else { val as f64 };
+                    fold::float_range_check(ctx, src, val, with)
+                }
+                _ if default => fold::int_range_check(ctx, src, value.into_int(), IntType::S32),
+                _ => return None,
             }
         }
         hir::ConstValue::Float { val, float_ty } => {
             if float_ty != FloatType::Untyped {
-                return;
+                return None;
             }
-            //@range check
             match with {
-                hir::Type::Float(FloatType::Untyped) => return,
-                hir::Type::Float(with) => hir::ConstValue::Float { val, float_ty: with },
-                _ => return,
+                Some(hir::Type::Float(with)) if with != FloatType::Untyped => {
+                    fold::float_range_check(ctx, src, val, with)
+                }
+                _ if default => fold::float_range_check(ctx, src, val, FloatType::F64),
+                _ => return None,
             }
         }
         hir::ConstValue::Bool { val, bool_ty } => {
             if bool_ty != BoolType::Untyped {
-                return;
+                return None;
             }
             match with {
-                hir::Type::Bool(BoolType::Untyped) => return,
-                hir::Type::Bool(with) => hir::ConstValue::Bool { val, bool_ty: with },
-                _ => return,
+                Some(hir::Type::Bool(with)) if with != BoolType::Untyped => {
+                    Ok(hir::ConstValue::Bool { val, bool_ty: with })
+                }
+                _ if default => Ok(hir::ConstValue::Bool { val, bool_ty: BoolType::Bool }),
+                _ => return None,
             }
         }
         hir::ConstValue::String { val, string_ty } => {
             if string_ty != StringType::Untyped {
-                return;
+                return None;
             }
             match with {
-                hir::Type::String(StringType::Untyped) => return,
-                hir::Type::String(with) => hir::ConstValue::String { val, string_ty: with },
-                _ => return,
+                Some(hir::Type::String(with)) if with != StringType::Untyped => {
+                    Ok(hir::ConstValue::String { val, string_ty: with })
+                }
+                _ if default => Ok(hir::ConstValue::String { val, string_ty: StringType::String }),
+                _ => return None,
             }
         }
-        _ => return,
+        _ => return None,
     };
 
-    res.ty = with;
-    res.expr = ctx
-        .arena
-        .alloc(hir::Expr { kind: hir::ExprKind::Const { value: promoted }, range: res.expr.range });
+    if let Ok(value) = promoted {
+        let ty = match value {
+            hir::ConstValue::Bool { bool_ty, .. } => hir::Type::Bool(bool_ty),
+            hir::ConstValue::Int { int_ty, .. } => hir::Type::Int(int_ty),
+            hir::ConstValue::Float { float_ty, .. } => hir::Type::Float(float_ty),
+            hir::ConstValue::String { string_ty, .. } => hir::Type::String(string_ty),
+            _ => unreachable!(),
+        };
+        Some((value, ty))
+    } else {
+        None
+    }
 }
 
 //@allow `==`, `!=` with rawptr's and references? implicit conversions?
@@ -1901,8 +1898,21 @@ fn typecheck_binary<'hir, 'ast>(
         return TypeResult::error();
     }
 
-    promote_untyped_constant(ctx, &mut lhs_res, rhs_res.ty, false);
-    promote_untyped_constant(ctx, &mut rhs_res, lhs_res.ty, false);
+    let lhs_promote =
+        promote_untyped_constant(ctx, lhs.range, lhs_res.expr.kind, Some(rhs_res.ty), false);
+    let rhs_promote =
+        promote_untyped_constant(ctx, rhs.range, rhs_res.expr.kind, Some(lhs_res.ty), false);
+
+    if let Some((value, ty)) = lhs_promote {
+        lhs_res.ty = ty;
+        lhs_res.expr =
+            ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value }, range: lhs.range });
+    }
+    if let Some((value, ty)) = rhs_promote {
+        rhs_res.ty = ty;
+        rhs_res.expr =
+            ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value }, range: lhs.range });
+    }
 
     //@change this rule for bitshifts?
     if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
