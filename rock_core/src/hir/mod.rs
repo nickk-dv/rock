@@ -4,7 +4,7 @@ use crate::error::SourceRange;
 use crate::intern::{LitID, NameID};
 use crate::session::ModuleID;
 use crate::support::{Arena, AsStr, BitSet};
-use crate::text::TextRange;
+use crate::text::{TextOffset, TextRange};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -225,7 +225,6 @@ pub struct Assign<'hir> {
 #[derive(Copy, Clone)]
 pub struct Expr<'hir> {
     pub kind: ExprKind<'hir>,
-    pub range: TextRange,
 }
 
 #[rustfmt::skip]
@@ -246,7 +245,7 @@ pub enum ExprKind<'hir> {
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
-    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>], start: TextOffset }, //@causes Expr to be 32 bytes!
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array_init: &'hir ArrayInit<'hir> },

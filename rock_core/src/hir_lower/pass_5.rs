@@ -352,12 +352,8 @@ impl<'hir> TypeResult<'hir> {
     fn error() -> TypeResult<'hir> {
         TypeResult { ty: hir::Type::Error, kind: hir::ExprKind::Error, ignore: true }
     }
-    fn into_expr_result(
-        self,
-        ctx: &mut HirCtx<'hir, '_, '_>,
-        range: TextRange,
-    ) -> ExprResult<'hir> {
-        let expr = hir::Expr { kind: self.kind, range };
+    fn into_expr_result(self, ctx: &mut HirCtx<'hir, '_, '_>) -> ExprResult<'hir> {
+        let expr = hir::Expr { kind: self.kind };
         let expr = ctx.arena.alloc(expr);
         ExprResult::new(self.ty, expr)
     }
@@ -462,7 +458,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
     if !expr_res.ignore {
         type_expectation_check(ctx, expr.range, expr_res.ty, expect);
     }
-    expr_res.into_expr_result(ctx, expr.range)
+    expr_res.into_expr_result(ctx)
 }
 
 fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
@@ -572,20 +568,20 @@ fn typecheck_match<'hir, 'ast>(
     let kind_res = super::match_check::match_kind(on_res.ty);
 
     if let Err(true) = kind_res {
-        let src = ctx.src(on_res.expr.range);
+        let src = ctx.src(match_.on_expr.range);
         let ty_fmt = type_format(ctx, on_res.ty);
         err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
     }
 
     let (pat_expect, ref_mut) = match kind_res {
         Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
-            let expect_src = ctx.src(on_res.expr.range);
+            let expect_src = ctx.src(match_.on_expr.range);
             //@gen types not handled
             let enum_ty = hir::Type::Enum(enum_id, &[]);
             (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
         }
         Ok(_) => {
-            let expect_src = ctx.src(on_res.expr.range);
+            let expect_src = ctx.src(match_.on_expr.range);
             (Expectation::HasType(on_res.ty, Some(expect_src)), None)
         }
         Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
@@ -696,7 +692,7 @@ fn typecheck_pat_lit<'hir, 'ast>(
     expr: &ast::Expr<'ast>,
 ) -> PatResult<'hir> {
     let expr_res = typecheck_expr(ctx, expect, expr);
-    let src = ctx.src(expr_res.expr.range);
+    let src = ctx.src(expr.range);
 
     match constant::fold_const_expr(ctx, src, expr_res.expr) {
         Ok(value) => PatResult::new(hir::Pat::Lit(value), expr_res.ty),
@@ -1090,7 +1086,7 @@ fn typecheck_call<'hir, 'ast>(
     args_list: &ast::ArgumentList<'ast>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    check_call_indirect(ctx, target_res, args_list)
+    check_call_indirect(ctx, target.range, target_res, args_list)
 }
 
 fn typecheck_cast<'hir, 'ast>(
@@ -1308,7 +1304,7 @@ fn typecheck_item<'hir, 'ast>(
         }
         ValueID::Proc(proc_id) => {
             if let Some(args_list) = args_list {
-                return check_call_direct(ctx, proc_id, args_list);
+                return check_call_direct(ctx, proc_id, args_list, expr_range.start());
             } else {
                 let data = ctx.registry.proc_data(proc_id);
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
@@ -1364,19 +1360,19 @@ fn typecheck_item<'hir, 'ast>(
     };
 
     let mut target_res = item_res;
-    let mut target_range = expr_range;
 
     //@check segments for having poly types in them + rename
     for &name in fields {
-        let expr_res = target_res.into_expr_result(ctx, target_range);
+        let expr_res = target_res.into_expr_result(ctx);
         let field_res = check_field_from_type(ctx, name.name, expr_res.ty);
         target_res = emit_field_expr(expr_res.expr, field_res);
-        target_range = TextRange::new(expr_range.start(), name.name.range.end());
     }
 
     if let Some(args_list) = args_list {
-        let expr_res = target_res.into_expr_result(ctx, target_range);
-        check_call_indirect(ctx, expr_res, args_list)
+        let expr_res = target_res.into_expr_result(ctx);
+        let target_range =
+            TextRange::new(expr_range.start(), path.segments.last().unwrap().name.range.end());
+        check_call_indirect(ctx, target_range, expr_res, args_list)
     } else {
         target_res
     }
@@ -1910,13 +1906,11 @@ fn typecheck_binary<'hir, 'ast>(
 
     if let Some((value, ty)) = lhs_promote {
         lhs_res.ty = ty;
-        lhs_res.expr =
-            ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value }, range: lhs.range });
+        lhs_res.expr = ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value } });
     }
     if let Some((value, ty)) = rhs_promote {
         rhs_res.ty = ty;
-        rhs_res.expr =
-            ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value }, range: lhs.range });
+        rhs_res.expr = ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value } });
     }
 
     //@change this rule for bitshifts?
@@ -2397,15 +2391,13 @@ fn typecheck_block<'hir, 'ast>(
                 match stmt_res {
                     hir::Stmt::Break | hir::Stmt::Continue => {
                         for block in ctx.scope.local.defer_blocks_loop().iter().copied().rev() {
-                            let kind = hir::ExprKind::Block { block };
-                            let expr = hir::Expr { kind, range: stmt.range }; //@unrelated range
+                            let expr = hir::Expr { kind: hir::ExprKind::Block { block } };
                             ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
                         }
                     }
                     hir::Stmt::Return(_) => {
                         for block in ctx.scope.local.defer_blocks_all().iter().copied().rev() {
-                            let kind = hir::ExprKind::Block { block };
-                            let expr = hir::Expr { kind, range: stmt.range }; //@unrelated range
+                            let expr = hir::Expr { kind: hir::ExprKind::Block { block } };
                             ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
                         }
                     }
@@ -2420,8 +2412,7 @@ fn typecheck_block<'hir, 'ast>(
     // generate defer blocks on exit from non-diverging block
     if let Diverges::Maybe = ctx.scope.local.diverges() {
         for block in ctx.scope.local.defer_blocks_last().iter().copied().rev() {
-            let kind = hir::ExprKind::Block { block };
-            let expr = hir::Expr { kind, range: TextRange::zero() }; //@unrelated range
+            let expr = hir::Expr { kind: hir::ExprKind::Block { block } };
             ctx.cache.stmts.push(hir::Stmt::ExprSemi(ctx.arena.alloc(expr)));
         }
     }
@@ -2576,16 +2567,15 @@ fn typecheck_for<'hir, 'ast>(
 
             let branch_cond = hir::Expr {
                 kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: cond_res.expr },
-                range: TextRange::zero(),
             };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
             let branch = hir::Branch { cond: ctx.arena.alloc(branch_cond), block: branch_block };
             let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
             let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
-            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
+            let expr_if = hir::Expr { kind: kind_if };
 
             let kind_block = hir::ExprKind::Block { block: block_res.block };
-            let expr_block = hir::Expr { kind: kind_block, range: for_.block.range };
+            let expr_block = hir::Expr { kind: kind_block };
 
             let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
             let stmt_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_block));
@@ -2604,14 +2594,14 @@ fn typecheck_for<'hir, 'ast>(
                 Ok(Some(collection)) => match collection.kind {
                     CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
                     CollectionKind::Multi(_) => {
-                        let src = ctx.src(expr_res.expr.range);
+                        let src = ctx.src(header.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
                         err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
                         return None;
                     }
                 },
                 Err(()) => {
-                    let src = ctx.src(expr_res.expr.range);
+                    let src = ctx.src(header.expr.range);
                     let ty_fmt = type_format(ctx, expr_res.ty);
                     err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
                     return None;
@@ -2673,18 +2663,13 @@ fn typecheck_for<'hir, 'ast>(
             let iter_init = if collection.deref.is_some() {
                 expr_res.expr
             } else {
-                ctx.arena.alloc(hir::Expr {
-                    kind: hir::ExprKind::Address { rhs: expr_res.expr },
-                    range: TextRange::zero(),
-                })
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Address { rhs: expr_res.expr } })
             };
             let iter_local = hir::Local { var_id: iter_id, init: hir::LocalInit::Init(iter_init) };
             let stmt_iter = hir::Stmt::Local(ctx.arena.alloc(iter_local));
 
-            let expr_iter_var = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Variable { var_id: iter_id },
-                range: TextRange::zero(),
-            });
+            let expr_iter_var =
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Variable { var_id: iter_id } });
             let expr_iter_len = match collection.kind {
                 CollectionKind::Array(array) => {
                     let len_value = hir::ConstValue::Int {
@@ -2692,10 +2677,7 @@ fn typecheck_for<'hir, 'ast>(
                         neg: false,
                         int_ty: IntType::Usize,
                     };
-                    ctx.arena.alloc(hir::Expr {
-                        kind: hir::ExprKind::Const { value: len_value },
-                        range: TextRange::zero(),
-                    })
+                    ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value: len_value } })
                 }
                 CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr {
                     //always doing deref since `iter` stores &slice
@@ -2706,7 +2688,6 @@ fn typecheck_for<'hir, 'ast>(
                             field: hir::SliceField::Len,
                         },
                     },
-                    range: TextRange::zero(),
                 }),
                 CollectionKind::Multi(_) => unreachable!(),
             };
@@ -2714,13 +2695,11 @@ fn typecheck_for<'hir, 'ast>(
                 kind: hir::ExprKind::Const {
                     value: hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
                 },
-                range: TextRange::zero(),
             });
             let expr_one_usize = ctx.arena.alloc(hir::Expr {
                 kind: hir::ExprKind::Const {
                     value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
                 },
-                range: TextRange::zero(),
             });
 
             // index local:
@@ -2732,10 +2711,8 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
 
             // loop statement:
-            let expr_index_var = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Variable { var_id: index_id },
-                range: TextRange::zero(),
-            });
+            let expr_index_var =
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Variable { var_id: index_id } });
 
             // conditional loop break:
             let cond_rhs = if header.reverse { expr_zero_usize } else { expr_iter_len };
@@ -2746,13 +2723,12 @@ fn typecheck_for<'hir, 'ast>(
             };
             let branch_cond = hir::Expr {
                 kind: hir::ExprKind::Binary { op: cond_op, lhs: expr_index_var, rhs: cond_rhs },
-                range: TextRange::zero(),
             };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
             let branch = hir::Branch { cond: ctx.arena.alloc(branch_cond), block: branch_block };
             let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
             let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
-            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
+            let expr_if = hir::Expr { kind: kind_if };
             let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
 
             // index expression:
@@ -2769,15 +2745,11 @@ fn typecheck_for<'hir, 'ast>(
                 index: expr_index_var,
             };
             let access = ctx.arena.alloc(index_access);
-            let iter_index_expr = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Index { target: expr_iter_var, access },
-                range: TextRange::zero(),
-            });
+            let iter_index_expr = ctx
+                .arena
+                .alloc(hir::Expr { kind: hir::ExprKind::Index { target: expr_iter_var, access } });
             let value_initializer = if header.ref_mut.is_some() {
-                ctx.arena.alloc(hir::Expr {
-                    kind: hir::ExprKind::Address { rhs: iter_index_expr },
-                    range: TextRange::zero(),
-                })
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Address { rhs: iter_index_expr } })
             } else {
                 iter_index_expr
             };
@@ -2799,10 +2771,8 @@ fn typecheck_for<'hir, 'ast>(
                 lhs_ty: hir::Type::USIZE,
             }));
 
-            let expr_for_block = hir::Expr {
-                kind: hir::ExprKind::Block { block: block_res.block },
-                range: for_.block.range,
-            };
+            let expr_for_block =
+                hir::Expr { kind: hir::ExprKind::Block { block: block_res.block } };
             let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
 
             let loop_block = if header.reverse {
@@ -2842,10 +2812,8 @@ fn typecheck_for<'hir, 'ast>(
             ctx.cache.stmts.push(stmt_loop);
             let stmts = ctx.cache.stmts.take(offset, &mut ctx.arena);
 
-            let expr_overall_block = hir::Expr {
-                kind: hir::ExprKind::Block { block: hir::Block { stmts } },
-                range: TextRange::zero(),
-            };
+            let expr_overall_block =
+                hir::Expr { kind: hir::ExprKind::Block { block: hir::Block { stmts } } };
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
             return Some(overall_block);
         }
@@ -2927,26 +2895,17 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
 
             let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
-            let zero = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Const { value: zero },
-                range: TextRange::zero(),
-            });
+            let zero = ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Const { value: zero } });
             let index_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(zero) };
             let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
 
             // loop body block:
-            let expr_start_var = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Variable { var_id: start_id },
-                range: TextRange::zero(),
-            });
-            let expr_end_var = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Variable { var_id: end_id },
-                range: TextRange::zero(),
-            });
-            let expr_index_var = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Variable { var_id: index_id },
-                range: TextRange::zero(),
-            });
+            let expr_start_var =
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Variable { var_id: start_id } });
+            let expr_end_var =
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Variable { var_id: end_id } });
+            let expr_index_var =
+                ctx.arena.alloc(hir::Expr { kind: hir::ExprKind::Variable { var_id: index_id } });
 
             let cond_op = match header.kind {
                 ast::RangeKind::Exclusive => {
@@ -2958,24 +2917,21 @@ fn typecheck_for<'hir, 'ast>(
             };
             let continue_cond = ctx.arena.alloc(hir::Expr {
                 kind: hir::ExprKind::Binary { op: cond_op, lhs: expr_start_var, rhs: expr_end_var },
-                range: TextRange::zero(),
             });
             let break_cond = hir::Expr {
                 kind: hir::ExprKind::Unary { op: hir::UnOp::LogicNot, rhs: continue_cond },
-                range: TextRange::zero(),
             };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
             let branch = hir::Branch { cond: ctx.arena.alloc(break_cond), block: branch_block };
             let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
             let kind_if = hir::ExprKind::If { if_: ctx.arena.alloc(expr_if) };
-            let expr_if = hir::Expr { kind: kind_if, range: TextRange::zero() };
+            let expr_if = hir::Expr { kind: kind_if };
             let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
 
             let expr_one_iter = ctx.arena.alloc(hir::Expr {
                 kind: hir::ExprKind::Const {
                     value: hir::ConstValue::Int { val: 1, neg: false, int_ty },
                 },
-                range: TextRange::zero(),
             });
             let stmt_value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
@@ -2987,7 +2943,6 @@ fn typecheck_for<'hir, 'ast>(
                 kind: hir::ExprKind::Const {
                     value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
                 },
-                range: TextRange::zero(),
             });
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
@@ -2996,10 +2951,8 @@ fn typecheck_for<'hir, 'ast>(
                 lhs_ty: hir::Type::USIZE,
             }));
 
-            let expr_for_block = hir::Expr {
-                kind: hir::ExprKind::Block { block: block_res.block },
-                range: for_.block.range,
-            };
+            let expr_for_block =
+                hir::Expr { kind: hir::ExprKind::Block { block: block_res.block } };
             let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
 
             let loop_block = if block_diverges {
@@ -3018,10 +2971,8 @@ fn typecheck_for<'hir, 'ast>(
 
             // overall block for entire loop:
             let stmts = ctx.arena.alloc_slice(&[stmt_start, stmt_end, stmt_index, stmt_loop]);
-            let expr_overall_block = hir::Expr {
-                kind: hir::ExprKind::Block { block: hir::Block { stmts } },
-                range: TextRange::zero(),
-            };
+            let expr_overall_block =
+                hir::Expr { kind: hir::ExprKind::Block { block: hir::Block { stmts } } };
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
             return Some(overall_block);
         }
@@ -3031,20 +2982,20 @@ fn typecheck_for<'hir, 'ast>(
 
             //@duplicate code for pattern handling same as `match`
             if let Err(true) = kind_res {
-                let src = ctx.src(on_res.expr.range);
+                let src = ctx.src(header.expr.range);
                 let ty_fmt = type_format(ctx, on_res.ty);
                 err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
             }
 
             let (pat_expect, ref_mut) = match kind_res {
                 Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
-                    let expect_src = ctx.src(on_res.expr.range);
+                    let expect_src = ctx.src(header.expr.range);
                     //@ignored poly_types
                     let enum_ty = hir::Type::Enum(enum_id, &[]);
                     (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
                 }
                 Ok(_) => {
-                    let expect_src = ctx.src(on_res.expr.range);
+                    let expect_src = ctx.src(header.expr.range);
                     (Expectation::HasType(on_res.ty, Some(expect_src)), None)
                 }
                 Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
@@ -3074,10 +3025,9 @@ fn typecheck_for<'hir, 'ast>(
             };
             let match_ = hir::Match { on_expr: on_res.expr, arms };
             let match_ = ctx.arena.alloc(match_);
-            let match_ = ctx.arena.alloc(hir::Expr {
-                kind: hir::ExprKind::Match { kind: match_kind, match_ },
-                range: header.pat.range, //fake range
-            });
+            let match_ = ctx
+                .arena
+                .alloc(hir::Expr { kind: hir::ExprKind::Match { kind: match_kind, match_ } });
             let stmt_match = hir::Stmt::ExprSemi(match_);
             let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_match]) };
             let block = ctx.arena.alloc(block);
@@ -3329,6 +3279,7 @@ fn check_call_direct<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     proc_id: hir::ProcID,
     arg_list: &ast::ArgumentList<'ast>,
+    start: TextOffset,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.proc_data(proc_id);
     let return_ty = data.return_ty;
@@ -3353,12 +3304,13 @@ fn check_call_direct<'hir, 'ast>(
     }
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
-    let kind = hir::ExprKind::CallDirect { proc_id, input: values };
+    let kind = hir::ExprKind::CallDirect { proc_id, input: values, start };
     TypeResult::new(return_ty, kind)
 }
 
 fn check_call_indirect<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    target_range: TextRange,
     target_res: ExprResult<'hir>,
     arg_list: &ast::ArgumentList<'ast>,
 ) -> TypeResult<'hir> {
@@ -3369,7 +3321,7 @@ fn check_call_indirect<'hir, 'ast>(
         }
         hir::Type::Procedure(proc_ty) => proc_ty,
         _ => {
-            let src = ctx.src(target_res.expr.range);
+            let src = ctx.src(target_range);
             let ty_fmt = type_format(ctx, target_res.ty);
             err::tycheck_cannot_call_value_of_type(&mut ctx.emit, src, ty_fmt.as_str());
             default_check_arg_list(ctx, arg_list);
@@ -3588,9 +3540,9 @@ enum AddrBase {
 enum AddrConstraint {
     None,
     AllowMut,
-    ImmutRef(SourceRange),
-    ImmutMulti(SourceRange),
-    ImmutSlice(SourceRange),
+    ImmutRef,
+    ImmutMulti,
+    ImmutSlice,
 }
 
 impl AddrConstraint {
@@ -3659,9 +3611,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::StructField { target, access } => {
                 match access.deref {
                     Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
-                    Some(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
+                    Some(ast::Mut::Immutable) => constraint.set(AddrConstraint::ImmutRef),
                     None => {}
                 }
                 expr = target;
@@ -3670,9 +3620,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Index { target, access } => {
                 match access.deref {
                     Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
-                    Some(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
+                    Some(ast::Mut::Immutable) => constraint.set(AddrConstraint::ImmutRef),
                     None => {}
                 }
                 match access.kind {
@@ -3683,10 +3631,10 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                         constraint.set(AddrConstraint::AllowMut)
                     }
                     hir::IndexKind::Multi(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutMulti(ctx.src(expr.range)))
+                        constraint.set(AddrConstraint::ImmutMulti)
                     }
                     hir::IndexKind::Slice(ast::Mut::Immutable) => {
-                        constraint.set(AddrConstraint::ImmutSlice(ctx.src(expr.range)))
+                        constraint.set(AddrConstraint::ImmutSlice)
                     }
                     hir::IndexKind::Array(_) => {}
                 }
@@ -3699,9 +3647,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::ExprKind::Deref { rhs, mutt, .. } => {
                 match mutt {
                     ast::Mut::Mutable => constraint.set(AddrConstraint::AllowMut),
-                    ast::Mut::Immutable => {
-                        constraint.set(AddrConstraint::ImmutRef(ctx.src(expr.range)))
-                    }
+                    ast::Mut::Immutable => constraint.set(AddrConstraint::ImmutRef),
                 }
                 expr = rhs;
                 continue;
@@ -3746,14 +3692,14 @@ fn check_address_addressability(
                     }
                 }
                 AddrConstraint::AllowMut => {}
-                AddrConstraint::ImmutRef(deref_src) => {
-                    err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src, deref_src);
+                AddrConstraint::ImmutRef => {
+                    err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src);
                 }
-                AddrConstraint::ImmutMulti(multi_src) => {
-                    err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
+                AddrConstraint::ImmutMulti => {
+                    err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src);
                 }
-                AddrConstraint::ImmutSlice(slice_src) => {
-                    err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src, slice_src);
+                AddrConstraint::ImmutSlice => {
+                    err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src);
                 }
             }
         }
@@ -3780,14 +3726,14 @@ fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_ran
                 }
             }
             AddrConstraint::AllowMut => {}
-            AddrConstraint::ImmutRef(deref_src) => {
-                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, src, deref_src);
+            AddrConstraint::ImmutRef => {
+                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, src);
             }
-            AddrConstraint::ImmutMulti(multi_src) => {
-                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, src, multi_src);
+            AddrConstraint::ImmutMulti => {
+                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, src);
             }
-            AddrConstraint::ImmutSlice(slice_src) => {
-                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, src, slice_src);
+            AddrConstraint::ImmutSlice => {
+                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, src);
             }
         },
     }

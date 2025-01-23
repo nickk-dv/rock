@@ -1013,11 +1013,11 @@ pub fn resolve_const_expr<'hir, 'ast>(
     expr: ast::ConstExpr<'ast>,
 ) -> (Result<hir::ConstValue<'hir>, ()>, hir::Type<'hir>) {
     let error_count = ctx.emit.error_count();
-    let expr_res = pass_5::typecheck_expr(ctx, expect, expr.0);
+    let expr_res = pass_5::typecheck_expr_untyped(ctx, expect, expr.0);
 
     if !ctx.emit.did_error(error_count) {
         //@will panic on non foldable expressions (fold panic on invalid)
-        let src = ctx.src(expr_res.expr.range);
+        let src = ctx.src(expr.0.range);
         (fold::fold_const_expr(ctx, src, expr_res.expr), expr_res.ty)
     } else {
         (Err(()), hir::Type::Error)

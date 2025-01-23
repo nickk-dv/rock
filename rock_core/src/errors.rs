@@ -1221,64 +1221,34 @@ pub fn tycheck_cannot_assign_var_immut(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_cannot_ref_val_behind_ref(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    deref_src: SourceRange,
-) {
+pub fn tycheck_cannot_ref_val_behind_ref(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot get `&mut` to a value behind an immutable reference";
-    let info = Info::new("immutable reference accessed here", deref_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_assign_val_behind_ref(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    deref_src: SourceRange,
-) {
+pub fn tycheck_cannot_assign_val_behind_ref(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot assign to a value behind an immutable reference";
-    let info = Info::new("immutable reference accessed here", deref_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_ref_val_behind_multi_ref(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    multi_src: SourceRange,
-) {
+pub fn tycheck_cannot_ref_val_behind_multi_ref(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot get `&mut` to a value behind an immutable multi-reference";
-    let info = Info::new("immutable multi-reference accessed here", multi_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_assign_val_behind_multi_ref(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    multi_src: SourceRange,
-) {
+pub fn tycheck_cannot_assign_val_behind_multi_ref(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot assign to a value behind an immutable multi-reference";
-    let info = Info::new("immutable multi-reference accessed here", multi_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_ref_val_behind_slice(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    slice_src: SourceRange,
-) {
+pub fn tycheck_cannot_ref_val_behind_slice(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot get `&mut` to a value behind an immutable slice";
-    let info = Info::new("immutable slice accessed here", slice_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_assign_val_behind_slice(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    slice_src: SourceRange,
-) {
+pub fn tycheck_cannot_assign_val_behind_slice(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot assign to a value behind an immutable slice";
-    let info = Info::new("immutable slice accessed here", slice_src);
-    emit.error(Error::new(msg, src, info));
+    emit.error(Error::new(msg, src, None));
 }
 
 //==================== ENTRY POINT ====================

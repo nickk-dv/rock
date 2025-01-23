@@ -3,6 +3,7 @@ use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
 use crate::support::AsStr;
+use crate::text::TextRange;
 
 pub fn fold_const_expr<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
@@ -74,7 +75,7 @@ fn fold_struct_field<'hir>(
     if access.deref.is_some() {
         unreachable!()
     }
-    let target_src = SourceRange::new(src.module_id(), target.range);
+    let target_src = SourceRange::new(src.module_id(), TextRange::zero());
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
@@ -92,7 +93,7 @@ fn fold_slice_field<'hir>(
     if access.deref.is_some() {
         unreachable!();
     }
-    let target_src = SourceRange::new(src.module_id(), target.range);
+    let target_src = SourceRange::new(src.module_id(), TextRange::zero());
     let target = fold_const_expr(ctx, target_src, target)?;
 
     match target {
@@ -129,8 +130,8 @@ fn fold_index<'hir>(
     if access.deref.is_some() {
         unreachable!();
     }
-    let target_src = SourceRange::new(src.module_id(), target.range);
-    let index_src = SourceRange::new(src.module_id(), access.index.range);
+    let target_src = SourceRange::new(src.module_id(), TextRange::zero());
+    let index_src = SourceRange::new(src.module_id(), TextRange::zero());
     let target = fold_const_expr(ctx, target_src, target);
     let index = fold_const_expr(ctx, index_src, access.index);
 
@@ -276,7 +277,7 @@ fn fold_variant<'hir>(
     let mut values = Vec::with_capacity(input.len());
 
     for &expr in input.iter() {
-        let src = SourceRange::new(src.module_id(), expr.range);
+        let src = SourceRange::new(src.module_id(), TextRange::zero());
         if let Ok(value) = fold_const_expr(ctx, src, expr) {
             values.push(value);
         } else {
@@ -305,7 +306,7 @@ fn fold_struct_init<'hir>(
     values.resize(input.len(), hir::ConstValue::Null); //dummy value
 
     for init in input {
-        let src = SourceRange::new(src.module_id(), init.expr.range);
+        let src = SourceRange::new(src.module_id(), TextRange::zero());
         if let Ok(value) = fold_const_expr(ctx, src, init.expr) {
             values[init.field_id.index()] = value;
         } else {
@@ -332,7 +333,7 @@ fn fold_array_init<'hir>(
     let mut values = Vec::with_capacity(array_init.input.len());
 
     for &expr in array_init.input {
-        let src = SourceRange::new(src.module_id(), expr.range);
+        let src = SourceRange::new(src.module_id(), TextRange::zero());
         if let Ok(value) = fold_const_expr(ctx, src, expr) {
             values.push(value);
         } else {
@@ -355,7 +356,7 @@ fn fold_array_repeat<'hir>(
     src: SourceRange,
     array_repeat: &hir::ArrayRepeat<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let src = SourceRange::new(src.module_id(), array_repeat.value.range);
+    let src = SourceRange::new(src.module_id(), TextRange::zero());
     let value = fold_const_expr(ctx, src, array_repeat.value)?;
     let len = array_repeat.len;
 
@@ -370,7 +371,7 @@ fn fold_unary_expr<'hir>(
     op: hir::UnOp,
     rhs: &'hir hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let rhs_src = SourceRange::new(src.module_id(), rhs.range);
+    let rhs_src = SourceRange::new(src.module_id(), TextRange::zero());
     let rhs = fold_const_expr(ctx, rhs_src, rhs)?;
 
     match op {

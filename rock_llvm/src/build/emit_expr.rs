@@ -4,7 +4,7 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::hir;
 use rock_core::intern::LitID;
-use rock_core::text::{self, TextRange};
+use rock_core::text::{self, TextOffset};
 
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();
@@ -104,8 +104,8 @@ fn codegen_expr<'c>(
         hir::ExprKind::Variant { enum_id, variant_id, input } => {
             codegen_variant(cg, expect, enum_id, variant_id, input)
         }
-        hir::ExprKind::CallDirect { proc_id, input } => {
-            codegen_call_direct(cg, expect, proc_id, input, expr.range)
+        hir::ExprKind::CallDirect { proc_id, input, start } => {
+            codegen_call_direct(cg, expect, proc_id, input, start)
         }
         hir::ExprKind::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
@@ -696,7 +696,7 @@ fn codegen_call_direct<'c>(
     expect: Expect,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
-    expr_range: TextRange,
+    start: TextOffset,
 ) -> Option<llvm::Value> {
     let offset = cg.cache.values.start();
     for (idx, expr) in input.iter().copied().enumerate() {
@@ -725,8 +725,7 @@ fn codegen_call_direct<'c>(
         let call_origin_id = cg.hir.proc_data(cg.proc.proc_id).origin_id;
         let call_origin = cg.session.module.get(call_origin_id);
         let call_file = cg.session.vfs.file(call_origin.file_id());
-        let location =
-            text::find_text_location(&call_file.source, expr_range.start(), &call_file.line_ranges);
+        let location = text::find_text_location(&call_file.source, start, &call_file.line_ranges);
         let line = llvm::const_int(cg.int_type(hir::IntType::U32), location.line() as u64, false);
         let col = llvm::const_int(cg.int_type(hir::IntType::U32), location.col() as u64, false);
 
