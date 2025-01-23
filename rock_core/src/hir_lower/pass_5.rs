@@ -9,7 +9,6 @@ use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
-use crate::intern::NameID;
 use crate::session::{self, ModuleID};
 use crate::support::AsStr;
 use crate::text::{TextOffset, TextRange};
@@ -42,8 +41,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         data.variables = variables;
 
         for var in variables {
-            //@hack checking for dummy ids, due to `for` binds always being added
-            if !var.was_used && var.name.id.raw() != u32::MAX {
+            if !var.was_used && var.name.id != ctx.session.discard_id {
                 let src = ctx.src(var.name.range);
                 let name = ctx.name(var.name.id);
                 err::scope_unused_variable(&mut ctx.emit, src, name);
@@ -52,6 +50,8 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     }
 }
 
+//@remove ref / multi ref coercion for polymorphic types
+// make coercion behavior conditional, right now T(&N) and T([&]N) is considered same.
 pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     if ty.is_error() || ty2.is_error() {
         return true;
@@ -2065,7 +2065,6 @@ fn typecheck_binary<'hir, 'ast>(
             | ast::BinOp::GreaterEq => hir::Type::Bool(expect.infer_bool()),
             _ => lhs_res.ty,
         };
-
         if let hir::ExprKind::Const { value: lhs } = lhs_res.expr.kind {
             if let hir::ExprKind::Const { value: rhs } = rhs_res.expr.kind {
                 if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhs) {
@@ -2075,7 +2074,6 @@ fn typecheck_binary<'hir, 'ast>(
                 }
             }
         }
-
         let binary = hir::ExprKind::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
         TypeResult::new(res_ty, binary)
     } else {
@@ -2622,14 +2620,11 @@ fn typecheck_for<'hir, 'ast>(
                 collection.elem_ty
             };
 
-            //@FIX: remove special variable binding kinds
-            // handle `_` differently? store `_` as names
-            // handle them where they can occur?
             let value_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header
                     .value
-                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
                 ty: value_ty,
                 was_used: false,
             };
@@ -2637,14 +2632,14 @@ fn typecheck_for<'hir, 'ast>(
                 mutt: ast::Mut::Immutable,
                 name: header
                     .index
-                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
                 ty: hir::Type::USIZE,
                 was_used: false,
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
-            let value_id = ctx.scope.local.add_variable_hack(value_var, header.value.is_some());
-            let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
+            let value_id = ctx.scope.local.add_variable(value_var);
+            let index_id = ctx.scope.local.add_variable(index_var);
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             // used to not insert index increment in forward iteration
             let block_diverges = match ctx.scope.local.diverges() {
@@ -2664,11 +2659,11 @@ fn typecheck_for<'hir, 'ast>(
             };
             let iter_var = hir::Variable {
                 mutt: ast::Mut::Mutable, //@doesnt matter so far
-                name: ast::Name { id: NameID::dummy(), range: TextRange::zero() },
+                name: ast::Name { id: ctx.session.discard_id, range: TextRange::zero() },
                 ty: iter_var_ty,
                 was_used: false,
             };
-            let iter_id = ctx.scope.local.add_variable_hack(iter_var, false);
+            let iter_id = ctx.scope.local.add_variable(iter_var);
 
             let iter_init = if collection.deref.is_some() {
                 expr_res.expr
@@ -2887,13 +2882,13 @@ fn typecheck_for<'hir, 'ast>(
                 mutt: ast::Mut::Immutable,
                 name: header
                     .value
-                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
                 ty: hir::Type::Int(int_ty),
                 was_used: false,
             };
             let end_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: ast::Name { id: NameID::dummy(), range: TextRange::zero() },
+                name: ast::Name { id: ctx.session.discard_id, range: TextRange::zero() },
                 ty: hir::Type::Int(int_ty),
                 was_used: false,
             };
@@ -2901,15 +2896,15 @@ fn typecheck_for<'hir, 'ast>(
                 mutt: ast::Mut::Immutable,
                 name: header
                     .index
-                    .unwrap_or(ast::Name { id: NameID::dummy(), range: TextRange::zero() }),
+                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
                 ty: hir::Type::USIZE,
                 was_used: false,
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
-            let start_id = ctx.scope.local.add_variable_hack(start_var, header.value.is_some());
-            let end_id = ctx.scope.local.add_variable_hack(end_var, false);
-            let index_id = ctx.scope.local.add_variable_hack(index_var, header.index.is_some());
+            let start_id = ctx.scope.local.add_variable(start_var);
+            let end_id = ctx.scope.local.add_variable(end_var);
+            let index_id = ctx.scope.local.add_variable(index_var);
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             // used to not insert index increment
             let block_diverges = match ctx.scope.local.diverges() {

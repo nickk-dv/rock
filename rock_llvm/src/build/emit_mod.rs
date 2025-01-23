@@ -288,12 +288,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
         }
 
         for var in data.variables {
-            //@hack, for variables added with dummy name ids (temp)
-            let name = if var.name.id.raw() == u32::MAX {
-                "<for_bind_discard>"
-            } else {
-                cg.session.intern_name.get(var.name.id)
-            };
+            let name = cg.session.intern_name.get(var.name.id);
             cg.string_buf.clear();
             cg.string_buf.push_str(name);
 

@@ -26,6 +26,7 @@ pub struct Session<'s> {
     pub stats: BuildStats,
     pub config: Config,
     pub root_id: PackageID,
+    pub discard_id: NameID,
 }
 
 pub struct Modules<'s> {
@@ -247,7 +248,9 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
         stats: BuildStats::default(),
         config,
         root_id: PackageID(0),
+        discard_id: NameID::dummy(),
     };
+    session.discard_id = session.intern_name.intern("_");
 
     let core_dir = session.curr_exe_dir.join("core");
     process_package(&mut session, &core_dir, None, true)?;

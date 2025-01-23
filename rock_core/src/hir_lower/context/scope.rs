@@ -371,21 +371,7 @@ impl<'hir> LocalScope<'hir> {
     pub fn add_variable(&mut self, var: hir::Variable<'hir>) -> hir::VariableID {
         let var_id = hir::VariableID::new(self.variables.len());
         self.variables.push(var);
-        self.variables_in_scope.push(var_id);
-        self.current_block_mut().var_count += 1;
-        var_id
-    }
-    //@HACK: adding for loop variables, but not always in scope
-    // this is a hack for codegen, when for loops are properly desurared remove this!
-    #[must_use]
-    pub fn add_variable_hack(
-        &mut self,
-        var: hir::Variable<'hir>,
-        in_scope: bool,
-    ) -> hir::VariableID {
-        let var_id = hir::VariableID::new(self.variables.len());
-        self.variables.push(var);
-        if in_scope {
+        if var.name.id.raw() != 0 {
             self.variables_in_scope.push(var_id);
             self.current_block_mut().var_count += 1;
         }
