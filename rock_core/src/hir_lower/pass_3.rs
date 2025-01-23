@@ -374,9 +374,11 @@ pub fn type_resolve<'hir, 'ast>(
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
                 match constant::resolve_const_expr(ctx, Expectation::USIZE, array.len) {
-                    Ok(hir::ConstValue::Int { val, .. }) => hir::ArrayStaticLen::Immediate(val),
-                    Ok(_) => unreachable!(),
-                    Err(_) => return hir::Type::Error,
+                    (Ok(hir::ConstValue::Int { val, .. }), _) => {
+                        hir::ArrayStaticLen::Immediate(val)
+                    }
+                    (Ok(_), _) => unreachable!(),
+                    (Err(_), _) => return hir::Type::Error,
                 }
             };
 

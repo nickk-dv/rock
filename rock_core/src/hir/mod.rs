@@ -244,7 +244,6 @@ pub enum ExprKind<'hir> {
     CallerLocation { struct_id: StructID }, //@why is it an expr_kind?
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },
-    ConstVar     { const_id: ConstID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },

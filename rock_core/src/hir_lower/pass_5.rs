@@ -325,7 +325,7 @@ pub struct TypeResult<'hir> {
 
 #[must_use]
 pub struct ExprResult<'hir> {
-    ty: hir::Type<'hir>,
+    pub ty: hir::Type<'hir>,
     pub expr: &'hir hir::Expr<'hir>,
 }
 
@@ -1331,13 +1331,18 @@ fn typecheck_item<'hir, 'ast>(
         ValueID::Enum(enum_id, variant_id) => {
             return check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range);
         }
-        ValueID::Const(id, fields) => (
-            TypeResult::new(
-                ctx.registry.const_data(id).ty.expect("typed const var item"),
-                hir::ExprKind::ConstVar { const_id: id },
-            ),
-            fields,
-        ),
+        ValueID::Const(id, fields) => {
+            let data = ctx.registry.const_data(id);
+            let const_ty = data.ty.expect("typed const var");
+            let (eval, _) = ctx.registry.const_eval(data.value);
+
+            let res = if let Ok(value) = eval.resolved() {
+                TypeResult::new(const_ty, hir::ExprKind::Const { value })
+            } else {
+                TypeResult::new(const_ty, hir::ExprKind::Error)
+            };
+            (res, fields)
+        }
         ValueID::Global(id, fields) => (
             TypeResult::new(
                 ctx.registry.global_data(id).ty,
@@ -1640,7 +1645,7 @@ fn typecheck_array_repeat<'hir, 'ast>(
     //@this is duplicated here and in pass_3::type_resolve 09.05.24
     let value = constant::resolve_const_expr(ctx, Expectation::USIZE, len);
     let len = match value {
-        Ok(hir::ConstValue::Int { val, .. }) => Some(val),
+        (Ok(hir::ConstValue::Int { val, .. }), _) => Some(val),
         _ => None,
     };
 
@@ -3196,7 +3201,6 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::ExprKind::CallerLocation { .. } => Some("caller location"),
         hir::ExprKind::ParamVar { .. } => Some("parameter value"),
         hir::ExprKind::Variable { .. } => Some("variable value"),
-        hir::ExprKind::ConstVar { .. } => Some("constant value"),
         hir::ExprKind::GlobalVar { .. } => Some("global value"),
         hir::ExprKind::Variant { .. } => Some("variant value"),
         hir::ExprKind::CallDirect { proc_id, .. } => {
@@ -3642,10 +3646,11 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 let src = ctx.src(var.name.range);
                 AddrBase::Variable(var.mutt, src)
             }
-            hir::ExprKind::ConstVar { const_id } => {
-                let const_data = ctx.registry.const_data(const_id);
-                AddrBase::Constant(const_data.src())
-            }
+            //@have const flag in Const kind directly!
+            //hir::ExprKind::ConstVar { const_id } => {
+            //    let const_data = ctx.registry.const_data(const_id);
+            //    AddrBase::Constant(const_data.src())
+            //}
             hir::ExprKind::GlobalVar { global_id } => {
                 let global_data = ctx.registry.global_data(global_id);
                 AddrBase::Variable(global_data.mutt, global_data.src())

@@ -955,7 +955,10 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 } else {
                     Expectation::None
                 };
-                resolve_and_update_const_eval(ctx, data.value, expect);
+                if let Some(ty) = resolve_and_update_const_eval(ctx, data.value, expect) {
+                    let data = ctx.registry.const_data_mut(id);
+                    data.ty = Some(ty);
+                }
             }
             ConstDependency::Global(id) => {
                 let data = ctx.registry.global_data(id);
@@ -980,7 +983,7 @@ fn resolve_and_update_const_eval<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     eval_id: hir::ConstEvalID,
     expect: Expectation<'hir>,
-) {
+) -> Option<hir::Type<'hir>> {
     let (eval, origin_id) = *ctx.registry.const_eval(eval_id);
 
     match eval {
@@ -991,14 +994,15 @@ fn resolve_and_update_const_eval<'hir>(
             ctx.scope.set_origin(origin_id);
             ctx.scope.local.reset();
 
-            let value_res = resolve_const_expr(ctx, expect, expr);
+            let (value_res, value_ty) = resolve_const_expr(ctx, expect, expr);
             let (eval, _) = ctx.registry.const_eval_mut(eval_id);
             *eval = hir::Eval::from_res(value_res);
+            Some(value_ty)
         }
         // ignore resolution calls on already resolved
-        hir::ConstEval::Resolved(_) => {}
-        hir::ConstEval::ResolvedError => {}
-    };
+        hir::ConstEval::Resolved(_) => None,
+        hir::ConstEval::ResolvedError => None,
+    }
 }
 
 /// typecheck and fold contant expression
@@ -1007,16 +1011,16 @@ pub fn resolve_const_expr<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     expr: ast::ConstExpr<'ast>,
-) -> Result<hir::ConstValue<'hir>, ()> {
+) -> (Result<hir::ConstValue<'hir>, ()>, hir::Type<'hir>) {
     let error_count = ctx.emit.error_count();
     let expr_res = pass_5::typecheck_expr(ctx, expect, expr.0);
 
     if !ctx.emit.did_error(error_count) {
         //@will panic on non foldable expressions (fold panic on invalid)
         let src = ctx.src(expr_res.expr.range);
-        fold::fold_const_expr(ctx, src, expr_res.expr)
+        (fold::fold_const_expr(ctx, src, expr_res.expr), expr_res.ty)
     } else {
-        Err(())
+        (Err(()), hir::Type::Error)
     }
 }
 

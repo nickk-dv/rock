@@ -100,7 +100,6 @@ fn codegen_expr<'c>(
         hir::ExprKind::CallerLocation { .. } => Some(codegen_caller_location(cg, expect)),
         hir::ExprKind::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
         hir::ExprKind::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
-        hir::ExprKind::ConstVar { const_id } => Some(codegen_const_var(cg, const_id)),
         hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::ExprKind::Variant { enum_id, variant_id, input } => {
             codegen_variant(cg, expect, enum_id, variant_id, input)
@@ -321,9 +320,10 @@ fn codegen_match<'c>(
                 cg.cache.cases.push((v, arm_bb));
             }
             hir::Pat::Const(const_id) => {
-                let pat_value = codegen_const_var(cg, const_id);
-                let v = extract_slice_len_if_needed(cg, kind, pat_value);
-                cg.cache.cases.push((v, arm_bb));
+                unimplemented!("const pattern");
+                //@let pat_value = codegen_const_var(cg, const_id);
+                //@let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                //@cg.cache.cases.push((v, arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
@@ -372,9 +372,10 @@ fn codegen_match<'c>(
                             cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Const(const_id) => {
-                            let pat_value = codegen_const_var(cg, const_id);
-                            let v = extract_slice_len_if_needed(cg, kind, pat_value);
-                            cg.cache.cases.push((v, arm_bb));
+                            unimplemented!("const pattern");
+                            //@let pat_value = codegen_const_var(cg, const_id);
+                            //@let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                            //@cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
                             let enum_data = cg.hir.enum_data(enum_id);
@@ -620,15 +621,6 @@ fn codegen_variable(cg: &mut Codegen, expect: Expect, var_id: hir::VariableID) -
         }
         Expect::Pointer => var_ptr.as_val(),
     }
-}
-
-//@often broken currently: 04.01.25
-// semantically constant var dont have memory locations
-// so they should not be used in memory operations that require pointers
-// instead they should be inlined by the compiler at usage sites.
-// currently checks and folding for this do not exist in `non-const`` blocks.
-fn codegen_const_var(cg: &Codegen, const_id: hir::ConstID) -> llvm::Value {
-    cg.consts[const_id.index()]
 }
 
 fn codegen_global_var(cg: &mut Codegen, expect: Expect, global_id: hir::GlobalID) -> llvm::Value {

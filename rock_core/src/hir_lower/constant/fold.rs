@@ -25,7 +25,6 @@ pub fn fold_const_expr<'hir>(
         hir::ExprKind::CallerLocation { .. } => unreachable!(),
         hir::ExprKind::ParamVar { .. } => unreachable!(),
         hir::ExprKind::Variable { .. } => unreachable!(),
-        hir::ExprKind::ConstVar { const_id } => fold_const_var(ctx, const_id),
         hir::ExprKind::GlobalVar { .. } => unreachable!(),
         hir::ExprKind::Variant { enum_id, variant_id, input } => {
             fold_variant(ctx, src, enum_id, variant_id, input)
