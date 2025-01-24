@@ -73,54 +73,52 @@ fn codegen_expr<'c>(
     expr: &hir::Expr<'c>,
     expect: Expect,
 ) -> Option<llvm::Value> {
-    match expr.kind {
-        hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => Some(codegen_const_expr(cg, expect, value)),
-        hir::ExprKind::If { if_ } => {
+    match *expr {
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { value } => Some(codegen_const_expr(cg, expect, value)),
+        hir::Expr::If { if_ } => {
             codegen_if(cg, expect, if_);
             None
         }
-        hir::ExprKind::Block { block } => {
+        hir::Expr::Block { block } => {
             emit_stmt::codegen_block(cg, expect, block);
             None
         }
-        hir::ExprKind::Match { kind, match_ } => {
+        hir::Expr::Match { kind, match_ } => {
             codegen_match(cg, expect, kind, match_);
             None
         }
-        hir::ExprKind::StructField { target, access } => {
+        hir::Expr::StructField { target, access } => {
             Some(codegen_struct_field(cg, expect, target, &access))
         }
-        hir::ExprKind::SliceField { target, access } => {
+        hir::Expr::SliceField { target, access } => {
             Some(codegen_slice_field(cg, expect, target, &access))
         }
-        hir::ExprKind::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
-        hir::ExprKind::Slice { target, access } => unimplemented!("slicing"),
-        hir::ExprKind::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
-        hir::ExprKind::CallerLocation { .. } => Some(codegen_caller_location(cg, expect)),
-        hir::ExprKind::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
-        hir::ExprKind::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
-        hir::ExprKind::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
-        hir::ExprKind::Variant { enum_id, variant_id, input } => {
+        hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
+        hir::Expr::Slice { target, access } => unimplemented!("slicing"),
+        hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
+        hir::Expr::CallerLocation { .. } => Some(codegen_caller_location(cg, expect)),
+        hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
+        hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
+        hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
+        hir::Expr::Variant { enum_id, variant_id, input } => {
             codegen_variant(cg, expect, enum_id, variant_id, input)
         }
-        hir::ExprKind::CallDirect { proc_id, input, start } => {
+        hir::Expr::CallDirect { proc_id, input, start } => {
             codegen_call_direct(cg, expect, proc_id, input, start)
         }
-        hir::ExprKind::CallIndirect { target, indirect } => {
+        hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
         }
-        hir::ExprKind::StructInit { struct_id, input } => {
+        hir::Expr::StructInit { struct_id, input } => {
             codegen_struct_init(cg, expect, struct_id, input)
         }
-        hir::ExprKind::ArrayInit { array_init } => codegen_array_init(cg, expect, array_init),
-        hir::ExprKind::ArrayRepeat { array_repeat } => {
-            codegen_array_repeat(cg, expect, array_repeat)
-        }
-        hir::ExprKind::Deref { rhs, ref_ty, .. } => Some(codegen_deref(cg, expect, rhs, *ref_ty)),
-        hir::ExprKind::Address { rhs } => Some(codegen_address(cg, rhs)),
-        hir::ExprKind::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
-        hir::ExprKind::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
+        hir::Expr::ArrayInit { array_init } => codegen_array_init(cg, expect, array_init),
+        hir::Expr::ArrayRepeat { array_repeat } => codegen_array_repeat(cg, expect, array_repeat),
+        hir::Expr::Deref { rhs, ref_ty, .. } => Some(codegen_deref(cg, expect, rhs, *ref_ty)),
+        hir::Expr::Address { rhs } => Some(codegen_address(cg, rhs)),
+        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
+        hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
     }
 }
 

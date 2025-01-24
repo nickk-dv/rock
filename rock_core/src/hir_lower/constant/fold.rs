@@ -10,37 +10,33 @@ pub fn fold_const_expr<'hir>(
     src: SourceRange,
     expr: &hir::Expr<'hir>,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    match expr.kind {
-        hir::ExprKind::Error => unreachable!(),
-        hir::ExprKind::Const { value } => fold_const(ctx, src, value),
-        hir::ExprKind::If { .. } => unreachable!(),
-        hir::ExprKind::Block { .. } => unreachable!(),
-        hir::ExprKind::Match { .. } => unreachable!(),
-        hir::ExprKind::StructField { target, access } => {
-            fold_struct_field(ctx, src, target, &access)
-        }
-        hir::ExprKind::SliceField { target, access } => fold_slice_field(ctx, src, target, &access),
-        hir::ExprKind::Index { target, access } => fold_index(ctx, src, target, access),
-        hir::ExprKind::Slice { .. } => unreachable!(),
-        hir::ExprKind::Cast { target, into, kind } => unreachable!(),
-        hir::ExprKind::CallerLocation { .. } => unreachable!(),
-        hir::ExprKind::ParamVar { .. } => unreachable!(),
-        hir::ExprKind::Variable { .. } => unreachable!(),
-        hir::ExprKind::GlobalVar { .. } => unreachable!(),
-        hir::ExprKind::Variant { enum_id, variant_id, input } => {
+    match *expr {
+        hir::Expr::Error => unreachable!(),
+        hir::Expr::Const { value } => fold_const(ctx, src, value),
+        hir::Expr::If { .. } => unreachable!(),
+        hir::Expr::Block { .. } => unreachable!(),
+        hir::Expr::Match { .. } => unreachable!(),
+        hir::Expr::StructField { target, access } => fold_struct_field(ctx, src, target, &access),
+        hir::Expr::SliceField { target, access } => fold_slice_field(ctx, src, target, &access),
+        hir::Expr::Index { target, access } => fold_index(ctx, src, target, access),
+        hir::Expr::Slice { .. } => unreachable!(),
+        hir::Expr::Cast { target, into, kind } => unreachable!(),
+        hir::Expr::CallerLocation { .. } => unreachable!(),
+        hir::Expr::ParamVar { .. } => unreachable!(),
+        hir::Expr::Variable { .. } => unreachable!(),
+        hir::Expr::GlobalVar { .. } => unreachable!(),
+        hir::Expr::Variant { enum_id, variant_id, input } => {
             fold_variant(ctx, src, enum_id, variant_id, input)
         }
-        hir::ExprKind::CallDirect { .. } => unreachable!(),
-        hir::ExprKind::CallIndirect { .. } => unreachable!(),
-        hir::ExprKind::StructInit { struct_id, input } => {
-            fold_struct_init(ctx, src, struct_id, input)
-        }
-        hir::ExprKind::ArrayInit { array_init } => fold_array_init(ctx, src, array_init),
-        hir::ExprKind::ArrayRepeat { array_repeat } => fold_array_repeat(ctx, src, array_repeat),
-        hir::ExprKind::Deref { .. } => unreachable!(),
-        hir::ExprKind::Address { .. } => unreachable!(),
-        hir::ExprKind::Unary { op, rhs } => fold_unary_expr(ctx, src, op, rhs),
-        hir::ExprKind::Binary { op, lhs, rhs } => unreachable!("bin fold"),
+        hir::Expr::CallDirect { .. } => unreachable!(),
+        hir::Expr::CallIndirect { .. } => unreachable!(),
+        hir::Expr::StructInit { struct_id, input } => fold_struct_init(ctx, src, struct_id, input),
+        hir::Expr::ArrayInit { array_init } => fold_array_init(ctx, src, array_init),
+        hir::Expr::ArrayRepeat { array_repeat } => fold_array_repeat(ctx, src, array_repeat),
+        hir::Expr::Deref { .. } => unreachable!(),
+        hir::Expr::Address { .. } => unreachable!(),
+        hir::Expr::Unary { op, rhs } => fold_unary_expr(ctx, src, op, rhs),
+        hir::Expr::Binary { op, lhs, rhs } => unreachable!("bin fold"),
     }
 }
 

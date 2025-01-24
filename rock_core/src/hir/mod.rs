@@ -222,14 +222,9 @@ pub struct Assign<'hir> {
     pub lhs_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
-pub struct Expr<'hir> {
-    pub kind: ExprKind<'hir>,
-}
-
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum ExprKind<'hir> {
+pub enum Expr<'hir> {
     Error,
     Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
