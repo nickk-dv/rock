@@ -11,7 +11,6 @@ pub struct Hir<'hir> {
     pub procs: Vec<ProcData<'hir>>,
     pub enums: Vec<EnumData<'hir>>,
     pub structs: Vec<StructData<'hir>>,
-    pub consts: Vec<ConstData<'hir>>,
     pub globals: Vec<GlobalData<'hir>>,
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
@@ -709,9 +708,6 @@ impl<'hir> Hir<'hir> {
     }
     pub fn struct_data(&self, id: StructID) -> &StructData<'hir> {
         &self.structs[id.index()]
-    }
-    pub fn const_data(&self, id: ConstID) -> &ConstData<'hir> {
-        &self.consts[id.index()]
     }
     pub fn global_data(&self, id: GlobalID) -> &GlobalData<'hir> {
         &self.globals[id.index()]

@@ -17,7 +17,6 @@ pub fn codegen_module<'c, 's, 's_ref>(
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_variant_types(&mut cg);
-    codegen_consts(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
     codegen_function_bodies(&mut cg);
@@ -139,14 +138,6 @@ fn codegen_variant_types(cg: &mut Codegen) {
         } else {
             cg.variants.push(Vec::new());
         }
-    }
-}
-
-fn codegen_consts(cg: &mut Codegen) {
-    for idx in 0..cg.hir.consts.len() {
-        let data = cg.hir.const_data(hir::ConstID::new(idx));
-        let value = emit_expr::codegen_const(cg, cg.hir.const_eval_values[data.value.index()]);
-        cg.consts.push(value);
     }
 }
 

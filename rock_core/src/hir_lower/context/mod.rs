@@ -97,7 +97,6 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             procs: self.registry.hir_procs,
             enums: self.registry.hir_enums,
             structs: self.registry.hir_structs,
-            consts: self.registry.hir_consts,
             globals: self.registry.hir_globals,
             const_eval_values,
             variant_eval_values,

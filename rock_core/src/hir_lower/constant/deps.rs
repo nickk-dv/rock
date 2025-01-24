@@ -1013,14 +1013,27 @@ pub fn resolve_const_expr<'hir, 'ast>(
     expr: ast::ConstExpr<'ast>,
 ) -> (Result<hir::ConstValue<'hir>, ()>, hir::Type<'hir>) {
     let error_count = ctx.emit.error_count();
-    let expr_res = pass_5::typecheck_expr_untyped(ctx, expect, expr.0);
+    let expr_res = match expect {
+        Expectation::HasType(_, _) => pass_5::typecheck_expr(ctx, expect, expr.0),
+        _ => pass_5::typecheck_expr_untyped(ctx, expect, expr.0),
+    };
 
     if !ctx.emit.did_error(error_count) {
-        //@will panic on non foldable expressions (fold panic on invalid)
-        let src = ctx.src(expr.0.range);
-        (fold::fold_const_expr(ctx, src, expr_res.expr), expr_res.ty)
+        match expr_res.expr {
+            hir::Expr::Error => (Err(()), expr_res.ty),
+            hir::Expr::Const { value } => (Ok(*value), expr_res.ty),
+            _ => {
+                error_cannot_use_in_constants(
+                    &mut ctx.emit,
+                    ctx.scope.origin(),
+                    expr.0.range,
+                    "non constant",
+                ); //@temp message for this case
+                (Err(()), expr_res.ty)
+            }
+        }
     } else {
-        (Err(()), hir::Type::Error)
+        (Err(()), expr_res.ty)
     }
 }
 
