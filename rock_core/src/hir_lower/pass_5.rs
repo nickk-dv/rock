@@ -1891,10 +1891,14 @@ fn typecheck_binary<'hir, 'ast>(
     if let Some((value, ty)) = lhs_promote {
         lhs_res.ty = ty;
         lhs_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+    } else {
+        return TypeResult::error();
     }
     if let Some((value, ty)) = rhs_promote {
         rhs_res.ty = ty;
         rhs_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+    } else {
+        return TypeResult::error();
     }
 
     //@change this rule for bitshifts?

@@ -951,7 +951,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
 
                 let expect = if let Some(ty) = item.ty {
                     let expect_src = SourceRange::new(data.origin_id, ty.range);
-                    Expectation::HasType(data.ty.unwrap(), Some(expect_src)) //unwrap since item and data are both typed
+                    Expectation::HasType(data.ty.unwrap(), Some(expect_src)) //unwrap, item and data are both typed
                 } else {
                     Expectation::None
                 };
