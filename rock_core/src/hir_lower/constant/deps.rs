@@ -841,16 +841,9 @@ fn add_expr_const_dependencies<'ast>(
             Ok(())
         }
         ast::ExprKind::Binary { lhs, rhs, .. } => {
-            error_cannot_use_in_constants(
-                &mut ctx.emit,
-                origin_id,
-                expr.range,
-                "binary expr (temp)",
-            );
-            Err(parent_id)
-            //add_expr_const_dependencies(ctx, tree, parent_id, origin_id, lhs)?;
-            //add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
-            //Ok(())
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, lhs)?;
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, rhs)?;
+            Ok(())
         }
     }
 }
