@@ -803,6 +803,27 @@ impl<'hir> Type<'hir> {
     pub fn is_never(&self) -> bool {
         matches!(self, Type::Never)
     }
+    #[inline(always)]
+    pub fn unwrap_int(&self) -> IntType {
+        match self {
+            Type::Int(int_ty) => *int_ty,
+            _ => unreachable!(),
+        }
+    }
+    #[inline(always)]
+    pub fn unwrap_float(&self) -> FloatType {
+        match self {
+            Type::Float(float_ty) => *float_ty,
+            _ => unreachable!(),
+        }
+    }
+    #[inline(always)]
+    pub fn unwrap_bool(&self) -> BoolType {
+        match self {
+            Type::Bool(bool_ty) => *bool_ty,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl<U, R> Eval<U, R>

@@ -1220,9 +1220,56 @@ fn typecheck_cast<'hir, 'ast>(
         err::tycheck_cast_invalid(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
         TypeResult::error()
     } else {
-        //@todo: constant fold
+        if let hir::Expr::Const { value: target } = *target_res.expr {
+            if let Ok(value) = constfold_cast(ctx, range, target, into, kind) {
+                return TypeResult::new(into, hir::Expr::Const { value });
+            } else {
+                return TypeResult::error();
+            }
+        }
         let cast = hir::Expr::Cast { target: target_res.expr, into: ctx.arena.alloc(into), kind };
         TypeResult::new(into, cast)
+    }
+}
+
+fn constfold_cast<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    range: TextRange,
+    target: hir::ConstValue<'hir>,
+    into: hir::Type<'hir>,
+    kind: hir::CastKind,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    use hir::CastKind;
+
+    let src = ctx.src(range);
+    match kind {
+        CastKind::Error => Err(()),
+        CastKind::Char_NoOp => {
+            Ok(hir::ConstValue::from_u64(target.into_char() as u64, IntType::U32))
+        }
+        CastKind::Rawptr_NoOp => Ok(target),
+        CastKind::Int_NoOp
+        | CastKind::Int_Trunc
+        | CastKind::IntS_Extend
+        | CastKind::IntU_Extend => {
+            fold::int_range_check(ctx, src, target.into_int(), into.unwrap_int())
+        }
+        CastKind::IntS_to_Float => todo!(),
+        CastKind::IntU_to_Float => todo!(),
+        CastKind::Float_Trunc => todo!(),
+        CastKind::Float_Extend => todo!(),
+        CastKind::Float_to_IntS => todo!(),
+        CastKind::Float_to_IntU => todo!(),
+        CastKind::Bool_Trunc | CastKind::Bool_Extend => {
+            Ok(hir::ConstValue::Bool { val: target.into_bool(), bool_ty: into.unwrap_bool() })
+        }
+        CastKind::Bool_NoOp_to_Int | CastKind::Bool_Trunc_to_Int | CastKind::Bool_Extend_to_Int => {
+            Ok(hir::ConstValue::from_u64(target.into_bool() as u64, into.unwrap_int()))
+        }
+        CastKind::Enum_NoOp_to_Int => todo!(),
+        CastKind::Enum_Trunc_to_Int => todo!(),
+        CastKind::EnumS_Extend_to_Int => todo!(),
+        CastKind::EnumU_Extend_to_Int => todo!(),
     }
 }
 
