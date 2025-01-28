@@ -1254,22 +1254,34 @@ fn constfold_cast<'hir>(
         | CastKind::IntU_Extend => {
             fold::int_range_check(ctx, src, target.into_int(), into.unwrap_int())
         }
-        CastKind::IntS_to_Float => todo!(),
-        CastKind::IntU_to_Float => todo!(),
-        CastKind::Float_Trunc => todo!(),
-        CastKind::Float_Extend => todo!(),
-        CastKind::Float_to_IntS => todo!(),
-        CastKind::Float_to_IntU => todo!(),
+        CastKind::IntS_to_Float | CastKind::IntU_to_Float => {
+            fold::float_range_check(ctx, src, target.into_int() as f64, into.unwrap_float())
+        }
+        CastKind::Float_Trunc | CastKind::Float_Extend => {
+            fold::float_range_check(ctx, src, target.into_float(), into.unwrap_float())
+        }
+        CastKind::Float_to_IntS | CastKind::Float_to_IntU => {
+            fold::int_range_check(ctx, src, target.into_float() as i128, into.unwrap_int())
+        }
         CastKind::Bool_Trunc | CastKind::Bool_Extend => {
             Ok(hir::ConstValue::Bool { val: target.into_bool(), bool_ty: into.unwrap_bool() })
         }
         CastKind::Bool_NoOp_to_Int | CastKind::Bool_Trunc_to_Int | CastKind::Bool_Extend_to_Int => {
             Ok(hir::ConstValue::from_u64(target.into_bool() as u64, into.unwrap_int()))
         }
-        CastKind::Enum_NoOp_to_Int => todo!(),
-        CastKind::Enum_Trunc_to_Int => todo!(),
-        CastKind::EnumS_Extend_to_Int => todo!(),
-        CastKind::EnumU_Extend_to_Int => todo!(),
+        CastKind::Enum_NoOp_to_Int
+        | CastKind::Enum_Trunc_to_Int
+        | CastKind::EnumS_Extend_to_Int
+        | CastKind::EnumU_Extend_to_Int => {
+            let variant = target.expect_variant();
+            let enum_data = ctx.registry.enum_data(variant.enum_id);
+            let variant = enum_data.variant(variant.variant_id);
+            let tag_value = match variant.kind {
+                hir::VariantKind::Default(id) => ctx.registry.variant_eval(id).resolved()?,
+                hir::VariantKind::Constant(id) => ctx.registry.const_eval(id).0.resolved()?,
+            };
+            fold::int_range_check(ctx, src, tag_value.into_int(), into.unwrap_int())
+        }
     }
 }
 

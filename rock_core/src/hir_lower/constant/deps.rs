@@ -711,10 +711,8 @@ fn add_expr_const_dependencies<'ast>(
             Err(parent_id)
         }
         ast::ExprKind::Cast { target, .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "cast");
-            Err(parent_id)
-            //@add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
-            //Ok(())
+            add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
+            Ok(())
         }
         ast::ExprKind::Sizeof { ty } => {
             let ty = pass_3::type_resolve(ctx, *ty, true);

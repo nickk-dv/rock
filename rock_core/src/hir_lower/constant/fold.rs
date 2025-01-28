@@ -472,6 +472,12 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
+    pub fn expect_variant(self) -> &'hir hir::ConstVariant<'hir> {
+        match self {
+            hir::ConstValue::Variant { variant } => variant,
+            _ => unreachable!(),
+        }
+    }
 
     pub fn into_bool(&self) -> bool {
         match *self {
