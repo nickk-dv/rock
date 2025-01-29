@@ -27,26 +27,16 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
                 err::internal_not_implemented(&mut ctx.emit, src, "polymorphic enum layout");
                 return Err(());
             }
-            let data = ctx.registry.enum_data(id);
-            data.layout.resolved()
+            ctx.registry.enum_data(id).layout.resolved()
         }
         hir::Type::Struct(id, poly_types) => {
             if !poly_types.is_empty() {
                 err::internal_not_implemented(&mut ctx.emit, src, "polymorphic struct layout");
                 return Err(());
             }
-            let data = ctx.registry.struct_data(id);
-            data.layout.resolved()
+            ctx.registry.struct_data(id).layout.resolved()
         }
-        hir::Type::Reference(_, _) => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            Ok(hir::Layout::equal(ptr_size))
-        }
-        hir::Type::MultiReference(_, _) => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            Ok(hir::Layout::equal(ptr_size))
-        }
-        hir::Type::Procedure(_) => {
+        hir::Type::Reference(_, _) | hir::Type::MultiReference(_, _) | hir::Type::Procedure(_) => {
             let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
             Ok(hir::Layout::equal(ptr_size))
         }
@@ -111,31 +101,14 @@ pub fn string_layout(ctx: &HirCtx, string_ty: hir::StringType) -> hir::Layout {
     }
 }
 
-pub fn resolve_enum_layout(ctx: &mut HirCtx, enum_id: hir::EnumID) -> Result<hir::Layout, ()> {
-    let mut size: u64 = 0;
-    let mut align: u64 = 1;
-
-    let data = ctx.registry.enum_data(enum_id);
-    for variant in data.variants {
-        let variant_layout = resolve_variant_layout(ctx, enum_id, variant)?;
-
-        size = size.max(variant_layout.size);
-        align = align.max(variant_layout.align);
-    }
-
-    size = aligned_size(size, align);
-    Ok(hir::Layout::new(size, align))
-}
-
 pub fn resolve_struct_layout(
     ctx: &mut HirCtx,
     struct_id: hir::StructID,
 ) -> Result<hir::Layout, ()> {
     let data = ctx.registry.struct_data(struct_id);
     let src = SourceRange::new(data.origin_id, data.name.range);
-
-    let mut types = data.fields.iter().map(|f| f.ty);
-    resolve_aggregate_layout(ctx, src, "struct", &mut types)
+    let types = data.fields.iter().map(|f| f.ty);
+    resolve_aggregate_layout(ctx, src, "struct", types)
 }
 
 fn resolve_variant_layout(
@@ -145,36 +118,46 @@ fn resolve_variant_layout(
 ) -> Result<hir::Layout, ()> {
     let data = ctx.registry.enum_data(enum_id);
     let src = SourceRange::new(data.origin_id, variant.name.range);
-
-    let tag_ty = data.tag_ty.resolved()?;
-    let tag_ty = [hir::Type::Int(tag_ty)];
-    let mut types = tag_ty.iter().copied().chain(variant.fields.iter().map(|f| &f.ty).copied());
-    resolve_aggregate_layout(ctx, src, "variant", &mut types)
+    let tag_ty = [hir::Type::Int(data.tag_ty.resolved()?)];
+    let types = tag_ty.iter().copied().chain(variant.fields.iter().map(|f| &f.ty).copied());
+    resolve_aggregate_layout(ctx, src, "variant", types)
 }
 
-//@avoid dyn trait if possible
-fn resolve_aggregate_layout(
+fn resolve_aggregate_layout<'hir, I: Iterator<Item = hir::Type<'hir>>>(
     ctx: &mut HirCtx,
     src: SourceRange,
     item_kind: &'static str,
-    types: &mut dyn Iterator<Item = hir::Type>,
+    types: I,
 ) -> Result<hir::Layout, ()> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for ty in types {
         let elem_layout = type_layout(ctx, ty, src)?;
-        let elem_size = elem_layout.size;
-
         size = aligned_size(size, elem_layout.align);
         align = align.max(elem_layout.align);
 
-        if let Some(total) = size.checked_add(elem_size) {
+        if let Some(total) = size.checked_add(elem_layout.size) {
             size = total;
         } else {
-            err::const_item_size_overflow(&mut ctx.emit, src, item_kind, size, elem_size);
+            err::const_item_size_overflow(&mut ctx.emit, src, item_kind, size, elem_layout.size);
             return Err(());
         }
+    }
+
+    size = aligned_size(size, align);
+    Ok(hir::Layout::new(size, align))
+}
+
+pub fn resolve_enum_layout(ctx: &mut HirCtx, enum_id: hir::EnumID) -> Result<hir::Layout, ()> {
+    let mut size: u64 = 0;
+    let mut align: u64 = 1;
+
+    let data = ctx.registry.enum_data(enum_id);
+    for variant in data.variants {
+        let variant_layout = resolve_variant_layout(ctx, enum_id, variant)?;
+        size = size.max(variant_layout.size);
+        align = align.max(variant_layout.align);
     }
 
     size = aligned_size(size, align);
