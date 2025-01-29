@@ -1953,148 +1953,7 @@ fn typecheck_binary<'hir, 'ast>(
         None => {}
     }
 
-    //@change this rule for bitshifts?
-    if !type_matches(ctx, lhs_res.ty, rhs_res.ty) {
-        let op_len = op.as_str().len() as u32;
-        let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
-        let lhs_ty = type_format(ctx, lhs_res.ty);
-        let rhs_ty = type_format(ctx, rhs_res.ty);
-        err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
-        return TypeResult::error();
-    }
-
-    let hir_op = match op {
-        ast::BinOp::Add => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Add_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Add_Float),
-            _ => Err(()),
-        },
-        ast::BinOp::Sub => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Sub_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Sub_Float),
-            _ => Err(()),
-        },
-        ast::BinOp::Mul => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Mul_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Mul_Float),
-            _ => Err(()),
-        },
-        ast::BinOp::Div => match lhs_res.ty {
-            hir::Type::Int(int_ty) => Ok(hir::BinOp::Div_Int(int_ty)),
-            hir::Type::Float(_) => Ok(hir::BinOp::Div_Float),
-            _ => Err(()),
-        },
-        ast::BinOp::Rem => match lhs_res.ty {
-            hir::Type::Int(int_ty) => Ok(hir::BinOp::Rem_Int(int_ty)),
-            _ => Err(()),
-        },
-        ast::BinOp::BitAnd => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitAnd),
-            _ => Err(()),
-        },
-        ast::BinOp::BitOr => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitOr),
-            _ => Err(()),
-        },
-        ast::BinOp::BitXor => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitXor),
-            _ => Err(()),
-        },
-        ast::BinOp::BitShl => match lhs_res.ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitShl),
-            _ => Err(()),
-        },
-        ast::BinOp::BitShr => match lhs_res.ty {
-            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitShr(int_ty)),
-            _ => Err(()),
-        },
-        ast::BinOp::Eq => match lhs_res.ty {
-            hir::Type::Char | hir::Type::Bool(_) => {
-                Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
-            }
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
-            }
-            hir::Type::Enum(enum_id, _) => {
-                let data = ctx.registry.enum_data(enum_id);
-                if !data.flag_set.contains(hir::EnumFlag::WithFields) {
-                    Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
-                } else {
-                    Err(())
-                }
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::NotEq => match lhs_res.ty {
-            hir::Type::Char | hir::Type::Bool(_) => {
-                Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
-            }
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::NotEq, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::NotEq, expect.infer_bool(), float_ty))
-            }
-            hir::Type::Enum(enum_id, _) => {
-                let data = ctx.registry.enum_data(enum_id);
-                if !data.flag_set.contains(hir::EnumFlag::WithFields) {
-                    Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
-                } else {
-                    Err(())
-                }
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::Less => match lhs_res.ty {
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::LessEq => match lhs_res.ty {
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::LessEq, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::LessEq, expect.infer_bool(), float_ty))
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::Greater => match lhs_res.ty {
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::Greater, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::Greater, expect.infer_bool(), float_ty))
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::GreaterEq => match lhs_res.ty {
-            hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::GreaterEq, expect.infer_bool(), int_ty))
-            }
-            hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::GreaterEq, expect.infer_bool(), float_ty))
-            }
-            _ => Err(()),
-        },
-        ast::BinOp::LogicAnd => match lhs_res.ty {
-            hir::Type::Bool(bool_ty) => Ok(hir::BinOp::LogicAnd(bool_ty)),
-            _ => Err(()),
-        },
-        ast::BinOp::LogicOr => match lhs_res.ty {
-            hir::Type::Bool(bool_ty) => Ok(hir::BinOp::LogicOr(bool_ty)),
-            _ => Err(()),
-        },
-    };
-
-    if let Ok(hir_op) = hir_op {
+    if let Ok(hir_op) = check_binary_op(ctx, expect, op, op_start, lhs_res.ty, rhs_res.ty) {
         let res_ty = match op {
             ast::BinOp::Eq
             | ast::BinOp::NotEq
@@ -2116,10 +1975,167 @@ fn typecheck_binary<'hir, 'ast>(
         let binary = hir::Expr::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
         TypeResult::new(res_ty, binary)
     } else {
+        TypeResult::error()
+    }
+}
+
+//@allow `==`, `!=` with rawptr's and references? implicit conversions?
+//@allow and implement string comparisons (cstring and string)
+//@extra checks when part of the operation is invalid: <lhs> / 0
+//@dont force type equality for bitshifts?
+fn check_binary_op<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    expect: Expectation,
+    op: ast::BinOp,
+    op_start: TextOffset,
+    lhs_ty: hir::Type<'hir>,
+    rhs_ty: hir::Type,
+) -> Result<hir::BinOp, ()> {
+    if !type_matches(ctx, lhs_ty, rhs_ty) {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
-        let lhs_ty = type_format(ctx, lhs_res.ty);
-        let rhs_ty = type_format(ctx, rhs_res.ty);
+        let lhs_ty = type_format(ctx, lhs_ty);
+        let rhs_ty = type_format(ctx, rhs_ty);
+        err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
+        return Err(());
+    }
+
+    let hir_op = match op {
+        ast::BinOp::Add => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::Add_Int),
+            hir::Type::Float(_) => Ok(hir::BinOp::Add_Float),
+            _ => Err(()),
+        },
+        ast::BinOp::Sub => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::Sub_Int),
+            hir::Type::Float(_) => Ok(hir::BinOp::Sub_Float),
+            _ => Err(()),
+        },
+        ast::BinOp::Mul => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::Mul_Int),
+            hir::Type::Float(_) => Ok(hir::BinOp::Mul_Float),
+            _ => Err(()),
+        },
+        ast::BinOp::Div => match lhs_ty {
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::Div_Int(int_ty)),
+            hir::Type::Float(_) => Ok(hir::BinOp::Div_Float),
+            _ => Err(()),
+        },
+        ast::BinOp::Rem => match lhs_ty {
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::Rem_Int(int_ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::BitAnd => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::BitAnd),
+            _ => Err(()),
+        },
+        ast::BinOp::BitOr => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::BitOr),
+            _ => Err(()),
+        },
+        ast::BinOp::BitXor => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::BitXor),
+            _ => Err(()),
+        },
+        ast::BinOp::BitShl => match lhs_ty {
+            hir::Type::Int(_) => Ok(hir::BinOp::BitShl),
+            _ => Err(()),
+        },
+        ast::BinOp::BitShr => match lhs_ty {
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitShr(int_ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::Eq => match lhs_ty {
+            hir::Type::Char | hir::Type::Bool(_) => {
+                Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
+            }
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
+            }
+            hir::Type::Enum(enum_id, _) => {
+                let data = ctx.registry.enum_data(enum_id);
+                if !data.flag_set.contains(hir::EnumFlag::WithFields) {
+                    Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::NotEq => match lhs_ty {
+            hir::Type::Char | hir::Type::Bool(_) => {
+                Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
+            }
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::NotEq, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::NotEq, expect.infer_bool(), float_ty))
+            }
+            hir::Type::Enum(enum_id, _) => {
+                let data = ctx.registry.enum_data(enum_id);
+                if !data.flag_set.contains(hir::EnumFlag::WithFields) {
+                    Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::Less => match lhs_ty {
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::LessEq => match lhs_ty {
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::LessEq, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::LessEq, expect.infer_bool(), float_ty))
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::Greater => match lhs_ty {
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::Greater, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::Greater, expect.infer_bool(), float_ty))
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::GreaterEq => match lhs_ty {
+            hir::Type::Int(int_ty) => {
+                Ok(hir::BinOp::Cmp_Int(CmpPred::GreaterEq, expect.infer_bool(), int_ty))
+            }
+            hir::Type::Float(float_ty) => {
+                Ok(hir::BinOp::Cmp_Float(CmpPred::GreaterEq, expect.infer_bool(), float_ty))
+            }
+            _ => Err(()),
+        },
+        ast::BinOp::LogicAnd => match lhs_ty {
+            hir::Type::Bool(bool_ty) => Ok(hir::BinOp::LogicAnd(bool_ty)),
+            _ => Err(()),
+        },
+        ast::BinOp::LogicOr => match lhs_ty {
+            hir::Type::Bool(bool_ty) => Ok(hir::BinOp::LogicOr(bool_ty)),
+            _ => Err(()),
+        },
+    };
+
+    if hir_op.is_err() {
+        let op_len = op.as_str().len() as u32;
+        let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
+        let lhs_ty = type_format(ctx, lhs_ty);
+        let rhs_ty = type_format(ctx, rhs_ty);
         err::tycheck_bin_cannot_apply(
             &mut ctx.emit,
             src,
@@ -2127,8 +2143,9 @@ fn typecheck_binary<'hir, 'ast>(
             lhs_ty.as_str(),
             rhs_ty.as_str(),
         );
-        TypeResult::error()
     }
+
+    hir_op
 }
 
 fn constfold_binary<'hir>(
@@ -3119,17 +3136,18 @@ fn typecheck_assign<'hir, 'ast>(
     let addr_res = resolve_expr_addressability(ctx, lhs_res.expr);
     check_assign_addressability(ctx, &addr_res, assign.lhs.range);
 
+    let expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));
+    let rhs_res = typecheck_expr(ctx, expect, assign.rhs);
+
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
         ast::AssignOp::Bin(op) => {
-            let src = ctx.src(assign.op_range);
-            err::internal_not_implemented(&mut ctx.emit, src, "binary typecheck in assignment");
-            hir::AssignOp::Assign
+            let op_start = assign.op_range.start();
+            let op_res =
+                check_binary_op(ctx, Expectation::None, op, op_start, lhs_res.ty, rhs_res.ty);
+            op_res.map(|op| hir::AssignOp::Bin(op)).unwrap_or(hir::AssignOp::Assign)
         }
     };
-
-    let rhs_expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));
-    let rhs_res = typecheck_expr(ctx, rhs_expect, assign.rhs);
 
     let assign =
         hir::Assign { op: assign_op, lhs: lhs_res.expr, rhs: rhs_res.expr, lhs_ty: lhs_res.ty };
