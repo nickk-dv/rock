@@ -1919,8 +1919,6 @@ fn promote_untyped<'hir>(
     Some(promoted)
 }
 
-//@allow `==`, `!=` with rawptr's and references? implicit conversions?
-//@allow and implement string comparisons (cstring and string)
 fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -1931,7 +1929,11 @@ fn typecheck_binary<'hir, 'ast>(
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
     let mut lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
-    let mut rhs_res = typecheck_expr_untyped(ctx, Expectation::None, rhs);
+    let rhs_expect = match lhs_res.ty {
+        hir::Type::Enum(..) => Expectation::HasType(lhs_res.ty, Some(ctx.src(lhs.range))),
+        _ => Expectation::None,
+    };
+    let mut rhs_res = typecheck_expr_untyped(ctx, rhs_expect, rhs);
 
     if lhs_res.ty.is_error() || rhs_res.ty.is_error() {
         return TypeResult::error();
@@ -1979,10 +1981,10 @@ fn typecheck_binary<'hir, 'ast>(
     }
 }
 
-//@allow `==`, `!=` with rawptr's and references? implicit conversions?
-//@allow and implement string comparisons (cstring and string)
-//@extra checks when part of the operation is invalid: <lhs> / 0
 //@dont force type equality for bitshifts?
+//@extra checks when part of the operation is invalid: <lhs> / 0
+//@allow and implement string comparisons (cstring and string)
+//@allow `==`, `!=` with implicit conversions between ref and rawptr's?
 fn check_binary_op<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation,
@@ -2046,7 +2048,7 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::Eq => match lhs_ty {
-            hir::Type::Char | hir::Type::Bool(_) => {
+            hir::Type::Char | hir::Type::Rawptr | hir::Type::Bool(_) => {
                 Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
             }
             hir::Type::Int(int_ty) => {
@@ -2066,7 +2068,7 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::NotEq => match lhs_ty {
-            hir::Type::Char | hir::Type::Bool(_) => {
+            hir::Type::Char | hir::Type::Rawptr | hir::Type::Bool(_) => {
                 Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
             }
             hir::Type::Int(int_ty) => {
@@ -2274,6 +2276,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Eq_Int_Other(bool_ty) => {
             let val = match lhs {
                 hir::ConstValue::Char { val } => val == rhs.into_char(),
+                hir::ConstValue::Null => true, //only value: null == null
                 hir::ConstValue::Bool { val, .. } => val == rhs.into_bool(),
                 hir::ConstValue::Variant { variant } => {
                     variant.variant_id == rhs.into_enum().variant_id
@@ -2285,6 +2288,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::NotEq_Int_Other(bool_ty) => {
             let val = match lhs {
                 hir::ConstValue::Char { val } => val != rhs.into_char(),
+                hir::ConstValue::Null => false, //only value: null != null
                 hir::ConstValue::Bool { val, .. } => val != rhs.into_bool(),
                 hir::ConstValue::Variant { variant } => {
                     variant.variant_id != rhs.into_enum().variant_id
