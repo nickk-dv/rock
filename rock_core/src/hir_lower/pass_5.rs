@@ -2901,10 +2901,34 @@ fn typecheck_for<'hir, 'ast>(
             }
 
             //@use untyped and unify the integer types
-            let start_res = typecheck_expr(ctx, Expectation::None, header.start);
+            let mut start_res = typecheck_expr_untyped(ctx, Expectation::None, header.start);
             check_expect_integer(ctx, header.start.range, start_res.ty);
-            let end_res = typecheck_expr(ctx, Expectation::None, header.end);
+            let mut end_res = typecheck_expr_untyped(ctx, Expectation::None, header.end);
             check_expect_integer(ctx, header.end.range, end_res.ty);
+
+            let start_promote = promote_untyped(
+                ctx,
+                header.start.range,
+                *start_res.expr,
+                &mut start_res.ty,
+                Some(end_res.ty),
+                true,
+            );
+            let end_promote = promote_untyped(
+                ctx,
+                header.end.range,
+                *end_res.expr,
+                &mut end_res.ty,
+                Some(start_res.ty),
+                true,
+            );
+
+            if let Some(Ok(value)) = start_promote {
+                start_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+            }
+            if let Some(Ok(value)) = end_promote {
+                end_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+            }
 
             let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) =
                 (start_res.ty, end_res.ty)
