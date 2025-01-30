@@ -424,8 +424,7 @@ pub fn float_range_check<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let (min, max) = match float_ty {
         hir::FloatType::F32 => (f32::MIN as f64, f32::MAX as f64),
-        hir::FloatType::F64 => (f64::MIN, f64::MAX),
-        hir::FloatType::Untyped => unreachable!(),
+        hir::FloatType::F64 | hir::FloatType::Untyped => (f64::MIN, f64::MAX),
     };
 
     if val.is_nan() {
