@@ -14,6 +14,12 @@ pub struct Hir<'hir> {
     pub globals: Vec<GlobalData<'hir>>,
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
+    pub core: CoreItems,
+}
+
+pub struct CoreItems {
+    pub string_equals: ProcID,
+    pub cstring_equals: ProcID,
 }
 
 pub struct ProcData<'hir> {
@@ -539,11 +545,12 @@ pub enum BinOp {
     NotEq_Int_Other(BoolType),
     Cmp_Int(CmpPred, BoolType, IntType),
     Cmp_Float(CmpPred, BoolType, FloatType),
+    Cmp_String(CmpPred, BoolType, StringType),
     LogicAnd(BoolType),
     LogicOr(BoolType),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum CmpPred {
     Eq,
     NotEq,
@@ -1009,6 +1016,7 @@ impl BinOp {
             BinOp::NotEq_Int_Other(_) => "!=",
             BinOp::Cmp_Int(pred, _, _) => pred.as_str(),
             BinOp::Cmp_Float(pred, _, _) => pred.as_str(),
+            BinOp::Cmp_String(pred, _, _) => pred.as_str(),
             BinOp::LogicAnd(_) => "&&",
             BinOp::LogicOr(_) => "||",
         }

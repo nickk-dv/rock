@@ -1302,7 +1302,7 @@ fn typecheck_directive<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     match directive.kind {
         ast::DirectiveKind::CallerLocation => {
-            let (struct_id, _) = match core_find_struct(ctx, "panics", "Location") {
+            let struct_id = match core_find_struct(ctx, "panics", "Location") {
                 Some(value) => value,
                 None => {
                     let msg = "failed to locate struct `Location` in `core:panics`";
@@ -1731,11 +1731,11 @@ fn typecheck_address<'hir, 'ast>(
 }
 
 //@move handling of core dependencies to context
-fn core_find_struct(
+pub fn core_find_struct(
     ctx: &HirCtx,
     module_name: &'static str,
     struct_name: &'static str,
-) -> Option<(hir::StructID, ModuleID)> {
+) -> Option<hir::StructID> {
     let module_name = ctx.session.intern_name.get_id(module_name)?;
     let struct_name = ctx.session.intern_name.get_id(struct_name)?;
 
@@ -1745,9 +1745,25 @@ fn core_find_struct(
         session::ModuleOrDirectory::Module(module_id) => module_id,
         session::ModuleOrDirectory::Directory(_) => return None,
     };
+    ctx.scope.global.find_defined_struct(target_id, struct_name)
+}
 
-    let struct_id = ctx.scope.global.find_defined_struct(target_id, struct_name);
-    struct_id.map(|id| (id, target_id))
+//@move, re-use module finding logic
+pub fn core_find_proc(
+    ctx: &HirCtx,
+    module_name: &'static str,
+    proc_name: &'static str,
+) -> Option<hir::ProcID> {
+    let module_name = ctx.session.intern_name.get_id(module_name)?;
+    let proc_name = ctx.session.intern_name.get_id(proc_name)?;
+
+    let core_package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
+    let target_id = match core_package.src().find(ctx.session, module_name) {
+        session::ModuleOrDirectory::None => return None,
+        session::ModuleOrDirectory::Module(module_id) => module_id,
+        session::ModuleOrDirectory::Directory(_) => return None,
+    };
+    ctx.scope.global.find_defined_proc(target_id, proc_name)
 }
 
 fn typecheck_unary<'hir, 'ast>(
@@ -1983,7 +1999,6 @@ fn typecheck_binary<'hir, 'ast>(
 
 //@dont force type equality for bitshifts?
 //@extra checks when part of the operation is invalid: <lhs> / 0
-//@allow and implement string comparisons (cstring and string)
 //@allow `==`, `!=` with implicit conversions between ref and rawptr's?
 fn check_binary_op<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
@@ -2057,6 +2072,9 @@ fn check_binary_op<'hir>(
             hir::Type::Float(float_ty) => {
                 Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
             }
+            hir::Type::String(string_ty) => {
+                Ok(hir::BinOp::Cmp_String(CmpPred::Eq, expect.infer_bool(), string_ty))
+            }
             hir::Type::Enum(enum_id, _) => {
                 let data = ctx.registry.enum_data(enum_id);
                 if !data.flag_set.contains(hir::EnumFlag::WithFields) {
@@ -2076,6 +2094,9 @@ fn check_binary_op<'hir>(
             }
             hir::Type::Float(float_ty) => {
                 Ok(hir::BinOp::Cmp_Float(CmpPred::NotEq, expect.infer_bool(), float_ty))
+            }
+            hir::Type::String(string_ty) => {
+                Ok(hir::BinOp::Cmp_String(CmpPred::NotEq, expect.infer_bool(), string_ty))
             }
             hir::Type::Enum(enum_id, _) => {
                 let data = ctx.registry.enum_data(enum_id);
@@ -2320,6 +2341,16 @@ fn constfold_binary<'hir>(
                 CmpPred::LessEq => lhs <= rhs,
                 CmpPred::Greater => lhs > rhs,
                 CmpPred::GreaterEq => lhs >= rhs,
+            };
+            Ok(hir::ConstValue::Bool { val, bool_ty })
+        }
+        hir::BinOp::Cmp_String(pred, bool_ty, _) => {
+            let lhs = lhs.into_string();
+            let rhs = rhs.into_string();
+            let val = match pred {
+                CmpPred::Eq => lhs == rhs,
+                CmpPred::NotEq => lhs != rhs,
+                _ => unreachable!(),
             };
             Ok(hir::ConstValue::Bool { val, bool_ty })
         }

@@ -2,7 +2,7 @@ use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
 use crate::llvm;
-use rock_core::hir;
+use rock_core::hir::{self, CmpPred};
 use rock_core::intern::LitID;
 use rock_core::text::{self, TextOffset};
 
@@ -509,7 +509,7 @@ fn codegen_index<'c>(
         let exit_bb = cg.append_bb("bounds_exit");
         let cond = codegen_binary_op(
             cg,
-            hir::BinOp::Cmp_Int(hir::CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::Usize),
+            hir::BinOp::Cmp_Int(CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::Usize),
             index_val,
             bound,
         );
@@ -866,7 +866,7 @@ fn codegen_array_repeat<'c>(
     let repeat_val = cg.const_usize(array_repeat.len);
     let cond = codegen_binary_op(
         cg,
-        hir::BinOp::Cmp_Int(hir::CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
+        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
         count_val,
         repeat_val,
     );
@@ -1030,13 +1030,31 @@ pub fn codegen_binary_op(
             let value = cg.build.fcmp(pred, lhs, rhs, "bin");
             convert_i1_to_bool(cg, value, bool_ty)
         }
+        hir::BinOp::Cmp_String(pred, bool_ty, string_ty) => {
+            let (fn_val, fn_ty) = match string_ty {
+                hir::StringType::String => cg.procs[cg.hir.core.string_equals.index()],
+                hir::StringType::CString => cg.procs[cg.hir.core.cstring_equals.index()],
+                hir::StringType::Untyped => unreachable!(),
+            };
+            let mut value = cg.build.call(fn_ty, fn_val, &[lhs, rhs], "bin_str_cmp").unwrap();
+
+            if pred == CmpPred::NotEq {
+                let bool = cg.bool_type(hir::BoolType::Bool);
+                let one = llvm::const_int(bool, 1, false);
+                value = cg.build.bin_op(llvm::OpCode::LLVMXor, value, one, "bin_str_not")
+            }
+            if bool_ty != hir::BoolType::Bool {
+                let into_ty = cg.bool_type(bool_ty);
+                value = cg.build.cast(OpCode::LLVMZExt, value, into_ty, "bin_str_bcast")
+            }
+            value
+        }
         hir::BinOp::LogicAnd(_) => cg.build.bin_op(llvm::OpCode::LLVMAnd, lhs, rhs, "bin"),
         hir::BinOp::LogicOr(_) => cg.build.bin_op(llvm::OpCode::LLVMOr, lhs, rhs, "bin"),
     }
 }
 
-fn cmp_int_predicate(pred: hir::CmpPred, int_ty: hir::IntType) -> llvm::IntPred {
-    use hir::CmpPred;
+fn cmp_int_predicate(pred: CmpPred, int_ty: hir::IntType) -> llvm::IntPred {
     use llvm::IntPred;
     match pred {
         CmpPred::Eq => IntPred::LLVMIntEQ,
@@ -1072,8 +1090,7 @@ fn cmp_int_predicate(pred: hir::CmpPred, int_ty: hir::IntType) -> llvm::IntPred 
     }
 }
 
-fn cmp_float_predicate(pred: hir::CmpPred) -> llvm::FloatPred {
-    use hir::CmpPred;
+fn cmp_float_predicate(pred: CmpPred) -> llvm::FloatPred {
     use llvm::FloatPred;
     match pred {
         CmpPred::Eq => FloatPred::LLVMRealOEQ,

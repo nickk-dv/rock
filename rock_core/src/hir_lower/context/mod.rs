@@ -81,6 +81,13 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
     }
 
     pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
+        //@dont unwrap, make all required core dependencies checked
+        let core = hir::CoreItems {
+            string_equals: super::pass_5::core_find_proc(&self, "slice", "string_equals").unwrap(),
+            cstring_equals: super::pass_5::core_find_proc(&self, "slice", "cstring_equals")
+                .unwrap(),
+        };
+
         let ((), warnings) = self.emit.result(())?;
 
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
@@ -100,6 +107,7 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             globals: self.registry.hir_globals,
             const_eval_values,
             variant_eval_values,
+            core,
         };
         Ok((hir, warnings))
     }

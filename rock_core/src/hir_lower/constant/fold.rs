@@ -2,6 +2,7 @@ use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
+use crate::intern::LitID;
 use crate::support::AsStr;
 use crate::text::TextRange;
 
@@ -536,6 +537,12 @@ impl<'hir> hir::ConstValue<'hir> {
     pub fn into_float_ty(&self) -> hir::FloatType {
         match *self {
             hir::ConstValue::Float { float_ty, .. } => float_ty,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_string(&self) -> LitID {
+        match *self {
+            hir::ConstValue::String { val, .. } => val,
             _ => unreachable!(),
         }
     }
