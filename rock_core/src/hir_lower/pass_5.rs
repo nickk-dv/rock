@@ -2109,10 +2109,10 @@ fn check_binary_op<'hir>(
         },
         ast::BinOp::Less => match lhs_ty {
             hir::Type::Int(int_ty) => {
-                Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
+                Ok(hir::BinOp::Cmp_Int(CmpPred::Less, expect.infer_bool(), int_ty))
             }
             hir::Type::Float(float_ty) => {
-                Ok(hir::BinOp::Cmp_Float(CmpPred::Eq, expect.infer_bool(), float_ty))
+                Ok(hir::BinOp::Cmp_Float(CmpPred::Less, expect.infer_bool(), float_ty))
             }
             _ => Err(()),
         },
