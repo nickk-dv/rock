@@ -677,11 +677,10 @@ fn typecheck_pat_lit<'hir, 'ast>(
     expr: &ast::Expr<'ast>,
 ) -> PatResult<'hir> {
     let expr_res = typecheck_expr(ctx, expect, expr);
-    let src = ctx.src(expr.range);
-
-    match constant::fold_const_expr(ctx, src, expr_res.expr) {
-        Ok(value) => PatResult::new(hir::Pat::Lit(value), expr_res.ty),
-        Err(()) => PatResult::error(),
+    match expr_res.expr {
+        hir::Expr::Error => PatResult::error(),
+        hir::Expr::Const { value } => PatResult::new(hir::Pat::Lit(*value), expr_res.ty),
+        _ => unreachable!(), //@reason: pat lit should always eval to error or const
     }
 }
 
