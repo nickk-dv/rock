@@ -358,6 +358,7 @@ pub fn type_resolve<'hir, 'ast>(
         }
         ast::TypeKind::ArraySlice(slice) => {
             let elem_ty = type_resolve(ctx, slice.elem_ty, in_definition);
+
             if elem_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -373,12 +374,10 @@ pub fn type_resolve<'hir, 'ast>(
                 let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
-                match constant::resolve_const_expr(ctx, Expectation::USIZE, array.len) {
-                    (Ok(hir::ConstValue::Int { val, .. }), _) => {
-                        hir::ArrayStaticLen::Immediate(val)
-                    }
-                    (Ok(_), _) => unreachable!(),
-                    (Err(_), _) => return hir::Type::Error,
+                let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, array.len);
+                match len_res {
+                    Ok(value) => hir::ArrayStaticLen::Immediate(value.into_int_u64()),
+                    Err(_) => return hir::Type::Error,
                 }
             };
 

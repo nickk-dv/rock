@@ -113,8 +113,8 @@ fn codegen_expr<'c>(
         hir::Expr::StructInit { struct_id, input } => {
             codegen_struct_init(cg, expect, struct_id, input)
         }
-        hir::Expr::ArrayInit { array_init } => codegen_array_init(cg, expect, array_init),
-        hir::Expr::ArrayRepeat { array_repeat } => codegen_array_repeat(cg, expect, array_repeat),
+        hir::Expr::ArrayInit { array } => codegen_array_init(cg, expect, array),
+        hir::Expr::ArrayRepeat { array } => codegen_array_repeat(cg, expect, array),
         hir::Expr::Deref { rhs, ref_ty, .. } => Some(codegen_deref(cg, expect, rhs, *ref_ty)),
         hir::Expr::Address { rhs } => Some(codegen_address(cg, rhs)),
         hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
@@ -817,17 +817,17 @@ fn codegen_struct_init<'c>(
 fn codegen_array_init<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
-    array_init: &hir::ArrayInit<'c>,
+    array: &hir::ArrayInit<'c>,
 ) -> Option<llvm::Value> {
-    let elem_ty = cg.ty(array_init.elem_ty);
-    let array_ty = llvm::array_type(elem_ty, array_init.input.len() as u64);
+    let elem_ty = cg.ty(array.elem_ty);
+    let array_ty = llvm::array_type(elem_ty, array.input.len() as u64);
     let array_ptr = match expect {
         Expect::Value(_) | Expect::Pointer => cg.entry_alloca(array_ty, "array_init"),
         Expect::Store(ptr_val) => ptr_val,
     };
 
     let mut indices = [cg.const_usize(0), cg.const_usize(0)];
-    for (idx, &expr) in array_init.input.iter().enumerate() {
+    for (idx, &expr) in array.input.iter().enumerate() {
         indices[1] = cg.const_usize(idx as u64);
         let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
         codegen_expr_store(cg, expr, elem_ptr);
@@ -843,16 +843,16 @@ fn codegen_array_init<'c>(
 fn codegen_array_repeat<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
-    array_repeat: &hir::ArrayRepeat<'c>,
+    array: &hir::ArrayRepeat<'c>,
 ) -> Option<llvm::Value> {
-    let elem_ty = cg.ty(array_repeat.elem_ty);
-    let array_ty = llvm::array_type(elem_ty, array_repeat.len);
+    let elem_ty = cg.ty(array.elem_ty);
+    let array_ty = llvm::array_type(elem_ty, array.len);
     let array_ptr = match expect {
         Expect::Value(_) | Expect::Pointer => cg.entry_alloca(array_ty, "array_repeat"),
         Expect::Store(ptr_val) => ptr_val,
     };
 
-    let copied_val = codegen_expr_value(cg, array_repeat.value);
+    let copied_val = codegen_expr_value(cg, array.value);
     let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
     cg.build.store(cg.const_usize(0), count_ptr);
 
@@ -863,7 +863,7 @@ fn codegen_array_repeat<'c>(
     cg.build.br(entry_bb);
     cg.build.position_at_end(entry_bb);
     let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
-    let repeat_val = cg.const_usize(array_repeat.len);
+    let repeat_val = cg.const_usize(array.len);
     let cond = codegen_binary_op(
         cg,
         hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),

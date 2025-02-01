@@ -248,8 +248,8 @@ pub enum Expr<'hir> {
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>], start: TextOffset }, //@causes Expr to be 32 bytes!
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
-    ArrayInit    { array_init: &'hir ArrayInit<'hir> },
-    ArrayRepeat  { array_repeat: &'hir ArrayRepeat<'hir> },
+    ArrayInit    { array: &'hir ArrayInit<'hir> },
+    ArrayRepeat  { array: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },
     Address      { rhs: &'hir Expr<'hir> },
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },

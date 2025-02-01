@@ -454,3 +454,53 @@ proc test_float_greater_eq() void {
     assert(pos >= neg == true, "");
     assert(neg >= pos == false, "");
 }
+
+//#entry "logic_and"
+//#expect
+//#!
+proc test_logic_and() void {
+    let a: bool = true;
+    let b: bool = false;
+    let a32: bool32 = true;
+    let b32: bool32 = false;
+
+    assert((true && true) == true, "");
+    assert((false && false) == false, "");
+    assert((true && false) == false, "");
+    assert((false && true) == false, "");
+
+    assert((a && a) == true, "");
+    assert((b && b) == false, "");
+    assert((a && b) == false, "");
+    assert((b && a) == false, "");
+
+    assert((a32 && a32) == true, "");
+    assert((b32 && b32) == false, "");
+    assert((a32 && b32) == false, "");
+    assert((b32 && a32) == false, "");
+}
+
+//#entry "logic_or"
+//#expect
+//#!
+proc test_logic_or() void {
+    let a: bool = true;
+    let b: bool = false;
+    let a32: bool32 = true;
+    let b32: bool32 = false;
+
+    assert((true || true) == true, "");
+    assert((false || false) == false, "");
+    assert((true || false) == true, "");
+    assert((false || true) == true, "");
+
+    assert((a || a) == true, "");
+    assert((b || b) == false, "");
+    assert((a || b) == true, "");
+    assert((b || a) == true, "");
+
+    assert((a32 || a32) == true, "");
+    assert((b32 || b32) == false, "");
+    assert((a32 || b32) == true, "");
+    assert((b32 || a32) == true, "");
+}

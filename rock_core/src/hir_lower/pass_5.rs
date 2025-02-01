@@ -262,6 +262,16 @@ impl<'hir> Expectation<'hir> {
             _ => BoolType::Bool,
         }
     }
+    fn infer_array_elem(&self) -> Expectation<'hir> {
+        match self {
+            Expectation::None => Expectation::None,
+            Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+                hir::Type::Error => Expectation::HasType(hir::Type::Error, None),
+                hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, *expect_src),
+                _ => Expectation::None,
+            },
+        }
+    }
 }
 
 pub fn type_expectation_check(
@@ -429,7 +439,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::StructInit { struct_init } => {
             typecheck_struct_init(ctx, expect, struct_init, expr.range)
         }
-        ast::ExprKind::ArrayInit { input } => typecheck_array_init(ctx, expect, input, expr.range),
+        ast::ExprKind::ArrayInit { input } => typecheck_array_init(ctx, expect, expr.range, input),
         ast::ExprKind::ArrayRepeat { value, len } => {
             typecheck_array_repeat(ctx, expect, value, len)
         }
@@ -1587,68 +1597,46 @@ fn typecheck_struct_init<'hir, 'ast>(
 fn typecheck_array_init<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
+    range: TextRange,
     input: &[&ast::Expr<'ast>],
-    expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let mut expect = match expect {
-        Expectation::None => Expectation::None,
-        Expectation::HasType(expect_ty, expect_src) => match expect_ty {
-            hir::Type::Error => Expectation::HasType(hir::Type::Error, None),
-            hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, expect_src),
-            _ => Expectation::None,
-        },
-    };
-
-    let mut elem_ty = None;
-    let mut did_error = false;
     let error_count = ctx.emit.error_count();
+    let mut elem_ty = None;
+    let mut expect = expect.infer_array_elem();
 
     let offset = ctx.cache.exprs.start();
     for expr in input.iter().copied() {
         let expr_res = typecheck_expr(ctx, expect, expr);
-        did_error = ctx.emit.did_error(error_count);
         ctx.cache.exprs.push(expr_res.expr);
 
         // stop expecting when errored
+        let did_error = ctx.emit.did_error(error_count);
         if did_error {
-            expect = Expectation::None; //@expect error type?
+            expect = Expectation::HasType(hir::Type::Error, None);
         }
-        // elem_ty is first non-error type
+
+        // set elem_ty and expect to first non-error type
         if elem_ty.is_none() && !expr_res.ty.is_error() {
             elem_ty = Some(expr_res.ty);
-
-            // update expect with first non-error type
             if matches!(expect, Expectation::None) && !did_error {
-                let expect_src = ctx.src(expr.range);
-                expect = Expectation::HasType(expr_res.ty, Some(expect_src));
+                expect = Expectation::HasType(expr_res.ty, Some(ctx.src(expr.range)));
             }
         }
     }
     let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
     if elem_ty.is_none() {
-        match expect {
-            Expectation::None => {}
-            Expectation::HasType(expect_ty, _) => {
-                elem_ty = Some(expect_ty);
-            }
-        }
+        elem_ty = expect.inner_type();
     }
 
-    //@should return error? or result with type and Expr::Error?
-    if did_error {
-        TypeResult::error()
-    } else if let Some(elem_ty) = elem_ty {
+    if let Some(elem_ty) = elem_ty {
         let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
-        let array_ty = hir::ArrayStatic { len, elem_ty };
-        let array_ty = ctx.arena.alloc(array_ty);
-
-        let array_init = hir::ArrayInit { elem_ty, input };
-        let array_init = ctx.arena.alloc(array_init);
-        let kind = hir::Expr::ArrayInit { array_init };
-        TypeResult::new(hir::Type::ArrayStatic(array_ty), kind)
+        let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
+        let array = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
+        let expr = hir::Expr::ArrayInit { array };
+        TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
     } else if input.is_empty() {
-        let src = ctx.src(expr_range);
+        let src = ctx.src(range);
         err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
         TypeResult::error()
     } else {
@@ -1658,39 +1646,32 @@ fn typecheck_array_init<'hir, 'ast>(
 
 fn typecheck_array_repeat<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
-    mut expect: Expectation<'hir>,
+    expect: Expectation<'hir>,
     value: &ast::Expr<'ast>,
     len: ast::ConstExpr<'ast>,
 ) -> TypeResult<'hir> {
-    expect = match expect {
-        Expectation::None => Expectation::None,
-        Expectation::HasType(expect_ty, expect_src) => match expect_ty {
-            hir::Type::Error => Expectation::HasType(hir::Type::Error, None),
-            hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, expect_src),
-            _ => Expectation::None,
-        },
+    let expect = expect.infer_array_elem();
+    let value_res = typecheck_expr(ctx, expect, value);
+    let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, len);
+
+    let len = match len_res {
+        Ok(value) => value.into_int_u64(),
+        Err(_) => return TypeResult::error(),
     };
 
-    let expr_res = typecheck_expr(ctx, expect, value);
-
-    //@this is duplicated here and in pass_3::type_resolve 09.05.24
-    let value = constant::resolve_const_expr(ctx, Expectation::USIZE, len);
-    let len = match value {
-        (Ok(hir::ConstValue::Int { val, .. }), _) => Some(val),
-        _ => None,
-    };
-
-    if let Some(len) = len {
-        let array_type = ctx.arena.alloc(hir::ArrayStatic {
-            len: hir::ArrayStaticLen::Immediate(len),
-            elem_ty: expr_res.ty,
-        });
-        let array_repeat =
-            ctx.arena.alloc(hir::ArrayRepeat { elem_ty: expr_res.ty, value: expr_res.expr, len });
-        TypeResult::new(hir::Type::ArrayStatic(array_type), hir::Expr::ArrayRepeat { array_repeat })
+    let expr = if let hir::Expr::Const { value } = *value_res.expr {
+        let array = hir::ConstArrayRepeat { len, value };
+        let value = hir::ConstValue::ArrayRepeat { array: ctx.arena.alloc(array) };
+        hir::Expr::Const { value }
     } else {
-        TypeResult::error()
-    }
+        let array = hir::ArrayRepeat { elem_ty: value_res.ty, value: value_res.expr, len };
+        hir::Expr::ArrayRepeat { array: ctx.arena.alloc(array) }
+    };
+
+    let len = hir::ArrayStaticLen::Immediate(len);
+    let array_ty = hir::ArrayStatic { len, elem_ty: value_res.ty };
+    let array_ty = ctx.arena.alloc(array_ty);
+    TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
 }
 
 fn typecheck_deref<'hir, 'ast>(
