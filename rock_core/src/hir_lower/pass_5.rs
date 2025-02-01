@@ -426,7 +426,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         }
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
-        ast::ExprKind::Index { target, index } => typecheck_index(ctx, target, index, expr.range),
+        ast::ExprKind::Index { target, index } => typecheck_index(ctx, expr.range, target, index),
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
@@ -1017,38 +1017,61 @@ fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
 
 fn typecheck_index<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: TextRange,
     target: &ast::Expr<'ast>,
     index: &ast::Expr<'ast>,
-    expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let index_res = typecheck_expr(ctx, Expectation::USIZE, index);
 
-    match type_as_collection(target_res.ty) {
-        Ok(None) => TypeResult::error(),
-        Ok(Some(collection)) => {
-            let kind = match collection.kind {
-                CollectionKind::Multi(mutt) => hir::IndexKind::Multi(mutt),
-                CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
-                CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
-            };
-            let access = hir::IndexAccess {
-                deref: collection.deref,
-                elem_ty: collection.elem_ty,
-                kind,
-                index: index_res.expr,
-            };
-            let index =
-                hir::Expr::Index { target: target_res.expr, access: ctx.arena.alloc(access) };
-            TypeResult::new(collection.elem_ty, index)
-        }
+    let collection = match type_as_collection(target_res.ty) {
+        Ok(None) => return TypeResult::error(),
+        Ok(Some(value)) => value,
         Err(()) => {
-            let src = ctx.src(expr_range);
+            let src = ctx.src(range);
             let ty_fmt = type_format(ctx, target_res.ty);
             err::tycheck_cannot_index_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
-            TypeResult::error()
+            return TypeResult::error();
+        }
+    };
+
+    let kind = match collection.kind {
+        CollectionKind::Multi(mutt) => hir::IndexKind::Multi(mutt),
+        CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
+        CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
+    };
+    let access = hir::IndexAccess {
+        deref: collection.deref,
+        elem_ty: collection.elem_ty,
+        kind,
+        index: index_res.expr,
+    };
+
+    if let hir::Expr::Const { value: target } = *target_res.expr {
+        if let hir::Expr::Const { value: index } = *index_res.expr {
+            let index = index.into_int_u64();
+            let array_len = match target {
+                hir::ConstValue::Array { array } => array.values.len() as u64,
+                hir::ConstValue::ArrayRepeat { array } => array.len,
+                hir::ConstValue::ArrayEmpty { .. } => 0,
+                _ => unreachable!(),
+            };
+            if index >= array_len {
+                let src = ctx.src(range);
+                err::const_index_out_of_bounds(&mut ctx.emit, src, index, array_len);
+                return TypeResult::error();
+            }
+            let value = match target {
+                hir::ConstValue::Array { array } => array.values[index as usize],
+                hir::ConstValue::ArrayRepeat { array } => array.value,
+                _ => unreachable!(),
+            };
+            return TypeResult::new(collection.elem_ty, hir::Expr::Const { value });
         }
     }
+
+    let index = hir::Expr::Index { target: target_res.expr, access: ctx.arena.alloc(access) };
+    TypeResult::new(collection.elem_ty, index)
 }
 
 fn typecheck_slice<'hir, 'ast>(
