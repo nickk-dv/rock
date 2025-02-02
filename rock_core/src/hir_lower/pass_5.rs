@@ -1631,10 +1631,32 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
     }
 
+    let expr = if ctx.in_const {
+        if ctx.emit.did_error(error_count) {
+            ctx.cache.field_inits.pop_view(offset_init);
+            return TypeResult::error();
+        }
+        let const_offset = ctx.cache.const_values.start();
+        let fields = ctx.cache.field_inits.view(offset_init.clone());
+        for field in fields {
+            match field.expr {
+                hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                _ => unreachable!(),
+            }
+        }
+        ctx.cache.field_inits.pop_view(offset_init);
+        let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
+
+        let struct_ = hir::ConstStruct { struct_id, values };
+        let struct_ = hir::ConstValue::Struct { struct_: ctx.arena.alloc(struct_) };
+        hir::Expr::Const { value: struct_ }
+    } else {
+        let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
+        hir::Expr::StructInit { struct_id, input }
+    };
+
     //@ignored poly_types
-    let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
-    let struct_init = hir::Expr::StructInit { struct_id, input };
-    TypeResult::new(hir::Type::Struct(struct_id, &[]), struct_init)
+    TypeResult::new(hir::Type::Struct(struct_id, &[]), expr)
 }
 
 fn typecheck_array_init<'hir, 'ast>(
