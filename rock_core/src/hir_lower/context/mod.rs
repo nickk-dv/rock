@@ -13,6 +13,7 @@ use std::collections::HashMap;
 pub struct HirCtx<'hir, 's, 's_ref> {
     pub arena: Arena<'hir>,
     pub emit: ErrorWarningBuffer,
+    pub in_const: bool,
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
@@ -33,6 +34,7 @@ pub struct Cache<'hir> {
     pub patterns: TempBuffer<hir::Pat<'hir>>,
     pub var_ids: TempBuffer<hir::VariableID>,
     pub field_inits: TempBuffer<hir::FieldInit<'hir>>,
+    pub const_values: TempBuffer<hir::ConstValue<'hir>>,
 }
 
 impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
@@ -50,10 +52,12 @@ impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
             patterns: TempBuffer::new(32),
             var_ids: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
+            const_values: TempBuffer::new(64),
         };
         HirCtx {
             arena: Arena::new(),
             emit: ErrorWarningBuffer::default(),
+            in_const: false,
             scope: scope::Scope::new(session),
             registry: registry::Registry::new(session),
             enum_tag_set: HashMap::with_capacity(128),

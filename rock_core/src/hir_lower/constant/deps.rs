@@ -1003,11 +1003,13 @@ pub fn resolve_const_expr<'hir, 'ast>(
     expect: Expectation<'hir>,
     expr: ast::ConstExpr<'ast>,
 ) -> (Result<hir::ConstValue<'hir>, ()>, hir::Type<'hir>) {
+    ctx.in_const = true;
     let error_count = ctx.emit.error_count();
     let expr_res = match expect {
         Expectation::HasType(_, _) => pass_5::typecheck_expr(ctx, expect, expr.0),
         _ => pass_5::typecheck_expr_untyped(ctx, expect, expr.0),
     };
+    ctx.in_const = false;
 
     if !ctx.emit.did_error(error_count) {
         match expr_res.expr {

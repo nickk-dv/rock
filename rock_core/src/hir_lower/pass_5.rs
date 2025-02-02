@@ -9,7 +9,7 @@ use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
-use crate::session::{self, ModuleID};
+use crate::session;
 use crate::support::AsStr;
 use crate::text::{TextOffset, TextRange};
 
@@ -802,7 +802,7 @@ fn typecheck_field<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let field_res = check_field_from_type(ctx, name, target_res.ty);
-    emit_field_expr(target_res.expr, field_res)
+    emit_field_expr(ctx, target_res.expr, field_res)
 }
 
 struct FieldResult<'hir> {
@@ -931,6 +931,8 @@ fn check_field_from_slice(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::Slic
     }
 }
 
+//@emit temp variable with array assignment?
+// else `[side_effect()].len` would result in `1` without any code running.
 fn check_field_from_array<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     name: ast::Name,
@@ -941,7 +943,7 @@ fn check_field_from_array<'hir>(
         "len" => {
             let len = match array.len {
                 hir::ArrayStaticLen::Immediate(len) => {
-                    hir::ConstValue::Int { val: len, neg: false, int_ty: hir::IntType::Usize }
+                    hir::ConstValue::from_u64(len, IntType::Usize)
                 }
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
                     let (eval, _) = ctx.registry.const_eval(eval_id);
@@ -959,16 +961,34 @@ fn check_field_from_array<'hir>(
 }
 
 fn emit_field_expr<'hir>(
+    ctx: &HirCtx,
     target: &'hir hir::Expr<'hir>,
     field_res: FieldResult<'hir>,
 ) -> TypeResult<'hir> {
     match field_res.kind {
         FieldKind::Error => TypeResult::error(),
         FieldKind::Struct(struct_id, field_id) => {
+            if let hir::Expr::Const { value } = target {
+                let field = match value {
+                    hir::ConstValue::Struct { struct_ } => struct_.values[field_id.index()],
+                    _ => unreachable!(),
+                };
+                return TypeResult::new(field_res.field_ty, hir::Expr::Const { value: field });
+            }
             let access = hir::StructFieldAccess { deref: field_res.deref, struct_id, field_id };
             TypeResult::new(field_res.field_ty, hir::Expr::StructField { target, access })
         }
         FieldKind::ArraySlice { field } => {
+            if let hir::Expr::Const { value } = target {
+                let field = match value {
+                    hir::ConstValue::String { val, .. } => {
+                        let len = ctx.session.intern_lit.get(*val).len();
+                        hir::ConstValue::from_u64(len as u64, IntType::Usize)
+                    }
+                    _ => unreachable!(),
+                };
+                return TypeResult::new(field_res.field_ty, hir::Expr::Const { value: field });
+            }
             let access = hir::SliceFieldAccess { deref: field_res.deref, field };
             TypeResult::new(field_res.field_ty, hir::Expr::SliceField { target, access })
         }
@@ -1047,8 +1067,8 @@ fn typecheck_index<'hir, 'ast>(
         index: index_res.expr,
     };
 
-    if let hir::Expr::Const { value: target } = *target_res.expr {
-        if let hir::Expr::Const { value: index } = *index_res.expr {
+    if let hir::Expr::Const { value: target } = target_res.expr {
+        if let hir::Expr::Const { value: index } = index_res.expr {
             let index = index.into_int_u64();
             let array_len = match target {
                 hir::ConstValue::Array { array } => array.values.len() as u64,
@@ -1433,7 +1453,7 @@ fn typecheck_item<'hir, 'ast>(
     for &name in fields {
         let expr_res = target_res.into_expr_result(ctx);
         let field_res = check_field_from_type(ctx, name.name, expr_res.ty);
-        target_res = emit_field_expr(expr_res.expr, field_res);
+        target_res = emit_field_expr(ctx, expr_res.expr, field_res);
     }
 
     if let Some(args_list) = args_list {
@@ -1646,25 +1666,59 @@ fn typecheck_array_init<'hir, 'ast>(
             }
         }
     }
-    let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
 
     if elem_ty.is_none() {
         elem_ty = expect.inner_type();
     }
 
-    if let Some(elem_ty) = elem_ty {
-        let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
-        let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
-        let array = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
-        let expr = hir::Expr::ArrayInit { array };
-        TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
-    } else if input.is_empty() {
-        let src = ctx.src(range);
-        err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
-        TypeResult::error()
+    let elem_ty = match elem_ty {
+        Some(elem_ty) => elem_ty,
+        None => {
+            if input.is_empty() {
+                let src = ctx.src(range);
+                err::tycheck_cannot_infer_empty_array(&mut ctx.emit, src);
+            }
+            ctx.cache.exprs.pop_view(offset);
+            return TypeResult::error();
+        }
+    };
+
+    let array_expr = if ctx.in_const {
+        // cannot constfold if any value is error
+        if ctx.emit.did_error(error_count) {
+            ctx.cache.exprs.pop_view(offset);
+            return TypeResult::error();
+        }
+
+        if input.is_empty() {
+            ctx.cache.exprs.pop_view(offset);
+            let array = hir::ConstValue::ArrayEmpty { elem_ty: ctx.arena.alloc(elem_ty) };
+            hir::Expr::Const { value: array }
+        } else {
+            let const_offset = ctx.cache.const_values.start();
+            let values = ctx.cache.exprs.view(offset.clone());
+            for value in values {
+                match value {
+                    hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                    _ => unreachable!(),
+                }
+            }
+            ctx.cache.exprs.pop_view(offset);
+            let const_values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
+
+            let array = hir::ConstArray { values: const_values };
+            let array = hir::ConstValue::Array { array: ctx.arena.alloc(array) };
+            hir::Expr::Const { value: array }
+        }
     } else {
-        TypeResult::error()
-    }
+        let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
+        let array = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
+        hir::Expr::ArrayInit { array }
+    };
+
+    let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
+    let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
+    TypeResult::new(hir::Type::ArrayStatic(array_ty), array_expr)
 }
 
 fn typecheck_array_repeat<'hir, 'ast>(
