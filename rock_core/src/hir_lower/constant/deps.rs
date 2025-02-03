@@ -846,7 +846,7 @@ fn add_expr_const_dependencies<'ast>(
     }
 }
 
-fn error_cannot_use_in_constants(
+pub fn error_cannot_use_in_constants(
     emit: &mut ErrorWarningBuffer,
     origin_id: ModuleID,
     range: TextRange,

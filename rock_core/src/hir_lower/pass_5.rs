@@ -1640,8 +1640,17 @@ fn typecheck_struct_init<'hir, 'ast>(
         let fields = ctx.cache.field_inits.view(offset_init.clone());
         for field in fields {
             match field.expr {
+                hir::Expr::Error => return TypeResult::error(),
                 hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
-                _ => unreachable!(),
+                _ => {
+                    constant::error_cannot_use_in_constants(
+                        &mut ctx.emit,
+                        ctx.scope.origin(),
+                        struct_init.input[field.field_id.index()].expr.range, //@should be correct range?
+                        "non constant",
+                    );
+                    return TypeResult::error();
+                }
             }
         }
         ctx.cache.field_inits.pop_view(offset_init);
@@ -1719,10 +1728,19 @@ fn typecheck_array_init<'hir, 'ast>(
         } else {
             let const_offset = ctx.cache.const_values.start();
             let values = ctx.cache.exprs.view(offset.clone());
-            for value in values {
+            for (idx, value) in values.iter().enumerate() {
                 match value {
+                    hir::Expr::Error => return TypeResult::error(),
                     hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
-                    _ => unreachable!(),
+                    _ => {
+                        constant::error_cannot_use_in_constants(
+                            &mut ctx.emit,
+                            ctx.scope.origin(),
+                            input[idx].range,
+                            "non constant",
+                        );
+                        return TypeResult::error();
+                    }
                 }
             }
             ctx.cache.exprs.pop_view(offset);
