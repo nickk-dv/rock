@@ -1,6 +1,105 @@
 //#prelude
 import core:panics as _.{assert}
 
+//#entry "add_int"
+//#expect
+//#!
+proc test_add_int() void {
+    let a = 10;
+    let b = -24;
+
+    assert(10 + -24 == -14, "");
+    assert(a + b == -14, "");
+}
+
+//#entry "add_float"
+//#expect
+//#!
+proc test_add_float() void {
+    let a = 10.0;
+    let b = -24.0;
+
+    assert(10.0 + -24.0 == -14.0, "");
+    assert(a + b == -14.0, "");
+}
+
+//#entry "sub_int"
+//#expect
+//#!
+proc test_sub_int() void {
+    let a = 10;
+    let b = -24;
+
+    assert(10 - -24 == 34, "");
+    assert(a - b == 34, "");
+}
+
+//#entry "sub_float"
+//#expect
+//#!
+proc test_sub_float() void {
+    let a = 10.0;
+    let b = -24.0;
+
+    assert(10.0 - -24.0 == 34.0, "");
+    assert(a - b == 34.0, "");
+}
+
+//#entry "mul_int"
+//#expect
+//#!
+proc test_mul_int() void {
+    let a = 10;
+    let b = -24;
+
+    assert(10 * -24 == -240, "");
+    assert(a * b == -240, "");
+}
+
+//#entry "mul_float"
+//#expect
+//#!
+proc test_mul_float() void {
+    let a = 10.0;
+    let b = -24.0;
+
+    assert(10.0 * -24.0 == -240.0, "");
+    assert(a * b == -240.0, "");
+}
+
+//#entry "div_int_signed"
+//#expect
+//#!
+proc test_div_int_signed() void {
+    let a = 100;
+    let b = -5;
+
+    assert(100 / -5 == -20, "");
+    assert(a / b == -20, "");
+}
+
+//#entry "div_int_unsigned"
+//#expect
+//#!
+proc test_div_int_unsigned() void {
+    let a: u8 = 0xFF;
+    let b: u8 = 10;
+
+    assert((0xFF as u8) / (10 as u8) == 25, "");
+    assert(a / b == 25, "");
+}
+
+//#entry "div_float"
+//#expect
+//#!
+proc test_div_float() void {
+    let a = 100.0;
+    let b = -5.0;
+
+    assert(100.0 / -5.0 == -20.0, "");
+    assert(a / b == -20.0, "");
+}
+
 //#entry "char_eq"
 //#expect
 //#!
