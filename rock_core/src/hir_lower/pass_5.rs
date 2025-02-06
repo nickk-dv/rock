@@ -1132,7 +1132,7 @@ fn typecheck_cast<'hir, 'ast>(
     use hir::CastKind;
     use std::cmp::Ordering;
 
-    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let target_res = typecheck_expr_untyped(ctx, Expectation::None, target);
     let from = target_res.ty;
     let into = super::pass_3::type_resolve(ctx, *into, false);
 
@@ -1151,18 +1151,24 @@ fn typecheck_cast<'hir, 'ast>(
         | (hir::Type::Procedure(_), hir::Type::Rawptr) => CastKind::Rawptr_NoOp,
 
         (hir::Type::Int(from_ty), hir::Type::Int(into_ty)) => {
-            let from_size = layout::int_layout(ctx, from_ty).size;
-            let into_size = layout::int_layout(ctx, into_ty).size;
-            match from_size.cmp(&into_size) {
-                Ordering::Less => {
-                    if from_ty.is_signed() {
-                        CastKind::IntS_Extend
-                    } else {
-                        CastKind::IntU_Extend
+            if from_ty == IntType::Untyped {
+                CastKind::Int_NoOp
+            } else if from_ty == into_ty {
+                CastKind::Error
+            } else {
+                let from_size = layout::int_layout(ctx, from_ty).size;
+                let into_size = layout::int_layout(ctx, into_ty).size;
+                match from_size.cmp(&into_size) {
+                    Ordering::Less => {
+                        if from_ty.is_signed() {
+                            CastKind::IntS_Extend
+                        } else {
+                            CastKind::IntU_Extend
+                        }
                     }
+                    Ordering::Equal => CastKind::Int_NoOp,
+                    Ordering::Greater => CastKind::Int_Trunc,
                 }
-                Ordering::Equal => CastKind::Int_NoOp,
-                Ordering::Greater => CastKind::Int_Trunc,
             }
         }
         (hir::Type::Int(from_ty), hir::Type::Float(_)) => {
@@ -1174,12 +1180,16 @@ fn typecheck_cast<'hir, 'ast>(
         }
 
         (hir::Type::Float(from_ty), hir::Type::Float(into_ty)) => {
-            let from_size = layout::float_layout(from_ty).size;
-            let into_size = layout::float_layout(into_ty).size;
-            match from_size.cmp(&into_size) {
-                Ordering::Less => CastKind::Float_Extend,
-                Ordering::Equal => CastKind::Error,
-                Ordering::Greater => CastKind::Float_Trunc,
+            if from_ty == FloatType::Untyped {
+                CastKind::Float_Trunc
+            } else {
+                let from_size = layout::float_layout(from_ty).size;
+                let into_size = layout::float_layout(into_ty).size;
+                match from_size.cmp(&into_size) {
+                    Ordering::Less => CastKind::Float_Extend,
+                    Ordering::Equal => CastKind::Error,
+                    Ordering::Greater => CastKind::Float_Trunc,
+                }
             }
         }
         (hir::Type::Float(_), hir::Type::Int(into_ty)) => {
@@ -1191,28 +1201,36 @@ fn typecheck_cast<'hir, 'ast>(
         }
 
         (hir::Type::Bool(from_ty), hir::Type::Bool(into_ty)) => {
-            let from_size = layout::bool_layout(from_ty).size;
-            let into_size = layout::bool_layout(into_ty).size;
-            match from_size.cmp(&into_size) {
-                Ordering::Less => CastKind::Bool_Extend,
-                Ordering::Equal => CastKind::Error,
-                Ordering::Greater => CastKind::Bool_Trunc,
+            if from_ty == BoolType::Untyped {
+                CastKind::Bool_Trunc
+            } else {
+                let from_size = layout::bool_layout(from_ty).size;
+                let into_size = layout::bool_layout(into_ty).size;
+                match from_size.cmp(&into_size) {
+                    Ordering::Less => CastKind::Bool_Extend,
+                    Ordering::Equal => CastKind::Error,
+                    Ordering::Greater => CastKind::Bool_Trunc,
+                }
             }
         }
         (hir::Type::Bool(from_ty), hir::Type::Int(into_ty)) => {
-            let from_size = layout::bool_layout(from_ty).size;
-            let into_size = layout::int_layout(ctx, into_ty).size;
-            match from_size.cmp(&into_size) {
-                Ordering::Less => CastKind::Bool_Extend_to_Int,
-                Ordering::Equal => {
-                    if from_size == 1 {
-                        // llvm uses i1, emit extend for `bool`
-                        CastKind::Bool_Extend_to_Int
-                    } else {
-                        CastKind::Bool_NoOp_to_Int
+            if from_ty == BoolType::Untyped {
+                CastKind::Bool_NoOp_to_Int
+            } else {
+                let from_size = layout::bool_layout(from_ty).size;
+                let into_size = layout::int_layout(ctx, into_ty).size;
+                match from_size.cmp(&into_size) {
+                    Ordering::Less => CastKind::Bool_Extend_to_Int,
+                    Ordering::Equal => {
+                        if from_size == 1 {
+                            // llvm uses i1, emit extend for `bool`
+                            CastKind::Bool_Extend_to_Int
+                        } else {
+                            CastKind::Bool_NoOp_to_Int
+                        }
                     }
+                    Ordering::Greater => CastKind::Bool_Trunc_to_Int,
                 }
-                Ordering::Greater => CastKind::Bool_Trunc_to_Int,
             }
         }
 
@@ -1255,7 +1273,7 @@ fn typecheck_cast<'hir, 'ast>(
         _ => CastKind::Error,
     };
 
-    if kind == CastKind::Error || (kind == CastKind::Int_NoOp && type_matches(ctx, into, from)) {
+    if kind == CastKind::Error {
         let src = ctx.src(range);
         let from_ty = type_format(ctx, from);
         let into_ty = type_format(ctx, into);
