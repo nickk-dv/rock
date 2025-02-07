@@ -1950,8 +1950,14 @@ fn constfold_unary<'hir>(
             fold::float_range_check(ctx, src, val, float_ty)
         }
         hir::UnOp::BitNot => {
-            err::internal_not_implemented(&mut ctx.emit, src, "unary `~` constant folding");
-            Err(())
+            let int_ty = rhs.into_int_ty();
+            if int_ty.is_signed() {
+                Ok(hir::ConstValue::from_i64(!rhs.into_int_i64(), int_ty))
+            } else {
+                let value_bits = layout::int_layout(ctx, int_ty).size * 8;
+                let mask: u64 = (1 << value_bits) - 1;
+                Ok(hir::ConstValue::from_u64(mask & !rhs.into_int_u64(), int_ty))
+            }
         }
         hir::UnOp::LogicNot => {
             let (val, bool_ty) = rhs.expect_bool();
