@@ -100,6 +100,117 @@ proc test_div_float() void {
     assert(a / b == -20.0, "");
 }
 
+//#entry "bit_and_const"
+//#expect
+//#!
+proc test_bit_and_const() void {
+    assert(0 & 0b10101010 == 0, "");
+    assert(175 & 0b10101010 == 170, "");
+    assert(0xFF & 0b10101010 == 170, "");
+}
+
+//#entry "bit_and_signed"
+//#expect
+//#!
+proc test_bit_and_signed() void {
+    let a: u8 = 0;
+    let b: u8 = 175;
+    let c: u8 = 0xFF;
+    let m: u8 = 0b10101010;
+
+    assert(a & m == 0, "");
+    assert(b & m == 170, "");
+    assert(c & m == 170, "");
+}
+
+//#entry "bit_and_unsigned"
+//#expect
+//#!
+proc test_bit_and_unsigned() void {
+    let a: s8 = 0;
+    let b: s8 = 56;
+    let c: s8 = 127;
+    let m: s8 = 0b1010101;
+
+    assert(a & m == 0, "");
+    assert(b & m == 16, "");
+    assert(c & m == 85, "");
+}
+
+//#entry "bit_or_const"
+//#expect
+//#!
+proc test_bit_or_const() void {
+    assert(0 | 0b10101010 == 170, "");
+    assert(175 | 0b10101010 == 175, "");
+    assert(0xFF | 0b10101010 == 255, "");
+}
+
+//#entry "bit_or_signed"
+//#expect
+//#!
+proc test_bit_or_signed() void {
+    let a: u8 = 0;
+    let b: u8 = 175;
+    let c: u8 = 0xFF;
+    let m: u8 = 0b10101010;
+
+    assert(a | m == 170, "");
+    assert(b | m == 175, "");
+    assert(c | m == 255, "");
+}
+
+//#entry "bit_or_unsigned"
+//#expect
+//#!
+proc test_bit_or_unsigned() void {
+    let a: s8 = 0;
+    let b: s8 = 56;
+    let c: s8 = 127;
+    let m: s8 = 0b1010101;
+
+    assert(a | m == 85, "");
+    assert(b | m == 125, "");
+    assert(c | m == 127, "");
+}
+
+//#entry "bit_xor_const"
+//#expect
+//#!
+proc test_bit_xor_const() void {
+    assert(0 ^ 0b10101010 == 170, "");
+    assert(175 ^ 0b10101010 == 5, "");
+    assert(0xFF ^ 0b10101010 == 85, "");
+}
+
+//#entry "bit_xor_signed"
+//#expect
+//#!
+proc test_bit_xor_signed() void {
+    let a: u8 = 0;
+    let b: u8 = 175;
+    let c: u8 = 0xFF;
+    let m: u8 = 0b10101010;
+
+    assert(a ^ m == 170, "");
+    assert(b ^ m == 5, "");
+    assert(c ^ m == 85, "");
+}
+
+//#entry "bit_xor_unsigned"
+//#expect
+//#!
+proc test_bit_xor_unsigned() void {
+    let a: s8 = 0;
+    let b: s8 = 56;
+    let c: s8 = 127;
+    let m: s8 = 0b1010101;
+
+    assert(a ^ m == 85, "");
+    assert(b ^ m == 109, "");
+    assert(c ^ m == 42, "");
+}
+
 //#entry "char_eq"
 //#expect
 //#!
