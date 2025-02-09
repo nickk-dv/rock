@@ -247,8 +247,9 @@ pub enum Expectation<'hir> {
 }
 
 impl<'hir> Expectation<'hir> {
-    pub const USIZE: Expectation<'static> = Expectation::HasType(hir::Type::USIZE, None);
     pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::Void, None);
+    pub const USIZE: Expectation<'static> =
+        Expectation::HasType(hir::Type::Int(IntType::Usize), None);
 
     fn inner_type(&self) -> Option<hir::Type<'hir>> {
         match self {
@@ -849,7 +850,7 @@ fn check_field_from_type<'hir>(
             match field_name {
                 "len" => {
                     let kind = FieldKind::ArraySlice { field: hir::SliceField::Len };
-                    let field_ty = hir::Type::USIZE;
+                    let field_ty = hir::Type::Int(IntType::Usize);
                     FieldResult::new(deref, kind, field_ty)
                 }
                 _ => {
@@ -873,7 +874,7 @@ fn check_field_from_type<'hir>(
                 let kind = FieldKind::ArraySlice { field };
                 let field_ty = match field {
                     hir::SliceField::Ptr => hir::Type::Reference(slice.mutt, &slice.elem_ty),
-                    hir::SliceField::Len => hir::Type::USIZE,
+                    hir::SliceField::Len => hir::Type::Int(IntType::Usize),
                 };
                 FieldResult::new(deref, kind, field_ty)
             }
@@ -882,7 +883,7 @@ fn check_field_from_type<'hir>(
         hir::Type::ArrayStatic(array) => match check_field_from_array(ctx, name, array) {
             Some(len) => {
                 let kind = FieldKind::ArrayStatic { len };
-                let field_ty = hir::Type::USIZE;
+                let field_ty = hir::Type::Int(IntType::Usize);
                 FieldResult::new(deref, kind, field_ty)
             }
             None => FieldResult::error(),
@@ -2836,7 +2837,7 @@ fn typecheck_for<'hir, 'ast>(
                 name: header
                     .index
                     .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
-                ty: hir::Type::USIZE,
+                ty: hir::Type::Int(IntType::Usize),
                 was_used: false,
             };
 
@@ -2964,7 +2965,7 @@ fn typecheck_for<'hir, 'ast>(
                 op: index_change_op,
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
-                lhs_ty: hir::Type::USIZE,
+                lhs_ty: hir::Type::Int(IntType::Usize),
             }));
 
             let expr_for_block = hir::Expr::Block { block: block_res.block };
@@ -3088,7 +3089,7 @@ fn typecheck_for<'hir, 'ast>(
                 name: header
                     .index
                     .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
-                ty: hir::Type::USIZE,
+                ty: hir::Type::Int(IntType::Usize),
                 was_used: false,
             };
 
@@ -3158,7 +3159,7 @@ fn typecheck_for<'hir, 'ast>(
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
-                lhs_ty: hir::Type::USIZE,
+                lhs_ty: hir::Type::Int(IntType::Usize),
             }));
 
             let expr_for_block = hir::Expr::Block { block: block_res.block };

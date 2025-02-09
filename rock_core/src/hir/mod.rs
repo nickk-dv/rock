@@ -240,12 +240,12 @@ pub enum Expr<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    CallerLocation { struct_id: StructID }, //@why is it an expr_kind?
+    CallerLocation { struct_id: StructID }, //@pass as param, refer to as param, remove.
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
-    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>], start: TextOffset }, //@causes Expr to be 32 bytes!
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>], start: TextOffset }, //@pass location in IR, no need for `start`
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
@@ -271,7 +271,7 @@ pub enum ConstValue<'hir> {
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
-    ArrayEmpty  { elem_ty: &'hir Type<'hir> }, //@not created anywhere yet
+    ArrayEmpty  { elem_ty: &'hir Type<'hir> },
 }
 
 #[derive(Copy, Clone)]
@@ -794,10 +794,6 @@ impl Layout {
 }
 
 impl<'hir> Type<'hir> {
-    //@remove
-    pub const USIZE: Type<'static> = Type::Int(IntType::Usize);
-    pub const BOOL: Type<'static> = Type::Bool(BoolType::Bool);
-
     #[inline(always)]
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)
