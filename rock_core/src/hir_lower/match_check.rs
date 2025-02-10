@@ -8,13 +8,12 @@ use std::collections::HashSet;
 
 //@report error here instead of returning weird boolean result values?
 //@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
-//@review potential bool32 support
 pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
     match ty {
         hir::Type::Error => Err(false),
         hir::Type::Char => Ok(hir::MatchKind::Char),
         hir::Type::Int(int_ty) => Ok(hir::MatchKind::Int { int_ty }),
-        hir::Type::Bool(hir::BoolType::Bool) => Ok(hir::MatchKind::Bool),
+        hir::Type::Bool(_) => Ok(hir::MatchKind::Bool),
         hir::Type::String(hir::StringType::String) => Ok(hir::MatchKind::String),
         //@gen types not handled
         hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum { enum_id, ref_mut: None }),

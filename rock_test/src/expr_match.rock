@@ -5,6 +5,13 @@ import core:panics as _.{assert}
 //#expect
 //#!
 proc test_match_bool_behavior() void {
+    let b32: bool32 = true;
+    let p32 = match b32 {
+        true -> 1,
+        false -> 0,
+    };
+    assert(p32 == 1, "p0 == 1");
+
     // discard
     let p0 = match true {
         _ -> -1,
