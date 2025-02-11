@@ -256,7 +256,6 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
 
 //@getting enum variant tag is repetative
 //@uniform pattern gen?
-//@do integration with `for` `if` single pat checks
 fn codegen_match<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
@@ -317,12 +316,6 @@ fn codegen_match<'c>(
                 let v = extract_slice_len_if_needed(cg, kind, pat_value);
                 cg.cache.cases.push((v, arm_bb));
             }
-            hir::Pat::Const(const_id) => {
-                unimplemented!("const pattern");
-                //@let pat_value = codegen_const_var(cg, const_id);
-                //@let v = extract_slice_len_if_needed(cg, kind, pat_value);
-                //@cg.cache.cases.push((v, arm_bb));
-            }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
                 let variant = enum_data.variant(variant_id);
@@ -368,12 +361,6 @@ fn codegen_match<'c>(
                             let pat_value = codegen_const(cg, value);
                             let v = extract_slice_len_if_needed(cg, kind, pat_value);
                             cg.cache.cases.push((v, arm_bb));
-                        }
-                        hir::Pat::Const(const_id) => {
-                            unimplemented!("const pattern");
-                            //@let pat_value = codegen_const_var(cg, const_id);
-                            //@let v = extract_slice_len_if_needed(cg, kind, pat_value);
-                            //@cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
                             let enum_data = cg.hir.enum_data(enum_id);

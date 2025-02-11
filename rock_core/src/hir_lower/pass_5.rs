@@ -610,15 +610,17 @@ fn typecheck_match<'hir, 'ast>(
     }
     let arms = ctx.cache.match_arms.take(offset, &mut ctx.arena);
 
+    if ctx.emit.did_error(error_count) {
+        return TypeResult::error();
+    }
     let kind = match kind_res {
         Ok(kind) => kind,
         Err(_) => return TypeResult::error(),
     };
-    if ctx.emit.did_error(error_count) {
-        return TypeResult::error();
-    }
-    if !match_const_pats_resolved(ctx, &arms) {
-        return TypeResult::error();
+    for arm in arms {
+        if let hir::Pat::Error = arm.pat {
+            return TypeResult::error();
+        }
     }
 
     let mut match_kw = TextRange::empty_at(match_range.start());
@@ -628,35 +630,6 @@ fn typecheck_match<'hir, 'ast>(
     let match_ = hir::Match { on_expr: on_res.expr, arms };
     let match_ = ctx.arena.alloc(match_);
     TypeResult::new_ignore(match_type, hir::Expr::Match { kind, match_ })
-}
-
-fn match_const_pats_resolved(ctx: &HirCtx, arms: &[hir::MatchArm]) -> bool {
-    fn const_value_resolved_ok(ctx: &HirCtx, const_id: hir::ConstID) -> bool {
-        let data = ctx.registry.const_data(const_id);
-        let (eval, _) = ctx.registry.const_eval(data.value);
-        eval.is_resolved_ok()
-    }
-
-    for arm in arms.iter() {
-        match arm.pat {
-            hir::Pat::Const(const_id) => {
-                if !const_value_resolved_ok(ctx, const_id) {
-                    return false;
-                }
-            }
-            hir::Pat::Or(patterns) => {
-                for pat in patterns {
-                    if let hir::Pat::Const(const_id) = pat {
-                        if !const_value_resolved_ok(ctx, *const_id) {
-                            return false;
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    true
 }
 
 fn typecheck_pat<'hir, 'ast>(
@@ -691,7 +664,7 @@ fn typecheck_pat_lit<'hir, 'ast>(
     match expr_res.expr {
         hir::Expr::Error => PatResult::error(),
         hir::Expr::Const { value } => PatResult::new(hir::Pat::Lit(*value), expr_res.ty),
-        _ => unreachable!(), //@reason: pat lit should always eval to error or const
+        _ => unreachable!(), // literal patterns can only be const or error expressions
     }
 }
 
@@ -701,7 +674,7 @@ fn typecheck_pat_item<'hir, 'ast>(
     bind_list: Option<&ast::BindingList>,
     ref_mut: Option<ast::Mut>,
     in_or_pat: bool,
-    pat_range: TextRange,
+    range: TextRange,
 ) -> PatResult<'hir> {
     match check_path::path_resolve_value(ctx, path) {
         ValueID::None => {
@@ -709,7 +682,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             PatResult::error()
         }
         ValueID::Enum(enum_id, variant_id) => {
-            check_variant_bind_count(ctx, bind_list, enum_id, variant_id, pat_range);
+            check_variant_bind_count(ctx, bind_list, enum_id, variant_id, range);
             let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
             let bind_ids = check_variant_bind_list(ctx, bind_list, variant, ref_mut, in_or_pat);
 
@@ -729,14 +702,28 @@ fn typecheck_pat_item<'hir, 'ast>(
                 err::tycheck_pat_const_with_bindings(&mut ctx.emit, src);
             }
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
+
             let data = ctx.registry.const_data(const_id);
-            PatResult::new(hir::Pat::Const(const_id), data.ty.expect("typed const var pattern"))
+            let (eval, _) = ctx.registry.const_eval(data.value);
+
+            let pat = if let Ok(value) = eval.resolved() {
+                if let hir::ConstValue::Variant { .. } = value {
+                    let src = ctx.src(range);
+                    err::tycheck_pat_const_enum(&mut ctx.emit, src);
+                    hir::Pat::Error
+                } else {
+                    hir::Pat::Lit(value)
+                }
+            } else {
+                hir::Pat::Error
+            };
+            PatResult::new(pat, data.ty.expect("typed const var pattern"))
         }
         ValueID::Proc(_)
         | ValueID::Global(_, _)
         | ValueID::Param(_, _)
         | ValueID::Variable(_, _) => {
-            let src = ctx.src(pat_range);
+            let src = ctx.src(range);
             err::tycheck_pat_runtime_value(&mut ctx.emit, src);
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             PatResult::new(hir::Pat::Error, hir::Type::Error)

@@ -121,15 +121,6 @@ fn pat_cov_int(
             let range = RangeInc::new(value, value);
             cov.cover(range)
         }
-        hir::Pat::Const(const_id) => {
-            let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
-            let value = eval.resolved_unwrap();
-
-            let value = value.into_int();
-            let range = RangeInc::new(value, value);
-            cov.cover(range)
-        }
         _ => unreachable!(),
     };
 
@@ -187,15 +178,6 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
         hir::Pat::Lit(hir::ConstValue::Bool { val, .. }) => cov.cover(val),
-        hir::Pat::Const(const_id) => {
-            let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
-            let value = eval.resolved_unwrap();
-            match value {
-                hir::ConstValue::Bool { val, .. } => cov.cover(val),
-                _ => unreachable!(),
-            }
-        }
         _ => unreachable!(),
     };
 
@@ -246,15 +228,6 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
         hir::Pat::Lit(hir::ConstValue::Char { val }) => {
             cov.cover(RangeInc::new(val as u32, val as u32))
         }
-        hir::Pat::Const(const_id) => {
-            let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
-            let value = eval.resolved_unwrap();
-            match value {
-                hir::ConstValue::Char { val } => cov.cover(RangeInc::new(val as u32, val as u32)),
-                _ => unreachable!(),
-            }
-        }
         _ => unreachable!(),
     };
 
@@ -303,16 +276,6 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(),
         hir::Pat::Lit(hir::ConstValue::String { val, .. }) => cov.cover(val),
-        hir::Pat::Const(const_id) => {
-            let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
-            let value = eval.resolved_unwrap();
-
-            match value {
-                hir::ConstValue::String { val, .. } => cov.cover(val),
-                _ => unreachable!(),
-            }
-        }
         _ => unreachable!(),
     };
 
@@ -383,18 +346,6 @@ fn pat_cov_enum<'hir>(
     let result = match pat {
         hir::Pat::Wild => cov.cover_wild(variant_count),
         hir::Pat::Variant(_, variant_id, _) => cov.cover(variant_id, variant_count),
-        hir::Pat::Const(const_id) => {
-            let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
-            let value = eval.resolved_unwrap();
-
-            match value {
-                hir::ConstValue::Variant { variant } => {
-                    cov.cover(variant.variant_id, variant_count)
-                }
-                _ => unreachable!(),
-            }
-        }
         _ => unreachable!(),
     };
 

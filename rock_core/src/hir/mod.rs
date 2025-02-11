@@ -337,7 +337,6 @@ pub enum Pat<'hir> {
     Error,
     Wild,
     Lit(ConstValue<'hir>),
-    Const(ConstID),
     Variant(EnumID, VariantID, &'hir [VariableID]),
     Or(&'hir [Pat<'hir>]),
 }

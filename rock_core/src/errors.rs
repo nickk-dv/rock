@@ -825,7 +825,12 @@ pub fn tycheck_pat_const_field_access(emit: &mut impl ErrorSink, src: SourceRang
 }
 
 pub fn tycheck_pat_const_with_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "constant patterns cannot have bindings";
+    let msg = "constant variables in patterns cannot have bindings";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_pat_const_enum(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "constant variables in patterns cannot be enums";
     emit.error(Error::new(msg, src, None));
 }
 
