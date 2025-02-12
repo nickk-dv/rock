@@ -84,12 +84,6 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    pub fn expect_variant(self) -> &'hir hir::ConstVariant<'hir> {
-        match self {
-            hir::ConstValue::Variant { variant } => variant,
-            _ => unreachable!(),
-        }
-    }
 
     pub fn into_bool(&self) -> bool {
         match *self {
@@ -157,9 +151,9 @@ impl<'hir> hir::ConstValue<'hir> {
             _ => unreachable!(),
         }
     }
-    pub fn into_enum(&self) -> &hir::ConstVariant {
-        match *self {
-            hir::ConstValue::Variant { variant } => variant,
+    pub fn into_enum(self) -> (hir::EnumID, hir::VariantID) {
+        match self {
+            hir::ConstValue::Variant { enum_id, variant_id } => (enum_id, variant_id),
             _ => unreachable!(),
         }
     }

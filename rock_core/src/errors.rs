@@ -683,6 +683,11 @@ pub fn const_cannot_refer_to(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn const_cannot_use_enum_with_fields(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("cannot use enums with fields in constants");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn const_int_div_by_zero(
     emit: &mut impl ErrorSink,
     src: SourceRange,

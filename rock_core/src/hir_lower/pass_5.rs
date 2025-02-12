@@ -1321,9 +1321,9 @@ fn constfold_cast<'hir>(
         | CastKind::Enum_Trunc_to_Int
         | CastKind::EnumS_Extend_to_Int
         | CastKind::EnumU_Extend_to_Int => {
-            let variant = target.expect_variant();
-            let enum_data = ctx.registry.enum_data(variant.enum_id);
-            let variant = enum_data.variant(variant.variant_id);
+            let (enum_id, variant_id) = target.into_enum();
+            let enum_data = ctx.registry.enum_data(enum_id);
+            let variant = enum_data.variant(variant_id);
             let tag_value = match variant.kind {
                 hir::VariantKind::Default(id) => ctx.registry.variant_eval(id).resolved()?,
                 hir::VariantKind::Constant(id) => ctx.registry.const_eval(id).0.resolved()?,
@@ -2408,9 +2408,7 @@ fn constfold_binary<'hir>(
                 hir::ConstValue::Char { val } => val == rhs.into_char(),
                 hir::ConstValue::Null => true, //only value: null == null
                 hir::ConstValue::Bool { val, .. } => val == rhs.into_bool(),
-                hir::ConstValue::Variant { variant } => {
-                    variant.variant_id == rhs.into_enum().variant_id
-                }
+                hir::ConstValue::Variant { variant_id, .. } => variant_id == rhs.into_enum().1,
                 _ => unreachable!(),
             };
             Ok(hir::ConstValue::Bool { val, bool_ty })
@@ -2420,9 +2418,7 @@ fn constfold_binary<'hir>(
                 hir::ConstValue::Char { val } => val != rhs.into_char(),
                 hir::ConstValue::Null => false, //only value: null != null
                 hir::ConstValue::Bool { val, .. } => val != rhs.into_bool(),
-                hir::ConstValue::Variant { variant } => {
-                    variant.variant_id != rhs.into_enum().variant_id
-                }
+                hir::ConstValue::Variant { variant_id, .. } => variant_id != rhs.into_enum().1,
                 _ => unreachable!(),
             };
             Ok(hir::ConstValue::Bool { val, bool_ty })
@@ -3575,21 +3571,22 @@ fn check_variant_input_opt<'hir, 'ast>(
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
     arg_list: Option<&ast::ArgumentList<'ast>>,
-    error_range: TextRange,
+    range: TextRange,
 ) -> TypeResult<'hir> {
-    let enum_data = ctx.registry.enum_data(enum_id);
-    let variant = enum_data.variant(variant_id);
-    let origin_id = enum_data.origin_id;
+    let data = ctx.registry.enum_data(enum_id);
+    let variant = data.variant(variant_id);
+    let origin_id = data.origin_id;
+    let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
 
     let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
 
     if expected_count == 0 && arg_list.is_some() {
-        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
+        let src = ctx.src(arg_list_opt_range(arg_list, range));
         let variant_src = SourceRange::new(origin_id, variant.name.range);
         err::tycheck_unexpected_variant_arg_list(&mut ctx.emit, src, variant_src);
     } else if input_count != expected_count {
-        let src = ctx.src(arg_list_opt_range(arg_list, error_range));
+        let src = ctx.src(arg_list_opt_range(arg_list, range));
         let variant_src = SourceRange::new(origin_id, variant.name.range);
         err::tycheck_unexpected_variant_arg_count(
             &mut ctx.emit,
@@ -3620,9 +3617,19 @@ fn check_variant_input_opt<'hir, 'ast>(
         ctx.arena.alloc(empty)
     };
 
+    let expr = if with_fields {
+        if ctx.in_const {
+            let src = ctx.src(range);
+            err::const_cannot_use_enum_with_fields(&mut ctx.emit, src);
+            return TypeResult::error();
+        }
+        hir::Expr::Variant { enum_id, variant_id, input }
+    } else {
+        let value = hir::ConstValue::Variant { enum_id, variant_id };
+        hir::Expr::Const { value }
+    };
     //@ignored poly_types
-    let variant = hir::Expr::Variant { enum_id, variant_id, input };
-    TypeResult::new(hir::Type::Enum(enum_id, &[]), variant)
+    TypeResult::new(hir::Type::Enum(enum_id, &[]), expr)
 }
 
 fn check_variant_bind_count(

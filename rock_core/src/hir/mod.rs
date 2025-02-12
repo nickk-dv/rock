@@ -267,18 +267,11 @@ pub enum ConstValue<'hir> {
     Char        { val: char },
     String      { val: LitID, string_ty: StringType },
     Procedure   { proc_id: ProcID },
-    Variant     { variant: &'hir ConstVariant<'hir> },
+    Variant     { enum_id: EnumID, variant_id: VariantID },
     Struct      { struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
     ArrayEmpty  { elem_ty: &'hir Type<'hir> },
-}
-
-#[derive(Copy, Clone)]
-pub struct ConstVariant<'hir> {
-    pub enum_id: EnumID,
-    pub variant_id: VariantID,
-    pub values: &'hir [ConstValue<'hir>],
 }
 
 #[derive(Copy, Clone)]

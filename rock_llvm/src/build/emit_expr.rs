@@ -148,7 +148,9 @@ pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
         hir::ConstValue::Char { val } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
-        hir::ConstValue::Variant { variant } => codegen_const_variant(cg, variant),
+        hir::ConstValue::Variant { enum_id, variant_id } => {
+            codegen_const_variant(cg, enum_id, variant_id)
+        }
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
@@ -173,12 +175,13 @@ fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) ->
     }
 }
 
-fn codegen_const_variant(cg: &mut Codegen, variant: &hir::ConstVariant) -> llvm::Value {
-    let data = cg.hir.enum_data(variant.enum_id);
-    if data.flag_set.contains(hir::EnumFlag::WithFields) {
-        unimplemented!("constant variant with fields");
-    }
-    let tag = match data.variant(variant.variant_id).kind {
+fn codegen_const_variant(
+    cg: &mut Codegen,
+    enum_id: hir::EnumID,
+    variant_id: hir::VariantID,
+) -> llvm::Value {
+    let data = cg.hir.enum_data(enum_id);
+    let tag = match data.variant(variant_id).kind {
         hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
