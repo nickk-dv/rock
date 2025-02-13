@@ -1,6 +1,8 @@
 use super::context::HirCtx;
+use super::pass_5::Expectation;
 use crate::ast;
 use crate::error::{Error, ErrorSink};
+use crate::errors as err;
 use crate::hir;
 use crate::intern::LitID;
 use crate::text::TextRange;
@@ -8,24 +10,47 @@ use std::collections::HashSet;
 
 //@report error here instead of returning weird boolean result values?
 //@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
-pub fn match_kind(ty: hir::Type) -> Result<hir::MatchKind, bool> {
-    match ty {
-        hir::Type::Error => Err(false),
-        hir::Type::Char => Ok(hir::MatchKind::Char),
-        hir::Type::Int(int_ty) => Ok(hir::MatchKind::Int { int_ty }),
-        hir::Type::Bool(_) => Ok(hir::MatchKind::Bool),
-        hir::Type::String(hir::StringType::String) => Ok(hir::MatchKind::String),
+pub fn match_kind(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) -> Option<hir::MatchKind> {
+    let kind = match ty {
+        hir::Type::Error => return None,
+        hir::Type::Int(int_ty) => Some(hir::MatchKind::Int { int_ty }),
+        hir::Type::Bool(bool_ty) => Some(hir::MatchKind::Bool { bool_ty }),
+        hir::Type::Char => Some(hir::MatchKind::Char),
+        hir::Type::String(hir::StringType::String) => Some(hir::MatchKind::String),
         //@gen types not handled
-        hir::Type::Enum(enum_id, _) => Ok(hir::MatchKind::Enum { enum_id, ref_mut: None }),
+        hir::Type::Enum(enum_id, _) => Some(hir::MatchKind::Enum { enum_id, ref_mut: None }),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
             //@gen types not handled
             hir::Type::Enum(enum_id, _) => {
-                Ok(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt) })
+                Some(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt) })
             }
-            _ => Err(true),
+            _ => None,
         },
-        _ => Err(true),
+        _ => None,
+    };
+    if kind.is_none() {
+        let src = ctx.src(range);
+        let ty = super::pass_5::type_format(ctx, ty);
+        err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty.as_str());
     }
+    kind
+}
+
+//@ignored enum poly_types
+pub fn match_pat_expect<'hir>(
+    ctx: &HirCtx,
+    range: TextRange,
+    kind: Option<hir::MatchKind>,
+) -> (Expectation<'hir>, Option<ast::Mut>) {
+    let (expect_ty, ref_mut) = match kind {
+        Some(hir::MatchKind::Int { int_ty }) => (hir::Type::Int(int_ty), None),
+        Some(hir::MatchKind::Bool { bool_ty }) => (hir::Type::Bool(bool_ty), None),
+        Some(hir::MatchKind::Char) => (hir::Type::Char, None),
+        Some(hir::MatchKind::String) => (hir::Type::String(hir::StringType::String), None),
+        Some(hir::MatchKind::Enum { enum_id, ref_mut }) => (hir::Type::Enum(enum_id, &[]), ref_mut),
+        None => (hir::Type::Error, None),
+    };
+    (Expectation::HasType(expect_ty, Some(ctx.src(range))), ref_mut)
 }
 
 pub fn match_cov<'hir>(
@@ -42,7 +67,7 @@ pub fn match_cov<'hir>(
             cov.cov_int.reset();
             match_cov_int(ctx, &mut cov.cov_int, arms, arms_ast, match_kw, int_ty)
         }
-        hir::MatchKind::Bool => {
+        hir::MatchKind::Bool { .. } => {
             cov.cov_bool.reset();
             match_cov_bool(ctx, &mut cov.cov_bool, arms, arms_ast, match_kw);
         }

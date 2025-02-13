@@ -307,7 +307,7 @@ pub struct Branch<'hir> {
 #[derive(Copy, Clone)]
 pub enum MatchKind {
     Int { int_ty: IntType },
-    Bool,
+    Bool { bool_ty: BoolType },
     Char,
     String,
     Enum { enum_id: EnumID, ref_mut: Option<ast::Mut> },

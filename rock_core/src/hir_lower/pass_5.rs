@@ -5,6 +5,7 @@ use super::constant::fold;
 use super::constant::layout;
 use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
+use super::match_check;
 use crate::ast;
 use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
@@ -562,27 +563,8 @@ fn typecheck_match<'hir, 'ast>(
     let error_count = ctx.emit.error_count();
 
     let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
-    let kind_res = super::match_check::match_kind(on_res.ty);
-
-    if let Err(true) = kind_res {
-        let src = ctx.src(match_.on_expr.range);
-        let ty_fmt = type_format(ctx, on_res.ty);
-        err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
-    }
-
-    let (pat_expect, ref_mut) = match kind_res {
-        Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
-            let expect_src = ctx.src(match_.on_expr.range);
-            //@gen types not handled
-            let enum_ty = hir::Type::Enum(enum_id, &[]);
-            (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
-        }
-        Ok(_) => {
-            let expect_src = ctx.src(match_.on_expr.range);
-            (Expectation::HasType(on_res.ty, Some(expect_src)), None)
-        }
-        Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
-    };
+    let kind = match_check::match_kind(ctx, match_.on_expr.range, on_res.ty);
+    let (pat_expect, ref_mut) = match_check::match_pat_expect(ctx, match_.on_expr.range, kind);
 
     let offset = ctx.cache.match_arms.start();
     for arm in match_.arms {
@@ -613,9 +595,9 @@ fn typecheck_match<'hir, 'ast>(
     if ctx.emit.did_error(error_count) {
         return TypeResult::error();
     }
-    let kind = match kind_res {
-        Ok(kind) => kind,
-        Err(_) => return TypeResult::error(),
+    let kind = match kind {
+        Some(kind) => kind,
+        None => return TypeResult::error(),
     };
     for arm in arms {
         if let hir::Pat::Error = arm.pat {
@@ -625,7 +607,7 @@ fn typecheck_match<'hir, 'ast>(
 
     let mut match_kw = TextRange::empty_at(match_range.start());
     match_kw.extend_by(5.into());
-    super::match_check::match_cov(ctx, kind, arms, match_.arms, match_kw);
+    match_check::match_cov(ctx, kind, arms, match_.arms, match_kw);
 
     let match_ = hir::Match { on_expr: on_res.expr, arms };
     let match_ = ctx.arena.alloc(match_);
@@ -3170,37 +3152,17 @@ fn typecheck_for<'hir, 'ast>(
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
-            let kind_res = super::match_check::match_kind(on_res.ty);
-
-            //@duplicate code for pattern handling same as `match`
-            if let Err(true) = kind_res {
-                let src = ctx.src(header.expr.range);
-                let ty_fmt = type_format(ctx, on_res.ty);
-                err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
-            }
-
-            let (pat_expect, ref_mut) = match kind_res {
-                Ok(hir::MatchKind::Enum { enum_id, ref_mut }) => {
-                    let expect_src = ctx.src(header.expr.range);
-                    //@ignored poly_types
-                    let enum_ty = hir::Type::Enum(enum_id, &[]);
-                    (Expectation::HasType(enum_ty, Some(expect_src)), ref_mut)
-                }
-                Ok(_) => {
-                    let expect_src = ctx.src(header.expr.range);
-                    (Expectation::HasType(on_res.ty, Some(expect_src)), None)
-                }
-                Err(_) => (Expectation::HasType(hir::Type::Error, None), None),
-            };
+            let kind = match_check::match_kind(ctx, header.expr.range, on_res.ty);
+            let (pat_expect, ref_mut) = match_check::match_pat_expect(ctx, header.expr.range, kind);
 
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
 
-            let match_kind = match kind_res {
-                Ok(match_kind) => match_kind,
-                Err(_) => return None,
+            let kind = match kind {
+                Some(kind) => kind,
+                None => return None,
             };
 
             //@this should also consider or patterns,
@@ -3217,7 +3179,7 @@ fn typecheck_for<'hir, 'ast>(
             };
             let match_ = hir::Match { on_expr: on_res.expr, arms };
             let match_ = ctx.arena.alloc(match_);
-            let match_ = ctx.arena.alloc(hir::Expr::Match { kind: match_kind, match_ });
+            let match_ = ctx.arena.alloc(hir::Expr::Match { kind, match_ });
             let stmt_match = hir::Stmt::ExprSemi(match_);
             let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_match]) };
             let block = ctx.arena.alloc(block);
