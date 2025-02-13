@@ -8,8 +8,6 @@ use crate::intern::LitID;
 use crate::text::TextRange;
 use std::collections::HashSet;
 
-//@report error here instead of returning weird boolean result values?
-//@slice elem_ty, ref_ty not handled for Error, trying to avoid them for now
 pub fn match_kind(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) -> Option<hir::MatchKind> {
     let kind = match ty {
         hir::Type::Error => return None,
@@ -20,6 +18,7 @@ pub fn match_kind(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) -> Option<h
         //@gen types not handled
         hir::Type::Enum(enum_id, _) => Some(hir::MatchKind::Enum { enum_id, ref_mut: None }),
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
+            hir::Type::Error => return None,
             //@gen types not handled
             hir::Type::Enum(enum_id, _) => {
                 Some(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt) })
@@ -53,10 +52,10 @@ pub fn match_pat_expect<'hir>(
     (Expectation::HasType(expect_ty, Some(ctx.src(range))), ref_mut)
 }
 
-pub fn match_cov<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+pub fn match_cov(
+    ctx: &mut HirCtx,
     kind: hir::MatchKind,
-    arms: &[hir::MatchArm<'hir>],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
 ) {
@@ -148,15 +147,7 @@ fn pat_cov_int(
         }
         _ => unreachable!(),
     };
-
-    if let Err(error) = result {
-        let msg = match error {
-            PatCovError::CoverFull => "pattern already covered",
-            PatCovError::CoverPartial => "pattern partially covered",
-        };
-        let src = ctx.src(pat_range);
-        ctx.emit.error(Error::new(msg, src, None));
-    }
+    check_pat_cov_result(ctx, pat_range, result);
 }
 
 fn match_cov_bool(
@@ -205,15 +196,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, cov: &mut PatCovBool, pat: hir::Pat, pat_range
         hir::Pat::Lit(hir::ConstValue::Bool { val, .. }) => cov.cover(val),
         _ => unreachable!(),
     };
-
-    if let Err(error) = result {
-        let msg = match error {
-            PatCovError::CoverFull => "pattern already covered",
-            PatCovError::CoverPartial => "pattern partially covered",
-        };
-        let src = ctx.src(pat_range);
-        ctx.emit.error(Error::new(msg, src, None));
-    }
+    check_pat_cov_result(ctx, pat_range, result);
 }
 
 fn match_cov_char(
@@ -255,15 +238,7 @@ fn pat_cov_char(ctx: &mut HirCtx, cov: &mut PatCovChar, pat: hir::Pat, pat_range
         }
         _ => unreachable!(),
     };
-
-    if let Err(error) = result {
-        let msg = match error {
-            PatCovError::CoverFull => "pattern already covered",
-            PatCovError::CoverPartial => "pattern partially covered",
-        };
-        let src = ctx.src(pat_range);
-        ctx.emit.error(Error::new(msg, src, None));
-    }
+    check_pat_cov_result(ctx, pat_range, result);
 }
 
 fn match_cov_string(
@@ -303,21 +278,13 @@ fn pat_cov_string(ctx: &mut HirCtx, cov: &mut PatCovString, pat: hir::Pat, pat_r
         hir::Pat::Lit(hir::ConstValue::String { val, .. }) => cov.cover(val),
         _ => unreachable!(),
     };
-
-    if let Err(error) = result {
-        let msg = match error {
-            PatCovError::CoverFull => "pattern already covered",
-            PatCovError::CoverPartial => "pattern partially covered",
-        };
-        let src = ctx.src(pat_range);
-        ctx.emit.error(Error::new(msg, src, None));
-    }
+    check_pat_cov_result(ctx, pat_range, result);
 }
 
-fn match_cov_enum<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn match_cov_enum(
+    ctx: &mut HirCtx,
     cov: &mut PatCovEnum,
-    arms: &[hir::MatchArm<'hir>],
+    arms: &[hir::MatchArm],
     arms_ast: &[ast::MatchArm],
     match_kw: TextRange,
     enum_id: hir::EnumID,
@@ -358,10 +325,10 @@ fn match_cov_enum<'hir>(
     }
 }
 
-fn pat_cov_enum<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+fn pat_cov_enum(
+    ctx: &mut HirCtx,
     cov: &mut PatCovEnum,
-    pat: hir::Pat<'hir>,
+    pat: hir::Pat,
     pat_range: TextRange,
     enum_id: hir::EnumID,
 ) {
@@ -373,7 +340,10 @@ fn pat_cov_enum<'hir>(
         hir::Pat::Variant(_, variant_id, _) => cov.cover(variant_id, variant_count),
         _ => unreachable!(),
     };
+    check_pat_cov_result(ctx, pat_range, result);
+}
 
+fn check_pat_cov_result(ctx: &mut HirCtx, pat_range: TextRange, result: Result<(), PatCovError>) {
     if let Err(error) = result {
         let msg = match error {
             PatCovError::CoverFull => "pattern already covered",

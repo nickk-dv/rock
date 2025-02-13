@@ -280,7 +280,7 @@ fn codegen_match<'c>(
 
     let (on_value, enum_ptr, bind_by_pointer) = match kind {
         hir::MatchKind::Int { .. }
-        | hir::MatchKind::Bool
+        | hir::MatchKind::Bool { .. }
         | hir::MatchKind::Char
         | hir::MatchKind::String => {
             let on_value = codegen_expr_value(cg, match_.on_expr);
