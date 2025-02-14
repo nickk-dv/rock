@@ -432,7 +432,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, *ty, expr.range),
+        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, expr.range, *ty),
         ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {
@@ -1315,25 +1315,26 @@ fn constfold_cast<'hir>(
     }
 }
 
-//@always range check int value, for 32bit targets to be correct
+//@remove sizeof later, use directives?
 fn typecheck_sizeof<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: TextRange,
     ty: ast::Type<'ast>,
-    expr_range: TextRange, //@temp? used for array size overflow error
 ) -> TypeResult<'hir> {
+    let src = ctx.src(range);
     let ty = super::pass_3::type_resolve(ctx, ty, false);
 
-    //@review source range for this type_size error 10.05.24
-    let kind = match constant::type_layout(ctx, ty, ctx.src(expr_range)) {
-        Ok(layout) => {
-            let value =
-                hir::ConstValue::Int { val: layout.size, neg: false, int_ty: IntType::Usize };
+    let expr = if let Ok(layout) = constant::type_layout(ctx, ty, src) {
+        if let Ok(value) = fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize) {
             hir::Expr::Const { value }
+        } else {
+            hir::Expr::Error
         }
-        Err(()) => hir::Expr::Error,
+    } else {
+        hir::Expr::Error
     };
 
-    TypeResult::new(hir::Type::Int(IntType::Usize), kind)
+    TypeResult::new(hir::Type::Int(IntType::Usize), expr)
 }
 
 fn typecheck_directive<'hir, 'ast>(
