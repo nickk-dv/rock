@@ -137,7 +137,6 @@ pub struct Layout {
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
     Error,
-    Any,
     Char,
     Void,
     Never,
@@ -499,7 +498,9 @@ crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum BoolType {
         Bool "bool",
+        Bool16 "bool16",
         Bool32 "bool32",
+        Bool64 "bool64",
         Untyped "untyped bool",
     }
 }
@@ -964,7 +965,9 @@ impl BoolType {
     pub fn into_basic(self) -> ast::BasicType {
         match self {
             BoolType::Bool => ast::BasicType::Bool,
+            BoolType::Bool16 => ast::BasicType::Bool16,
             BoolType::Bool32 => ast::BasicType::Bool32,
+            BoolType::Bool64 => ast::BasicType::Bool64,
             BoolType::Untyped => unreachable!("untyped bool to basic type"),
         }
     }

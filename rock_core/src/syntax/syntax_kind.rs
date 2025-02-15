@@ -67,7 +67,6 @@ pub enum SyntaxKind {
     EXPR_SLICE,
     EXPR_CALL,
     EXPR_CAST,
-    EXPR_SIZEOF,
     EXPR_ITEM,
     EXPR_VARIANT,
     EXPR_STRUCT_INIT,

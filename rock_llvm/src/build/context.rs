@@ -113,7 +113,6 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn ty(&self, ty: hir::Type) -> llvm::Type {
         match ty {
             hir::Type::Error => unreachable!(),
-            hir::Type::Any => self.cache.slice_type.as_ty(),
             hir::Type::Char => self.cache.int_32,
             hir::Type::Void => self.cache.void_val_type.as_ty(),
             hir::Type::Never => self.cache.void_val_type.as_ty(),
@@ -173,7 +172,9 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
     pub fn bool_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
         match bool_ty {
             hir::BoolType::Bool => self.cache.int_1,
+            hir::BoolType::Bool16 => self.cache.int_16,
             hir::BoolType::Bool32 => self.cache.int_32,
+            hir::BoolType::Bool64 => self.cache.int_64,
             hir::BoolType::Untyped => unreachable!(),
         }
     }

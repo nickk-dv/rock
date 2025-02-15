@@ -813,7 +813,6 @@ fn semantic_visit_node(
                     SyntaxKind::EXPR_SLICE => None,
                     SyntaxKind::EXPR_CALL => None, //defer to path
                     SyntaxKind::EXPR_CAST => None,
-                    SyntaxKind::EXPR_SIZEOF => None,
                     SyntaxKind::EXPR_ITEM => None,
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
                     SyntaxKind::EXPR_STRUCT_INIT => Some(SemanticToken::Type),
@@ -938,13 +937,13 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![let] | T![mut] | T![zeroed] | T![undefined] => SemanticToken::Keyword,
 
         T![null] | T![true] | T![false] => SemanticToken::Number,
-        T![if] | T![else] | T![match] | T![as] | T![sizeof] => SemanticToken::Keyword,
+        T![if] | T![else] | T![match] | T![as] => SemanticToken::Keyword,
         T![_] => SemanticToken::Parameter,
 
         T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
         T![u8] | T![u16] | T![u32] | T![u64] | T![usize] | 
-        T![f32] | T![f64] | T![bool] | T![bool32] | T![char] |
-        T![rawptr] | T![any] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
+        T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
+        T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
 
         T![.] | T![,] | T![:] | T![;] | T![#] |
         T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,

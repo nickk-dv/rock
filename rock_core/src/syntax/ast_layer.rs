@@ -500,7 +500,6 @@ ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprSlice, SyntaxKind::EXPR_SLICE);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
-ast_node_impl!(ExprSizeof, SyntaxKind::EXPR_SIZEOF);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
 ast_node_impl!(ExprVariant, SyntaxKind::EXPR_VARIANT);
 ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
@@ -697,7 +696,6 @@ pub enum Expr<'syn> {
     Slice(ExprSlice<'syn>),
     Call(ExprCall<'syn>),
     Cast(ExprCast<'syn>),
-    Sizeof(ExprSizeof<'syn>),
     Directive(Directive<'syn>),
     Item(ExprItem<'syn>),
     Variant(ExprVariant<'syn>),
@@ -722,7 +720,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_SLICE => Some(Expr::Slice(ExprSlice(node))),
             SyntaxKind::EXPR_CALL => Some(Expr::Call(ExprCall(node))),
             SyntaxKind::EXPR_CAST => Some(Expr::Cast(ExprCast(node))),
-            SyntaxKind::EXPR_SIZEOF => Some(Expr::Sizeof(ExprSizeof(node))),
             SyntaxKind::EXPR_ITEM => Some(Expr::Item(ExprItem(node))),
             SyntaxKind::EXPR_VARIANT => Some(Expr::Variant(ExprVariant(node))),
             SyntaxKind::EXPR_STRUCT_INIT => Some(Expr::StructInit(ExprStructInit(node))),
@@ -755,7 +752,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Slice(expr) => expr.find_range(tree),
             Expr::Call(expr) => expr.find_range(tree),
             Expr::Cast(expr) => expr.find_range(tree),
-            Expr::Sizeof(expr) => expr.find_range(tree),
             Expr::Directive(expr) => expr.find_range(tree),
             Expr::Item(expr) => expr.find_range(tree),
             Expr::Variant(expr) => expr.find_range(tree),
@@ -1151,10 +1147,6 @@ impl<'syn> ExprCall<'syn> {
 impl<'syn> ExprCast<'syn> {
     node_find!(target, Expr);
     node_find!(into_ty, Type);
-}
-
-impl<'syn> ExprSizeof<'syn> {
-    node_find!(ty, Type);
 }
 
 impl<'syn> ExprItem<'syn> {

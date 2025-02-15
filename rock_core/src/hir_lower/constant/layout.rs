@@ -6,10 +6,6 @@ use crate::hir_lower::context::HirCtx;
 pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<hir::Layout, ()> {
     match ty {
         hir::Type::Error => Err(()),
-        hir::Type::Any => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            Ok(hir::Layout::new(ptr_size * 2, ptr_size))
-        }
         hir::Type::Char => Ok(hir::Layout::equal(4)),
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
@@ -86,7 +82,9 @@ pub fn float_layout(float_ty: hir::FloatType) -> hir::Layout {
 pub fn bool_layout(bool_ty: hir::BoolType) -> hir::Layout {
     match bool_ty {
         hir::BoolType::Bool => hir::Layout::equal(1),
+        hir::BoolType::Bool16 => hir::Layout::equal(2),
         hir::BoolType::Bool32 => hir::Layout::equal(4),
+        hir::BoolType::Bool64 => hir::Layout::equal(8),
         hir::BoolType::Untyped => unreachable!(),
     }
 }

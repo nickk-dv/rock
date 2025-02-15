@@ -778,7 +778,6 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![if] => expr_if(p),
         T!['{'] => block(p),
         T![match] => expr_match(p),
-        T![sizeof] => expr_sizeof(p),
         T![#] => directive(p).0,
         T![ident] => expr_item_or_struct_init(p),
         T![.] => expr_variant_or_struct_init(p),
@@ -892,15 +891,6 @@ fn match_arm(p: &mut Parser) {
     p.expect(T![->]);
     expr(p);
     m.complete(p, SyntaxKind::MATCH_ARM);
-}
-
-fn expr_sizeof(p: &mut Parser) -> MarkerClosed {
-    let m = p.start();
-    p.bump(T![sizeof]);
-    p.expect(T!['(']);
-    ty(p);
-    p.expect(T![')']);
-    m.complete(p, SyntaxKind::EXPR_SIZEOF)
 }
 
 fn expr_item_or_struct_init(p: &mut Parser) -> MarkerClosed {

@@ -304,7 +304,6 @@ pub fn type_resolve<'hir, 'ast>(
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => match basic {
-            ast::BasicType::Any => hir::Type::Any,
             ast::BasicType::Char => hir::Type::Char,
             ast::BasicType::Void => hir::Type::Void,
             ast::BasicType::Never => hir::Type::Never,
@@ -322,7 +321,9 @@ pub fn type_resolve<'hir, 'ast>(
             ast::BasicType::F32 => hir::Type::Float(hir::FloatType::F32),
             ast::BasicType::F64 => hir::Type::Float(hir::FloatType::F64),
             ast::BasicType::Bool => hir::Type::Bool(hir::BoolType::Bool),
+            ast::BasicType::Bool16 => hir::Type::Bool(hir::BoolType::Bool16),
             ast::BasicType::Bool32 => hir::Type::Bool(hir::BoolType::Bool32),
+            ast::BasicType::Bool64 => hir::Type::Bool(hir::BoolType::Bool64),
             ast::BasicType::String => hir::Type::String(hir::StringType::String),
             ast::BasicType::CString => hir::Type::String(hir::StringType::CString),
         },

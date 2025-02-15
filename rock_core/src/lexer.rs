@@ -635,7 +635,7 @@ fn skip_num_digits(lex: &mut Lexer) {
 mod gperf {
     use crate::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
-    const MAX_HASH_VALUE: usize = 72;
+    const MAX_HASH_VALUE: usize = 81;
 
     #[inline(always)]
     pub fn lookup(string: &str) -> Token {
@@ -659,25 +659,27 @@ mod gperf {
             + ASSOC_TABLE[string.as_bytes()[0] as usize] as usize
     }
 
-    #[rustfmt::skip]
-    const KEYWORD_TABLE: [Token; 73] = [
-        T![ident], T![_], T![s8], T![ident], T![else], T![ssize], T![rawptr], T![as],
-        T![for], T![ident], T![false], T![sizeof], T![u8], T![s64], T![true], T![usize],
-        T![struct], T![if], T![f64], T![ident], T![never], T![return], T![ident], T![u64],
-        T![void], T![defer], T![import], T![in], T![s32], T![ident], T![break], T![string],
-        T![ident], T![f32], T![ident], T![ident], T![zeroed], T![ident], T![u32], T![undefined],
-        T![ident], T![ident], T![ident], T![let], T![char], T![ident], T![ident], T![ident],
-        T![continue], T![null], T![ident], T![ident], T![ident], T![any], T![enum], T![match],
-        T![bool32], T![ident], T![s16], T![bool], T![ident], T![ident], T![ident], T![mut],
-        T![proc], T![ident], T![ident],  T![ident], T![u16], T![ident], T![ident],  T![ident], T![cstring],
+    const ASSOC_TABLE: [u8; 128] = [
+        82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82,
+        82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82,
+        82, 82, 82, 82, 10, 82, 0, 82, 40, 82, 0, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82,
+        82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82,
+        82, 82, 82, 0, 82, 5, 35, 50, 10, 0, 20, 0, 0, 10, 82, 0, 25, 40, 25, 82, 15, 82, 5, 5, 10,
+        0, 10, 82, 82, 82, 15, 82, 82, 82, 82, 82,
     ];
 
-    const ASSOC_TABLE: [u8; 128] = [
-        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
-        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
-        73, 73, 73, 73, 25, 73, 10, 73, 55, 73, 0, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
-        73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73, 73,
-        73, 73, 73, 0, 73, 5, 25, 40, 20, 0, 5, 25, 0, 10, 73, 0, 30, 50, 15, 73, 20, 73, 0, 0, 10,
-        10, 0, 73, 73, 45, 10, 73, 73, 73, 73, 73,
+    #[rustfmt::skip]
+    const KEYWORD_TABLE: [Token; 82] = [
+        T![ident], T![_], T![u8], T![u64], T![else], T![usize], T![ident], T![s8],
+        T![s64], T![ident], T![ssize], T![string], T![as], T![u32], T![true], T![ident],
+        T![rawptr], T![ident], T![s32], T![undefined], T![defer], T![struct], T![ident], T![f64],
+        T![void], T![false], T![import], T![ident], T![for], T![ident], T![ident], T![zeroed],
+        T![if], T![f32], T![ident], T![never], T![return], T![in], T![let], T![ident],
+        T![break], T![bool64], T![ident], T![u16], T![enum], T![match], T![ident], T![ident],
+        T![s16], T![ident], T![ident], T![bool32], T![ident], T![mut], T![null], T![ident],
+        T![ident], T![cstring], T![continue], T![char], T![ident], T![ident], T![ident], T![ident],
+        T![bool], T![ident], T![ident], T![ident], T![ident], T![proc], T![ident], T![ident],
+        T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident], T![ident],
+        T![ident], T![bool16]
     ];
 }

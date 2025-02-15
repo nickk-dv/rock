@@ -59,7 +59,6 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     }
 
     match (ty, ty2) {
-        (hir::Type::Any, hir::Type::Any) => true,
         (hir::Type::Char, hir::Type::Char) => true,
         (hir::Type::Void, hir::Type::Void) => true,
         (hir::Type::Never, hir::Type::Never) => true,
@@ -126,7 +125,6 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
 pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
         hir::Type::Error => "<unknown>".into(),
-        hir::Type::Any => "any".into(),
         hir::Type::Char => "char".into(),
         hir::Type::Void => "void".into(),
         hir::Type::Never => "never".into(),
@@ -432,7 +430,6 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
-        ast::ExprKind::Sizeof { ty } => typecheck_sizeof(ctx, expr.range, *ty),
         ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {

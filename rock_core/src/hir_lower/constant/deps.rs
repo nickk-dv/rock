@@ -508,7 +508,6 @@ fn add_type_size_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
-        hir::Type::Any => {}
         hir::Type::Char => {}
         hir::Type::Void => {}
         hir::Type::Never => {}
@@ -609,7 +608,6 @@ fn add_type_usage_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
-        hir::Type::Any => {}
         hir::Type::Char => {}
         hir::Type::Void => {}
         hir::Type::Never => {}
@@ -714,11 +712,12 @@ fn add_expr_const_dependencies<'ast>(
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
-        ast::ExprKind::Sizeof { ty } => {
-            let ty = pass_3::type_resolve(ctx, *ty, true);
-            add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
-            Ok(())
-        }
+        //ast::ExprKind::Sizeof { ty } => {
+        //    let ty = pass_3::type_resolve(ctx, *ty, true);
+        //    add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
+        //    Ok(())
+        //}
+        //@allow size_of and align_of directives in constants
         ast::ExprKind::Directive { .. } => {
             error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "directive");
             Err(parent_id)

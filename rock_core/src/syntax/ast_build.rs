@@ -735,11 +735,6 @@ fn expr_kind<'ast>(
             let into = ctx.arena.alloc(into);
             ast::ExprKind::Cast { target, into }
         }
-        cst::Expr::Sizeof(sizeof) => {
-            let ty = ty(ctx, sizeof.ty(ctx.tree).unwrap());
-            let ty = ctx.arena.alloc(ty);
-            ast::ExprKind::Sizeof { ty }
-        }
         cst::Expr::Directive(dir) => {
             let directive = directive(ctx, dir);
             let directive = ctx.arena.alloc(directive);

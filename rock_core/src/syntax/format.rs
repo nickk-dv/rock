@@ -1298,7 +1298,6 @@ fn expr<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::Expr<'syn>) {
         cst::Expr::Slice(expr) => expr_slice(fmt, expr),
         cst::Expr::Call(expr) => expr_call(fmt, expr),
         cst::Expr::Cast(expr) => expr_cast(fmt, expr),
-        cst::Expr::Sizeof(expr) => expr_sizeof(fmt, expr),
         cst::Expr::Directive(dir) => directive(fmt, dir),
         cst::Expr::Item(expr) => expr_item(fmt, expr),
         cst::Expr::Variant(expr) => expr_variant(fmt, expr),
@@ -1427,13 +1426,6 @@ fn expr_cast<'syn>(fmt: &mut Formatter<'syn, '_>, cast: cst::ExprCast<'syn>) {
     fmt.write_str("as");
     fmt.space();
     ty(fmt, cast.into_ty(fmt.tree).unwrap());
-}
-
-fn expr_sizeof<'syn>(fmt: &mut Formatter<'syn, '_>, sizeof: cst::ExprSizeof<'syn>) {
-    fmt.write_str("sizeof");
-    fmt.write('(');
-    ty(fmt, sizeof.ty(fmt.tree).unwrap());
-    fmt.write(')');
 }
 
 fn expr_item<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::ExprItem<'syn>) {

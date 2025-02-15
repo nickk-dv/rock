@@ -238,7 +238,7 @@ macro_rules! token_gen {
         }
 
         /// lenght in bytes of `normal` tokens,  
-        /// `special` tokens will have lenght of 0.
+        /// `special` tokens will have length of 0.
         const NORMAL_TOKEN_LEN: [u8; 96] = {
             let mut token_len: [u8; 96] =  [
                 $($string.len() as u8,)+
@@ -391,7 +391,6 @@ token_gen! {
     [else]     | "else"     | KwElse     |
     [match]    | "match"    | KwMatch    |
     [as]       | "as"       | KwAs       |
-    [sizeof]   | "sizeof"   | KwSizeof   |
     [_]        | "_"        | KwDiscard  |
 
     // keyword basic types
@@ -408,10 +407,11 @@ token_gen! {
     [f32]      | "f32"      | KwF32      | BASIC[BasicType::F32]
     [f64]      | "f64"      | KwF64      | BASIC[BasicType::F64]
     [bool]     | "bool"     | KwBool     | BASIC[BasicType::Bool]
+    [bool16]   | "bool16"   | KwBool16   | BASIC[BasicType::Bool16]
     [bool32]   | "bool32"   | KwBool32   | BASIC[BasicType::Bool32]
+    [bool64]   | "bool64"   | KwBool64   | BASIC[BasicType::Bool64]
     [char]     | "char"     | KwChar     | BASIC[BasicType::Char]
     [rawptr]   | "rawptr"   | KwRawptr   | BASIC[BasicType::Rawptr]
-    [any]      | "any"      | KwAny      | BASIC[BasicType::Any]
     [void]     | "void"     | KwVoid     | BASIC[BasicType::Void]
     [never]    | "never"    | KwNever    | BASIC[BasicType::Never]
     [string]   | "string"   | KwString   | BASIC[BasicType::String]
