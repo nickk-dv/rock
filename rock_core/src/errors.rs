@@ -425,6 +425,11 @@ pub fn directive_not_compatible(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn directive_cannot_use_as_expr(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
+    let msg = format!("directive `#{name}` cannot be used as expression",);
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn dir_scope_vis_redundant(
     emit: &mut impl ErrorSink,
     src: SourceRange,

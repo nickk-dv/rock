@@ -875,22 +875,6 @@ impl IntType {
         }
     }
 
-    pub fn into_basic(self) -> ast::BasicType {
-        match self {
-            IntType::S8 => ast::BasicType::S8,
-            IntType::S16 => ast::BasicType::S16,
-            IntType::S32 => ast::BasicType::S32,
-            IntType::S64 => ast::BasicType::S64,
-            IntType::Ssize => ast::BasicType::Ssize,
-            IntType::U8 => ast::BasicType::U8,
-            IntType::U16 => ast::BasicType::U16,
-            IntType::U32 => ast::BasicType::U32,
-            IntType::U64 => ast::BasicType::U64,
-            IntType::Usize => ast::BasicType::Usize,
-            IntType::Untyped => unreachable!("untyped int to basic type"),
-        }
-    }
-
     pub fn is_signed(self) -> bool {
         matches!(self, IntType::S8 | IntType::S16 | IntType::S32 | IntType::S64 | IntType::Ssize)
     }
@@ -933,59 +917,6 @@ impl IntType {
                 TargetPtrWidth::Bit_64 => u64::MAX as i128,
             },
             IntType::Untyped => u64::MAX as i128, // u64 magnitude
-        }
-    }
-}
-
-impl FloatType {
-    pub fn from_basic(basic: ast::BasicType) -> Option<FloatType> {
-        match basic {
-            ast::BasicType::F32 => Some(FloatType::F32),
-            ast::BasicType::F64 => Some(FloatType::F64),
-            _ => None,
-        }
-    }
-    pub fn into_basic(self) -> ast::BasicType {
-        match self {
-            FloatType::F32 => ast::BasicType::F32,
-            FloatType::F64 => ast::BasicType::F64,
-            FloatType::Untyped => unreachable!(),
-        }
-    }
-}
-
-impl BoolType {
-    pub fn from_basic(basic: ast::BasicType) -> Option<BoolType> {
-        match basic {
-            ast::BasicType::Bool => Some(BoolType::Bool),
-            ast::BasicType::Bool32 => Some(BoolType::Bool32),
-            _ => None,
-        }
-    }
-    pub fn into_basic(self) -> ast::BasicType {
-        match self {
-            BoolType::Bool => ast::BasicType::Bool,
-            BoolType::Bool16 => ast::BasicType::Bool16,
-            BoolType::Bool32 => ast::BasicType::Bool32,
-            BoolType::Bool64 => ast::BasicType::Bool64,
-            BoolType::Untyped => unreachable!("untyped bool to basic type"),
-        }
-    }
-}
-
-impl StringType {
-    pub fn from_basic(basic: ast::BasicType) -> Option<StringType> {
-        match basic {
-            ast::BasicType::String => Some(StringType::String),
-            ast::BasicType::CString => Some(StringType::CString),
-            _ => None,
-        }
-    }
-    pub fn into_basic(self) -> ast::BasicType {
-        match self {
-            StringType::String => ast::BasicType::String,
-            StringType::CString => ast::BasicType::CString,
-            StringType::Untyped => unreachable!(),
         }
     }
 }
