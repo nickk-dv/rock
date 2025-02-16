@@ -2572,7 +2572,6 @@ fn typecheck_block<'hir, 'ast>(
                     check_unused_expr_semi(ctx, expr_res.expr, expr.range);
                 }
 
-                //@migrate to using never type instead of diverges bool flags
                 let will_diverge = expr_res.ty.is_never();
                 check_stmt_diverges(ctx, will_diverge, stmt.range);
                 hir::Stmt::ExprSemi(expr_res.expr)

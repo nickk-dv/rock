@@ -258,7 +258,6 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
 }
 
 //@getting enum variant tag is repetative
-//@uniform pattern gen?
 fn codegen_match<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
