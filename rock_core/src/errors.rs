@@ -462,16 +462,6 @@ pub fn flag_proc_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: Sourc
     emit.error(Error::new(msg, proc_src, None));
 }
 
-pub fn flag_proc_builtin_with_block(
-    emit: &mut impl ErrorSink,
-    proc_src: SourceRange,
-    block_src: SourceRange,
-) {
-    let msg = "`builtin` procedures cannot have a body";
-    let info = Info::new("remove this block", block_src);
-    emit.error(Error::new(msg, proc_src, info));
-}
-
 //==================== CHECK IMPORT ====================
 
 pub fn import_package_dependency_not_found(
@@ -924,6 +914,17 @@ pub fn tycheck_cast_redundant(
     into_ty: &str,
 ) {
     let msg = format!("redundant cast from `{from_ty}` into `{into_ty}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn tycheck_transmute_mismatch(
+    emit: &mut impl WarningSink,
+    src: SourceRange,
+    subject: &str,
+    from_ty: &str,
+    into_ty: &str,
+) {
+    let msg = format!("{subject} mismatch in @transmute from `{from_ty}` into `{into_ty}`");
     emit.warning(Warning::new(msg, src, None));
 }
 

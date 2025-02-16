@@ -430,6 +430,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
+        ast::ExprKind::Builtin { kind } => typecheck_builtin(ctx, expr.range, kind),
         ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {
@@ -1332,6 +1333,70 @@ fn typecheck_sizeof<'hir, 'ast>(
     };
 
     TypeResult::new(hir::Type::Int(IntType::Usize), expr)
+}
+
+fn typecheck_builtin<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    range: TextRange,
+    kind: &ast::Builtin<'ast>,
+) -> TypeResult<'hir> {
+    let src = ctx.src(range);
+    match *kind {
+        ast::Builtin::SizeOf(ty) => {
+            let ty = super::pass_3::type_resolve(ctx, ty, false);
+            let expr = constant::type_layout(ctx, ty, src)
+                .map(|layout| {
+                    fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
+                        .map(|value| hir::Expr::Const { value })
+                        .unwrap_or(hir::Expr::Error)
+                })
+                .unwrap_or(hir::Expr::Error);
+            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
+        }
+        ast::Builtin::AlignOf(ty) => {
+            let ty = super::pass_3::type_resolve(ctx, ty, false);
+            let expr = constant::type_layout(ctx, ty, src)
+                .map(|layout| {
+                    fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
+                        .map(|value| hir::Expr::Const { value })
+                        .unwrap_or(hir::Expr::Error)
+                })
+                .unwrap_or(hir::Expr::Error);
+            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
+        }
+        ast::Builtin::Transmute(expr, into) => {
+            let expr_res = typecheck_expr(ctx, Expectation::None, expr);
+            let into_ty = super::pass_3::type_resolve(ctx, into, false);
+
+            let from_src = ctx.src(expr.range);
+            let into_src = ctx.src(into.range);
+            let from_layout = constant::type_layout(ctx, expr_res.ty, from_src);
+            let into_layout = constant::type_layout(ctx, into_ty, into_src);
+
+            if let (Ok(from_layout), Ok(into_layout)) = (from_layout, into_layout) {
+                let subject = if from_layout.size != into_layout.size {
+                    "size"
+                } else if from_layout.align != into_layout.align {
+                    "alignment"
+                } else {
+                    return TypeResult::new(into_ty, *expr_res.expr);
+                };
+
+                let from_ty = type_format(ctx, expr_res.ty);
+                let into_ty = type_format(ctx, into_ty);
+                err::tycheck_transmute_mismatch(
+                    &mut ctx.emit,
+                    src,
+                    subject,
+                    from_ty.as_str(),
+                    into_ty.as_str(),
+                );
+                TypeResult::error()
+            } else {
+                TypeResult::error()
+            }
+        }
+    }
 }
 
 fn typecheck_directive<'hir, 'ast>(

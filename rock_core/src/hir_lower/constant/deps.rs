@@ -712,12 +712,17 @@ fn add_expr_const_dependencies<'ast>(
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
-        //ast::ExprKind::Sizeof { ty } => {
-        //    let ty = pass_3::type_resolve(ctx, *ty, true);
-        //    add_type_size_const_dependencies(ctx, tree, parent_id, ty)?;
-        //    Ok(())
-        //}
-        //@allow size_of and align_of directives in constants
+        //@allow size_of and align_of in constants? and transmute?
+        ast::ExprKind::Builtin { .. } => {
+            error_cannot_use_in_constants(
+                &mut ctx.emit,
+                origin_id,
+                expr.range,
+                "builtin procedures",
+            );
+            Err(parent_id)
+        }
+        //@deprecate directive exprs soon 16/02/25
         ast::ExprKind::Directive { .. } => {
             error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "directive");
             Err(parent_id)

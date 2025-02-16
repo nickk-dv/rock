@@ -155,7 +155,6 @@ pub struct DirectiveParam {
 pub enum DirectiveKind<'ast> {
     Error(Name),
     Inline,
-    Builtin,
     ScopePublic,
     ScopePackage,
     ScopePrivate,
@@ -325,6 +324,7 @@ pub enum ExprKind<'ast> {
     Slice       { target: &'ast Expr<'ast>, range: &'ast SliceRange<'ast> },
     Call        { target: &'ast Expr<'ast>, args_list: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
+    Builtin     { kind: &'ast Builtin<'ast> },
     Directive   { directive: &'ast Directive<'ast> },
     Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
@@ -371,6 +371,13 @@ pub struct SliceRange<'ast> {
 pub enum RangeKind {
     Exclusive,
     Inclusive,
+}
+
+#[derive(Copy, Clone)]
+pub enum Builtin<'ast> {
+    SizeOf(Type<'ast>),
+    AlignOf(Type<'ast>),
+    Transmute(&'ast Expr<'ast>, Type<'ast>),
 }
 
 #[derive(Copy, Clone)]
@@ -591,7 +598,6 @@ impl<'ast> DirectiveKind<'ast> {
         match self {
             DirectiveKind::Error(_) => "<error>",
             DirectiveKind::Inline => "inline",
-            DirectiveKind::Builtin => "builtin",
             DirectiveKind::ScopePublic => "scope_public",
             DirectiveKind::ScopePackage => "scope_package",
             DirectiveKind::ScopePrivate => "scope_private",

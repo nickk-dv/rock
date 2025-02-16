@@ -697,8 +697,7 @@ fn codegen_call_direct<'c>(
         let param = proc_data.param(hir::ParamID::new(idx));
 
         //@copy pasta from fn_val generation
-        let is_external = proc_data.flag_set.contains(hir::ProcFlag::External)
-            && !proc_data.flag_set.contains(hir::ProcFlag::Builtin);
+        let is_external = proc_data.flag_set.contains(hir::ProcFlag::External);
         let value = if is_external && emit_mod::win64_abi_pass_by_pointer(cg, param.ty) {
             codegen_expr_pointer(cg, expr).as_val()
         } else {

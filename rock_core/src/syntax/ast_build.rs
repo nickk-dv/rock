@@ -387,7 +387,6 @@ fn directive<'ast>(
             let name = name(ctx, dir.name(ctx.tree).unwrap());
             match ctx.intern_name.get(name.id) {
                 "inline" => ast::DirectiveKind::Inline,
-                "builtin" => ast::DirectiveKind::Builtin,
                 "scope_public" => ast::DirectiveKind::ScopePublic,
                 "scope_package" => ast::DirectiveKind::ScopePackage,
                 "scope_private" => ast::DirectiveKind::ScopePrivate,

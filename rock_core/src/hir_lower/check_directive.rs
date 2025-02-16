@@ -54,7 +54,6 @@ pub fn check_proc_directives(
         }
         let new_flag = match directive.kind {
             DirectiveKind::Inline => hir::ProcFlag::Inline,
-            DirectiveKind::Builtin => hir::ProcFlag::Builtin,
             _ => {
                 let src = ctx.src(directive.range);
                 let name = directive.kind.as_str();
@@ -72,13 +71,6 @@ pub fn check_proc_directives(
         );
     }
 
-    if flag_set.contains(hir::ProcFlag::Builtin) {
-        if let Some(block) = item.block {
-            let proc_src = ctx.src(item.name.range);
-            let block_src = ctx.src(block.range);
-            err::flag_proc_builtin_with_block(&mut ctx.emit, proc_src, block_src);
-        }
-    }
     (config, flag_set)
 }
 

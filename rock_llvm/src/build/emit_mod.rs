@@ -173,8 +173,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 
     for data in cg.hir.procs.iter() {
         //builtin takes precedence over external flag
-        let is_external = data.flag_set.contains(hir::ProcFlag::External)
-            && !data.flag_set.contains(hir::ProcFlag::Builtin);
+        let is_external = data.flag_set.contains(hir::ProcFlag::External);
         let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
         let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
 
@@ -246,9 +245,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
         let data = cg.hir.proc_data(proc_id);
         cg.proc.reset(proc_id, fn_val);
 
-        if data.flag_set.contains(hir::ProcFlag::External)
-            && !data.flag_set.contains(hir::ProcFlag::Builtin)
-        {
+        if data.flag_set.contains(hir::ProcFlag::External) {
             continue;
         }
 
@@ -299,40 +296,6 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             };
             if !cg.insert_bb_terminated() {
                 cg.build.ret(value);
-            }
-        } else if data.flag_set.contains(hir::ProcFlag::Builtin) {
-            let name = cg.session.intern_name.get(data.name.id);
-            match name {
-                "from_raw_parts" | "from_raw_parts_mut" => {
-                    let slice_ty = cg.slice_type();
-                    let slice_ptr = cg.build.alloca(slice_ty.as_ty(), "slice");
-                    let param_ptr_ptr = cg.proc.param_ptrs[0];
-                    let param_len_ptr = cg.proc.param_ptrs[1];
-
-                    let slice_ptr_ptr =
-                        cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
-                    let param_ptr = cg.build.load(cg.ptr_type(), param_ptr_ptr, "param_ptr");
-                    cg.build.store(param_ptr, slice_ptr_ptr);
-
-                    let slice_len_ptr =
-                        cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
-                    let param_len = cg.build.load(cg.ptr_sized_int(), param_len_ptr, "param_len");
-                    cg.build.store(param_len, slice_len_ptr);
-
-                    let slice_val = cg.build.load(slice_ty.as_ty(), slice_ptr, "slice_val");
-                    cg.build.ret(Some(slice_val));
-                }
-                "string_to_bytes" | "string_from_bytes" => {
-                    let param_0_ptr = cg.proc.param_ptrs[0];
-                    let value = cg.build.load(cg.slice_type().as_ty(), param_0_ptr, "value");
-                    cg.build.ret(Some(value));
-                }
-                "cstring_to_bytes" => {
-                    let param_0_ptr = cg.proc.param_ptrs[0];
-                    let value = cg.build.load(cg.ptr_type(), param_0_ptr, "value");
-                    cg.build.ret(Some(value));
-                }
-                _ => unreachable!("unknown #builtin `{name}`"),
             }
         }
     }
