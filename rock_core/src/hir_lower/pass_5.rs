@@ -430,7 +430,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
-        ast::ExprKind::Builtin { kind } => typecheck_builtin(ctx, expr.range, kind),
+        ast::ExprKind::Builtin { builtin } => typecheck_builtin(ctx, expr.range, builtin),
         ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {
@@ -1338,10 +1338,15 @@ fn typecheck_sizeof<'hir, 'ast>(
 fn typecheck_builtin<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     range: TextRange,
-    kind: &ast::Builtin<'ast>,
+    builtin: &ast::Builtin<'ast>,
 ) -> TypeResult<'hir> {
     let src = ctx.src(range);
-    match *kind {
+    match *builtin {
+        ast::Builtin::Error(name) => {
+            let name = ctx.name(name.id);
+            err::tycheck_builtin_unknown(&mut ctx.emit, src, name);
+            TypeResult::error()
+        }
         ast::Builtin::SizeOf(ty) => {
             let ty = super::pass_3::type_resolve(ctx, ty, false);
             let expr = constant::type_layout(ctx, ty, src)

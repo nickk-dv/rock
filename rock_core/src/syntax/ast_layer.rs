@@ -463,6 +463,10 @@ ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
 ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
 ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
 
+ast_node_impl!(BuiltinError, SyntaxKind::BUILTIN_ERROR);
+ast_node_impl!(BuiltinWithType, SyntaxKind::BUILTIN_WITH_TYPE);
+ast_node_impl!(BuiltinTransmute, SyntaxKind::BUILTIN_TRANSMUTE);
+
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
@@ -536,33 +540,6 @@ ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
 ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
 
 #[derive(Copy, Clone)]
-pub enum Directive<'syn> {
-    Simple(DirectiveSimple<'syn>),
-    WithType(DirectiveWithType<'syn>),
-    WithParams(DirectiveWithParams<'syn>),
-}
-
-impl<'syn> AstNode<'syn> for Directive<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Directive<'syn>> {
-        match node.kind {
-            SyntaxKind::DIRECTIVE_SIMPLE => Some(Directive::Simple(DirectiveSimple(node))),
-            SyntaxKind::DIRECTIVE_WITH_TYPE => Some(Directive::WithType(DirectiveWithType(node))),
-            SyntaxKind::DIRECTIVE_WITH_PARAMS => {
-                Some(Directive::WithParams(DirectiveWithParams(node)))
-            }
-            _ => None,
-        }
-    }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
-        match self {
-            Directive::Simple(dir) => dir.find_range(tree),
-            Directive::WithType(dir) => dir.find_range(tree),
-            Directive::WithParams(dir) => dir.find_range(tree),
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
 pub enum Item<'syn> {
     Proc(ProcItem<'syn>),
     Enum(EnumItem<'syn>),
@@ -595,6 +572,58 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             Item::Global(item) => item.find_range(tree),
             Item::Import(item) => item.find_range(tree),
             Item::Directive(item) => item.find_range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Directive<'syn> {
+    Simple(DirectiveSimple<'syn>),
+    WithType(DirectiveWithType<'syn>),
+    WithParams(DirectiveWithParams<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Directive<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Directive<'syn>> {
+        match node.kind {
+            SyntaxKind::DIRECTIVE_SIMPLE => Some(Directive::Simple(DirectiveSimple(node))),
+            SyntaxKind::DIRECTIVE_WITH_TYPE => Some(Directive::WithType(DirectiveWithType(node))),
+            SyntaxKind::DIRECTIVE_WITH_PARAMS => {
+                Some(Directive::WithParams(DirectiveWithParams(node)))
+            }
+            _ => None,
+        }
+    }
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Directive::Simple(dir) => dir.find_range(tree),
+            Directive::WithType(dir) => dir.find_range(tree),
+            Directive::WithParams(dir) => dir.find_range(tree),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Builtin<'syn> {
+    Error(BuiltinError<'syn>),
+    WithType(BuiltinWithType<'syn>),
+    Transmute(BuiltinTransmute<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Builtin<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Builtin<'syn>> {
+        match node.kind {
+            SyntaxKind::BUILTIN_ERROR => Some(Builtin::Error(BuiltinError(node))),
+            SyntaxKind::BUILTIN_WITH_TYPE => Some(Builtin::WithType(BuiltinWithType(node))),
+            SyntaxKind::BUILTIN_TRANSMUTE => Some(Builtin::Transmute(BuiltinTransmute(node))),
+            _ => None,
+        }
+    }
+    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+        match self {
+            Builtin::Error(builtin) => builtin.find_range(tree),
+            Builtin::WithType(builtin) => builtin.find_range(tree),
+            Builtin::Transmute(builtin) => builtin.find_range(tree),
         }
     }
 }
@@ -696,6 +725,7 @@ pub enum Expr<'syn> {
     Slice(ExprSlice<'syn>),
     Call(ExprCall<'syn>),
     Cast(ExprCast<'syn>),
+    Builtin(Builtin<'syn>),
     Directive(Directive<'syn>),
     Item(ExprItem<'syn>),
     Variant(ExprVariant<'syn>),
@@ -732,6 +762,8 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             _ => {
                 if let Some(lit) = Lit::cast(node) {
                     Some(Expr::Lit(lit))
+                } else if let Some(builtin) = Builtin::cast(node) {
+                    Some(Expr::Builtin(builtin))
                 } else if let Some(directive) = Directive::cast(node) {
                     Some(Expr::Directive(directive))
                 } else {
@@ -752,6 +784,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Slice(expr) => expr.find_range(tree),
             Expr::Call(expr) => expr.find_range(tree),
             Expr::Cast(expr) => expr.find_range(tree),
+            Expr::Builtin(expr) => expr.find_range(tree),
             Expr::Directive(expr) => expr.find_range(tree),
             Expr::Item(expr) => expr.find_range(tree),
             Expr::Variant(expr) => expr.find_range(tree),
@@ -953,6 +986,18 @@ impl<'syn> DirectiveParamList<'syn> {
 impl<'syn> DirectiveParam<'syn> {
     node_find!(name, Name);
     node_find!(value, LitString);
+}
+
+impl<'syn> BuiltinError<'syn> {
+    node_find!(name, Name);
+}
+impl<'syn> BuiltinWithType<'syn> {
+    node_find!(name, Name);
+    node_find!(ty, Type);
+}
+impl<'syn> BuiltinTransmute<'syn> {
+    node_find!(expr, Expr);
+    node_find!(into_ty, Type);
 }
 
 //==================== TYPE ====================

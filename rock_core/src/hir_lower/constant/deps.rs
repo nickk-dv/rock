@@ -1,6 +1,6 @@
 use super::super::check_path::{self, ValueID};
 use super::super::context::HirCtx;
-use super::super::{pass_3, pass_5, pass_5::Expectation};
+use super::super::{pass_5, pass_5::Expectation};
 use super::fold;
 use super::layout;
 use crate::ast;

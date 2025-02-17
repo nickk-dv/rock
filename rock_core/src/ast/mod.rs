@@ -324,7 +324,7 @@ pub enum ExprKind<'ast> {
     Slice       { target: &'ast Expr<'ast>, range: &'ast SliceRange<'ast> },
     Call        { target: &'ast Expr<'ast>, args_list: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
-    Builtin     { kind: &'ast Builtin<'ast> },
+    Builtin     { builtin: &'ast Builtin<'ast> },
     Directive   { directive: &'ast Directive<'ast> },
     Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
@@ -375,6 +375,7 @@ pub enum RangeKind {
 
 #[derive(Copy, Clone)]
 pub enum Builtin<'ast> {
+    Error(Name),
     SizeOf(Type<'ast>),
     AlignOf(Type<'ast>),
     Transmute(&'ast Expr<'ast>, Type<'ast>),

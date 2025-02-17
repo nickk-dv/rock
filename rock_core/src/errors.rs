@@ -907,25 +907,20 @@ pub fn tycheck_cast_invalid(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cast_redundant(
-    emit: &mut impl WarningSink,
-    src: SourceRange,
-    from_ty: &str,
-    into_ty: &str,
-) {
-    let msg = format!("redundant cast from `{from_ty}` into `{into_ty}`");
-    emit.warning(Warning::new(msg, src, None));
+pub fn tycheck_builtin_unknown(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
+    let msg = format!("builtin procedure `@{name}` is unknown");
+    emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_transmute_mismatch(
-    emit: &mut impl WarningSink,
+    emit: &mut impl ErrorSink,
     src: SourceRange,
     subject: &str,
     from_ty: &str,
     into_ty: &str,
 ) {
     let msg = format!("{subject} mismatch in @transmute from `{from_ty}` into `{into_ty}`");
-    emit.warning(Warning::new(msg, src, None));
+    emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_field_already_initialized(

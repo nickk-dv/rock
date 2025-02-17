@@ -734,6 +734,29 @@ fn expr_kind<'ast>(
             let into = ctx.arena.alloc(into);
             ast::ExprKind::Cast { target, into }
         }
+        cst::Expr::Builtin(builtin) => {
+            let builtin = match builtin {
+                cst::Builtin::Error(builtin) => {
+                    let name = name(ctx, builtin.name(ctx.tree).unwrap());
+                    ast::Builtin::Error(name)
+                }
+                cst::Builtin::WithType(builtin) => {
+                    let name = name(ctx, builtin.name(ctx.tree).unwrap());
+                    let ty = ty(ctx, builtin.ty(ctx.tree).unwrap());
+                    match ctx.intern_name.get(name.id) {
+                        "size_of" => ast::Builtin::SizeOf(ty),
+                        "align_of" => ast::Builtin::AlignOf(ty),
+                        _ => ast::Builtin::Error(name),
+                    }
+                }
+                cst::Builtin::Transmute(builtin) => ast::Builtin::Transmute(
+                    expr(ctx, builtin.expr(ctx.tree).unwrap()),
+                    ty(ctx, builtin.into_ty(ctx.tree).unwrap()),
+                ),
+            };
+            let builtin = ctx.arena.alloc(builtin);
+            ast::ExprKind::Builtin { builtin }
+        }
         cst::Expr::Directive(dir) => {
             let directive = directive(ctx, dir);
             let directive = ctx.arena.alloc(directive);

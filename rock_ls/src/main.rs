@@ -776,6 +776,10 @@ fn semantic_visit_node(
                     SyntaxKind::DIRECTIVE_PARAM_LIST => None,
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
 
+                    SyntaxKind::BUILTIN_ERROR => None,
+                    SyntaxKind::BUILTIN_WITH_TYPE => None,
+                    SyntaxKind::BUILTIN_TRANSMUTE => None,
+
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
                     SyntaxKind::TYPE_REFERENCE => None,
@@ -945,7 +949,7 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
         T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
 
-        T![.] | T![,] | T![:] | T![;] | T![#] |
+        T![.] | T![,] | T![:] | T![;] | T![#] | T![@] |
         T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,
 
         T![..] | T![->] | T!["..<"] | T!["..="] | T![~] | T![!] |
