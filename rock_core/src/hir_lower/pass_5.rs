@@ -1429,28 +1429,6 @@ fn typecheck_directive<'hir, 'ast>(
                 hir::Expr::CallerLocation { struct_id },
             )
         }
-        ast::DirectiveKind::SizeOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, *ty, false);
-            let expr = constant::type_layout(ctx, ty, src)
-                .map(|layout| {
-                    fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
-                        .map(|value| hir::Expr::Const { value })
-                        .unwrap_or(hir::Expr::Error)
-                })
-                .unwrap_or(hir::Expr::Error);
-            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
-        }
-        ast::DirectiveKind::AlignOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, *ty, false);
-            let expr = constant::type_layout(ctx, ty, src)
-                .map(|layout| {
-                    fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
-                        .map(|value| hir::Expr::Const { value })
-                        .unwrap_or(hir::Expr::Error)
-                })
-                .unwrap_or(hir::Expr::Error);
-            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
-        }
         ast::DirectiveKind::Error(name) => {
             let name = ctx.name(name.id);
             err::directive_unknown(&mut ctx.emit, src, name);

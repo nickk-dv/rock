@@ -363,7 +363,6 @@ fn directive(p: &mut Parser) -> (MarkerClosed, bool) {
                 scope = true;
                 SyntaxKind::DIRECTIVE_SIMPLE
             }
-            "size_of" | "align_of" => SyntaxKind::DIRECTIVE_WITH_TYPE,
             "config" | "config_any" | "config_not" => SyntaxKind::DIRECTIVE_WITH_PARAMS,
             _ => SyntaxKind::DIRECTIVE_SIMPLE,
         }
@@ -373,11 +372,6 @@ fn directive(p: &mut Parser) -> (MarkerClosed, bool) {
 
     name(p);
     match kind {
-        SyntaxKind::DIRECTIVE_WITH_TYPE => {
-            p.expect(T!['(']);
-            ty(p);
-            p.expect(T![')']);
-        }
         SyntaxKind::DIRECTIVE_WITH_PARAMS => {
             if p.at(T!['(']) {
                 directive_param_list(p);

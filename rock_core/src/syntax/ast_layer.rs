@@ -458,7 +458,6 @@ ast_node_impl!(ImportSymbolRename, SyntaxKind::IMPORT_SYMBOL_RENAME);
 
 ast_node_impl!(DirectiveList, SyntaxKind::DIRECTIVE_LIST);
 ast_node_impl!(DirectiveSimple, SyntaxKind::DIRECTIVE_SIMPLE);
-ast_node_impl!(DirectiveWithType, SyntaxKind::DIRECTIVE_WITH_TYPE);
 ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
 ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
 ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
@@ -579,7 +578,6 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
 #[derive(Copy, Clone)]
 pub enum Directive<'syn> {
     Simple(DirectiveSimple<'syn>),
-    WithType(DirectiveWithType<'syn>),
     WithParams(DirectiveWithParams<'syn>),
 }
 
@@ -587,7 +585,6 @@ impl<'syn> AstNode<'syn> for Directive<'syn> {
     fn cast(node: &'syn Node<'syn>) -> Option<Directive<'syn>> {
         match node.kind {
             SyntaxKind::DIRECTIVE_SIMPLE => Some(Directive::Simple(DirectiveSimple(node))),
-            SyntaxKind::DIRECTIVE_WITH_TYPE => Some(Directive::WithType(DirectiveWithType(node))),
             SyntaxKind::DIRECTIVE_WITH_PARAMS => {
                 Some(Directive::WithParams(DirectiveWithParams(node)))
             }
@@ -597,7 +594,6 @@ impl<'syn> AstNode<'syn> for Directive<'syn> {
     fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
         match self {
             Directive::Simple(dir) => dir.find_range(tree),
-            Directive::WithType(dir) => dir.find_range(tree),
             Directive::WithParams(dir) => dir.find_range(tree),
         }
     }
@@ -971,10 +967,6 @@ impl<'syn> DirectiveList<'syn> {
 }
 impl<'syn> DirectiveSimple<'syn> {
     node_find!(name, Name);
-}
-impl<'syn> DirectiveWithType<'syn> {
-    node_find!(name, Name);
-    node_find!(ty, Type);
 }
 impl<'syn> DirectiveWithParams<'syn> {
     node_find!(name, Name);

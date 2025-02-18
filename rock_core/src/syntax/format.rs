@@ -913,12 +913,6 @@ fn directive<'syn>(fmt: &mut Formatter<'syn, '_>, directive: cst::Directive<'syn
         cst::Directive::Simple(dir) => {
             name(fmt, dir.name(fmt.tree).unwrap());
         }
-        cst::Directive::WithType(dir) => {
-            name(fmt, dir.name(fmt.tree).unwrap());
-            fmt.write('(');
-            ty(fmt, dir.ty(fmt.tree).unwrap());
-            fmt.write(')');
-        }
         cst::Directive::WithParams(dir) => {
             name(fmt, dir.name(fmt.tree).unwrap());
             directive_param_list(fmt, dir.param_list(fmt.tree).unwrap());

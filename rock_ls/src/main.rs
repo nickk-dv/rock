@@ -771,7 +771,6 @@ fn semantic_visit_node(
 
                     SyntaxKind::DIRECTIVE_LIST => None,
                     SyntaxKind::DIRECTIVE_SIMPLE => None,
-                    SyntaxKind::DIRECTIVE_WITH_TYPE => None,
                     SyntaxKind::DIRECTIVE_WITH_PARAMS => None,
                     SyntaxKind::DIRECTIVE_PARAM_LIST => None,
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),

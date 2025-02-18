@@ -394,16 +394,6 @@ fn directive<'ast>(
                 _ => ast::DirectiveKind::Error(name),
             }
         }
-        cst::Directive::WithType(dir) => {
-            let name = name(ctx, dir.name(ctx.tree).unwrap());
-            let ty = ty(ctx, dir.ty(ctx.tree).unwrap());
-            let ty = ctx.arena.alloc(ty);
-            match ctx.intern_name.get(name.id) {
-                "size_of" => ast::DirectiveKind::SizeOf(ty),
-                "align_of" => ast::DirectiveKind::SizeOf(ty),
-                _ => unreachable!(),
-            }
-        }
         cst::Directive::WithParams(dir) => {
             let name = name(ctx, dir.name(ctx.tree).unwrap());
             let params = directive_param_list(ctx, dir.param_list(ctx.tree).unwrap());
