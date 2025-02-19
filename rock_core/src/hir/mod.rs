@@ -239,6 +239,7 @@ pub enum Expr<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
+    Transmute    { target: &'hir Expr<'hir>, into: &'hir Type<'hir> },
     CallerLocation { struct_id: StructID }, //@pass as param, refer to as param, remove.
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },

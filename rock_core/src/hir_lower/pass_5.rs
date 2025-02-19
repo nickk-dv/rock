@@ -1313,28 +1313,6 @@ fn constfold_cast<'hir>(
     }
 }
 
-//@remove sizeof later, use directives?
-fn typecheck_sizeof<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    range: TextRange,
-    ty: ast::Type<'ast>,
-) -> TypeResult<'hir> {
-    let src = ctx.src(range);
-    let ty = super::pass_3::type_resolve(ctx, ty, false);
-
-    let expr = if let Ok(layout) = constant::type_layout(ctx, ty, src) {
-        if let Ok(value) = fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize) {
-            hir::Expr::Const { value }
-        } else {
-            hir::Expr::Error
-        }
-    } else {
-        hir::Expr::Error
-    };
-
-    TypeResult::new(hir::Type::Int(IntType::Usize), expr)
-}
-
 fn typecheck_builtin<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     range: TextRange,
@@ -1384,7 +1362,11 @@ fn typecheck_builtin<'hir, 'ast>(
                 } else if from_layout.align != into_layout.align {
                     "alignment"
                 } else {
-                    return TypeResult::new(into_ty, *expr_res.expr);
+                    let expr = hir::Expr::Transmute {
+                        target: expr_res.expr,
+                        into: ctx.arena.alloc(into_ty),
+                    };
+                    return TypeResult::new(into_ty, expr);
                 };
 
                 let from_ty = type_format(ctx, expr_res.ty);
@@ -3373,6 +3355,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Index { .. } => Some("index access"),
         hir::Expr::Slice { .. } => Some("slice value"),
         hir::Expr::Cast { .. } => Some("cast value"),
+        hir::Expr::Transmute { .. } => Some("transmute value"),
         hir::Expr::CallerLocation { .. } => Some("caller location"),
         hir::Expr::ParamVar { .. } => Some("parameter value"),
         hir::Expr::Variable { .. } => Some("variable value"),
@@ -3811,6 +3794,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::Match { .. } => AddrBase::Temporary,
             hir::Expr::SliceField { .. } => AddrBase::SliceField,
             hir::Expr::Cast { .. } => AddrBase::Temporary,
+            hir::Expr::Transmute { .. } => AddrBase::Temporary,
             hir::Expr::CallerLocation { .. } => AddrBase::Temporary,
             hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,

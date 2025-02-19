@@ -97,6 +97,7 @@ fn codegen_expr<'c>(
         hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
         hir::Expr::Slice { target, access } => unimplemented!("slicing"),
         hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
+        hir::Expr::Transmute { target, into } => Some(codegen_transmute(cg, expect, target, into)),
         hir::Expr::CallerLocation { .. } => Some(codegen_caller_location(cg, expect)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
         hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
@@ -572,6 +573,24 @@ fn codegen_cast<'c>(
         CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "ecast"),
         CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "ecast"),
         CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "ecast"),
+    }
+}
+
+fn codegen_transmute<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    expect: Expect,
+    target: &hir::Expr<'c>,
+    into: &hir::Type,
+) -> llvm::Value {
+    let val = codegen_expr_value(cg, target);
+    let into_ty = cg.ty(*into);
+
+    let local_ptr = cg.entry_alloca(into_ty, "transmute_local");
+    cg.build.store(val, local_ptr);
+
+    match expect {
+        Expect::Value(_) | Expect::Store(_) => cg.build.load(into_ty, local_ptr, "transmute_val"),
+        Expect::Pointer => local_ptr.as_val(),
     }
 }
 
