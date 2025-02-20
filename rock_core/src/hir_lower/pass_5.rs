@@ -2881,7 +2881,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::Type::Reference(ast::Mut::Immutable, ctx.arena.alloc(expr_res.ty))
             };
             let iter_var = hir::Variable {
-                mutt: ast::Mut::Mutable, //@doesnt matter so far
+                mutt: ast::Mut::Mutable,
                 name: ast::Name { id: ctx.session.discard_id, range: TextRange::zero() },
                 ty: iter_var_ty,
                 was_used: false,

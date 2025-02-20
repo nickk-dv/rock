@@ -142,7 +142,9 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
             hir::Type::MultiReference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,
             hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
-            hir::Type::ArrayStatic(array) => self.array_type(array),
+            hir::Type::ArrayStatic(array) => {
+                llvm::array_type(self.ty(array.elem_ty), self.array_len(array.len))
+            }
         }
     }
 
@@ -214,12 +216,6 @@ impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
 
     pub fn slice_type(&self) -> llvm::TypeStruct {
         self.cache.slice_type
-    }
-
-    pub fn array_type(&self, array: &hir::ArrayStatic) -> llvm::Type {
-        let elem_ty = self.ty(array.elem_ty);
-        let len = self.array_len(array.len);
-        llvm::array_type(elem_ty, len)
     }
 
     pub fn array_len(&self, len: hir::ArrayStaticLen) -> u64 {

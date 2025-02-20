@@ -40,12 +40,8 @@ fn codegen_enum_types(cg: &mut Codegen) {
 
         let enum_ty = if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
             let layout = enum_data.layout.resolved_unwrap();
-            //@bad api, forced to create hir::ArrayStatic
-            let array_ty = hir::ArrayStatic {
-                len: hir::ArrayStaticLen::Immediate(layout.size),
-                elem_ty: hir::Type::Int(hir::IntType::U8),
-            };
-            let array_ty = cg.array_type(&array_ty);
+            let elem_ty = cg.int_type(hir::IntType::U8);
+            let array_ty = llvm::array_type(elem_ty, layout.size);
 
             let module_origin = cg.session.module.get(enum_data.origin_id);
             let package_origin = cg.session.graph.package(module_origin.origin());
