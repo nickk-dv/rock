@@ -376,8 +376,6 @@ fn directive_list_opt<'ast>(
     }
 }
 
-//@do not need to have "name" node in the syntax tree
-// identifier is enough, find the ident token, instead of interning names
 fn directive<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     directive: cst::Directive,

@@ -506,7 +506,7 @@ fn codegen_index<'c>(
         cg.build.cond_br(cond, check_bb, exit_bb);
         cg.build.position_at_end(check_bb);
         //@insert panic call (cannot get reference to it currently)
-        cg.build.br(exit_bb); //@insert unrechable as hint?
+        cg.build.br(exit_bb);
         cg.build.position_at_end(exit_bb);
     }
 

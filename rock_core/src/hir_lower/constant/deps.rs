@@ -730,7 +730,6 @@ fn add_expr_const_dependencies<'ast>(
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path) {
                 ValueID::None => Err(parent_id),
-                //@fold panics on direct | indirect calls
                 ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
