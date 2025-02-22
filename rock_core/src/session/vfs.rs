@@ -46,7 +46,7 @@ impl Vfs {
         } else {
             let file_id = FileID(self.files.len() as u32);
             let file =
-                FileData { version: 0, path: path.as_ref().to_path_buf(), source, line_ranges };
+                FileData { version: 1, path: path.as_ref().to_path_buf(), source, line_ranges };
             assert!(file.path.is_absolute());
             self.files.push(file);
             self.paths.insert(path.as_ref().to_path_buf(), file_id);

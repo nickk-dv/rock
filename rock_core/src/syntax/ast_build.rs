@@ -82,6 +82,10 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBu
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
+        if module.tree_version == file.version {
+            eprintln!("[info] tree up to date: `{}`", file.path.to_string_lossy());
+            continue;
+        }
 
         let tree_result = super::parse_tree_complete(
             &file.source,
@@ -97,6 +101,7 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBu
             }
             Err(errors) => state.errors.join_e(errors),
         }
+        session.module.get_mut(module_id).tree_version = file.version;
     }
 
     if state.errors.error_count() > 0 {
@@ -106,12 +111,17 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBu
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
-        let tree = module.tree_expect();
+        if module.ast_version == file.version {
+            eprintln!("[info] ast up to date: `{}`", file.path.to_string_lossy());
+            continue;
+        }
 
+        let tree = module.tree_expect();
         let mut ctx = AstBuild::new(tree, &file.source, &mut session.intern_name, &mut state);
         let items = source_file(&mut ctx, tree.source_file());
         let ast = ctx.finish(items);
         session.module.get_mut(module_id).set_ast(ast);
+        session.module.get_mut(module_id).ast_version = file.version;
     }
 
     state.errors.result(())

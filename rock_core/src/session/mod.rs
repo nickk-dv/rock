@@ -51,7 +51,9 @@ pub struct Module<'s> {
     name_id: NameID,
     file_id: FileID,
     tree: Option<SyntaxTree<'s>>,
+    pub tree_version: u32,
     ast: Option<Ast<'s>>,
+    pub ast_version: u32,
 }
 
 pub struct Directory {
@@ -366,7 +368,7 @@ fn process_module(
     let file_id = session.vfs.open(path, source);
 
     #[rustfmt::skip]
-    let module = Module { origin, name_id, file_id, tree: None, ast: None };
+    let module = Module { origin, name_id, file_id, tree: None, tree_version: 0, ast: None, ast_version: 0 };
     let module_id = session.module.add(module);
     Ok(module_id)
 }
