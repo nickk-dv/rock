@@ -734,7 +734,7 @@ fn codegen_call_direct<'c>(
         let line = llvm::const_int(cg.int_type(hir::IntType::U32), location.line() as u64, false);
         let col = llvm::const_int(cg.int_type(hir::IntType::U32), location.col() as u64, false);
 
-        let path = call_file.path().to_str().unwrap();
+        let path = call_file.path.to_str().unwrap();
         let string_val = llvm::const_string(&cg.context, path, true);
         let string_ty = llvm::typeof_value(string_val);
         let global = cg.module.add_global("rock.string.path", string_val, string_ty, true, true);

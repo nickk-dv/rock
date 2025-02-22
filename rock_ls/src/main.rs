@@ -338,6 +338,12 @@ fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Noti
             };
 
             let file = session.vfs.file_mut(module.file_id());
+            file.version += 1;
+            eprintln!(
+                "[info] file changed, path: `{}`, version: `{}`",
+                file.path.to_string_lossy(),
+                file.version
+            );
             for change in changes {
                 if let Some(range) = change.range {
                     let range = text_ops::file_range_to_text_range(file, range);
@@ -454,7 +460,7 @@ fn source_to_range_and_path<'s, 's_ref: 's>(
         Position::new(end_location.line() - 1, end_location.col() - 1),
     );
 
-    (range, file.path())
+    (range, &file.path)
 }
 
 fn create_diagnostic<'src>(
@@ -555,7 +561,7 @@ fn run_diagnostics(
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
-        diagnostics_map.insert(file.path().clone(), Vec::new());
+        diagnostics_map.insert(file.path.clone(), Vec::new());
     }
 
     // generate diagnostics

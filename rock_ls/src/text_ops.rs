@@ -21,7 +21,7 @@ fn file_line_range(file: &FileData, line: u32) -> TextRange {
     } else {
         unreachable!(
             "internal: `file_line_range()` failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
-            file.path().to_string_lossy(),
+            file.path.to_string_lossy(),
             file.line_ranges.len(),
         );
     }
@@ -44,7 +44,7 @@ fn file_line_char_utf16_to_offset(
         } else {
             unreachable!(
                 "internal: `file_line_char_utf16_to_offset()` failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
-                file.path().to_string_lossy(),
+                file.path.to_string_lossy(),
                 line_range,
                 character,
             )

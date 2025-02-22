@@ -7,11 +7,10 @@ pub struct Vfs {
     paths: HashMap<PathBuf, FileID>,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct FileID(u32);
-
+crate::define_id!(pub FileID);
 pub struct FileData {
-    path: PathBuf,
+    pub version: u32,
+    pub path: PathBuf,
     pub source: String,
     pub line_ranges: Vec<TextRange>,
 }
@@ -39,13 +38,15 @@ impl Vfs {
         let line_ranges = text::find_line_ranges(source.as_str());
 
         if let Some(&file_id) = self.paths.get(path.as_ref()) {
+            //@what to do with version?
             let file = self.file_mut(file_id);
             file.source = source;
             file.line_ranges = line_ranges;
             file_id
         } else {
             let file_id = FileID(self.files.len() as u32);
-            let file = FileData { path: path.as_ref().to_path_buf(), source, line_ranges };
+            let file =
+                FileData { version: 0, path: path.as_ref().to_path_buf(), source, line_ranges };
             assert!(file.path.is_absolute());
             self.files.push(file);
             self.paths.insert(path.as_ref().to_path_buf(), file_id);
@@ -57,19 +58,5 @@ impl Vfs {
         let file = self.file_mut(file_id);
         file.source = String::new();
         file.line_ranges = Vec::new();
-    }
-}
-
-impl FileID {
-    #[inline]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl FileData {
-    #[inline]
-    pub fn path(&self) -> &PathBuf {
-        &self.path
     }
 }

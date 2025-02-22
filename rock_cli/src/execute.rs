@@ -279,7 +279,7 @@ fn fmt() -> Result<(), Error> {
 
             let tree = module.tree_expect();
             let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
-            os::file_create(file.path(), &formatted)?;
+            os::file_create(&file.path, &formatted)?;
         }
         Ok(())
     }

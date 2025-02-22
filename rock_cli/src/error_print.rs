@@ -81,7 +81,7 @@ impl<'src> ContextFmt<'src> {
     ) -> ContextFmt<'src> {
         let module = session.module.get(context.src().module_id());
         let file = session.vfs.file(module.file_id());
-        let path = file.path().strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| file.path());
+        let path = file.path.strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| &file.path);
 
         let range = context.src().range();
         let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
