@@ -2,11 +2,15 @@ use lsp_types as lsp;
 use rock_core::session::FileData;
 use rock_core::text::{TextOffset, TextRange};
 
+pub fn str_char_len_utf16(string: &str) -> u32 {
+    string.chars().map(|c| c.len_utf16() as u32).sum()
+}
+
 pub fn file_range_to_text_range(file: &FileData, range: lsp::Range) -> TextRange {
     let start_line = file_line_range(file, range.start.line);
     let end_line = file_line_range(file, range.end.line);
-    let start = file_line_char_utf16_to_offset(file, start_line, range.start.character);
-    let end = file_line_char_utf16_to_offset(file, end_line, range.end.character);
+    let start = file_line_char_utf16_offset(file, start_line, range.start.character);
+    let end = file_line_char_utf16_offset(file, end_line, range.end.character);
     TextRange::new(start, end)
 }
 
@@ -20,14 +24,14 @@ fn file_line_range(file: &FileData, line: u32) -> TextRange {
         TextRange::new(last.end(), last.end())
     } else {
         unreachable!(
-            "internal: `file_line_range()` failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
+            "internal: `file_line_range` failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
             file.path.to_string_lossy(),
             file.line_ranges.len(),
         );
     }
 }
 
-fn file_line_char_utf16_to_offset(
+fn file_line_char_utf16_offset(
     file: &FileData,
     line_range: TextRange,
     character: u32,
@@ -43,7 +47,7 @@ fn file_line_char_utf16_to_offset(
             char_utf16 += c.len_utf16() as u32;
         } else {
             unreachable!(
-                "internal: `file_line_char_utf16_to_offset()` failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
+                "internal: `file_line_char_utf16_to_offset` failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
                 file.path.to_string_lossy(),
                 line_range,
                 character,

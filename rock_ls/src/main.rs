@@ -880,10 +880,6 @@ fn semantic_visit_node(
     }
 }
 
-fn str_char_len_utf16(string: &str) -> u32 {
-    string.chars().map(|c| c.len_utf16() as u32).sum()
-}
-
 fn semantic_token_add(
     builder: &mut SemanticTokenBuilder,
     semantic: SemanticToken,
@@ -913,10 +909,10 @@ fn semantic_token_add(
     let mut delta_range = TextRange::empty_at(start);
     delta_range.extend_by(offset);
     let token_str = &builder.source[delta_range.as_usize()];
-    let delta_start = str_char_len_utf16(token_str);
+    let delta_start = text_ops::str_char_len_utf16(token_str);
 
     let token_str = &builder.source[range.as_usize()];
-    let length = str_char_len_utf16(token_str);
+    let length = text_ops::str_char_len_utf16(token_str);
 
     builder.prev_range = Some(range);
     builder.semantic_tokens.push(lsp::SemanticToken {
@@ -950,7 +946,7 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![_] => SemanticToken::Parameter,
 
         T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
-        T![u8] | T![u16] | T![u32] | T![u64] | T![usize] | 
+        T![u8] | T![u16] | T![u32] | T![u64] | T![usize] |
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
         T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
 
