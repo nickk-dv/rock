@@ -1,10 +1,10 @@
 use super::parser::Event;
 use super::syntax_kind::SyntaxKind;
+use super::token::{TokenID, TokenList, Trivia, TriviaID};
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::session::ModuleID;
 use crate::support::{Arena, TempBuffer, TempOffset};
-use crate::token::{TokenID, TokenList, Trivia, TriviaID};
 
 pub struct SyntaxTree<'syn> {
     #[allow(unused)]

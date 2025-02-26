@@ -1,8 +1,8 @@
 use super::syntax_kind::SyntaxKind;
 use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
+use super::token::{Token, TokenID, T};
 use crate::ast;
 use crate::text::TextRange;
-use crate::token::{Token, TokenID, T};
 use std::marker::PhantomData;
 
 pub trait AstNode<'syn> {

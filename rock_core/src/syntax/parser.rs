@@ -1,7 +1,7 @@
 use super::syntax_kind::SyntaxKind;
+use super::token::{Token, TokenID, TokenList, TokenSet};
 use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
 use crate::session::ModuleID;
-use crate::token::{Token, TokenID, TokenList, TokenSet};
 use std::cell::Cell;
 
 pub struct Parser<'src> {

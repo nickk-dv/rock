@@ -1,9 +1,9 @@
+use super::token::{self, Token, TokenList, Trivia};
 use crate::error::{ErrorBuffer, SourceRange};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
-use crate::token::{self, Token, TokenList, Trivia};
 
 pub fn lex<'src>(
     source: &'src str,
@@ -633,7 +633,7 @@ fn skip_num_digits(lex: &mut Lexer) {
 /// generated using `gperf-3.0.1`  
 /// command: `gperf keywords.txt -G -7 > gperf.h`  
 mod gperf {
-    use crate::token::{Token, T};
+    use super::token::{Token, T};
     const MAX_WORD_LENGTH: usize = 9;
     const MAX_HASH_VALUE: usize = 81;
 

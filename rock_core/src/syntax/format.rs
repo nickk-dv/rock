@@ -1,10 +1,10 @@
 use super::ast_layer::{self as cst, AstNode, AstNodeIterator};
 use super::syntax_kind::{SyntaxKind, SyntaxSet};
 use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
+use super::token::Trivia;
 use crate::ast;
 use crate::support::AsStr;
 use crate::text::TextRange;
-use crate::token::Trivia;
 
 const TAB_STR: &str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;

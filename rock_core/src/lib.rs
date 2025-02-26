@@ -7,15 +7,11 @@ pub mod errors;
 pub mod hir;
 pub mod hir_lower;
 pub mod intern;
-#[allow(unsafe_code)]
-mod lexer;
 pub mod package;
 pub mod session;
 pub mod support;
 pub mod syntax;
 pub mod text;
-#[allow(unsafe_code)]
-pub mod token;
 
 use package::semver::Semver;
 

@@ -13,7 +13,7 @@ use rock_core::support::Timer;
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
-use rock_core::token::{SemanticToken, Token, Trivia};
+use rock_core::syntax::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
 
 fn main() {

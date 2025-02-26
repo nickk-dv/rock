@@ -2,13 +2,16 @@ pub mod ast_build;
 pub mod ast_layer;
 pub mod format;
 mod grammar;
+#[allow(unsafe_code)]
+mod lexer;
 mod parser;
 pub mod syntax_kind;
 pub mod syntax_tree;
+#[allow(unsafe_code)]
+pub mod token;
 
 use crate::error::{ErrorBuffer, ErrorSink};
 use crate::intern::{InternPool, LitID};
-use crate::lexer;
 use crate::session::ModuleID;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
