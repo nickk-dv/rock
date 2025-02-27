@@ -1,13 +1,12 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::{ErrorBuffer, ErrorSink};
+use crate::error::ErrorBuffer;
 use crate::intern::{InternPool, LitID, NameID};
-use crate::session::Session;
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 
-struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
+pub struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     arena: Arena<'ast>,
     tree: &'syn SyntaxTree<'syn>,
     source: &'src str,
@@ -15,8 +14,8 @@ struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
     s: &'state mut AstBuildState<'ast>,
 }
 
-struct AstBuildState<'ast> {
-    errors: ErrorBuffer,
+pub struct AstBuildState<'ast> {
+    pub errors: ErrorBuffer,
     items: TempBuffer<ast::Item<'ast>>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
@@ -37,7 +36,7 @@ struct AstBuildState<'ast> {
 }
 
 impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
-    fn new(
+    pub fn new(
         tree: &'syn SyntaxTree<'syn>,
         source: &'src str,
         intern_name: &'src mut InternPool<'s, NameID>,
@@ -46,13 +45,13 @@ impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
         AstBuild { arena: Arena::new(), tree, source, intern_name, s: state }
     }
 
-    fn finish(self, items: &'ast [ast::Item<'ast>]) -> ast::Ast<'ast> {
+    pub fn finish(self, items: &'ast [ast::Item<'ast>]) -> ast::Ast<'ast> {
         ast::Ast { arena: self.arena, items }
     }
 }
 
 impl<'ast> AstBuildState<'ast> {
-    fn new() -> AstBuildState<'ast> {
+    pub fn new() -> AstBuildState<'ast> {
         AstBuildState {
             errors: ErrorBuffer::default(),
             items: TempBuffer::new(128),
@@ -76,58 +75,7 @@ impl<'ast> AstBuildState<'ast> {
     }
 }
 
-pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ErrorBuffer> {
-    let mut state = AstBuildState::new();
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
-        if module.tree_version == file.version {
-            eprintln!("[info] tree up to date: `{}`", file.path.to_string_lossy());
-            continue;
-        }
-
-        let tree_result = super::parse_tree_complete(
-            &file.source,
-            module_id,
-            with_trivia,
-            &mut session.intern_lit,
-        );
-        match tree_result {
-            Ok(tree) => {
-                session.stats.line_count += file.line_ranges.len() as u32;
-                session.stats.token_count += tree.tokens().token_count() as u32;
-                session.module.get_mut(module_id).set_tree(tree);
-            }
-            Err(errors) => state.errors.join_e(errors),
-        }
-        session.module.get_mut(module_id).tree_version = file.version;
-    }
-
-    if state.errors.error_count() > 0 {
-        return state.errors.result(());
-    }
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
-        if module.ast_version == file.version {
-            eprintln!("[info] ast up to date: `{}`", file.path.to_string_lossy());
-            continue;
-        }
-
-        let tree = module.tree_expect();
-        let mut ctx = AstBuild::new(tree, &file.source, &mut session.intern_name, &mut state);
-        let items = source_file(&mut ctx, tree.source_file());
-        let ast = ctx.finish(items);
-        session.module.get_mut(module_id).set_ast(ast);
-        session.module.get_mut(module_id).ast_version = file.version;
-    }
-
-    state.errors.result(())
-}
-
-fn source_file<'ast>(
+pub fn source_file<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
     source_file: cst::SourceFile,
 ) -> &'ast [ast::Item<'ast>] {

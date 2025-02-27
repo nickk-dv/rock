@@ -399,16 +399,16 @@ fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
 use rock_core::error::{
     Diagnostic, DiagnosticData, ErrorWarningBuffer, Severity, SourceRange, WarningBuffer,
 };
+use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
-use rock_core::syntax::ast_build;
+use rock_core::syntax;
 use rock_core::text::{self, TextRange};
-use rock_core::{hir_lower, syntax};
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
 
 fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
-    ast_build::parse_all(session, true)?;
+    syntax::parse_all(session, true)?;
     let (_, warnings) = hir_lower::check(session)?;
     Ok(warnings)
 }
