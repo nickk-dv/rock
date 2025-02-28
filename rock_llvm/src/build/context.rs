@@ -4,7 +4,7 @@ use rock_core::hir;
 use rock_core::session::Session;
 use rock_core::support::TempBuffer;
 
-pub struct Codegen<'c, 's, 's_ref> {
+pub struct Codegen<'c, 's, 'sref> {
     pub proc: ProcCodegen,
     pub context: llvm::IRContext,
     pub target: llvm::IRTarget,
@@ -17,7 +17,7 @@ pub struct Codegen<'c, 's, 's_ref> {
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
-    pub session: &'s_ref Session<'s>,
+    pub session: &'sref Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
     pub location_ty: llvm::TypeStruct,
@@ -76,12 +76,12 @@ pub struct CodegenCache {
     pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
 }
 
-impl<'c, 's, 's_ref> Codegen<'c, 's, 's_ref> {
+impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     pub fn new(
         hir: hir::Hir<'c>,
         triple: TargetTriple,
-        session: &'s_ref Session<'s>,
-    ) -> Codegen<'c, 's, 's_ref> {
+        session: &'sref Session<'s>,
+    ) -> Codegen<'c, 's, 'sref> {
         let mut context = llvm::IRContext::new();
         let target = llvm::IRTarget::new(triple);
         let module = llvm::IRModule::new(&context, &target, "rock_module");

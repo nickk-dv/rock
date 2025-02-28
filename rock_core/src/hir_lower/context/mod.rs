@@ -10,14 +10,14 @@ use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
-pub struct HirCtx<'hir, 's, 's_ref> {
+pub struct HirCtx<'hir, 's, 'sref> {
     pub arena: Arena<'hir>,
     pub emit: ErrorWarningBuffer,
     pub in_const: bool,
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
-    pub session: &'s_ref Session<'s>,
+    pub session: &'sref Session<'s>,
     pub cache: Cache<'hir>,
 }
 
@@ -37,8 +37,8 @@ pub struct Cache<'hir> {
     pub const_values: TempBuffer<hir::ConstValue<'hir>>,
 }
 
-impl<'hir, 's, 's_ref> HirCtx<'hir, 's, 's_ref> {
-    pub fn new(session: &'s_ref Session<'s>) -> HirCtx<'hir, 's, 's_ref> {
+impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
+    pub fn new(session: &'sref Session<'s>) -> HirCtx<'hir, 's, 'sref> {
         let cache = Cache {
             proc_params: Vec::with_capacity(32),
             enum_variants: Vec::with_capacity(256),

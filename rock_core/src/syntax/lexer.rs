@@ -5,11 +5,11 @@ use crate::intern::{InternPool, LitID};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 
-pub fn lex<'src>(
-    source: &'src str,
+pub fn lex<'sref>(
+    source: &'sref str,
     module_id: ModuleID,
     with_trivia: bool,
-    intern_lit: &'src mut InternPool<LitID>,
+    intern_lit: &'sref mut InternPool<LitID>,
 ) -> (TokenList, ErrorBuffer) {
     let mut lex = Lexer {
         cursor: 0,
@@ -25,18 +25,18 @@ pub fn lex<'src>(
     (lex.tokens, lex.errors)
 }
 
-struct Lexer<'src, 's> {
+struct Lexer<'s, 'sref> {
     cursor: usize,
     tokens: TokenList,
     errors: ErrorBuffer,
     buffer: String,
-    source: &'src str,
+    source: &'sref str,
     module_id: ModuleID,
     with_trivia: bool,
-    intern_lit: &'src mut InternPool<'s, LitID>,
+    intern_lit: &'sref mut InternPool<'s, LitID>,
 }
 
-impl<'src, 's> Lexer<'src, 's> {
+impl<'s, 'sref> Lexer<'s, 'sref> {
     #[inline(always)]
     fn start_range(&self) -> TextOffset {
         (self.cursor as u32).into()

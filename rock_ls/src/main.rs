@@ -443,8 +443,8 @@ fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
     }
 }
 
-fn source_to_range_and_path<'s, 's_ref: 's>(
-    session: &'s_ref Session<'s>,
+fn source_to_range_and_path<'s, 'sref: 's>(
+    session: &'sref Session<'s>,
     source: SourceRange,
 ) -> (Range, &'s PathBuf) {
     let module = session.module.get(source.module_id());
@@ -599,11 +599,11 @@ fn run_diagnostics(
         .collect()
 }
 
-struct SemanticTokenBuilder<'s_ref> {
+struct SemanticTokenBuilder<'sref> {
     curr_line: u32,
     prev_range: Option<TextRange>,
-    source: &'s_ref str,
-    line_ranges: &'s_ref [TextRange],
+    source: &'sref str,
+    line_ranges: &'sref [TextRange],
     semantic_tokens: Vec<lsp::SemanticToken>,
     scope: ModuleScope,
 }

@@ -6,11 +6,11 @@ use crate::intern::{InternPool, LitID, NameID};
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 
-pub struct AstBuild<'ast, 'syn, 'src, 'state, 's> {
+pub struct AstBuild<'ast, 'state, 's, 'sref> {
     arena: Arena<'ast>,
-    tree: &'syn SyntaxTree<'syn>,
-    source: &'src str,
-    intern_name: &'src mut InternPool<'s, NameID>,
+    tree: &'sref SyntaxTree<'s>,
+    source: &'sref str,
+    intern_name: &'sref mut InternPool<'s, NameID>,
     s: &'state mut AstBuildState<'ast>,
 }
 
@@ -35,11 +35,11 @@ pub struct AstBuildState<'ast> {
     segments: TempBuffer<ast::PathSegment<'ast>>,
 }
 
-impl<'ast, 'syn, 'src, 'state, 's> AstBuild<'ast, 'syn, 'src, 'state, 's> {
+impl<'ast, 'state, 's, 'sref> AstBuild<'ast, 'state, 's, 'sref> {
     pub fn new(
-        tree: &'syn SyntaxTree<'syn>,
-        source: &'src str,
-        intern_name: &'src mut InternPool<'s, NameID>,
+        tree: &'sref SyntaxTree<'s>,
+        source: &'sref str,
+        intern_name: &'sref mut InternPool<'s, NameID>,
         state: &'state mut AstBuildState<'ast>,
     ) -> Self {
         AstBuild { arena: Arena::new(), tree, source, intern_name, s: state }
@@ -76,7 +76,7 @@ impl<'ast> AstBuildState<'ast> {
 }
 
 pub fn source_file<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     source_file: cst::SourceFile,
 ) -> &'ast [ast::Item<'ast>] {
     let offset = ctx.s.items.start();
@@ -109,7 +109,7 @@ fn mutt(t_mut: Option<TextRange>) -> ast::Mut {
 }
 
 fn proc_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ProcItem,
 ) -> &'ast ast::ProcItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -142,7 +142,7 @@ fn param(ctx: &mut AstBuild, param: cst::Param) {
 }
 
 fn enum_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::EnumItem,
 ) -> &'ast ast::EnumItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -194,7 +194,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
 }
 
 fn struct_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::StructItem,
 ) -> &'ast ast::StructItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -222,7 +222,7 @@ fn field(ctx: &mut AstBuild, field: cst::Field) {
 }
 
 fn const_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ConstItem,
 ) -> &'ast ast::ConstItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -236,7 +236,7 @@ fn const_item<'ast>(
 }
 
 fn global_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::GlobalItem,
 ) -> &'ast ast::GlobalItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -257,7 +257,7 @@ fn global_item<'ast>(
 }
 
 fn import_item<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     item: cst::ImportItem,
 ) -> &'ast ast::ImportItem<'ast> {
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
@@ -311,7 +311,7 @@ fn import_symbol_rename(
 }
 
 fn directive_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     dir_list: cst::DirectiveList,
 ) -> &'ast ast::DirectiveList<'ast> {
     let offset = ctx.s.directives.start();
@@ -324,7 +324,7 @@ fn directive_list<'ast>(
 }
 
 fn directive_list_opt<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     dir_list: Option<cst::DirectiveList>,
 ) -> Option<&'ast ast::DirectiveList<'ast>> {
     if let Some(dir_list) = dir_list {
@@ -335,7 +335,7 @@ fn directive_list_opt<'ast>(
 }
 
 fn directive<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     directive: cst::Directive,
 ) -> ast::Directive<'ast> {
     let kind = match directive {
@@ -366,7 +366,7 @@ fn directive<'ast>(
 }
 
 fn directive_param_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     param_list: cst::DirectiveParamList,
 ) -> &'ast [ast::DirectiveParam] {
     let offset = ctx.s.directive_params.start();
@@ -386,7 +386,7 @@ fn directive_param(ctx: &mut AstBuild, param: cst::DirectiveParam) -> ast::Direc
     ast::DirectiveParam { name, value, value_range }
 }
 
-fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
+fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
     let range = ty_cst.find_range(ctx.tree);
 
     let kind = match ty_cst {
@@ -443,7 +443,7 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, ty_cst: cst::Type) -> ast:
     ast::Type { kind, range }
 }
 
-fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
+fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
     let range = stmt_cst.find_range(ctx.tree);
 
     let kind = match stmt_cst {
@@ -479,7 +479,7 @@ fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, stmt_cst: cst::Stmt) -> 
 }
 
 fn stmt_defer<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     defer: cst::StmtDefer,
 ) -> &'ast ast::Block<'ast> {
     if let Some(block_cst) = defer.block(ctx.tree) {
@@ -494,7 +494,7 @@ fn stmt_defer<'ast>(
 }
 
 fn stmt_for<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     for_: cst::StmtFor,
 ) -> &'ast ast::For<'ast> {
     let header = if let Some(header) = for_.header_cond(ctx.tree) {
@@ -559,7 +559,7 @@ fn for_bind(ctx: &mut AstBuild, bind: cst::ForBind) -> Option<ast::Name> {
 }
 
 fn stmt_local<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let bind = bind(ctx, local.bind(ctx.tree).unwrap());
@@ -578,7 +578,7 @@ fn stmt_local<'ast>(
 }
 
 fn stmt_assign<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     assign: cst::StmtAssign,
 ) -> &'ast ast::Assign<'ast> {
     let (op, op_range) = assign.assign_op(ctx.tree).unwrap();
@@ -589,10 +589,7 @@ fn stmt_assign<'ast>(
     ctx.arena.alloc(assign)
 }
 
-fn expr<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
-    expr_cst: cst::Expr,
-) -> &'ast ast::Expr<'ast> {
+fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
     let range = expr_cst.find_range(ctx.tree);
     let kind = expr_kind(ctx, expr_cst);
     let expr = ast::Expr { kind, range };
@@ -601,7 +598,7 @@ fn expr<'ast>(
 
 //@rename expr_cst back to expr when each arm has a function
 fn expr_kind<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     expr_cst: cst::Expr,
 ) -> ast::ExprKind<'ast> {
     match expr_cst {
@@ -794,7 +791,7 @@ fn expr_kind<'ast>(
 }
 
 fn match_arm_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     match_arm_list: cst::MatchArmList,
 ) -> &'ast [ast::MatchArm<'ast>] {
     let offset = ctx.s.match_arms.start();
@@ -806,7 +803,7 @@ fn match_arm_list<'ast>(
 }
 
 fn match_arm<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     arm: cst::MatchArm,
 ) -> ast::MatchArm<'ast> {
     let pat = pat(ctx, arm.pat(ctx.tree).unwrap());
@@ -814,7 +811,7 @@ fn match_arm<'ast>(
     ast::MatchArm { pat, expr }
 }
 
-fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
+fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
     let range = pat_cst.find_range(ctx.tree);
 
     let kind = match pat_cst {
@@ -896,7 +893,7 @@ fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> LitID {
     ctx.tree.tokens().string(token_id)
 }
 
-fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
+fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
     let range = block.find_range(ctx.tree);
 
     let offset = ctx.s.stmts.start();
@@ -928,7 +925,7 @@ fn bind(ctx: &mut AstBuild, bind: cst::Bind) -> ast::Binding {
 }
 
 fn bind_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     bind_list: cst::BindList,
 ) -> &'ast ast::BindingList<'ast> {
     let range = bind_list.find_range(ctx.tree);
@@ -945,7 +942,7 @@ fn bind_list<'ast>(
 }
 
 fn args_list<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     args_list: cst::ArgsList,
 ) -> &'ast ast::ArgumentList<'ast> {
     let range = args_list.find_range(ctx.tree);
@@ -961,7 +958,7 @@ fn args_list<'ast>(
     ctx.arena.alloc(args_list)
 }
 
-fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
+fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {
     let offset = ctx.s.segments.start();
     for segment in path.segments(ctx.tree) {
         let segment = path_segment(ctx, segment);
@@ -974,7 +971,7 @@ fn path<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_, '_>, path: cst::Path) -> &'as
 }
 
 fn path_segment<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     segment: cst::PathSegment,
 ) -> ast::PathSegment<'ast> {
     let name = name(ctx, segment.name(ctx.tree).unwrap());
@@ -983,7 +980,7 @@ fn path_segment<'ast>(
 }
 
 fn polymorph_args<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     poly_args: cst::PolymorphArgs,
 ) -> &'ast ast::PolymorphArgs<'ast> {
     let range = poly_args.find_range(ctx.tree);
@@ -1000,7 +997,7 @@ fn polymorph_args<'ast>(
 }
 
 fn polymorph_params<'ast>(
-    ctx: &mut AstBuild<'ast, '_, '_, '_, '_>,
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
     poly_params: cst::PolymorphParams,
 ) -> &'ast ast::PolymorphParams<'ast> {
     let range = poly_params.find_range(ctx.tree);

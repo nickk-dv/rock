@@ -10,7 +10,7 @@ use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, Package
 use rock_core::package::semver::Semver;
 use rock_core::session::{self, BuildStats, Session};
 use rock_core::support::{os, AsStr, Timer};
-use rock_core::syntax::ast_build;
+use rock_core::syntax;
 use rock_core::syntax::format;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -122,7 +122,7 @@ fn check(data: CommandCheck) -> Result<(), Error> {
 
     fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ErrorWarningBuffer> {
         let timer = Timer::start();
-        ast_build::parse_all(session, false)?;
+        syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
@@ -157,7 +157,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
 
     fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ErrorWarningBuffer> {
         let timer = Timer::start();
-        ast_build::parse_all(session, false)?;
+        syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
@@ -193,7 +193,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
 
     fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ErrorWarningBuffer> {
         let timer = Timer::start();
-        ast_build::parse_all(session, false)?;
+        syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
@@ -269,7 +269,7 @@ fn fmt() -> Result<(), Error> {
 
     fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
         //@only parse syntax trees for root package, instead of full session & parse
-        ast_build::parse_all(session, true)?;
+        syntax::parse_all(session, true)?;
         let mut cache = format::FormatterCache::new();
 
         let root_package = session.graph.package(session.root_id);
