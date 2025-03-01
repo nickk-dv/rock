@@ -9,6 +9,7 @@ use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
 use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::os;
+use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::syntax_tree::SyntaxTree;
 use graph::PackageGraph;
 use std::path::PathBuf;
@@ -27,6 +28,7 @@ pub struct Session<'s> {
     pub config: Config,
     pub root_id: PackageID,
     pub discard_id: NameID,
+    pub ast_state: AstBuildState<'s>,
 }
 
 pub struct Modules<'s> {
@@ -252,6 +254,7 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
         config,
         root_id: PackageID(0),
         discard_id: NameID::dummy(),
+        ast_state: AstBuildState::new(),
     };
     session.discard_id = session.intern_name.intern("_");
 

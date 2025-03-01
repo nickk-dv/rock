@@ -408,7 +408,7 @@ use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsPa
 use std::path::PathBuf;
 
 fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
-    syntax::parse_all(session, true)?;
+    syntax::parse_all_lsp(session, true)?;
     let (_, warnings) = hir_lower::check(session)?;
     Ok(warnings)
 }

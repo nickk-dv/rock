@@ -1,7 +1,6 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::syntax_tree::SyntaxTree;
 use crate::ast;
-use crate::error::ErrorBuffer;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
@@ -15,7 +14,6 @@ pub struct AstBuild<'ast, 'state, 's, 'sref> {
 }
 
 pub struct AstBuildState<'ast> {
-    pub errors: ErrorBuffer,
     items: TempBuffer<ast::Item<'ast>>,
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
@@ -53,7 +51,6 @@ impl<'ast, 'state, 's, 'sref> AstBuild<'ast, 'state, 's, 'sref> {
 impl<'ast> AstBuildState<'ast> {
     pub fn new() -> AstBuildState<'ast> {
         AstBuildState {
-            errors: ErrorBuffer::default(),
             items: TempBuffer::new(128),
             params: TempBuffer::new(32),
             variants: TempBuffer::new(32),

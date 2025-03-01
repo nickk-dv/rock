@@ -236,6 +236,10 @@ impl ErrorWarningBuffer {
         self.errors.extend(errors);
         self.warnings.extend(warnings);
     }
+
+    pub fn replace_e(&mut self, err: ErrorBuffer) {
+        self.errors = err.collect();
+    }
 }
 
 impl From<Error> for ErrorBuffer {
