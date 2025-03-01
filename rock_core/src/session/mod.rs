@@ -3,7 +3,7 @@ mod vfs;
 
 use crate::ast::Ast;
 use crate::config::Config;
-use crate::error::Error;
+use crate::error::{Error, ErrorWarningBuffer};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
@@ -54,6 +54,7 @@ pub struct Module<'s> {
     pub tree_version: u32,
     ast: Option<Ast<'s>>,
     pub ast_version: u32,
+    pub errors: ErrorWarningBuffer,
 }
 
 pub struct Directory {
@@ -351,9 +352,7 @@ fn process_directory(
         }
     }
 
-    #[rustfmt::skip]
-    let dir = Directory { name_id, modules, sub_dirs };
-    Ok(dir)
+    Ok(Directory { name_id, modules, sub_dirs })
 }
 
 fn process_module(
@@ -368,7 +367,12 @@ fn process_module(
     let file_id = session.vfs.open(path, source);
 
     #[rustfmt::skip]
-    let module = Module { origin, name_id, file_id, tree: None, tree_version: 0, ast: None, ast_version: 0 };
+    let module = Module {
+        origin, name_id, file_id,
+        tree: None, tree_version: 0,
+        ast: None, ast_version: 0,
+        errors: ErrorWarningBuffer::default(),
+    };
     let module_id = session.module.add(module);
     Ok(module_id)
 }
