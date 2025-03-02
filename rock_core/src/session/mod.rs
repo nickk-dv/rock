@@ -3,7 +3,7 @@ mod vfs;
 
 use crate::ast::Ast;
 use crate::config::Config;
-use crate::error::{Error, ErrorWarningBuffer};
+use crate::error::{Error, ErrorSink, ErrorWarningBuffer};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
@@ -104,6 +104,15 @@ impl<'s> Modules<'s> {
         let module_id = ModuleID(self.modules.len() as u32);
         self.modules.push(module);
         module_id
+    }
+
+    pub fn result(&self) -> Result<(), ()> {
+        for module in &self.modules {
+            if module.errors.did_error(0) {
+                return Err(());
+            }
+        }
+        Ok(())
     }
 }
 

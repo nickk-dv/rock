@@ -18,7 +18,7 @@ use ast_build::AstBuild;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
-pub fn parse_all(session: &mut Session, with_trivia: bool) {
+pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
@@ -36,13 +36,7 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) {
             Err(errors) => module.errors.replace_e(errors),
         }
     }
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        if module.errors.did_error(0) {
-            return;
-        }
-    }
+    session.module.result()?;
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
@@ -57,9 +51,10 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) {
         let module = session.module.get_mut(module_id);
         module.set_ast(ast);
     }
+    Ok(())
 }
 
-pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) {
+pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
@@ -75,13 +70,7 @@ pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) {
         module.tree_version = file.version;
         module.errors.replace_e(errors);
     }
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        if module.errors.did_error(0) {
-            return;
-        }
-    }
+    session.module.result()?;
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
@@ -100,6 +89,7 @@ pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) {
         module.set_ast(ast);
         module.ast_version = file.version;
     }
+    Ok(())
 }
 
 pub fn parse_tree<'syn>(
