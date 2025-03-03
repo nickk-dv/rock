@@ -2,7 +2,7 @@ pub mod registry;
 pub mod scope;
 
 use crate::ast;
-use crate::error::{ErrorWarningBuffer, SourceRange, WarningBuffer};
+use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
 use crate::hir;
 use crate::intern::NameID;
 use crate::session::Session;
@@ -17,7 +17,7 @@ pub struct HirCtx<'hir, 's, 'sref> {
     pub scope: scope::Scope<'hir>,
     pub registry: registry::Registry<'hir, 's>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
-    pub session: &'sref Session<'s>,
+    pub session: &'sref mut Session<'s>,
     pub cache: Cache<'hir>,
 }
 
@@ -38,7 +38,7 @@ pub struct Cache<'hir> {
 }
 
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
-    pub fn new(session: &'sref Session<'s>) -> HirCtx<'hir, 's, 'sref> {
+    pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
         let cache = Cache {
             proc_params: Vec::with_capacity(32),
             enum_variants: Vec::with_capacity(256),
@@ -84,7 +84,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         poly_params[poly_param_idx as usize]
     }
 
-    pub fn finish(self) -> Result<(hir::Hir<'hir>, WarningBuffer), ErrorWarningBuffer> {
+    pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
         //@dont unwrap, make all required core dependencies checked
         let core = hir::CoreItems {
             string_equals: super::pass_5::core_find_proc(&self, "slice", "string_equals").unwrap(),
@@ -92,7 +92,24 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
                 .unwrap(),
         };
 
-        let ((), warnings) = self.emit.result(())?;
+        //@moving errors from single buffer into per module storage (hack)
+        let (errors, warnings) = self.emit.collect();
+        for e in errors {
+            let origin = match e.diagnostic().data() {
+                DiagnosticData::Message => todo!(),
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.session.module.get_mut(origin).errors.error(e);
+        }
+        for w in warnings {
+            let origin = match w.diagnostic().data() {
+                DiagnosticData::Message => todo!(),
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.session.module.get_mut(origin).errors.warning(w);
+        }
 
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
         for (eval, _) in self.registry.const_evals.iter() {
@@ -103,7 +120,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             variant_eval_values.push(eval.resolved_unwrap());
         }
 
-        let hir = hir::Hir {
+        Ok(hir::Hir {
             arena: self.arena,
             procs: self.registry.hir_procs,
             enums: self.registry.hir_enums,
@@ -112,8 +129,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             const_eval_values,
             variant_eval_values,
             core,
-        };
-        Ok((hir, warnings))
+        })
     }
 }
 

@@ -115,18 +115,18 @@ fn check(data: CommandCheck) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    if let Err(errw) = check_impl(&mut session, data) {
-        error_print::print_errors_warnings(Some(&session), errw);
+    if let Err(()) = check_impl(&mut session, data) {
+        error_print::print_session_errors(&session);
     }
     return Ok(());
 
-    fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ErrorWarningBuffer> {
+    fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
         let timer = Timer::start();
         syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
-        let (_, warn) = hir_lower::check(session)?;
+        let _ = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
         error_print::print_warnings(Some(session), warn);
@@ -150,18 +150,18 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_build_lib_package());
     }
-    if let Err(errw) = build_impl(&mut session, data) {
-        error_print::print_errors_warnings(Some(&session), errw);
+    if let Err(()) = build_impl(&mut session, data) {
+        error_print::print_session_errors(&session);
     }
     return Ok(());
 
-    fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ErrorWarningBuffer> {
+    fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
         let timer = Timer::start();
         syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
-        let (hir, warn) = hir_lower::check(session)?;
+        let hir = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
         error_print::print_warnings(Some(session), warn);
@@ -186,18 +186,18 @@ fn run(data: CommandRun) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_run_lib_package());
     }
-    if let Err(errw) = run_impl(&mut session, data) {
-        error_print::print_errors_warnings(Some(&session), errw);
+    if let Err(()) = run_impl(&mut session, data) {
+        error_print::print_session_errors(&session);
     }
     return Ok(());
 
-    fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ErrorWarningBuffer> {
+    fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ()> {
         let timer = Timer::start();
         syntax::parse_all(session, false)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
-        let (hir, warn) = hir_lower::check(session)?;
+        let hir = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
         error_print::print_warnings(Some(session), warn);
@@ -261,13 +261,12 @@ fn fmt() -> Result<(), Error> {
     let config = Config::new(TargetTriple::host(), BuildKind::Debug);
     let mut session = session::create_session(config)?;
 
-    match fmt_impl(&mut session) {
-        Ok(()) => (),
-        Err(errw) => error_print::print_errors_warnings(Some(&session), errw),
+    if let Err(()) = fmt_impl(&mut session) {
+        error_print::print_session_errors(&session);
     }
     return Ok(());
 
-    fn fmt_impl(session: &mut Session) -> Result<(), ErrorWarningBuffer> {
+    fn fmt_impl(session: &mut Session) -> Result<(), ()> {
         //@only parse syntax trees for root package, instead of full session & parse
         syntax::parse_all(session, true)?;
         let mut cache = format::FormatterCache::new();

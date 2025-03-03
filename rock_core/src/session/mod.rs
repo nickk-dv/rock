@@ -91,6 +91,10 @@ impl<'s> Modules<'s> {
         (0..(self.modules.len() as u32)).map(ModuleID)
     }
     #[inline]
+    pub fn moveout(self) -> Vec<Module<'s>> {
+        self.modules
+    }
+    #[inline]
     pub fn get(&self, module_id: ModuleID) -> &Module<'s> {
         &self.modules[module_id.index()]
     }

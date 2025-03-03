@@ -396,9 +396,7 @@ fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
     conn.sender.send(msg.into()).expect("send message");
 }
 
-use rock_core::error::{
-    Diagnostic, DiagnosticData, ErrorWarningBuffer, Severity, SourceRange, WarningBuffer,
-};
+use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
 use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax;
@@ -406,12 +404,6 @@ use rock_core::text::{self, TextRange};
 
 use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
-
-fn check_impl(session: &mut Session) -> Result<WarningBuffer, ErrorWarningBuffer> {
-    syntax::parse_all_lsp(session, true)?;
-    let (_, warnings) = hir_lower::check(session)?;
-    Ok(warnings)
-}
 
 fn uri_to_path(uri: &lsp::Url) -> PathBuf {
     uri.to_file_path().expect("uri to pathbuf")
@@ -597,6 +589,12 @@ fn run_diagnostics(
             PublishDiagnosticsParams::new(url_from_path(&path), diagnostics, None)
         })
         .collect()
+}
+
+fn check_impl(session: &mut Session) -> Result<(), ()> {
+    syntax::parse_all_lsp(session, true)?;
+    hir_lower::check(session)?;
+    Ok(())
 }
 
 struct SemanticTokenBuilder<'sref> {

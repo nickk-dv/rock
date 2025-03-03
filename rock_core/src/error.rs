@@ -155,20 +155,20 @@ impl From<String> for StringOrStr {
 #[derive(Default)]
 pub struct ErrorBuffer {
     collected: bool,
-    errors: Vec<Error>,
+    pub errors: Vec<Error>,
 }
 
 #[derive(Default)]
 pub struct WarningBuffer {
     collected: bool,
-    warnings: Vec<Warning>,
+    pub warnings: Vec<Warning>,
 }
 
 #[derive(Default)]
 pub struct ErrorWarningBuffer {
     collected: bool,
-    errors: Vec<Error>,
-    warnings: Vec<Warning>,
+    pub errors: Vec<Error>,
+    pub warnings: Vec<Warning>,
 }
 
 impl ErrorBuffer {

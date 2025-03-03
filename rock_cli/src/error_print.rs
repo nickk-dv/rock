@@ -10,27 +10,34 @@ use std::path::Path;
 
 pub fn print_errors(session: Option<&Session>, err: ErrorBuffer) {
     let errors = err.collect();
-    print_impl(session, errors, vec![])
+    print_impl(session, &errors, &[])
 }
 
 pub fn print_warnings(session: Option<&Session>, warn: WarningBuffer) {
     let warnings = warn.collect();
-    print_impl(session, vec![], warnings)
+    print_impl(session, &[], &warnings)
 }
 
 pub fn print_errors_warnings(session: Option<&Session>, errw: ErrorWarningBuffer) {
     let (errors, warnings) = errw.collect();
-    print_impl(session, errors, warnings)
+    print_impl(session, &errors, &warnings)
 }
 
-pub fn print_impl(session: Option<&Session>, errors: Vec<Error>, warnings: Vec<Warning>) {
+pub fn print_session_errors(session: &Session) {
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
+        print_impl(Some(session), &module.errors.errors, &module.errors.warnings);
+    }
+}
+
+pub fn print_impl(session: Option<&Session>, errors: &[Error], warnings: &[Warning]) {
     let mut state = StateFmt::new();
     let mut handle = BufWriter::new(std::io::stderr());
 
-    for warning in warnings.iter() {
+    for warning in warnings {
         print_diagnostic(session, warning.diagnostic(), Severity::Warning, &mut state, &mut handle);
     }
-    for error in errors.iter() {
+    for error in errors {
         print_diagnostic(session, error.diagnostic(), Severity::Error, &mut state, &mut handle);
     }
     let _ = handle.flush();
