@@ -1,26 +1,18 @@
 use crate::ansi::AnsiStyle;
 use rock_core::error::{
-    Diagnostic, DiagnosticContext, DiagnosticData, Error, ErrorBuffer, ErrorWarningBuffer,
-    Severity, Warning, WarningBuffer,
+    Diagnostic, DiagnosticContext, DiagnosticData, Error, ErrorBuffer, Severity, Warning,
 };
 use rock_core::session::Session;
 use rock_core::text::{self, TextLocation, TextRange};
 use std::io::{BufWriter, Stderr, Write};
 use std::path::Path;
 
-pub fn print_errors(session: Option<&Session>, err: ErrorBuffer) {
-    let errors = err.collect();
-    print_impl(session, &errors, &[])
+pub fn print_error(session: Option<&Session>, error: Error) {
+    print_impl(session, &[error], &[])
 }
 
-pub fn print_warnings(session: Option<&Session>, warn: WarningBuffer) {
-    let warnings = warn.collect();
-    print_impl(session, &[], &warnings)
-}
-
-pub fn print_errors_warnings(session: Option<&Session>, errw: ErrorWarningBuffer) {
-    let (errors, warnings) = errw.collect();
-    print_impl(session, &errors, &warnings)
+pub fn print_errors(session: Option<&Session>, error: ErrorBuffer) {
+    print_impl(session, &error.collect(), &[])
 }
 
 pub fn print_session_errors(session: &Session) {
@@ -30,7 +22,7 @@ pub fn print_session_errors(session: &Session) {
     }
 }
 
-pub fn print_impl(session: Option<&Session>, errors: &[Error], warnings: &[Warning]) {
+fn print_impl(session: Option<&Session>, errors: &[Error], warnings: &[Warning]) {
     let mut state = StateFmt::new();
     let mut handle = BufWriter::new(std::io::stderr());
 

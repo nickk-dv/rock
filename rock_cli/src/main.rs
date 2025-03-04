@@ -8,13 +8,13 @@ mod execute;
 pub fn main() {
     let command = match command::parse() {
         Ok(command) => command,
-        Err(err) => {
-            error_print::print_errors(None, err);
+        Err(errors) => {
+            error_print::print_errors(None, errors);
             return;
         }
     };
 
     if let Err(error) = execute::command(command) {
-        error_print::print_errors(None, error.into());
+        error_print::print_error(None, error);
     }
 }

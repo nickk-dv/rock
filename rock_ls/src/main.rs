@@ -459,7 +459,7 @@ fn create_diagnostic<'src>(
     session: &'src Session,
     diagnostic: &Diagnostic,
     severity: Severity,
-) -> Option<(lsp::Diagnostic, &'src PathBuf)> {
+) -> Option<lsp::Diagnostic> {
     let (main, related_info) = match diagnostic.data() {
         DiagnosticData::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
         DiagnosticData::Context { main, info } => {
@@ -508,17 +508,13 @@ fn create_diagnostic<'src>(
         None,
     );
 
-    Some((diagnostic, main_path))
+    Some(diagnostic)
 }
 
 fn run_diagnostics(
     conn: &Connection,
     context: &mut ServerContext,
 ) -> Vec<PublishDiagnosticsParams> {
-    //@not used now, only sending one session error
-    let mut messages = Vec::<lsp::Diagnostic>::new();
-    let mut diagnostics_map = HashMap::new();
-
     //re-use existing session else try to create it
     let session = if let Some(session) = &mut context.session {
         session
@@ -545,50 +541,37 @@ fn run_diagnostics(
         context.session.as_mut().unwrap()
     };
 
-    let (errors, warnings) = match check_impl(session) {
-        Ok(warnings) => (vec![], warnings.collect()),
-        Err(errw) => errw.collect(),
-    };
+    for module_id in session.module.ids() {
+        let module = session.module.get_mut(module_id);
+        module.errors.clear();
+    }
+
+    let _ = check_impl(session);
+    let mut publish_diagnostics = Vec::with_capacity(session.module.count());
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
-        diagnostics_map.insert(file.path.clone(), Vec::new());
-    }
 
-    // generate diagnostics
-    for warning in warnings {
-        if let Some((diagnostic, main_path)) =
-            create_diagnostic(&session, warning.diagnostic(), Severity::Warning)
-        {
-            match diagnostics_map.get_mut(main_path) {
-                Some(diagnostics) => diagnostics.push(diagnostic),
-                None => {
-                    diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
-                }
+        let capacity = module.errors.errors.len() + module.errors.warnings.len();
+        let mut diagnostics = Vec::with_capacity(capacity);
+
+        for error in &module.errors.errors {
+            if let Some(d) = create_diagnostic(&session, error.diagnostic(), Severity::Error) {
+                diagnostics.push(d);
             }
         }
-    }
-
-    for error in errors {
-        if let Some((diagnostic, main_path)) =
-            create_diagnostic(&session, error.diagnostic(), Severity::Error)
-        {
-            match diagnostics_map.get_mut(main_path) {
-                Some(diagnostics) => diagnostics.push(diagnostic),
-                None => {
-                    diagnostics_map.insert(main_path.clone(), vec![diagnostic]);
-                }
+        for warning in &module.errors.warnings {
+            if let Some(d) = create_diagnostic(&session, warning.diagnostic(), Severity::Warning) {
+                diagnostics.push(d);
             }
         }
+
+        let publish = PublishDiagnosticsParams::new(url_from_path(&file.path), diagnostics, None);
+        publish_diagnostics.push(publish);
     }
 
-    diagnostics_map
-        .into_iter()
-        .map(|(path, diagnostics)| {
-            PublishDiagnosticsParams::new(url_from_path(&path), diagnostics, None)
-        })
-        .collect()
+    publish_diagnostics
 }
 
 fn check_impl(session: &mut Session) -> Result<(), ()> {

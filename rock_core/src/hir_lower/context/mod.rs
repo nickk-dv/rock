@@ -94,6 +94,8 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
 
         //@moving errors from single buffer into per module storage (hack)
         let (errors, warnings) = self.emit.collect();
+        let did_error = !errors.is_empty();
+
         for e in errors {
             let origin = match e.diagnostic().data() {
                 DiagnosticData::Message => todo!(),
@@ -109,6 +111,10 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
                 DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
             };
             self.session.module.get_mut(origin).errors.warning(w);
+        }
+
+        if did_error {
+            return Err(());
         }
 
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());

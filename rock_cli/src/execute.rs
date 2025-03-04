@@ -129,7 +129,7 @@ fn check(data: CommandCheck) -> Result<(), Error> {
         let _ = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(session), warn);
+        error_print::print_session_errors(session);
 
         let style = AnsiStyle::new();
         if data.stats {
@@ -164,8 +164,11 @@ fn build(data: CommandBuild) -> Result<(), Error> {
         let hir = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(session), warn);
-        let _ = rock_llvm::build::build(hir, session, data.options)?;
+        error_print::print_session_errors(session);
+        if let Err(error) = rock_llvm::build::build(hir, session, data.options) {
+            error_print::print_error(Some(session), error);
+            return Err(());
+        }
 
         let style = AnsiStyle::new();
         if data.stats {
@@ -200,16 +203,26 @@ fn run(data: CommandRun) -> Result<(), Error> {
         let hir = hir_lower::check(session)?;
         session.stats.check_ms = timer.measure_ms();
 
-        error_print::print_warnings(Some(session), warn);
-        let bin_path = rock_llvm::build::build(hir, session, data.options)?;
+        error_print::print_session_errors(session);
+        let bin_path = match rock_llvm::build::build(hir, session, data.options) {
+            Ok(path) => path,
+            Err(error) => {
+                error_print::print_error(Some(session), error);
+                return Err(());
+            }
+        };
 
         let style = AnsiStyle::new();
         if data.stats {
             print_stats(&style, &session.stats, true);
         }
         print_build_finished(session, &style, &session.stats);
+
         print_build_running(session, &style, &bin_path);
-        rock_llvm::build::run(bin_path, data.args)?;
+        if let Err(error) = rock_llvm::build::run(bin_path, data.args) {
+            error_print::print_error(Some(session), error);
+            return Err(());
+        }
         Ok(())
     }
 }
@@ -278,7 +291,10 @@ fn fmt() -> Result<(), Error> {
 
             let tree = module.tree_expect();
             let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
-            os::file_create(&file.path, &formatted)?;
+
+            if let Err(error) = os::file_create(&file.path, &formatted) {
+                error_print::print_error(Some(session), error);
+            }
         }
         Ok(())
     }

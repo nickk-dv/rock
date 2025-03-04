@@ -154,19 +154,16 @@ impl From<String> for StringOrStr {
 
 #[derive(Default)]
 pub struct ErrorBuffer {
-    collected: bool,
     pub errors: Vec<Error>,
 }
 
 #[derive(Default)]
 pub struct WarningBuffer {
-    collected: bool,
     pub warnings: Vec<Warning>,
 }
 
 #[derive(Default)]
 pub struct ErrorWarningBuffer {
-    collected: bool,
     pub errors: Vec<Error>,
     pub warnings: Vec<Warning>,
 }
@@ -182,7 +179,6 @@ impl ErrorBuffer {
     }
 
     pub fn collect(mut self) -> Vec<Error> {
-        self.collected = true;
         std::mem::take(&mut self.errors)
     }
 
@@ -194,7 +190,6 @@ impl ErrorBuffer {
 
 impl WarningBuffer {
     pub fn collect(mut self) -> Vec<Warning> {
-        self.collected = true;
         std::mem::take(&mut self.warnings)
     }
 
@@ -217,10 +212,14 @@ impl ErrorWarningBuffer {
     }
 
     pub fn collect(mut self) -> (Vec<Error>, Vec<Warning>) {
-        self.collected = true;
         let errors = std::mem::take(&mut self.errors);
         let warnings = std::mem::take(&mut self.warnings);
         (errors, warnings)
+    }
+
+    pub fn clear(&mut self) {
+        self.errors.clear();
+        self.warnings.clear();
     }
 
     pub fn join_e(&mut self, err: ErrorBuffer) {
@@ -263,32 +262,6 @@ impl From<ErrorBuffer> for ErrorWarningBuffer {
         let mut errw = ErrorWarningBuffer::default();
         errw.errors = err.collect();
         errw
-    }
-}
-
-impl Drop for ErrorBuffer {
-    fn drop(&mut self) {
-        if !self.collected {
-            panic!("internal: ErrorBuffer was not collected! E:{}", self.errors.len());
-        }
-    }
-}
-impl Drop for WarningBuffer {
-    fn drop(&mut self) {
-        if !self.collected {
-            panic!("internal: WarningBuffer was not collected! W:{}", self.warnings.len());
-        }
-    }
-}
-impl Drop for ErrorWarningBuffer {
-    fn drop(&mut self) {
-        if !self.collected {
-            panic!(
-                "internal: ErrorWarningBuffer was not collected! E:{} W:{}",
-                self.errors.len(),
-                self.warnings.len(),
-            );
-        }
     }
 }
 
