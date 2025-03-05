@@ -175,7 +175,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(session) => session,
                 None => {
                     eprintln!(" - session is None");
-                    send_response_format_error(conn, id);
+                    send_response(conn, id, Vec::<lsp::TextEdit>::new());
                     return;
                 }
             };
@@ -183,7 +183,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
-                    send_response_format_error(conn, id);
+                    send_response(conn, id, Vec::<lsp::TextEdit>::new());
                     return;
                 }
             };
@@ -201,7 +201,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
             if !tree.complete() {
                 eprintln!(" - tree is incomplete");
-                send_response_format_error(conn, id);
+                send_response(conn, id, Vec::<lsp::TextEdit>::new());
                 return;
             }
             let file = session.vfs.file(module.file_id());
@@ -219,8 +219,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let edit_range = lsp::Range::new(edit_start, edit_end);
 
             let text_edit = lsp::TextEdit::new(edit_range, formatted);
-            let json = serde_json::to_value(vec![text_edit]).unwrap();
-            send_response(conn, id, json);
+            send_response(conn, id, vec![text_edit]);
         }
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -254,12 +253,9 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
 
             let timer = Timer::start();
-            let semantic_tokens = semantic_tokens(&mut session.intern_name, file, tree);
-            eprintln!("semantic tokens: {}", timer.measure_ms());
-
-            eprintln!("[SEND: Response] SemanticTokens ({})", semantic_tokens.len());
-            let result = lsp::SemanticTokens { result_id: None, data: semantic_tokens };
-            send(conn, lsp_server::Response::new_ok(id, result));
+            let data = semantic_tokens(&mut session.intern_name, file, tree);
+            eprintln!("[semantic tokens] ms: {}, count: {}", timer.measure_ms(), data.len());
+            send_response(conn, id, lsp::SemanticTokens { result_id: None, data });
         }
         Request::ShowSyntaxTree(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -293,8 +289,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
 
             let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
-            eprintln!("[SEND: Response] ShowSyntaxTree len: {}", tree_display.len());
-            send(conn, lsp_server::Response::new_ok(id, tree_display));
+            send_response(conn, id, tree_display);
         }
     }
 }
@@ -375,25 +370,14 @@ fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
     }
 }
 
-fn send_response(conn: &Connection, id: RequestId, result: serde_json::Value) {
-    let response = lsp_server::Response::new_ok(id, result);
-    send(conn, response);
-}
-
-fn send_response_format_error(conn: &Connection, id: RequestId) {
-    let no_edits = serde_json::to_value::<Vec<lsp::TextEdit>>(vec![]).unwrap();
-    let response = lsp_server::Response::new_ok(id, no_edits);
-    send(conn, response);
-}
-
-fn send_response_error(conn: &Connection, id: RequestId, message: String) {
-    let response =
-        lsp_server::Response::new_err(id, lsp_server::ErrorCode::RequestFailed as i32, message);
+fn send_response<R: serde::Serialize>(conn: &Connection, id: RequestId, result: R) {
+    let result = Some(serde_json::to_value(result).unwrap());
+    let response = lsp_server::Response { id, result, error: None };
     send(conn, response);
 }
 
 fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
-    conn.sender.send(msg.into()).expect("send message");
+    conn.sender.send(msg.into()).unwrap();
 }
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
