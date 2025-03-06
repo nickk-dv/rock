@@ -5,7 +5,6 @@ mod text_ops;
 
 use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
-use lsp_types::notification::{self, Notification as NotificationTrait};
 use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{InternPool, NameID};
 use rock_core::session::FileData;
@@ -363,17 +362,24 @@ fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
     eprintln!("run diagnostics: {} ms", elapsed_time.as_secs_f64() * 1000.0);
 
     for publish in publish_diagnostics.iter() {
-        send(
-            conn,
-            lsp_server::Notification::new(notification::PublishDiagnostics::METHOD.into(), publish),
-        );
+        send_notification::<lsp::notification::PublishDiagnostics>(conn, publish);
     }
 }
 
-fn send_response<R: serde::Serialize>(conn: &Connection, id: RequestId, result: R) {
+fn send_response(conn: &Connection, id: RequestId, result: impl serde::Serialize) {
     let result = Some(serde_json::to_value(result).unwrap());
     let response = lsp_server::Response { id, result, error: None };
     send(conn, response);
+}
+
+fn send_notification<N>(conn: &Connection, params: impl serde::Serialize)
+where
+    N: lsp::notification::Notification,
+    N::Params: serde::de::DeserializeOwned,
+{
+    let params = serde_json::to_value(params).unwrap();
+    let notification = lsp_server::Notification { method: N::METHOD.to_string(), params };
+    send(conn, notification);
 }
 
 fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
@@ -509,15 +515,9 @@ fn run_diagnostics(
         let session = match session::create_session(config) {
             Ok(value) => value,
             Err(error) => {
-                let params = lsp::ShowMessageParams {
-                    typ: lsp::MessageType::ERROR,
-                    message: error.diagnostic().msg().as_str().to_string(),
-                };
-                let not = lsp_server::Notification::new(
-                    notification::ShowMessage::METHOD.to_string(),
-                    params,
-                );
-                send(conn, not);
+                let message = error.diagnostic().msg().as_str().to_string();
+                let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
+                send_notification::<lsp::notification::ShowMessage>(conn, params);
                 return vec![];
             }
         };
