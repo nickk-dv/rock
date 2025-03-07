@@ -6,25 +6,43 @@ use std::path::PathBuf;
 pub struct MessageBuffer {
     messages: Vec<Message>,
 }
+
 pub enum Action {
     Collect,
     Handle(Vec<Message>),
     Shutdown,
 }
+
 pub enum Message {
     Request(lsr::RequestId, Request),
     Notification(Notification),
 }
+
 pub enum Request {
     Format(lsp::DocumentFormattingParams),
     SemanticTokens(lsp::SemanticTokensParams),
     ShowSyntaxTree(ShowSyntaxTreeParams),
 }
+
 pub enum Notification {
     FileOpened(PathBuf, String),
     FileClosed(PathBuf),
     FileSaved(PathBuf),
     FileChanged(PathBuf, Vec<lsp::TextDocumentContentChangeEvent>),
+}
+
+pub enum CustomShowSyntaxTree {}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShowSyntaxTreeParams {
+    pub text_document: lsp::TextDocumentIdentifier,
+}
+
+impl lsp::request::Request for CustomShowSyntaxTree {
+    type Params = ShowSyntaxTreeParams;
+    type Result = String;
+    const METHOD: &str = "custom/show_syntax_tree";
 }
 
 //@buffering only to avoid doing semantic tokens on each edit (16.12.24).
@@ -131,33 +149,10 @@ fn parse_notification(not: lsr::Notification) -> Option<Message> {
     Some(Message::Notification(not))
 }
 
-fn cast_request<R>(req: lsr::Request) -> R::Params
-where
-    R: lsp::request::Request,
-    R::Params: serde::de::DeserializeOwned,
-{
-    let (_, params) = req.extract(R::METHOD).expect("cast request");
-    params
+fn cast_request<R: lsp::request::Request>(req: lsr::Request) -> R::Params {
+    req.extract(R::METHOD).expect("cast request").1
 }
 
-fn cast_notification<N>(not: lsr::Notification) -> N::Params
-where
-    N: lsp::notification::Notification,
-    N::Params: serde::de::DeserializeOwned,
-{
+fn cast_notification<N: lsp::notification::Notification>(not: lsr::Notification) -> N::Params {
     not.extract(N::METHOD).expect("cast notification")
-}
-
-pub enum CustomShowSyntaxTree {}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShowSyntaxTreeParams {
-    pub text_document: lsp::TextDocumentIdentifier,
-}
-
-impl lsp::request::Request for CustomShowSyntaxTree {
-    type Params = ShowSyntaxTreeParams;
-    type Result = String;
-    const METHOD: &str = "custom/show_syntax_tree";
 }

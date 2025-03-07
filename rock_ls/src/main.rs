@@ -372,11 +372,10 @@ fn send_response(conn: &Connection, id: RequestId, result: impl serde::Serialize
     send(conn, response);
 }
 
-fn send_notification<N>(conn: &Connection, params: impl serde::Serialize)
-where
-    N: lsp::notification::Notification,
-    N::Params: serde::de::DeserializeOwned,
-{
+fn send_notification<N: lsp::notification::Notification>(
+    conn: &Connection,
+    params: impl serde::Serialize,
+) {
     let params = serde_json::to_value(params).unwrap();
     let notification = lsp_server::Notification { method: N::METHOD.to_string(), params };
     send(conn, notification);
