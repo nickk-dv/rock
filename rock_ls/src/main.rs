@@ -591,7 +591,6 @@ struct SemanticTokenBuilder<'sref> {
     source: &'sref str,
     line_ranges: &'sref [TextRange],
     semantic_tokens: Vec<lsp::SemanticToken>,
-    scope: ModuleScope,
 }
 
 fn semantic_tokens(
@@ -606,67 +605,7 @@ fn semantic_tokens(
         line_ranges: file.line_ranges.as_slice(),
         //@temp semantic token count estimate
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
-        scope: ModuleScope { symbols: HashMap::with_capacity(512) },
     };
-
-    let root = cst::SourceFile::cast(tree.root()).unwrap();
-
-    for item in root.items(tree) {
-        match item {
-            cst::Item::Proc(item) => {
-                if let Some(name) = item.name(tree) {
-                    let range = name.ident(tree).unwrap();
-                    let name_text = &builder.source[range.as_usize()];
-                    let name_id = intern_name.intern(name_text);
-                    builder.scope.symbols.insert(name_id, SyntaxKind::PROC_ITEM);
-                }
-            }
-            cst::Item::Enum(item) => {
-                if let Some(name) = item.name(tree) {
-                    let range = name.ident(tree).unwrap();
-                    let name_text = &builder.source[range.as_usize()];
-                    let name_id = intern_name.intern(name_text);
-                    builder.scope.symbols.insert(name_id, SyntaxKind::ENUM_ITEM);
-                }
-            }
-            cst::Item::Struct(item) => {
-                if let Some(name) = item.name(tree) {
-                    let range = name.ident(tree).unwrap();
-                    let name_text = &builder.source[range.as_usize()];
-                    let name_id = intern_name.intern(name_text);
-                    builder.scope.symbols.insert(name_id, SyntaxKind::STRUCT_ITEM);
-                }
-            }
-            cst::Item::Const(item) => {
-                if let Some(name) = item.name(tree) {
-                    let range = name.ident(tree).unwrap();
-                    let name_text = &builder.source[range.as_usize()];
-                    let name_id = intern_name.intern(name_text);
-                    builder.scope.symbols.insert(name_id, SyntaxKind::CONST_ITEM);
-                }
-            }
-            cst::Item::Global(item) => {
-                if let Some(name) = item.name(tree) {
-                    let range = name.ident(tree).unwrap();
-                    let name_text = &builder.source[range.as_usize()];
-                    let name_id = intern_name.intern(name_text);
-                    builder.scope.symbols.insert(name_id, SyntaxKind::GLOBAL_ITEM);
-                }
-            }
-            cst::Item::Import(item) => {
-                if let Some(path) = item.import_path(tree) {
-                    if let Some(name) = path.names(tree).last() {
-                        let range = name.ident(tree).unwrap();
-                        let name_text = &builder.source[range.as_usize()];
-                        let name_id = intern_name.intern(name_text);
-                        builder.scope.symbols.insert(name_id, SyntaxKind::SOURCE_FILE);
-                        //@"module"
-                    }
-                }
-            }
-            cst::Item::Directive(_) => {}
-        }
-    }
 
     semantic_visit_node(&mut builder, intern_name, tree, tree.root(), None);
     builder.semantic_tokens
@@ -693,20 +632,20 @@ fn semantic_visit_node(
                             let name_text = &builder.source[range.as_usize()];
                             let name_id = intern_name.intern(name_text);
 
-                            let mut item_ident_style =
-                                if let Some(&kind) = builder.scope.symbols.get(&name_id) {
-                                    match kind {
-                                        SyntaxKind::SOURCE_FILE => Some(SemanticToken::Namespace),
-                                        SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
-                                        SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
-                                        SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
-                                        SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
-                                        SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
-                                        _ => Some(SemanticToken::Property),
-                                    }
-                                } else {
-                                    None
-                                };
+                            //builder.scope.symbols.get(&name_id)
+                            let mut item_ident_style = if let Some(&kind) = None {
+                                match kind {
+                                    SyntaxKind::SOURCE_FILE => Some(SemanticToken::Namespace),
+                                    SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
+                                    SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
+                                    SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
+                                    SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
+                                    SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
+                                    _ => Some(SemanticToken::Property),
+                                }
+                            } else {
+                                None
+                            };
                             //@hack for Type::Custom
                             if let Some(SemanticToken::Type) = ident_style {
                                 item_ident_style = ident_style;
@@ -737,27 +676,18 @@ fn semantic_visit_node(
                 }
 
                 let ident_style = match node.kind {
-                    SyntaxKind::ERROR => None,
-                    SyntaxKind::TOMBSTONE => None,
-                    SyntaxKind::SOURCE_FILE => None,
-
                     SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
-                    SyntaxKind::PARAM_LIST => None,
                     SyntaxKind::PARAM => Some(SemanticToken::Parameter),
                     SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
-                    SyntaxKind::VARIANT_LIST => None,
                     SyntaxKind::VARIANT => Some(SemanticToken::EnumMember),
-                    SyntaxKind::VARIANT_FIELD_LIST => None,
                     SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
-                    SyntaxKind::FIELD_LIST => None,
                     SyntaxKind::FIELD => Some(SemanticToken::Property),
                     SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
                     SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
                     SyntaxKind::IMPORT_ITEM => Some(SemanticToken::Namespace),
                     SyntaxKind::IMPORT_PATH => Some(SemanticToken::Namespace),
-                    SyntaxKind::IMPORT_SYMBOL_LIST => None,
-                    SyntaxKind::IMPORT_SYMBOL => Some(SemanticToken::Type), //default to type
-                    SyntaxKind::IMPORT_SYMBOL_RENAME => Some(SemanticToken::Type), //default to type
+                    SyntaxKind::IMPORT_SYMBOL => None, //@todo based on symbol
+                    SyntaxKind::IMPORT_SYMBOL_RENAME => None, //@todo based on symbol
 
                     SyntaxKind::DIRECTIVE_LIST => None,
                     SyntaxKind::DIRECTIVE_SIMPLE => None,
@@ -765,9 +695,9 @@ fn semantic_visit_node(
                     SyntaxKind::DIRECTIVE_PARAM_LIST => None,
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
 
-                    SyntaxKind::BUILTIN_ERROR => None,
-                    SyntaxKind::BUILTIN_WITH_TYPE => None,
-                    SyntaxKind::BUILTIN_TRANSMUTE => None,
+                    SyntaxKind::BUILTIN_ERROR => Some(SemanticToken::Function),
+                    SyntaxKind::BUILTIN_WITH_TYPE => Some(SemanticToken::Function),
+                    SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
 
                     SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
@@ -840,6 +770,8 @@ fn semantic_visit_node(
                     SyntaxKind::PATH_SEGMENT => ident_style.or(Some(SemanticToken::Property)),
                     SyntaxKind::POLYMORPH_ARGS => None,
                     SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
+
+                    _ => None,
                 };
 
                 semantic_visit_node(builder, intern_name, tree, node, ident_style);
@@ -908,10 +840,6 @@ fn semantic_token_add(
     });
 }
 
-struct ModuleScope {
-    symbols: HashMap<NameID, SyntaxKind>,
-}
-
 fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Option<SemanticToken> {
     use rock_core::T;
     #[rustfmt::skip]
@@ -934,7 +862,8 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
         T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
 
-        T![.] | T![,] | T![:] | T![;] | T![#] | T![@] |
+        T![.] | T![,] | T![:] | T![;] | T![#] => return None,
+        T![@] => SemanticToken::Function,
         T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,
 
         T![..] | T![->] | T!["..<"] | T!["..="] | T![~] | T![!] |
