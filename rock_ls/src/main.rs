@@ -105,7 +105,7 @@ struct ServerContext<'s> {
 
 struct ModuleData {
     symbols_version: u32,
-    symbols: HashMap<NameID, SyntaxKind>,
+    symbols: HashMap<NameID, SemanticToken>,
 }
 
 fn initialize_server<'s>(conn: &'s Connection) -> Result<ServerContext<'s>, ()> {
@@ -233,34 +233,75 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             data.symbols.reserve(root.0.content.len());
 
             for item in root.items(&tree) {
-                let name = match item {
-                    cst::Item::Proc(item) => item.name(&tree),
-                    cst::Item::Enum(item) => item.name(&tree),
-                    cst::Item::Struct(item) => item.name(&tree),
-                    cst::Item::Const(item) => item.name(&tree),
-                    cst::Item::Global(item) => item.name(&tree),
-                    cst::Item::Import(_) => continue, //@add modules and imports
+                fn name_id(
+                    pool: &mut InternPool<NameID>,
+                    tree: &SyntaxTree,
+                    file: &FileData,
+                    name: cst::Name,
+                ) -> NameID {
+                    let name_range = name.ident(&tree).unwrap();
+                    let name_text = &file.source[name_range.as_usize()];
+                    pool.intern(name_text)
+                }
+
+                match item {
+                    cst::Item::Proc(item) => {
+                        if let Some(name) = item.name(&tree) {
+                            let id = name_id(&mut session.intern_name, &tree, file, name);
+                            data.symbols.insert(id, SemanticToken::Function);
+                        }
+                    }
+                    cst::Item::Enum(item) => {
+                        if let Some(name) = item.name(&tree) {
+                            let id = name_id(&mut session.intern_name, &tree, file, name);
+                            data.symbols.insert(id, SemanticToken::Type);
+                        }
+                    }
+                    cst::Item::Struct(item) => {
+                        if let Some(name) = item.name(&tree) {
+                            let id = name_id(&mut session.intern_name, &tree, file, name);
+                            data.symbols.insert(id, SemanticToken::Type);
+                        }
+                    }
+                    cst::Item::Const(item) => {
+                        if let Some(name) = item.name(&tree) {
+                            let id = name_id(&mut session.intern_name, &tree, file, name);
+                            data.symbols.insert(id, SemanticToken::Variable);
+                        }
+                    }
+                    cst::Item::Global(item) => {
+                        if let Some(name) = item.name(&tree) {
+                            let id = name_id(&mut session.intern_name, &tree, file, name);
+                            data.symbols.insert(id, SemanticToken::Variable);
+                        }
+                    }
+                    cst::Item::Import(item) => {
+                        if let Some(rename) = item.rename(&tree) {
+                            if let Some(name) = rename.alias(&tree) {
+                                let id = name_id(&mut session.intern_name, &tree, file, name);
+                                data.symbols.insert(id, SemanticToken::Namespace);
+                            }
+                        } else if let Some(path) = item.import_path(&tree) {
+                            if let Some(name) = path.names(&tree).last() {
+                                let id = name_id(&mut session.intern_name, &tree, file, name);
+                                data.symbols.insert(id, SemanticToken::Namespace);
+                            }
+                        }
+                        if let Some(symbol_list) = item.import_symbol_list(&tree) {
+                            for symbol in symbol_list.import_symbols(&tree) {
+                                if let Some(name) = symbol.name(&tree) {
+                                    let id = name_id(&mut session.intern_name, &tree, file, name);
+                                }
+                                if let Some(rename) = symbol.rename(&tree) {
+                                    if let Some(name) = rename.alias(&tree) {
+                                        //
+                                    }
+                                }
+                            }
+                        }
+                    }
                     cst::Item::Directive(_) => continue,
                 };
-                let name = match name {
-                    Some(name) => name,
-                    None => continue,
-                };
-
-                let name_range = name.ident(&tree).unwrap();
-                let name_text = &file.source[name_range.as_usize()];
-                let name_id = session.intern_name.intern(name_text);
-
-                let kind = match item {
-                    cst::Item::Proc(_) => SyntaxKind::PROC_ITEM,
-                    cst::Item::Enum(_) => SyntaxKind::ENUM_ITEM,
-                    cst::Item::Struct(_) => SyntaxKind::STRUCT_ITEM,
-                    cst::Item::Const(_) => SyntaxKind::CONST_ITEM,
-                    cst::Item::Global(_) => SyntaxKind::GLOBAL_ITEM,
-                    cst::Item::Import(_) => continue,
-                    cst::Item::Directive(_) => continue,
-                };
-                data.symbols.insert(name_id, kind);
             }
 
             let module = session.module.get_mut(module_id);
@@ -316,7 +357,7 @@ fn handle_notification(server: &mut ServerContext, not: Notification) {
             // 2) existing file renamed
             // 3) file closed in the editor
         }
-        Notification::FileSaved(path) => {
+        Notification::FileSaved(_) => {
             handle_compile_project(server);
         }
         Notification::FileChanged(path, changes) => {
