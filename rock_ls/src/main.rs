@@ -9,6 +9,7 @@ use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{InternPool, NameID};
 use rock_core::session::FileData;
 use rock_core::support::Timer;
+use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::syntax_kind::SyntaxKind;
 use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
@@ -16,29 +17,13 @@ use rock_core::syntax::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
 
 fn main() {
-    if !check_args() {
-        return;
-    };
     let (conn, threads) = Connection::stdio();
     let _ = initialize_handshake(&conn);
-    server_loop(&conn);
-    threads.join().expect("io joined");
-}
-
-fn check_args() -> bool {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let started = match args.get(0) {
-        Some(first) => first == "lsp",
-        _ => false,
-    };
-
-    let message = r#"`rock_ls` is a language server
-its started by your editor or editor extension
-you do not need to run `rock_ls` manually"#;
-    if !started {
-        eprintln!("{message}");
+    if let Ok(mut server) = initialize_server(&conn) {
+        handle_compile_project(&mut server);
+        server_loop(&mut server);
     }
-    started
+    threads.join().expect("io join");
 }
 
 fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
@@ -112,77 +97,77 @@ fn from_json<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
 }
 
 struct ServerContext<'s> {
-    session: Option<Session<'s>>,
+    conn: &'s Connection,
+    session: Session<'s>,
+    modules: Vec<ModuleData>,
     fmt_cache: FormatterCache,
 }
 
-impl<'s> ServerContext<'s> {
-    fn new() -> ServerContext<'s> {
-        ServerContext { session: None, fmt_cache: FormatterCache::new() }
-    }
+struct ModuleData {
+    symbols_version: u32,
+    symbols: HashMap<NameID, SyntaxKind>,
 }
 
-fn server_loop(conn: &Connection) {
+fn initialize_server<'s>(conn: &'s Connection) -> Result<ServerContext<'s>, ()> {
+    use rock_core::config::{BuildKind, Config, TargetTriple};
+    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+
+    let session = match session::create_session(config) {
+        Ok(value) => value,
+        Err(error) => {
+            let message = error.diagnostic().msg().as_str().to_string();
+            let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
+            send_notification::<lsp::notification::ShowMessage>(&conn, params);
+            return Err(());
+        }
+    };
+
+    let mut modules = Vec::with_capacity(session.module.count());
+    for _ in session.module.ids() {
+        let data = ModuleData { symbols_version: 0, symbols: HashMap::new() };
+        modules.push(data);
+    }
+
+    let server = ServerContext { conn, session, modules, fmt_cache: FormatterCache::new() };
+    Ok(server)
+}
+
+fn server_loop(server: &mut ServerContext) {
     let mut buffer = MessageBuffer::new();
-    let mut context = ServerContext::new();
-    handle_compile_project(conn, &mut context);
-
     loop {
-        match buffer.receive(conn) {
+        match buffer.receive(&server.conn) {
             Action::Collect => continue,
-            Action::Handle(messages) => handle_messages(conn, &mut context, messages),
             Action::Shutdown => break,
+            Action::Handle(messages) => handle_messages(server, messages),
         }
     }
 }
 
-fn handle_messages(conn: &Connection, context: &mut ServerContext, messages: Vec<Message>) {
+fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
     eprintln!("\n====================");
-    eprintln!("[HANDLE MESSAGES] {}", messages.len());
-    for message in &messages {
-        match message {
-            Message::Request(_, request) => match request {
-                Request::Format(_) => eprintln!(" - Request::Format"),
-                Request::SemanticTokens(_) => eprintln!(" - Request::SemanticTokens"),
-                Request::ShowSyntaxTree(_) => eprintln!(" - Request::ShowSyntaxTree"),
-            },
-            Message::Notification(not) => match not {
-                Notification::FileOpened { .. } => eprintln!(" - Notification::FileOpened"),
-                Notification::FileChanged { .. } => eprintln!(" - Notification::FileChanged"),
-                Notification::FileSaved { .. } => eprintln!(" - Notification::FileSaved"),
-                Notification::FileClosed { .. } => eprintln!(" - Notification::FileClosed"),
-            },
-        }
-    }
+    eprintln!("[info] handling {} messages:", messages.len());
     eprintln!("====================\n");
 
     for message in messages {
         match message {
-            Message::Request(id, req) => handle_request(conn, context, id.clone(), req),
-            Message::Notification(not) => handle_notification(conn, context, not),
+            Message::Request(id, req) => handle_request(server, id.clone(), req),
+            Message::Notification(not) => handle_notification(server, not),
         }
     }
 }
 
-fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId, req: Request) {
+fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
     match &req {
         Request::Format(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::Format\n - document: {:?}", &path);
 
-            let session = match &mut context.session {
-                Some(session) => session,
-                None => {
-                    eprintln!(" - session is None");
-                    send_response(conn, id, Vec::<lsp::TextEdit>::new());
-                    return;
-                }
-            };
+            let session = &mut server.session;
             let module_id = match module_id_from_path(session, &path) {
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
-                    send_response(conn, id, Vec::<lsp::TextEdit>::new());
+                    send_response(&server.conn, id, Vec::<lsp::TextEdit>::new());
                     return;
                 }
             };
@@ -199,8 +184,8 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
 
             let tree = module.tree_expect();
             if !tree.complete() {
-                eprintln!(" - tree is incomplete");
-                send_response(conn, id, Vec::<lsp::TextEdit>::new());
+                eprintln!(" - tree is incomplete"); //@remove?
+                send_response(&server.conn, id, Vec::<lsp::TextEdit>::new());
                 return;
             }
             let file = session.vfs.file(module.file_id());
@@ -208,7 +193,7 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
                 tree,
                 &file.source,
                 &file.line_ranges,
-                &mut context.fmt_cache,
+                &mut server.fmt_cache,
             );
 
             //@hack overshoot by 1 line to ignore last line chars
@@ -218,20 +203,13 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let edit_range = lsp::Range::new(edit_start, edit_end);
 
             let text_edit = lsp::TextEdit::new(edit_range, formatted);
-            send_response(conn, id, vec![text_edit]);
+            send_response(&server.conn, id, vec![text_edit]);
         }
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
 
-            let session = match &mut context.session {
-                Some(session) => session,
-                None => {
-                    eprintln!(" - session is None");
-                    return;
-                }
-            };
-
+            let session = &mut server.session;
             let module_id = match module_id_from_path(session, &path) {
                 Some(module_id) => module_id,
                 None => {
@@ -243,9 +221,47 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             //@hack always update the syntax tree before semantic tokens
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
+
             let (tree, errors) =
                 syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
             let _ = errors.collect();
+
+            //@always updating, so far sufficient
+            let root = cst::SourceFile::cast(tree.root()).unwrap();
+            let data = &mut server.modules[module_id.index()];
+            data.symbols.clear();
+            data.symbols.reserve(root.0.content.len());
+
+            for item in root.items(&tree) {
+                let name = match item {
+                    cst::Item::Proc(item) => item.name(&tree),
+                    cst::Item::Enum(item) => item.name(&tree),
+                    cst::Item::Struct(item) => item.name(&tree),
+                    cst::Item::Const(item) => item.name(&tree),
+                    cst::Item::Global(item) => item.name(&tree),
+                    cst::Item::Import(_) => continue, //@add modules and imports
+                    cst::Item::Directive(_) => continue,
+                };
+                let name = match name {
+                    Some(name) => name,
+                    None => continue,
+                };
+
+                let name_range = name.ident(&tree).unwrap();
+                let name_text = &file.source[name_range.as_usize()];
+                let name_id = session.intern_name.intern(name_text);
+
+                let kind = match item {
+                    cst::Item::Proc(_) => SyntaxKind::PROC_ITEM,
+                    cst::Item::Enum(_) => SyntaxKind::ENUM_ITEM,
+                    cst::Item::Struct(_) => SyntaxKind::STRUCT_ITEM,
+                    cst::Item::Const(_) => SyntaxKind::CONST_ITEM,
+                    cst::Item::Global(_) => SyntaxKind::GLOBAL_ITEM,
+                    cst::Item::Import(_) => continue,
+                    cst::Item::Directive(_) => continue,
+                };
+                data.symbols.insert(name_id, kind);
+            }
 
             let module = session.module.get_mut(module_id);
             module.set_tree(tree);
@@ -254,20 +270,13 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let timer = Timer::start();
             let data = semantic_tokens(&mut session.intern_name, file, tree);
             eprintln!("[semantic tokens] ms: {}, count: {}", timer.measure_ms(), data.len());
-            send_response(conn, id, lsp::SemanticTokens { result_id: None, data });
+            send_response(&server.conn, id, lsp::SemanticTokens { result_id: None, data });
         }
         Request::ShowSyntaxTree(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::ShowSyntaxTree\n - document: {:?}", &path);
 
-            let session = match &mut context.session {
-                Some(session) => session,
-                None => {
-                    eprintln!(" - session is None");
-                    return;
-                }
-            };
-
+            let session = &mut server.session;
             let module_id = match module_id_from_path(session, &path) {
                 Some(module_id) => module_id,
                 None => {
@@ -288,12 +297,12 @@ fn handle_request(conn: &Connection, context: &mut ServerContext, id: RequestId,
             let tree = module.tree_expect();
 
             let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
-            send_response(conn, id, tree_display);
+            send_response(&server.conn, id, tree_display);
         }
     }
 }
 
-fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Notification) {
+fn handle_notification(server: &mut ServerContext, not: Notification) {
     match not {
         Notification::FileOpened(path, text) => {
             //@handle file open, send when:
@@ -308,7 +317,7 @@ fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Noti
             // 3) file closed in the editor
         }
         Notification::FileSaved(path) => {
-            handle_compile_project(conn, context);
+            handle_compile_project(server);
         }
         Notification::FileChanged(path, changes) => {
             eprintln!(
@@ -316,13 +325,7 @@ fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Noti
                 &path,
                 changes.len()
             );
-            let session = match &mut context.session {
-                Some(session) => session,
-                None => {
-                    eprintln!(" - session is missing");
-                    return;
-                }
-            };
+            let session = &mut server.session;
             let module = match module_id_from_path(session, &path) {
                 Some(module_id) => session.module.get(module_id),
                 None => {
@@ -352,17 +355,17 @@ fn handle_notification(conn: &Connection, context: &mut ServerContext, not: Noti
     }
 }
 
-fn handle_compile_project(conn: &Connection, context: &mut ServerContext) {
+fn handle_compile_project(server: &mut ServerContext) {
     eprintln!("[Handle] CompileProject");
 
     use std::time::Instant;
     let start_time = Instant::now();
-    let publish_diagnostics = run_diagnostics(conn, context);
+    let publish_diagnostics = run_diagnostics(server);
     let elapsed_time = start_time.elapsed();
     eprintln!("run diagnostics: {} ms", elapsed_time.as_secs_f64() * 1000.0);
 
     for publish in publish_diagnostics.iter() {
-        send_notification::<lsp::notification::PublishDiagnostics>(conn, publish);
+        send_notification::<lsp::notification::PublishDiagnostics>(&server.conn, publish);
     }
 }
 
@@ -500,30 +503,8 @@ fn create_diagnostic<'src>(
     Some(diagnostic)
 }
 
-fn run_diagnostics(
-    conn: &Connection,
-    context: &mut ServerContext,
-) -> Vec<PublishDiagnosticsParams> {
-    //re-use existing session else try to create it
-    let session = if let Some(session) = &mut context.session {
-        session
-    } else {
-        use rock_core::config::{BuildKind, Config, TargetTriple};
-        let config = Config::new(TargetTriple::host(), BuildKind::Debug);
-
-        let session = match session::create_session(config) {
-            Ok(value) => value,
-            Err(error) => {
-                let message = error.diagnostic().msg().as_str().to_string();
-                let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
-                send_notification::<lsp::notification::ShowMessage>(conn, params);
-                return vec![];
-            }
-        };
-        context.session = Some(session);
-        context.session.as_mut().unwrap()
-    };
-
+fn run_diagnostics(server: &mut ServerContext) -> Vec<PublishDiagnosticsParams> {
+    let session = &mut server.session;
     for module_id in session.module.ids() {
         let module = session.module.get_mut(module_id);
         module.errors.clear();
@@ -587,7 +568,6 @@ fn semantic_tokens(
         scope: ModuleScope { symbols: HashMap::with_capacity(512) },
     };
 
-    use rock_core::syntax::ast_layer::{self as cst, AstNode};
     let root = cst::SourceFile::cast(tree.root()).unwrap();
 
     for item in root.items(tree) {
@@ -663,7 +643,6 @@ fn semantic_visit_node(
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
 
-                use rock_core::syntax::ast_layer::{self as cst, AstNode};
                 if let Some(path) = cst::Path::cast(node) {
                     let mut segments = path.segments(tree);
 

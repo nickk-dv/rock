@@ -9,8 +9,8 @@ pub struct MessageBuffer {
 
 pub enum Action {
     Collect,
-    Handle(Vec<Message>),
     Shutdown,
+    Handle(Vec<Message>),
 }
 
 pub enum Message {
