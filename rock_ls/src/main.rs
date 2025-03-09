@@ -689,88 +689,30 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL => None, //@todo based on symbol
                     SyntaxKind::IMPORT_SYMBOL_RENAME => None, //@todo based on symbol
 
-                    SyntaxKind::DIRECTIVE_LIST => None,
-                    SyntaxKind::DIRECTIVE_SIMPLE => None,
-                    SyntaxKind::DIRECTIVE_WITH_PARAMS => None,
-                    SyntaxKind::DIRECTIVE_PARAM_LIST => None,
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
-
                     SyntaxKind::BUILTIN_ERROR => Some(SemanticToken::Function),
                     SyntaxKind::BUILTIN_WITH_TYPE => Some(SemanticToken::Function),
                     SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
 
-                    SyntaxKind::TYPE_BASIC => None,
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
-                    SyntaxKind::TYPE_REFERENCE => None,
-                    SyntaxKind::TYPE_MULTI_REFERENCE => None,
-                    SyntaxKind::TYPE_PROCEDURE => None,
-                    SyntaxKind::PROC_TYPE_PARAM_LIST => None,
-                    SyntaxKind::TYPE_ARRAY_SLICE => None,
-                    SyntaxKind::TYPE_ARRAY_STATIC => None,
 
-                    SyntaxKind::BLOCK => None,
-                    SyntaxKind::STMT_BREAK => None,
-                    SyntaxKind::STMT_CONTINUE => None,
-                    SyntaxKind::STMT_RETURN => None,
-                    SyntaxKind::STMT_DEFER => None,
-                    SyntaxKind::STMT_FOR => None,
                     SyntaxKind::FOR_BIND => Some(SemanticToken::Variable),
-                    SyntaxKind::FOR_HEADER_COND => None,
-                    SyntaxKind::FOR_HEADER_ELEM => None,
-                    SyntaxKind::FOR_HEADER_RANGE => None,
-                    SyntaxKind::FOR_HEADER_PAT => None,
-                    SyntaxKind::STMT_LOCAL => None,
-                    SyntaxKind::STMT_ASSIGN => None,
-                    SyntaxKind::STMT_EXPR_SEMI => None,
-                    SyntaxKind::STMT_EXPR_TAIL => None,
-                    SyntaxKind::STMT_WITH_DIRECTIVE => None,
+                    SyntaxKind::STMT_LOCAL => Some(SemanticToken::Variable),
 
-                    SyntaxKind::EXPR_PAREN => None,
-                    SyntaxKind::EXPR_IF => None,
-                    SyntaxKind::IF_BRANCH => None,
-                    SyntaxKind::EXPR_MATCH => None,
-                    SyntaxKind::MATCH_ARM_LIST => None,
-                    SyntaxKind::MATCH_ARM => None,
                     SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
-                    SyntaxKind::EXPR_INDEX => None,
-                    SyntaxKind::EXPR_SLICE => None,
-                    SyntaxKind::EXPR_CALL => None, //defer to path
-                    SyntaxKind::EXPR_CAST => None,
-                    SyntaxKind::EXPR_ITEM => None,
+                    SyntaxKind::EXPR_CALL => None, //@todo path
+                    SyntaxKind::EXPR_ITEM => None, //@todo path
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
-                    SyntaxKind::EXPR_STRUCT_INIT => Some(SemanticToken::Type),
-                    SyntaxKind::FIELD_INIT_LIST => None,
+                    SyntaxKind::EXPR_STRUCT_INIT => None, //@todo path
                     SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
-                    SyntaxKind::EXPR_ARRAY_INIT => None,
-                    SyntaxKind::EXPR_ARRAY_REPEAT => None,
-                    SyntaxKind::EXPR_DEREF => None,
-                    SyntaxKind::EXPR_ADDRESS => None,
-                    SyntaxKind::EXPR_UNARY => None,
-                    SyntaxKind::EXPR_BINARY => None,
 
-                    SyntaxKind::PAT_WILD => None,
-                    SyntaxKind::PAT_LIT => None,
-                    SyntaxKind::PAT_ITEM => None,
+                    SyntaxKind::PAT_ITEM => None, //@todo path
                     SyntaxKind::PAT_VARIANT => Some(SemanticToken::EnumMember),
-                    SyntaxKind::PAT_OR => None,
 
-                    SyntaxKind::LIT_VOID => None,
-                    SyntaxKind::LIT_NULL => None,
-                    SyntaxKind::LIT_BOOL => None,
-                    SyntaxKind::LIT_INT => None,
-                    SyntaxKind::LIT_FLOAT => None,
-                    SyntaxKind::LIT_CHAR => None,
-                    SyntaxKind::LIT_STRING => None,
-
-                    SyntaxKind::NAME => ident_style, // use pushed style
+                    SyntaxKind::NAME => ident_style,
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
-                    SyntaxKind::BIND_LIST => None,
-                    SyntaxKind::ARGS_LIST => None,
-                    SyntaxKind::PATH => ident_style.or(Some(SemanticToken::Property)),
                     SyntaxKind::PATH_SEGMENT => ident_style.or(Some(SemanticToken::Property)),
-                    SyntaxKind::POLYMORPH_ARGS => None,
                     SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
-
                     _ => None,
                 };
 
