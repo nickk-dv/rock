@@ -105,7 +105,7 @@ mod arena {
         }
     }
 
-    impl<'arena> Drop for Arena<'arena> {
+    impl Drop for Arena<'_> {
         fn drop(&mut self) {
             let mut current = Some(self.block);
             while let Some(block) = current {
@@ -284,7 +284,7 @@ pub mod os {
             let mut string = String::new();
             string.try_reserve_exact(size.unwrap_or(0) + 1)?;
             file.read_to_string(&mut string)?;
-            string.push_str("\0");
+            string.push('\0');
             Ok(string)
         }
         inner(path.as_ref()).map_err(|io_error| err::os_file_read(io_error.to_string(), path))

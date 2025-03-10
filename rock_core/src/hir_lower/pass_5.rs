@@ -2762,8 +2762,8 @@ fn typecheck_return<'hir, 'ast>(
     valid.then_some(hir::Stmt::Return(expr))
 }
 
-fn typecheck_defer<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
+fn typecheck_defer<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     block: ast::Block<'ast>,
     stmt_range: TextRange,
 ) -> bool {
@@ -2791,7 +2791,7 @@ fn typecheck_for<'hir, 'ast>(
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
             let block = ctx.arena.alloc(block_res.block);
-            return Some(hir::Stmt::Loop(block));
+            Some(hir::Stmt::Loop(block))
         }
         ast::ForHeader::Cond(cond) => {
             let cond_res = typecheck_expr(ctx, Expectation::None, cond);
@@ -2809,7 +2809,7 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_block));
             let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_block]) };
             let block = ctx.arena.alloc(block);
-            return Some(hir::Stmt::Loop(block));
+            Some(hir::Stmt::Loop(block))
         }
         ast::ForHeader::Elem(header) => {
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
@@ -2999,24 +2999,18 @@ fn typecheck_for<'hir, 'ast>(
                         stmt_for_block,
                     ]),
                 }
+            } else if block_diverges {
+                hir::Block {
+                    stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_value_local, stmt_for_block]),
+                }
             } else {
-                if block_diverges {
-                    hir::Block {
-                        stmts: ctx.arena.alloc_slice(&[
-                            stmt_cond,
-                            stmt_value_local,
-                            stmt_for_block,
-                        ]),
-                    }
-                } else {
-                    hir::Block {
-                        stmts: ctx.arena.alloc_slice(&[
-                            stmt_cond,
-                            stmt_value_local,
-                            stmt_for_block,
-                            stmt_index_change,
-                        ]),
-                    }
+                hir::Block {
+                    stmts: ctx.arena.alloc_slice(&[
+                        stmt_cond,
+                        stmt_value_local,
+                        stmt_for_block,
+                        stmt_index_change,
+                    ]),
                 }
             };
             let stmt_loop = hir::Stmt::Loop(ctx.arena.alloc(loop_block));
@@ -3029,7 +3023,7 @@ fn typecheck_for<'hir, 'ast>(
 
             let expr_overall_block = hir::Expr::Block { block: hir::Block { stmts } };
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
-            return Some(overall_block);
+            Some(overall_block)
         }
         ast::ForHeader::Range(header) => {
             if let Some(start) = header.ref_start {
@@ -3202,7 +3196,7 @@ fn typecheck_for<'hir, 'ast>(
             let stmts = ctx.arena.alloc_slice(&[stmt_start, stmt_end, stmt_index, stmt_loop]);
             let expr_overall_block = hir::Expr::Block { block: hir::Block { stmts } };
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
-            return Some(overall_block);
+            Some(overall_block)
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
@@ -3214,10 +3208,7 @@ fn typecheck_for<'hir, 'ast>(
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
 
-            let kind = match kind {
-                Some(kind) => kind,
-                None => return None,
-            };
+            let kind = kind?;
 
             //@this should also consider or patterns,
             // ideally check match coverage, allowing `_`
@@ -3237,7 +3228,7 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_match = hir::Stmt::ExprSemi(match_);
             let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_match]) };
             let block = ctx.arena.alloc(block);
-            return Some(hir::Stmt::Loop(block));
+            Some(hir::Stmt::Loop(block))
         }
     }
 }
@@ -3325,7 +3316,7 @@ fn typecheck_assign<'hir, 'ast>(
             let op_start = assign.op_range.start();
             let op_res =
                 check_binary_op(ctx, Expectation::None, op, op_start, lhs_res.ty, rhs_res.ty);
-            op_res.map(|op| hir::AssignOp::Bin(op)).unwrap_or(hir::AssignOp::Assign)
+            op_res.map(hir::AssignOp::Bin).unwrap_or(hir::AssignOp::Assign)
         }
     };
 

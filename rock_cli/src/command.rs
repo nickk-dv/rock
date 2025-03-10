@@ -254,7 +254,7 @@ fn parse_option_enum<T: Copy + AsStr>(p: &mut CommandParser, default: T) -> T {
     let mut selected = None;
     let mut variants = T::ALL.iter().copied();
 
-    while let Some(value) = variants.next() {
+    for value in variants.by_ref() {
         if parse_option_no_args(p, value.as_str()) {
             selected = Some(value);
             break;

@@ -371,15 +371,12 @@ fn directive(p: &mut Parser) -> (MarkerClosed, bool) {
     };
 
     name(p);
-    match kind {
-        SyntaxKind::DIRECTIVE_WITH_PARAMS => {
-            if p.at(T!['(']) {
-                directive_param_list(p);
-            } else {
-                p.error_recover("expected directive parameter list", RECOVER_DIRECTIVE_PARAM_LIST);
-            }
+    if kind == SyntaxKind::DIRECTIVE_WITH_PARAMS {
+        if p.at(T!['(']) {
+            directive_param_list(p);
+        } else {
+            p.error_recover("expected directive parameter list", RECOVER_DIRECTIVE_PARAM_LIST);
         }
-        _ => {}
     }
     (m.complete(p, kind), scope)
 }

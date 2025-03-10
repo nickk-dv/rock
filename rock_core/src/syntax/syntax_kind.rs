@@ -130,6 +130,6 @@ impl SyntaxSet {
     }
     #[inline]
     pub const fn contains(&self, syntax: SyntaxKind) -> bool {
-        self.mask & 1u128 << syntax as u8 != 0
+        self.mask & (1u128 << syntax as u8) != 0
     }
 }

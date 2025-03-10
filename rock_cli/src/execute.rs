@@ -2,7 +2,7 @@ use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
 use rock_core::config::{BuildKind, Config, TargetTriple};
-use rock_core::error::{Error, ErrorWarningBuffer};
+use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir_lower;
 use rock_core::package;

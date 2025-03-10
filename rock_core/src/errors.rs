@@ -679,7 +679,7 @@ pub fn const_cannot_refer_to(
 }
 
 pub fn const_cannot_use_enum_with_fields(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("cannot use enums with fields in constants");
+    let msg = "cannot use enums with fields in constants";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1015,12 +1015,12 @@ pub fn tycheck_cannot_iter_on_type(emit: &mut impl ErrorSink, src: SourceRange, 
 }
 
 pub fn tycheck_for_range_ref(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("for range loops don't support by reference iteration");
+    let msg = "for range loops don't support by reference iteration";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_for_range_reverse(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("for range loops don't support reverse iteration");
+    let msg = "for range loops don't support reverse iteration";
     emit.error(Error::new(msg, src, None));
 }
 

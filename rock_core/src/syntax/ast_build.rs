@@ -560,7 +560,7 @@ fn stmt_local<'ast>(
     local: cst::StmtLocal,
 ) -> &'ast ast::Local<'ast> {
     let bind = bind(ctx, local.bind(ctx.tree).unwrap());
-    let ty = if let Some(ty_cst) = local.ty(ctx.tree) { Some(ty(ctx, ty_cst)) } else { None };
+    let ty = local.ty(ctx.tree).map(|ty_cst| ty(ctx, ty_cst));
 
     let init = if let Some(expr_cst) = local.init(ctx.tree) {
         ast::LocalInit::Init(expr(ctx, expr_cst))

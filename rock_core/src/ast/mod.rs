@@ -592,7 +592,7 @@ impl BinOp {
     }
 }
 
-impl<'ast> DirectiveKind<'ast> {
+impl DirectiveKind<'_> {
     pub fn as_str(&self) -> &'static str {
         match self {
             DirectiveKind::Error(_) => "<error>",

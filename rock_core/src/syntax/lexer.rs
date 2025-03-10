@@ -36,7 +36,7 @@ struct Lexer<'s, 'sref> {
     intern_lit: &'sref mut InternPool<'s, LitID>,
 }
 
-impl<'s, 'sref> Lexer<'s, 'sref> {
+impl Lexer<'_, '_> {
     #[inline(always)]
     fn start_range(&self) -> TextOffset {
         (self.cursor as u32).into()

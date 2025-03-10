@@ -764,13 +764,13 @@ impl<'hir> StructData<'hir> {
     }
 }
 
-impl<'hir> ConstData<'hir> {
+impl ConstData<'_> {
     pub fn src(&self) -> SourceRange {
         SourceRange::new(self.origin_id, self.name.range)
     }
 }
 
-impl<'hir> GlobalData<'hir> {
+impl GlobalData<'_> {
     pub fn src(&self) -> SourceRange {
         SourceRange::new(self.origin_id, self.name.range)
     }
@@ -785,7 +785,7 @@ impl Layout {
     }
 }
 
-impl<'hir> Type<'hir> {
+impl Type<'_> {
     #[inline(always)]
     pub fn is_error(&self) -> bool {
         matches!(self, Type::Error)

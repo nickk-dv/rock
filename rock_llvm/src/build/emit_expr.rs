@@ -212,7 +212,7 @@ fn codegen_const_array(cg: &mut Codegen, array: &hir::ConstArray) -> llvm::Value
     let values = cg.cache.values.view(offset.clone());
 
     let elem_ty = llvm::typeof_value(values[0]);
-    let array = llvm::const_array(elem_ty, &values);
+    let array = llvm::const_array(elem_ty, values);
     cg.cache.values.pop_view(offset);
     array
 }
@@ -226,7 +226,7 @@ fn codegen_const_array_repeat(cg: &mut Codegen, array: &hir::ConstArrayRepeat) -
     let values = cg.cache.values.view(offset.clone());
 
     let elem_ty = llvm::typeof_value(values[0]);
-    let array = llvm::const_array(elem_ty, &values);
+    let array = llvm::const_array(elem_ty, values);
     cg.cache.values.pop_view(offset);
     array
 }
@@ -748,7 +748,7 @@ fn codegen_call_direct<'c>(
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];
     let input_values = cg.cache.values.view(offset.clone());
-    let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "call_val")?;
+    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val")?;
     cg.cache.values.pop_view(offset);
 
     match expect {
@@ -782,7 +782,7 @@ fn codegen_call_indirect<'c>(
 
     let fn_ty = cg.proc_type(indirect.proc_ty);
     let input_values = cg.cache.values.view(offset.clone());
-    let ret_val = cg.build.call(fn_ty, fn_val, &input_values, "icall_val")?;
+    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "icall_val")?;
     cg.cache.values.pop_view(offset);
 
     match expect {

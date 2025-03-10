@@ -15,7 +15,7 @@ pub fn file_range_to_text_range(file: &FileData, range: lsp::Range) -> TextRange
 }
 
 fn file_line_range(file: &FileData, line: u32) -> TextRange {
-    if file.line_ranges.len() == 0 {
+    if file.line_ranges.is_empty() {
         TextRange::zero()
     } else if line < file.line_ranges.len() as u32 {
         file.line_ranges[line as usize]

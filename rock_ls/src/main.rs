@@ -108,7 +108,7 @@ struct ModuleData {
     symbols: HashMap<NameID, SemanticToken>,
 }
 
-fn initialize_server<'s>(conn: &'s Connection) -> Result<ServerContext<'s>, ()> {
+fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
     use rock_core::config::{BuildKind, Config, TargetTriple};
     let config = Config::new(TargetTriple::host(), BuildKind::Debug);
 
@@ -117,7 +117,7 @@ fn initialize_server<'s>(conn: &'s Connection) -> Result<ServerContext<'s>, ()> 
         Err(error) => {
             let message = error.diagnostic().msg().as_str().to_string();
             let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
-            send_notification::<lsp::notification::ShowMessage>(&conn, params);
+            send_notification::<lsp::notification::ShowMessage>(conn, params);
             return Err(());
         }
     };
@@ -135,7 +135,7 @@ fn initialize_server<'s>(conn: &'s Connection) -> Result<ServerContext<'s>, ()> 
 fn server_loop(server: &mut ServerContext) {
     let mut buffer = MessageBuffer::new();
     loop {
-        match buffer.receive(&server.conn) {
+        match buffer.receive(server.conn) {
             Action::Collect => continue,
             Action::Shutdown => break,
             Action::Handle(messages) => handle_messages(server, messages),
@@ -167,7 +167,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
                 Some(module_id) => module_id,
                 None => {
                     eprintln!(" - module not found by path");
-                    send_response(&server.conn, id, Vec::<lsp::TextEdit>::new());
+                    send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
                     return;
                 }
             };
@@ -185,7 +185,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             let tree = module.tree_expect();
             if !tree.complete() {
                 eprintln!(" - tree is incomplete"); //@remove?
-                send_response(&server.conn, id, Vec::<lsp::TextEdit>::new());
+                send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
                 return;
             }
             let file = session.vfs.file(module.file_id());
@@ -203,7 +203,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             let edit_range = lsp::Range::new(edit_start, edit_end);
 
             let text_edit = lsp::TextEdit::new(edit_range, formatted);
-            send_response(&server.conn, id, vec![text_edit]);
+            send_response(server.conn, id, vec![text_edit]);
         }
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -239,7 +239,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
                     file: &FileData,
                     name: cst::Name,
                 ) -> NameID {
-                    let name_range = name.ident(&tree).unwrap();
+                    let name_range = name.ident(tree).unwrap();
                     let name_text = &file.source[name_range.as_usize()];
                     pool.intern(name_text)
                 }
@@ -311,7 +311,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             let timer = Timer::start();
             let data = semantic_tokens(&mut session.intern_name, file, tree);
             eprintln!("[semantic tokens] ms: {}, count: {}", timer.measure_ms(), data.len());
-            send_response(&server.conn, id, lsp::SemanticTokens { result_id: None, data });
+            send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
         }
         Request::ShowSyntaxTree(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -338,7 +338,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             let tree = module.tree_expect();
 
             let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
-            send_response(&server.conn, id, tree_display);
+            send_response(server.conn, id, tree_display);
         }
     }
 }
@@ -406,7 +406,7 @@ fn handle_compile_project(server: &mut ServerContext) {
     eprintln!("run diagnostics: {} ms", elapsed_time.as_secs_f64() * 1000.0);
 
     for publish in publish_diagnostics.iter() {
-        send_notification::<lsp::notification::PublishDiagnostics>(&server.conn, publish);
+        send_notification::<lsp::notification::PublishDiagnostics>(server.conn, publish);
     }
 }
 
@@ -450,7 +450,7 @@ fn url_from_path(path: &PathBuf) -> lsp::Url {
 }
 
 fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
-    if let Some(file_id) = session.vfs.path_to_file_id(&path) {
+    if let Some(file_id) = session.vfs.path_to_file_id(path) {
         for module_id in session.module.ids() {
             if session.module.get(module_id).file_id() == file_id {
                 return Some(module_id);
@@ -488,8 +488,8 @@ fn source_to_range_and_path<'s, 'sref: 's>(
     (range, &file.path)
 }
 
-fn create_diagnostic<'src>(
-    session: &'src Session,
+fn create_diagnostic(
+    session: &Session,
     diagnostic: &Diagnostic,
     severity: Severity,
 ) -> Option<lsp::Diagnostic> {
@@ -562,12 +562,12 @@ fn run_diagnostics(server: &mut ServerContext) -> Vec<PublishDiagnosticsParams> 
         let mut diagnostics = Vec::with_capacity(capacity);
 
         for error in &module.errors.errors {
-            if let Some(d) = create_diagnostic(&session, error.diagnostic(), Severity::Error) {
+            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
                 diagnostics.push(d);
             }
         }
         for warning in &module.errors.warnings {
-            if let Some(d) = create_diagnostic(&session, warning.diagnostic(), Severity::Warning) {
+            if let Some(d) = create_diagnostic(session, warning.diagnostic(), Severity::Warning) {
                 diagnostics.push(d);
             }
         }

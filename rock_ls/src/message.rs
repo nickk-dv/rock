@@ -80,10 +80,8 @@ impl MessageBuffer {
 
     fn handle_notification(&mut self, not: lsr::Notification) -> Action {
         if let Some(message) = parse_notification(not) {
-            let text_edit = match &message {
-                Message::Notification(Notification::FileChanged(_, _)) => true,
-                _ => false,
-            };
+            let text_edit =
+                matches!(&message, Message::Notification(Notification::FileChanged(_, _)));
             self.messages.push(message);
             if text_edit {
                 Action::Collect

@@ -119,7 +119,7 @@ enum FormatEvent {
     Comment { spacing: u16, range_idx: u32 },
 }
 
-impl<'syn, 'cache> Formatter<'syn, 'cache> {
+impl<'syn> Formatter<'syn, '_> {
     fn space(&mut self) {
         self.line_offset += 1;
         self.cache.events.push(FormatEvent::Space);

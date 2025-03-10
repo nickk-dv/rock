@@ -7,10 +7,10 @@ use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;
 
-pub fn codegen_module<'c, 's, 'sref>(
-    hir: hir::Hir<'c>,
+pub fn codegen_module(
+    hir: hir::Hir,
     target: TargetTriple,
-    session: &'sref Session<'s>,
+    session: &Session,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, session);
     codegen_string_lits(&mut cg);

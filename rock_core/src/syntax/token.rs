@@ -205,7 +205,7 @@ impl TokenSet {
     }
     #[inline]
     pub const fn contains(&self, token: Token) -> bool {
-        self.mask & 1u128 << token as u8 != 0
+        self.mask & (1u128 << token as u8) != 0
     }
 }
 
@@ -217,7 +217,6 @@ impl TokenSet {
 ///
 /// `T` macro is also generated and allows to reference tokens  
 /// without directly using `Token` enum: `T![,] T![:] T![pub]`
-
 #[rustfmt::skip]
 macro_rules! token_gen {
     {

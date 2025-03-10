@@ -32,7 +32,7 @@ pub struct MarkerClosed {
 }
 
 impl<'src> Parser<'src> {
-    pub fn new(tokens: TokenList, module_id: ModuleID, source: &'src str) -> Parser {
+    pub fn new(tokens: TokenList, module_id: ModuleID, source: &'src str) -> Parser<'src> {
         Parser {
             cursor: TokenID::new(0),
             tokens,
