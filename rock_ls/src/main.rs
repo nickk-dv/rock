@@ -304,14 +304,11 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
                 };
             }
 
-            let module = session.module.get_mut(module_id);
-            module.set_tree(tree);
-            let tree = module.tree_expect();
-
             let timer = Timer::start();
-            let data = semantic_tokens(&mut session.intern_name, file, tree);
+            let data = semantic_tokens(server, &tree, module_id);
             eprintln!("[semantic tokens] ms: {}, count: {}", timer.measure_ms(), data.len());
             send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
+            server.session.module.get_mut(module_id).set_tree(tree);
         }
         Request::ShowSyntaxTree(params) => {
             let path = uri_to_path(&params.text_document.uri);
@@ -585,95 +582,41 @@ fn check_impl(session: &mut Session) -> Result<(), ()> {
     Ok(())
 }
 
-struct SemanticTokenBuilder<'sref> {
+struct SemanticTokenBuilder {
+    module_id: ModuleID,
     curr_line: u32,
     prev_range: Option<TextRange>,
-    source: &'sref str,
-    line_ranges: &'sref [TextRange],
     semantic_tokens: Vec<lsp::SemanticToken>,
 }
 
 fn semantic_tokens(
-    intern_name: &mut InternPool<NameID>,
-    file: &FileData,
+    server: &mut ServerContext,
     tree: &SyntaxTree,
+    module_id: ModuleID,
 ) -> Vec<lsp::SemanticToken> {
     let mut builder = SemanticTokenBuilder {
+        module_id,
         curr_line: 0,
         prev_range: None,
-        source: file.source.as_str(),
-        line_ranges: file.line_ranges.as_slice(),
         //@temp semantic token count estimate
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
     };
 
-    semantic_visit_node(&mut builder, intern_name, tree, tree.root(), None);
+    semantic_visit_node(server, &mut builder, tree.root(), tree, None);
     builder.semantic_tokens
 }
 
 fn semantic_visit_node(
+    server: &mut ServerContext,
     builder: &mut SemanticTokenBuilder,
-    intern_name: &mut InternPool<NameID>,
-    tree: &SyntaxTree,
     node: &Node,
+    tree: &SyntaxTree,
     ident_style: Option<SemanticToken>,
 ) {
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
-
-                if let Some(path) = cst::Path::cast(node) {
-                    let mut segments = path.segments(tree);
-
-                    if let Some(segment) = segments.next() {
-                        if let Some(name) = segment.name(tree) {
-                            let range = name.ident(tree).unwrap();
-                            let name_text = &builder.source[range.as_usize()];
-                            let name_id = intern_name.intern(name_text);
-
-                            //builder.scope.symbols.get(&name_id)
-                            let mut item_ident_style = if let Some(&kind) = None {
-                                match kind {
-                                    SyntaxKind::SOURCE_FILE => Some(SemanticToken::Namespace),
-                                    SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
-                                    SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
-                                    SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
-                                    SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
-                                    SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
-                                    _ => Some(SemanticToken::Property),
-                                }
-                            } else {
-                                None
-                            };
-                            //@hack for Type::Custom
-                            if let Some(SemanticToken::Type) = ident_style {
-                                item_ident_style = ident_style;
-                            }
-                            semantic_visit_node(
-                                builder,
-                                intern_name,
-                                tree,
-                                name.0,
-                                item_ident_style,
-                            );
-                        }
-                        if let Some(poly_args) = segment.poly_args(tree) {
-                            semantic_visit_node(builder, intern_name, tree, poly_args.0, None);
-                        }
-                    }
-
-                    for segment in segments {
-                        semantic_visit_node(
-                            builder,
-                            intern_name,
-                            tree,
-                            segment.0,
-                            Some(ident_style.unwrap_or(SemanticToken::Property)),
-                        );
-                    }
-                    continue;
-                }
 
                 let ident_style = match node.kind {
                     SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
@@ -716,13 +659,13 @@ fn semantic_visit_node(
                     _ => None,
                 };
 
-                semantic_visit_node(builder, intern_name, tree, node, ident_style);
+                semantic_visit_node(server, builder, node, tree, ident_style);
             }
             //@color void differently (type vs void literal, number color?)
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
-                if let Some(semantic) = semantic_token_style(token, ident_style) {
-                    semantic_token_add(builder, semantic, range);
+                if let Some(semantic) = semantic_token_style(token, node.kind, ident_style) {
+                    semantic_token_add(server, builder, semantic, range);
                 }
             }
             NodeOrToken::Trivia(id) => {
@@ -730,7 +673,7 @@ fn semantic_visit_node(
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
-                        semantic_token_add(builder, SemanticToken::Comment, range)
+                        semantic_token_add(server, builder, SemanticToken::Comment, range)
                     }
                 };
             }
@@ -739,13 +682,17 @@ fn semantic_visit_node(
 }
 
 fn semantic_token_add(
+    server: &ServerContext,
     builder: &mut SemanticTokenBuilder,
     semantic: SemanticToken,
     range: TextRange,
 ) {
-    let mut delta_line: u32 = 0;
-    let line_ranges = builder.line_ranges;
+    let module = server.session.module.get(builder.module_id);
+    let file = server.session.vfs.file(module.file_id());
+    let source = &file.source;
+    let line_ranges = file.line_ranges.as_slice();
 
+    let mut delta_line: u32 = 0;
     while range.start() >= line_ranges[builder.curr_line as usize].end() {
         builder.curr_line += 1;
         delta_line += 1;
@@ -766,10 +713,10 @@ fn semantic_token_add(
 
     let mut delta_range = TextRange::empty_at(start);
     delta_range.extend_by(offset);
-    let token_str = &builder.source[delta_range.as_usize()];
+    let token_str = &source[delta_range.as_usize()];
     let delta_start = text_ops::str_char_len_utf16(token_str);
 
-    let token_str = &builder.source[range.as_usize()];
+    let token_str = &source[range.as_usize()];
     let length = text_ops::str_char_len_utf16(token_str);
 
     builder.prev_range = Some(range);
@@ -782,7 +729,11 @@ fn semantic_token_add(
     });
 }
 
-fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Option<SemanticToken> {
+fn semantic_token_style(
+    token: Token,
+    parent: SyntaxKind,
+    ident_style: Option<SemanticToken>,
+) -> Option<SemanticToken> {
     use rock_core::T;
     #[rustfmt::skip]
     let semantic = match token {
@@ -798,11 +749,13 @@ fn semantic_token_style(token: Token, ident_style: Option<SemanticToken>) -> Opt
         T![null] | T![true] | T![false] => SemanticToken::Number,
         T![if] | T![else] | T![match] | T![as] => SemanticToken::Keyword,
         T![_] => SemanticToken::Parameter,
-
+        
         T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
         T![u8] | T![u16] | T![u32] | T![u64] | T![usize] |
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
-        T![rawptr] | T![void] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
+        T![rawptr] | T![never] | T![string] | T![cstring] => SemanticToken::Type,
+        T![void] if parent == SyntaxKind::TYPE_BASIC => SemanticToken::Type,
+        T![void] => SemanticToken::Number,
 
         T![.] | T![,] | T![:] | T![;] | T![#] => return None,
         T![@] => SemanticToken::Function,
