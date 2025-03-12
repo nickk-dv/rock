@@ -586,6 +586,7 @@ struct SemanticTokenBuilder {
     module_id: ModuleID,
     curr_line: u32,
     prev_range: Option<TextRange>,
+    params_in_scope: Vec<NameID>,
     semantic_tokens: Vec<lsp::SemanticToken>,
 }
 
@@ -598,12 +599,63 @@ fn semantic_tokens(
         module_id,
         curr_line: 0,
         prev_range: None,
-        //@temp semantic token count estimate
-        semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2),
+        params_in_scope: Vec::with_capacity(16),
+        semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2), //@estimate better count
     };
 
     semantic_visit_node(server, &mut builder, tree.root(), tree, None);
     builder.semantic_tokens
+}
+
+fn name_id(
+    pool: &mut InternPool<NameID>,
+    tree: &SyntaxTree,
+    file: &FileData,
+    name: cst::Name,
+) -> NameID {
+    let name_range = name.ident(tree).unwrap();
+    let name_text = &file.source[name_range.as_usize()];
+    pool.intern(name_text)
+}
+
+fn semantic_visit_path(
+    server: &mut ServerContext,
+    builder: &mut SemanticTokenBuilder,
+    path: cst::Path,
+    tree: &SyntaxTree,
+    parent: SyntaxKind,
+) {
+    let module = server.session.module.get(builder.module_id);
+    let file = server.session.vfs.file(module.file_id());
+    let data = &server.modules[builder.module_id.index()];
+    let mut segments = path.segments(tree);
+
+    if let Some(first) = segments.next() {
+        let style = if let Some(name) = first.name(tree) {
+            let id = name_id(&mut server.session.intern_name, tree, file, name);
+            let mut symbol = data.symbols.get(&id).copied();
+            if symbol.is_none() {
+                if builder.params_in_scope.iter().any(|&n| n == id) {
+                    symbol = Some(SemanticToken::Parameter);
+                }
+            }
+            symbol
+        } else {
+            None
+        };
+        semantic_visit_node(server, builder, first.0, tree, style);
+    }
+
+    for segment in segments.by_ref() {
+        let style =
+            if parent == SyntaxKind::TYPE_CUSTOM { Some(SemanticToken::Type) } else { None };
+        semantic_visit_node(server, builder, segment.0, tree, style);
+    }
+
+    // TYPE_CUSTOM
+    // EXPR_ITEM
+    // EXPR_STRUCT_INIT
+    // PAT_ITEM
 }
 
 fn semantic_visit_node(
@@ -613,10 +665,32 @@ fn semantic_visit_node(
     tree: &SyntaxTree,
     ident_style: Option<SemanticToken>,
 ) {
+    let parent = node.kind;
+
+    if cst::Item::cast(node).is_some() {
+        builder.params_in_scope.clear();
+    }
+    if let Some(params) = cst::ParamList::cast(node) {
+        for param in params.params(tree) {
+            if let Some(name) = param.name(tree) {
+                //@repetative way to get name_id
+                let module = server.session.module.get(builder.module_id);
+                let file = server.session.vfs.file(module.file_id());
+                let id = name_id(&mut server.session.intern_name, tree, file, name);
+                builder.params_in_scope.push(id);
+            }
+        }
+    }
+
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
                 let node = tree.node(node_id);
+
+                if let Some(path) = cst::Path::cast(node) {
+                    semantic_visit_path(server, builder, path, tree, parent);
+                    continue;
+                }
 
                 let ident_style = match node.kind {
                     SyntaxKind::PROC_ITEM => Some(SemanticToken::Function),
@@ -654,7 +728,6 @@ fn semantic_visit_node(
 
                     SyntaxKind::NAME => ident_style,
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
-                    SyntaxKind::PATH_SEGMENT => ident_style.or(Some(SemanticToken::Property)),
                     SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
                     _ => None,
                 };
