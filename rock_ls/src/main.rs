@@ -661,7 +661,6 @@ fn semantic_visit_node(
 
                 semantic_visit_node(server, builder, node, tree, ident_style);
             }
-            //@color void differently (type vs void literal, number color?)
             NodeOrToken::Token(token_id) => {
                 let (token, range) = tree.tokens().token_and_range(token_id);
                 if let Some(semantic) = semantic_token_style(token, node.kind, ident_style) {
@@ -749,7 +748,7 @@ fn semantic_token_style(
         T![null] | T![true] | T![false] => SemanticToken::Number,
         T![if] | T![else] | T![match] | T![as] => SemanticToken::Keyword,
         T![_] => SemanticToken::Parameter,
-        
+
         T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
         T![u8] | T![u16] | T![u32] | T![u64] | T![usize] |
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] | T![char] |
