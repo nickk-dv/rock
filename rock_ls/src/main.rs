@@ -590,6 +590,15 @@ struct SemanticTokenBuilder {
     semantic_tokens: Vec<lsp::SemanticToken>,
 }
 
+enum Symbol {
+    Proc,
+    Enum,
+    Struct,
+    Const,
+    Global,
+    Module(ModuleID),
+}
+
 fn semantic_tokens(
     server: &mut ServerContext,
     tree: &SyntaxTree,
@@ -628,34 +637,36 @@ fn semantic_visit_path(
     let module = server.session.module.get(builder.module_id);
     let file = server.session.vfs.file(module.file_id());
     let data = &server.modules[builder.module_id.index()];
-    let mut segments = path.segments(tree);
 
-    if let Some(first) = segments.next() {
-        let style = if let Some(name) = first.name(tree) {
-            let id = name_id(&mut server.session.intern_name, tree, file, name);
-            let mut symbol = data.symbols.get(&id).copied();
-            if symbol.is_none() {
-                if builder.params_in_scope.iter().any(|&n| n == id) {
-                    symbol = Some(SemanticToken::Parameter);
-                }
+    match parent {
+        SyntaxKind::TYPE_CUSTOM | SyntaxKind::EXPR_STRUCT_INIT => {
+            let mut segments = path.segments(tree);
+
+            if let Some(first) = segments.next() {
+                let style = if let Some(name) = first.name(tree) {
+                    let id = name_id(&mut server.session.intern_name, tree, file, name);
+                    match data.symbols.get(&id).copied() {
+                        symbol @ Some(SemanticToken::Namespace) => symbol,
+                        _ => Some(SemanticToken::Type),
+                    }
+                } else {
+                    None
+                };
+                semantic_visit_node(server, builder, first.0, tree, style);
             }
-            symbol
-        } else {
-            None
-        };
-        semantic_visit_node(server, builder, first.0, tree, style);
-    }
 
-    for segment in segments.by_ref() {
-        let style =
-            if parent == SyntaxKind::TYPE_CUSTOM { Some(SemanticToken::Type) } else { None };
-        semantic_visit_node(server, builder, segment.0, tree, style);
+            for segment in segments.by_ref() {
+                semantic_visit_node(server, builder, segment.0, tree, Some(SemanticToken::Type));
+            }
+        }
+        SyntaxKind::EXPR_ITEM | SyntaxKind::PAT_ITEM => {
+            //@maybe module
+            //@enum type, struct type, function, parameter, const var, global var, local var.
+            //@enum variant
+            //.. fields
+        }
+        _ => semantic_visit_node(server, builder, path.0, tree, None),
     }
-
-    // TYPE_CUSTOM
-    // EXPR_ITEM
-    // EXPR_STRUCT_INIT
-    // PAT_ITEM
 }
 
 fn semantic_visit_node(
