@@ -1,5 +1,5 @@
 mod graph;
-mod vfs;
+pub mod vfs;
 
 use crate::ast::Ast;
 use crate::config::Config;
