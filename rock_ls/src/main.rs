@@ -725,36 +725,76 @@ fn semantic_visit_path(
     builder: &mut SemanticTokenBuilder,
     path: cst::Path,
     tree: &SyntaxTree,
-    parent: SyntaxKind,
+    mut parent: SyntaxKind,
 ) {
-    let data = &server.modules[builder.module_id.index()];
+    let mut origin_id = builder.module_id;
+    let mut segments = path.segments(tree).peekable();
+
+    if let Some(first) = segments.peek() {
+        if let Some(name) = first.name(tree) {
+            let id = name_id(&mut server.session, builder.module_id, tree, name);
+            let data = &server.modules[origin_id.index()];
+
+            if let Some(Symbol::Module(module_id)) = data.symbols.get(&id).copied() {
+                let style = Some(SemanticToken::Namespace);
+                semantic_visit_node(server, builder, first.0, tree, style);
+
+                segments.next();
+                if let Some(module_id) = module_id {
+                    origin_id = module_id;
+                } else {
+                    eprintln!("unknown module symbol found");
+                    parent = SyntaxKind::ERROR;
+                }
+            }
+        }
+    }
+
+    let data = &server.modules[origin_id.index()];
 
     match parent {
         SyntaxKind::TYPE_CUSTOM | SyntaxKind::EXPR_STRUCT_INIT => {
-            let mut segments = path.segments(tree);
-
-            if let Some(first) = segments.next() {
-                let style = if let Some(name) = first.name(tree) {
-                    let id = name_id(&mut server.session, builder.module_id, tree, name);
-                    match data.symbols.get(&id).copied() {
-                        Some(Symbol::Module(_)) => Some(SemanticToken::Namespace),
-                        _ => Some(SemanticToken::Type),
-                    }
-                } else {
-                    None
-                };
-                semantic_visit_node(server, builder, first.0, tree, style);
-            }
-
             for segment in segments.by_ref() {
                 semantic_visit_node(server, builder, segment.0, tree, Some(SemanticToken::Type));
             }
         }
         SyntaxKind::EXPR_ITEM | SyntaxKind::PAT_ITEM => {
-            //@maybe module
-            //@enum type, struct type, function, parameter, const var, global var, local var.
-            //@enum variant
-            //.. fields
+            let mut is_enum = false;
+
+            if let Some(segment) = segments.next() {
+                if let Some(name) = segment.name(tree) {
+                    let id = name_id(&mut server.session, builder.module_id, tree, name);
+                    let style = if let Some(symbol) = data.symbols.get(&id).copied() {
+                        Some(match symbol {
+                            Symbol::Proc => SemanticToken::Function,
+                            Symbol::Enum => {
+                                is_enum = true;
+                                SemanticToken::Type
+                            }
+                            Symbol::Struct => SemanticToken::Type,
+                            Symbol::Const | Symbol::Global => SemanticToken::Variable,
+                            Symbol::Module(_) => SemanticToken::Namespace,
+                        })
+                    } else if builder.params_in_scope.iter().any(|&n| n == id) {
+                        Some(SemanticToken::Parameter)
+                    } else {
+                        None
+                    };
+                    semantic_visit_node(server, builder, segment.0, tree, style);
+                }
+            }
+
+            if is_enum {
+                let style = Some(SemanticToken::EnumMember);
+                if let Some(segment) = segments.next() {
+                    semantic_visit_node(server, builder, segment.0, tree, style);
+                }
+            }
+
+            for segment in segments.by_ref() {
+                let style = Some(SemanticToken::Property);
+                semantic_visit_node(server, builder, segment.0, tree, style);
+            }
         }
         _ => semantic_visit_node(server, builder, path.0, tree, None),
     }
