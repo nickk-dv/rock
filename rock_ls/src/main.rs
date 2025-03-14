@@ -764,6 +764,7 @@ fn semantic_visit_path(
             if let Some(segment) = segments.next() {
                 if let Some(name) = segment.name(tree) {
                     let id = name_id(&mut server.session, builder.module_id, tree, name);
+
                     let style = if let Some(symbol) = data.symbols.get(&id).copied() {
                         Some(match symbol {
                             Symbol::Proc => SemanticToken::Function,
@@ -800,6 +801,43 @@ fn semantic_visit_path(
     }
 }
 
+fn semantic_visit_import_symbols(
+    server: &mut ServerContext,
+    builder: &mut SemanticTokenBuilder,
+    symbols: cst::ImportSymbolList,
+    tree: &SyntaxTree,
+) {
+    for symbol in symbols.import_symbols(tree) {
+        let mut name = match symbol.name(tree) {
+            Some(name) => name,
+            None => {
+                semantic_visit_node(server, builder, symbol.0, tree, None);
+                continue;
+            }
+        };
+        if let Some(rename) = symbol.rename(tree) {
+            if let Some(rename) = rename.alias(tree) {
+                name = rename;
+            }
+        }
+
+        let data = &server.modules[builder.module_id.index()];
+        let id = name_id(&mut server.session, builder.module_id, tree, name);
+
+        let style = if let Some(symbol) = data.symbols.get(&id).copied() {
+            Some(match symbol {
+                Symbol::Proc => SemanticToken::Function,
+                Symbol::Enum | Symbol::Struct => SemanticToken::Type,
+                Symbol::Const | Symbol::Global => SemanticToken::Variable,
+                Symbol::Module(_) => SemanticToken::Namespace,
+            })
+        } else {
+            None
+        };
+        semantic_visit_node(server, builder, symbol.0, tree, style);
+    }
+}
+
 fn semantic_visit_node(
     server: &mut ServerContext,
     builder: &mut SemanticTokenBuilder,
@@ -829,6 +867,9 @@ fn semantic_visit_node(
                 if let Some(path) = cst::Path::cast(node) {
                     semantic_visit_path(server, builder, path, tree, parent);
                     continue;
+                } else if let Some(symbols) = cst::ImportSymbolList::cast(node) {
+                    semantic_visit_import_symbols(server, builder, symbols, tree);
+                    continue;
                 }
 
                 let ident_style = match node.kind {
@@ -842,8 +883,8 @@ fn semantic_visit_node(
                     SyntaxKind::GLOBAL_ITEM => Some(SemanticToken::Variable),
                     SyntaxKind::IMPORT_ITEM => Some(SemanticToken::Namespace),
                     SyntaxKind::IMPORT_PATH => Some(SemanticToken::Namespace),
-                    SyntaxKind::IMPORT_SYMBOL => None, //@todo based on symbol
-                    SyntaxKind::IMPORT_SYMBOL_RENAME => None, //@todo based on symbol
+                    SyntaxKind::IMPORT_SYMBOL => ident_style,
+                    SyntaxKind::IMPORT_SYMBOL_RENAME => ident_style,
 
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
                     SyntaxKind::BUILTIN_ERROR => Some(SemanticToken::Function),
@@ -856,13 +897,9 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_LOCAL => Some(SemanticToken::Variable),
 
                     SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
-                    SyntaxKind::EXPR_CALL => None, //@todo path
-                    SyntaxKind::EXPR_ITEM => None, //@todo path
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
-                    SyntaxKind::EXPR_STRUCT_INIT => None, //@todo path
                     SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
 
-                    SyntaxKind::PAT_ITEM => None, //@todo path
                     SyntaxKind::PAT_VARIANT => Some(SemanticToken::EnumMember),
 
                     SyntaxKind::NAME => ident_style,
