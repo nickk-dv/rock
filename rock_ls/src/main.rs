@@ -7,7 +7,6 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{InternPool, NameID};
-use rock_core::session::FileData;
 use rock_core::support::Timer;
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
@@ -506,8 +505,6 @@ use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax;
 use rock_core::text::{self, TextRange};
-
-use lsp::{DiagnosticRelatedInformation, Location, Position, PublishDiagnosticsParams, Range};
 use std::path::PathBuf;
 
 fn uri_to_path(uri: &lsp::Url) -> PathBuf {
@@ -540,24 +537,23 @@ fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
     }
 }
 
-fn source_to_range_and_path<'s, 'sref: 's>(
-    session: &'sref Session<'s>,
-    source: SourceRange,
-) -> (Range, &'s PathBuf) {
+fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
+    let module = session.module.get(source.module_id());
+    let file = session.vfs.file(module.file_id());
+    &file.path
+}
+
+fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
     let module = session.module.get(source.module_id());
     let file = session.vfs.file(module.file_id());
 
-    let start_location =
-        text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
-    let end_location =
-        text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
+    let start = text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
+    let end = text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
 
-    let range = Range::new(
-        Position::new(start_location.line() - 1, start_location.col() - 1),
-        Position::new(end_location.line() - 1, end_location.col() - 1),
-    );
-
-    (range, &file.path)
+    lsp::Range::new(
+        lsp::Position::new(start.line() - 1, start.col() - 1),
+        lsp::Position::new(end.line() - 1, end.col() - 1),
+    )
 }
 
 fn create_diagnostic(
@@ -569,10 +565,10 @@ fn create_diagnostic(
         DiagnosticData::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
         DiagnosticData::Context { main, info } => {
             if let Some(info) = info {
-                let (info_range, info_path) =
-                    source_to_range_and_path(session, info.context().src());
-                let related_info = DiagnosticRelatedInformation {
-                    location: Location::new(url_from_path(info_path), info_range),
+                let info_range = source_to_range(session, info.context().src());
+                let info_path = source_to_path(session, info.context().src());
+                let related_info = lsp::DiagnosticRelatedInformation {
+                    location: lsp::Location::new(url_from_path(info_path), info_range),
                     message: info.context().msg().to_string(),
                 };
                 (main, Some(vec![related_info]))
@@ -583,10 +579,10 @@ fn create_diagnostic(
         DiagnosticData::ContextVec { main, info_vec } => {
             let mut related_infos = Vec::with_capacity(info_vec.len());
             for info in info_vec {
-                let (info_range, info_path) =
-                    source_to_range_and_path(session, info.context().src());
-                let related_info = DiagnosticRelatedInformation {
-                    location: Location::new(url_from_path(info_path), info_range),
+                let info_range = source_to_range(session, info.context().src());
+                let info_path = source_to_path(session, info.context().src());
+                let related_info = lsp::DiagnosticRelatedInformation {
+                    location: lsp::Location::new(url_from_path(info_path), info_range),
                     message: info.context().msg().to_string(),
                 };
                 related_infos.push(related_info);
@@ -595,8 +591,6 @@ fn create_diagnostic(
         }
     };
 
-    let (main_range, main_path) = source_to_range_and_path(session, main.src());
-
     let mut message = diagnostic.msg().as_str().to_string();
     if !main.msg().is_empty() {
         message.push('\n');
@@ -604,7 +598,7 @@ fn create_diagnostic(
     }
 
     let diagnostic = lsp::Diagnostic::new(
-        main_range,
+        source_to_range(session, main.src()),
         severity_convert(severity),
         None,
         None,
@@ -616,7 +610,7 @@ fn create_diagnostic(
     Some(diagnostic)
 }
 
-fn run_diagnostics(server: &mut ServerContext) -> Vec<PublishDiagnosticsParams> {
+fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsParams> {
     let session = &mut server.session;
     for module_id in session.module.ids() {
         let module = session.module.get_mut(module_id);
@@ -644,7 +638,8 @@ fn run_diagnostics(server: &mut ServerContext) -> Vec<PublishDiagnosticsParams> 
             }
         }
 
-        let publish = PublishDiagnosticsParams::new(url_from_path(&file.path), diagnostics, None);
+        let publish =
+            lsp::PublishDiagnosticsParams::new(url_from_path(&file.path), diagnostics, None);
         publish_diagnostics.push(publish);
     }
 
