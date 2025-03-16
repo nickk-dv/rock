@@ -18,6 +18,30 @@ use ast_build::AstBuild;
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
+pub fn parse_root(session: &mut Session) -> Result<(), ()> {
+    let package = session.graph.package(session.root_id);
+
+    for module_id in package.module_ids().iter().copied() {
+        let module = session.module.get(module_id);
+        let file = session.vfs.file(module.file_id());
+
+        let tree_result =
+            parse_tree_complete(&file.source, module_id, true, &mut session.intern_lit);
+        let module = session.module.get_mut(module_id);
+
+        match tree_result {
+            Ok(tree) => {
+                session.stats.line_count += file.line_ranges.len() as u32;
+                session.stats.token_count += tree.tokens().token_count() as u32;
+                module.set_tree(tree);
+            }
+            Err(errors) => module.errors.replace_e(errors),
+        }
+    }
+    session.module.result()?;
+    Ok(())
+}
+
 pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);

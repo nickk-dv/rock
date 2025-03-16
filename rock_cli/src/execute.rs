@@ -280,12 +280,11 @@ fn fmt() -> Result<(), Error> {
     return Ok(());
 
     fn fmt_impl(session: &mut Session) -> Result<(), ()> {
-        //@only parse syntax trees for root package, instead of full session & parse
-        syntax::parse_all(session, true)?;
+        syntax::parse_root(session)?;
         let mut cache = format::FormatterCache::new();
 
-        let root_package = session.graph.package(session.root_id);
-        for module_id in root_package.module_ids().iter().copied() {
+        let package = session.graph.package(session.root_id);
+        for module_id in package.module_ids().iter().copied() {
             let module = session.module.get(module_id);
             let file = session.vfs.file(module.file_id());
 

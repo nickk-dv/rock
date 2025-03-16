@@ -177,8 +177,7 @@ fn print_context(
     let r = state.style.err.reset;
     let box_char = if last { '└' } else { '├' };
 
-    //@required for tests to be uniform, allocates
-    // long-term switch to custom utf8 pathbuf wrapper
+    // normalize windows and unix style path separators for tests to be uniform
     #[cfg(target_os = "windows")]
     let path_display = fmt.path.to_string_lossy().replace('\\', "/");
     #[cfg(not(target_os = "windows"))]
