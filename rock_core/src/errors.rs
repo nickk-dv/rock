@@ -142,9 +142,8 @@ pub fn session_src_not_found(path: &PathBuf) -> Error {
     Error::message(msg)
 }
 
-//@add more context information
-pub fn session_dep_on_bin() -> Error {
-    let msg = "cannot depend on a binary package";
+pub fn session_dep_on_bin(dep_path: &str, dep_name: &str, pkg_name: &str) -> Error {
+    let msg = format!("cannot depend on a binary package:\n`{dep_name}` located in `{dep_path}` depends on `{pkg_name}`");
     Error::message(msg)
 }
 

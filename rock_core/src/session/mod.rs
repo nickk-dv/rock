@@ -308,8 +308,15 @@ fn process_package(
     let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
     let name_id = session.intern_name.intern(&manifest.package.name);
 
-    if dep_from.is_some() && manifest.package.kind == PackageKind::Bin {
-        return Err(err::session_dep_on_bin());
+    if let Some(dep_id) = dep_from {
+        let dep = session.graph.package(dep_id);
+        let dep_path = dep.root_dir.to_str().unwrap_or("");
+        let dep_name = session.intern_name.get(dep.name_id);
+        let pkg_name = session.intern_name.get(name_id);
+
+        if manifest.package.kind == PackageKind::Bin {
+            return Err(err::session_dep_on_bin(dep_path, dep_name, pkg_name));
+        }
     }
 
     let package_id = session.graph.next_id();
