@@ -150,26 +150,23 @@ impl fmt::Debug for TextLocation {
     }
 }
 
-//@opt for re-using existing line_ranges Vec in Vfs
-//@opt lines().count() for exact capacity?
-pub fn find_line_ranges(text: &str) -> Vec<TextRange> {
-    let mut ranges = Vec::new();
+pub fn find_line_ranges(line_ranges: &mut Vec<TextRange>, text: &str) {
+    line_ranges.clear();
     let mut range = TextRange::zero();
 
     for c in text.chars() {
-        let size: TextOffset = (c.len_utf8() as u32).into();
+        let size = (c.len_utf8() as u32).into();
         range.extend_by(size);
 
         if c == '\n' {
-            ranges.push(range);
+            line_ranges.push(range);
             range = TextRange::empty_at(range.end());
         }
     }
-    if !range.is_empty() {
-        ranges.push(range);
-    }
 
-    ranges
+    if !range.is_empty() {
+        line_ranges.push(range);
+    }
 }
 
 pub fn find_text_location(

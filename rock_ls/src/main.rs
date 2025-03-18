@@ -457,10 +457,10 @@ fn handle_notification(server: &mut ServerContext, not: Notification) {
                 if let Some(range) = change.range {
                     let range = text_ops::file_range_to_text_range(file, range);
                     file.source.replace_range(range.as_usize(), &change.text);
-                    file.line_ranges = text::find_line_ranges(&file.source); //@make incremental
+                    text::find_line_ranges(&mut file.line_ranges, &file.source);
                 } else {
                     file.source = change.text;
-                    file.line_ranges = text::find_line_ranges(&file.source);
+                    text::find_line_ranges(&mut file.line_ranges, &file.source);
                 }
             }
         }

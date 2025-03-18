@@ -35,19 +35,20 @@ impl Vfs {
 
     #[must_use]
     pub fn open<P: AsRef<Path>>(&mut self, path: P, source: String) -> FileID {
-        let line_ranges = text::find_line_ranges(source.as_str());
-
-        if let Some(&file_id) = self.paths.get(path.as_ref()) {
+        if let Some(file_id) = self.paths.get(path.as_ref()).copied() {
             //@what to do with version?
             let file = self.file_mut(file_id);
+            text::find_line_ranges(&mut file.line_ranges, &source);
             file.source = source;
-            file.line_ranges = line_ranges;
             file_id
         } else {
-            let file_id = FileID(self.files.len() as u32);
+            let mut line_ranges = Vec::with_capacity(source.lines().count());
+            text::find_line_ranges(&mut line_ranges, &source);
             let file =
                 FileData { version: 1, path: path.as_ref().to_path_buf(), source, line_ranges };
             assert!(file.path.is_absolute());
+
+            let file_id = FileID(self.files.len() as u32);
             self.files.push(file);
             self.paths.insert(path.as_ref().to_path_buf(), file_id);
             file_id
