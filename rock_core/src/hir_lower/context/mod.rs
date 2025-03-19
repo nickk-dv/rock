@@ -1,6 +1,7 @@
 pub mod registry;
 pub mod scope;
 
+use super::match_check::PatCov;
 use crate::ast;
 use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
 use crate::hir;
@@ -19,6 +20,7 @@ pub struct HirCtx<'hir, 's, 'sref> {
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
     pub session: &'sref mut Session<'s>,
     pub cache: Cache<'hir>,
+    pub pat: PatCov,
 }
 
 pub struct Cache<'hir> {
@@ -63,6 +65,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             enum_tag_set: HashMap::with_capacity(128),
             session,
             cache,
+            pat: PatCov::new(),
         }
     }
 
