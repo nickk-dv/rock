@@ -602,13 +602,13 @@ pub fn item_enum_duplicate_tag_value(
 pub fn path_not_expected(
     emit: &mut impl ErrorSink,
     src: SourceRange,
-    found_src: SourceRange,
+    defined_src: Option<SourceRange>,
     name: &str,
     expected: &'static str,
     found: &'static str,
 ) {
     let msg = format!("expected {expected}, found {found} `{name}`");
-    let info = Info::new("defined here", found_src);
+    let info = defined_src.map(|s| Info::new_val("defined here", s));
     emit.error(Error::new(msg, src, info));
 }
 

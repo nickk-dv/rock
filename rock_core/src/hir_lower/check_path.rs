@@ -174,7 +174,7 @@ pub fn path_resolve_type<'hir, 'ast>(
             }
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
+                let defined_src = Some(symbol_id.src(&ctx.registry));
                 let name = ctx.name(path.at_segment.name.id);
                 #[rustfmt::skip]
                 err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", symbol_id.desc());
@@ -183,16 +183,15 @@ pub fn path_resolve_type<'hir, 'ast>(
         },
         PathResolvedKind::Variable(var_id) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = ctx.scope.var_src(var_id);
+            let defined_src = Some(ctx.scope.var_src(var_id));
             let name = ctx.name(path.at_segment.name.id);
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", var_id.desc());
             return hir::Type::Error;
         }
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
             let name = ctx.name(path.at_segment.name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", "module");
+            err::path_not_expected(&mut ctx.emit, src, None, name, "type", "module");
             return hir::Type::Error;
         }
         PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
@@ -237,7 +236,6 @@ fn resolve_type_poly_args<'hir, 'ast>(
             }
         }
         (Some(poly_params), Some(poly_args)) => {
-            let mut poly_types = Vec::with_capacity(poly_params.len());
             let input_count = poly_args.types.len();
             let expected_count = poly_params.len();
 
@@ -251,16 +249,16 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 );
             }
 
+            let offset = ctx.cache.types.start();
             for idx in 0..poly_params.len() {
                 let ty = if let Some(arg_type) = poly_args.types.get(idx) {
                     super::pass_3::type_resolve(ctx, *arg_type, require_poly)
                 } else {
                     hir::Type::Error
                 };
-                poly_types.push(ty);
+                ctx.cache.types.push(ty);
             }
-
-            ctx.arena.alloc_slice(&poly_types)
+            ctx.cache.types.take(offset, &mut ctx.arena)
         }
     }
 }
@@ -289,7 +287,7 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
             SymbolID::Struct(struct_id) => struct_id,
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
+                let defined_src = Some(symbol_id.src(&ctx.registry));
                 let name = ctx.name(path.at_segment.name.id);
                 #[rustfmt::skip]
                 err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", symbol_id.desc());
@@ -298,21 +296,20 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
         },
         PathResolvedKind::Variable(var_id) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = ctx.scope.var_src(var_id);
+            let defined_src = Some(ctx.scope.var_src(var_id));
             let name = ctx.name(path.at_segment.name.id);
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", var_id.desc());
             return None;
         }
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
             let name = ctx.name(path.at_segment.name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "module");
+            err::path_not_expected(&mut ctx.emit, src, None, name, "struct", "module");
             return None;
         }
         PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
+            let defined_src = Some(ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range));
             let name = ctx.name(path.at_segment.name.id);
             #[rustfmt::skip]
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "type parameter");
@@ -364,7 +361,7 @@ pub fn path_resolve_value<'ast>(
                     }
                 } else {
                     let src = ctx.src(path.at_segment.name.range);
-                    let defined_src = symbol_id.src(&ctx.registry);
+                    let defined_src = Some(symbol_id.src(&ctx.registry));
                     let name = ctx.name(path.at_segment.name.id);
                     err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "enum");
                     ValueID::None
@@ -372,7 +369,7 @@ pub fn path_resolve_value<'ast>(
             }
             SymbolID::Struct(_) => {
                 let src = ctx.src(path.at_segment.name.range);
-                let defined_src = symbol_id.src(&ctx.registry);
+                let defined_src = Some(symbol_id.src(&ctx.registry));
                 let name = ctx.name(path.at_segment.name.id);
                 err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "struct");
                 ValueID::None
@@ -386,14 +383,13 @@ pub fn path_resolve_value<'ast>(
         },
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = src; //@no src avaiblable, store imported src
             let name = ctx.name(path.at_segment.name.id);
-            err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "module");
+            err::path_not_expected(&mut ctx.emit, src, None, name, "value", "module");
             ValueID::None
         }
         PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range);
+            let defined_src = Some(ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range));
             let name = ctx.name(path.at_segment.name.id);
             #[rustfmt::skip]
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "type parameter");
