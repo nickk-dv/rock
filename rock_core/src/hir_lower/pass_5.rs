@@ -874,6 +874,7 @@ fn check_field_from_struct<'hir>(
         let data = ctx.registry.struct_data(struct_id);
         let field = data.field(field_id);
 
+        //@check for field package vis in 2 places in this file
         if ctx.scope.origin() != data.origin_id && field.vis == hir::Vis::Private {
             let src = ctx.src(name.range);
             let field_name = ctx.name(name.id);

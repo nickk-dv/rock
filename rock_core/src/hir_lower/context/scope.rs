@@ -236,6 +236,25 @@ impl GlobalScope {
                 let vis = symbol_id.vis(registry);
                 return match vis {
                     hir::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
+                    hir::Vis::Package => {
+                        let origin_package_id = session.module.get(origin_id).origin();
+                        let target_package_id = session.module.get(target_id).origin();
+                        if origin_package_id != target_package_id {
+                            let name_src = SourceRange::new(origin_id, name.range);
+                            let defined_src = symbol_id.src(registry);
+                            let name = session.intern_name.get(name.id);
+                            err::scope_symbol_package_vis(
+                                emit,
+                                name_src,
+                                defined_src,
+                                name,
+                                symbol_id.desc(),
+                            );
+                            Err(())
+                        } else {
+                            Ok(SymbolOrModule::Symbol(symbol_id))
+                        }
+                    }
                     hir::Vis::Private => {
                         let name_src = SourceRange::new(origin_id, name.range);
                         let defined_src = symbol_id.src(registry);

@@ -454,6 +454,7 @@ crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum Vis {
         Public "public",
+        Package "package",
         Private "private",
     }
 }

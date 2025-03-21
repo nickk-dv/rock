@@ -305,6 +305,18 @@ pub fn scope_symbol_is_private(
     emit.error(Error::new(msg, name_src, info));
 }
 
+pub fn scope_symbol_package_vis(
+    emit: &mut impl ErrorSink,
+    name_src: SourceRange,
+    defined_src: SourceRange,
+    name: &str,
+    symbol_kind: &'static str,
+) {
+    let msg = format!("{symbol_kind} `{name}` has package visibility");
+    let info = Info::new("defined here", defined_src);
+    emit.error(Error::new(msg, name_src, info));
+}
+
 pub fn scope_symbol_not_found(
     emit: &mut impl ErrorSink,
     name_src: SourceRange,

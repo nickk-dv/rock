@@ -244,7 +244,7 @@ fn check_directive_item<'ast>(
     }
     let new_vis = match scope_dir.kind {
         ast::DirectiveKind::ScopePublic => hir::Vis::Public,
-        ast::DirectiveKind::ScopePackage => hir::Vis::Public, //@introduce `package` vis
+        ast::DirectiveKind::ScopePackage => hir::Vis::Package,
         ast::DirectiveKind::ScopePrivate => hir::Vis::Private,
         _ => unreachable!(),
     };
