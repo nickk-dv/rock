@@ -293,7 +293,7 @@ pub fn scope_name_already_defined(
     emit.error(Error::new(msg, name_src, info));
 }
 
-pub fn scope_symbol_is_private(
+pub fn scope_symbol_private_vis(
     emit: &mut impl ErrorSink,
     name_src: SourceRange,
     defined_src: SourceRange,
@@ -853,17 +853,6 @@ pub fn tycheck_pat_runtime_value(emit: &mut impl ErrorSink, src: SourceRange) {
 pub fn tycheck_pat_in_or_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot use named bindings in `or` patterns, use `_`";
     emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_field_is_private(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    field_name: &str,
-    field_src: SourceRange,
-) {
-    let msg = format!("field `{field_name}` is private");
-    let info = Info::new("defined here", field_src);
-    emit.error(Error::new(msg, src, info));
 }
 
 pub fn tycheck_field_not_found_ty(

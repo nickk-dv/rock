@@ -229,17 +229,15 @@ impl GlobalScope {
 
         match target.symbols.get(&name.id).copied() {
             Some(Symbol::Defined(symbol_id)) => {
-                if origin_id == target_id {
-                    return Ok(SymbolOrModule::Symbol(symbol_id));
-                }
-
-                let vis = symbol_id.vis(registry);
-                return match vis {
+                return match symbol_id.vis(registry) {
                     hir::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
                     hir::Vis::Package => {
                         let origin_package_id = session.module.get(origin_id).origin();
                         let target_package_id = session.module.get(target_id).origin();
-                        if origin_package_id != target_package_id {
+
+                        if origin_package_id == target_package_id {
+                            Ok(SymbolOrModule::Symbol(symbol_id))
+                        } else {
                             let name_src = SourceRange::new(origin_id, name.range);
                             let defined_src = symbol_id.src(registry);
                             let name = session.intern_name.get(name.id);
@@ -251,22 +249,24 @@ impl GlobalScope {
                                 symbol_id.desc(),
                             );
                             Err(())
-                        } else {
-                            Ok(SymbolOrModule::Symbol(symbol_id))
                         }
                     }
                     hir::Vis::Private => {
-                        let name_src = SourceRange::new(origin_id, name.range);
-                        let defined_src = symbol_id.src(registry);
-                        let name = session.intern_name.get(name.id);
-                        err::scope_symbol_is_private(
-                            emit,
-                            name_src,
-                            defined_src,
-                            name,
-                            symbol_id.desc(),
-                        );
-                        Err(())
+                        if origin_id == target_id {
+                            Ok(SymbolOrModule::Symbol(symbol_id))
+                        } else {
+                            let name_src = SourceRange::new(origin_id, name.range);
+                            let defined_src = symbol_id.src(registry);
+                            let name = session.intern_name.get(name.id);
+                            err::scope_symbol_private_vis(
+                                emit,
+                                name_src,
+                                defined_src,
+                                name,
+                                symbol_id.desc(),
+                            );
+                            Err(())
+                        }
                     }
                 };
             }
@@ -571,18 +571,24 @@ pub fn check_find_enum_variant(
     enum_id: hir::EnumID,
     name: ast::Name,
 ) -> Option<hir::VariantID> {
-    let enum_data = ctx.registry.enum_data(enum_id);
-    for (idx, variant) in enum_data.variants.iter().enumerate() {
-        if variant.name.id == name.id {
-            return Some(hir::VariantID::new(idx));
-        }
+    let data = ctx.registry.enum_data(enum_id);
+
+    let variant_id = data
+        .variants
+        .iter()
+        .enumerate()
+        .find(|(_, v)| v.name.id == name.id)
+        .map(|(i, _)| hir::VariantID::new(i));
+
+    if variant_id.is_none() {
+        let src = ctx.src(name.range);
+        let enum_src = data.src();
+        let name = ctx.name(name.id);
+        let enum_name = ctx.name(data.name.id);
+        err::scope_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
     }
-    let src = ctx.src(name.range);
-    let enum_src = enum_data.src();
-    let name = ctx.name(name.id);
-    let enum_name = ctx.name(enum_data.name.id);
-    err::scope_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
-    None
+
+    variant_id
 }
 
 pub fn check_find_struct_field(
@@ -590,16 +596,60 @@ pub fn check_find_struct_field(
     struct_id: hir::StructID,
     name: ast::Name,
 ) -> Option<hir::FieldID> {
-    let struct_data = ctx.registry.struct_data(struct_id);
-    for (idx, field) in struct_data.fields.iter().enumerate() {
-        if field.name.id == name.id {
-            return Some(hir::FieldID::new(idx));
+    let data = ctx.registry.struct_data(struct_id);
+
+    let field_id = data
+        .fields
+        .iter()
+        .enumerate()
+        .find(|(_, f)| f.name.id == name.id)
+        .map(|(i, _)| hir::FieldID::new(i));
+
+    if field_id.is_none() {
+        let src = ctx.src(name.range);
+        let struct_src = data.src();
+        let name = ctx.name(name.id);
+        let struct_name = ctx.name(data.name.id);
+        err::scope_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name)
+    }
+
+    let field_id = field_id?;
+    let field = data.field(field_id);
+
+    match field.vis {
+        hir::Vis::Public => {}
+        hir::Vis::Package => {
+            let origin_package_id = ctx.session.module.get(ctx.scope.origin()).origin();
+            let struct_package_id = ctx.session.module.get(data.origin_id).origin();
+
+            if origin_package_id != struct_package_id {
+                let name_src = ctx.src(name.range);
+                let defined_src = SourceRange::new(data.origin_id, field.name.range);
+                let field_name = ctx.name(field.name.id);
+                err::scope_symbol_package_vis(
+                    &mut ctx.emit,
+                    name_src,
+                    defined_src,
+                    field_name,
+                    "field",
+                );
+            }
+        }
+        hir::Vis::Private => {
+            if ctx.scope.origin() != data.origin_id {
+                let name_src = ctx.src(name.range);
+                let defined_src = SourceRange::new(data.origin_id, field.name.range);
+                let field_name = ctx.name(field.name.id);
+                err::scope_symbol_private_vis(
+                    &mut ctx.emit,
+                    name_src,
+                    defined_src,
+                    field_name,
+                    "field",
+                );
+            }
         }
     }
-    let src = ctx.src(name.range);
-    let struct_src = struct_data.src();
-    let name = ctx.name(name.id);
-    let struct_name = ctx.name(struct_data.name.id);
-    err::scope_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name);
-    None
+
+    Some(field_id)
 }

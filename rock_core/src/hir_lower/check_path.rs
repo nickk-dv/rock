@@ -272,7 +272,10 @@ fn poly_args_range(poly_args: &ast::PolymorphArgs) -> TextRange {
     }
 }
 
-pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::StructID> {
+pub fn path_resolve_struct<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
+    path: &ast::Path<'ast>,
+) -> Option<hir::StructID> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return None,
@@ -283,8 +286,18 @@ pub fn path_resolve_struct(ctx: &mut HirCtx, path: &ast::Path) -> Option<hir::St
 
     let struct_id = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            //@check input poly_args
-            SymbolID::Struct(struct_id) => struct_id,
+            SymbolID::Struct(struct_id) => {
+                let data = ctx.registry.struct_data(struct_id);
+                let poly_types = resolve_type_poly_args(
+                    ctx,
+                    path.at_segment,
+                    data.poly_params,
+                    false,
+                    data.name,
+                    "struct",
+                );
+                struct_id
+            }
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
                 let defined_src = Some(symbol_id.src(&ctx.registry));
@@ -344,7 +357,6 @@ pub fn path_resolve_value<'ast>(
                     ValueID::Proc(proc_id)
                 }
             }
-            //@obtain input poly_args from path_resolve
             SymbolID::Enum(enum_id) => {
                 if let Some(next) = path.names.first().copied() {
                     if let Some(variant_id) =
@@ -354,6 +366,15 @@ pub fn path_resolve_value<'ast>(
                         if check_unexpected_segments(ctx, names, "enum variant").is_err() {
                             ValueID::None
                         } else {
+                            let data = ctx.registry.enum_data(enum_id);
+                            let poly_types = resolve_type_poly_args(
+                                ctx,
+                                path.at_segment,
+                                data.poly_params,
+                                false,
+                                data.name,
+                                "enum",
+                            );
                             ValueID::Enum(enum_id, variant_id)
                         }
                     } else {

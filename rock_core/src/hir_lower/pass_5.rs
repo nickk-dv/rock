@@ -828,14 +828,17 @@ fn check_field_from_type<'hir>(
             }
         }
         //@gen types not handled
-        hir::Type::Struct(struct_id, _) => match check_field_from_struct(ctx, struct_id, name) {
-            Some((field_id, field)) => {
-                let kind = FieldKind::Struct(struct_id, field_id);
-                let field_ty = field.ty;
-                FieldResult::new(deref, kind, field_ty)
+        hir::Type::Struct(struct_id, _) => {
+            match scope::check_find_struct_field(ctx, struct_id, name) {
+                Some(field_id) => {
+                    let data = ctx.registry.struct_data(struct_id);
+                    let field = data.field(field_id);
+                    let kind = FieldKind::Struct(struct_id, field_id);
+                    FieldResult::new(deref, kind, field.ty)
+                }
+                None => FieldResult::error(),
             }
-            None => FieldResult::error(),
-        },
+        }
         hir::Type::ArraySlice(slice) => match check_field_from_slice(ctx, name) {
             Some(field) => {
                 let kind = FieldKind::ArraySlice { field };
@@ -862,28 +865,6 @@ fn check_field_from_type<'hir>(
             err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, ty_fmt.as_str());
             FieldResult::error()
         }
-    }
-}
-
-fn check_field_from_struct<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    struct_id: hir::StructID,
-    name: ast::Name,
-) -> Option<(hir::FieldID, &'hir hir::Field<'hir>)> {
-    if let Some(field_id) = scope::check_find_struct_field(ctx, struct_id, name) {
-        let data = ctx.registry.struct_data(struct_id);
-        let field = data.field(field_id);
-
-        //@check for field package vis in 2 places in this file
-        if ctx.scope.origin() != data.origin_id && field.vis == hir::Vis::Private {
-            let src = ctx.src(name.range);
-            let field_name = ctx.name(name.id);
-            let field_src = SourceRange::new(data.origin_id, field.name.range);
-            err::tycheck_field_is_private(&mut ctx.emit, src, field_name, field_src);
-        }
-        Some((field_id, field))
-    } else {
-        None
     }
 }
 
@@ -1614,13 +1595,6 @@ fn typecheck_struct_init<'hir, 'ast>(
             let field_name = ctx.name(input.name.id);
             err::tycheck_field_already_initialized(&mut ctx.emit, src, prev_src, field_name);
         } else {
-            if ctx.scope.origin() != struct_origin_id && field.vis == hir::Vis::Private {
-                let src = ctx.src(input.name.range);
-                let field_name = ctx.name(input.name.id);
-                let field_src = SourceRange::new(struct_origin_id, field.name.range);
-                err::tycheck_field_is_private(&mut ctx.emit, src, field_name, field_src);
-            }
-
             let field_init = hir::FieldInit { field_id, expr: input_res.expr };
             ctx.cache.field_inits.push(field_init);
             field_status[field_id.index()] = FieldStatus::Init(input.name.range);
