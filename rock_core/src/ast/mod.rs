@@ -478,7 +478,6 @@ pub enum Mut {
     Immutable,
 }
 
-//@reorder same as hir::Type?
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum BasicType {
@@ -498,12 +497,12 @@ crate::enum_as_str! {
         Bool16 "bool16",
         Bool32 "bool32",
         Bool64 "bool64",
-        Char "char",
-        Rawptr "rawptr",
-        Void "void",
-        Never "never",
         String "string",
         CString "cstring",
+        Char "char",
+        Void "void",
+        Never "never",
+        Rawptr "rawptr",
     }
 }
 

@@ -409,12 +409,12 @@ token_gen! {
     [bool16]   | "bool16"   | KwBool16   | BASIC[BasicType::Bool16]
     [bool32]   | "bool32"   | KwBool32   | BASIC[BasicType::Bool32]
     [bool64]   | "bool64"   | KwBool64   | BASIC[BasicType::Bool64]
-    [char]     | "char"     | KwChar     | BASIC[BasicType::Char]
-    [rawptr]   | "rawptr"   | KwRawptr   | BASIC[BasicType::Rawptr]
-    [void]     | "void"     | KwVoid     | BASIC[BasicType::Void]
-    [never]    | "never"    | KwNever    | BASIC[BasicType::Never]
     [string]   | "string"   | KwString   | BASIC[BasicType::String]
     [cstring]  | "cstring"  | KwCstring  | BASIC[BasicType::CString]
+    [char]     | "char"     | KwChar     | BASIC[BasicType::Char]
+    [void]     | "void"     | KwVoid     | BASIC[BasicType::Void]
+    [never]    | "never"    | KwNever    | BASIC[BasicType::Never]
+    [rawptr]   | "rawptr"   | KwRawptr   | BASIC[BasicType::Rawptr]
 
     // single punctuation
     [.]      | "."      | Dot          |
