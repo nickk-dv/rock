@@ -883,8 +883,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 let data = ctx.registry.enum_data(enum_id);
                 let variant = data.variant(variant_id);
 
-                //@variant is set to `ResolvedError` if tag_ty is not known (safe to unwrap)
-                let tag_ty = data.tag_ty.resolved_unwrap();
+                let tag_ty = data.tag_ty.resolved_unwrap(); // if tag_ty not resolved, variant set to error in pass3
                 let expect = Expectation::HasType(hir::Type::Int(tag_ty), None);
 
                 match variant.kind {

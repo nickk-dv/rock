@@ -511,9 +511,6 @@ impl PatCovEnum {
     }
 }
 
-//@design: are ranges where start > end
-// considered empty or just reversed?
-// currently flipping them to have accending ordering
 #[derive(Copy, Clone)]
 struct RangeInc<T> {
     start: T,
@@ -530,11 +527,7 @@ where
     T: Copy + Clone + PartialEq + Ord,
 {
     fn new(start: T, end: T) -> RangeInc<T> {
-        if start < end {
-            RangeInc { start, end }
-        } else {
-            RangeInc { start: end, end: start }
-        }
+        RangeInc { start, end }
     }
     fn display(self) -> RangeIncDisplay<T> {
         if self.start == self.end {

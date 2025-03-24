@@ -184,7 +184,6 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     }
 
     // when `tag_ty` is unknown: set all Evals to `ResolvedError`
-    //@not needed?
     if !tag_ty.is_resolved_ok() {
         for variant in ctx.cache.enum_variants.iter() {
             match variant.kind {
