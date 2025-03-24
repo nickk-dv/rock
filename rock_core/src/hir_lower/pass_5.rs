@@ -350,6 +350,7 @@ struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
     tail_range: Option<TextRange>,
+    diverges: bool, //@temp fix: used in for loop gen to not generate incrementing code
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -387,8 +388,9 @@ impl<'hir> BlockResult<'hir> {
         ty: hir::Type<'hir>,
         block: hir::Block<'hir>,
         tail_range: Option<TextRange>,
+        diverges: bool,
     ) -> BlockResult<'hir> {
-        BlockResult { ty, block, tail_range }
+        BlockResult { ty, block, tail_range, diverges }
     }
 
     fn into_type_result(self) -> TypeResult<'hir> {
@@ -2585,8 +2587,10 @@ fn typecheck_block<'hir, 'ast>(
                 // type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
-                // @seems to fix the problem (still a hack)
-                check_stmt_diverges(ctx, true, stmt.range);
+                // @seems to fix the problem (still a hack) - will_diverge was `true`
+
+                let will_diverge = expr_res.ty.is_never();
+                check_stmt_diverges(ctx, will_diverge, stmt.range);
                 block_tail_ty = Some(expr_res.ty);
                 block_tail_range = Some(expr.range);
                 stmt_res
@@ -2611,12 +2615,53 @@ fn typecheck_block<'hir, 'ast>(
                     }
                     _ => {}
                 }
+
+                if let hir::Stmt::Continue = stmt_res {
+                    let curr_block = ctx.scope.local.current_block();
+                    if let Some((var_id, op)) = curr_block.for_idx_change {
+                        let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
+                        let expr_one = ctx.arena.alloc(hir::Expr::Const {
+                            value: hir::ConstValue::Int {
+                                val: 1,
+                                neg: false,
+                                int_ty: IntType::Usize,
+                            },
+                        });
+                        let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                            op: hir::AssignOp::Bin(op),
+                            lhs: expr_var,
+                            rhs: expr_one,
+                            lhs_ty: hir::Type::Int(IntType::Usize),
+                        }));
+                        ctx.cache.stmts.push(index_change);
+                    }
+                    if let Some((var_id, int_ty)) = curr_block.for_value_change {
+                        let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
+                        let expr_one = ctx.arena.alloc(hir::Expr::Const {
+                            value: hir::ConstValue::Int { val: 1, neg: false, int_ty },
+                        });
+                        let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                            lhs: expr_var,
+                            rhs: expr_one,
+                            lhs_ty: hir::Type::Int(int_ty),
+                        }));
+                        ctx.cache.stmts.push(index_change);
+                    }
+                }
+
                 ctx.cache.stmts.push(stmt_res);
             }
             Diverges::AlwaysWarned => {}
         }
     }
 
+    let diverges = match ctx.scope.local.diverges() {
+        Diverges::Maybe => false,
+        Diverges::Always(_) | Diverges::AlwaysWarned => true,
+    };
+
+    //@can affect diverge status? "defer { panic(); }"
     // generate defer blocks on exit from non-diverging block
     if let Diverges::Maybe = ctx.scope.local.diverges() {
         for block in ctx.scope.local.defer_blocks_last().iter().copied().rev() {
@@ -2630,15 +2675,11 @@ fn typecheck_block<'hir, 'ast>(
 
     //@wip approach, will change 03.07.24
     let block_result = if let Some(block_ty) = block_tail_ty {
-        BlockResult::new(block_ty, hir_block, block_tail_range)
+        BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
     } else {
         //@potentially incorrect aproach, verify that `void`
         // as the expectation and block result ty are valid 29.05.24
-        let diverges = match ctx.scope.local.diverges() {
-            Diverges::Maybe => false,
-            Diverges::Always(_) => true,
-            Diverges::AlwaysWarned => true,
-        };
+
         //@change to last `}` range?
         // verify that all block are actual blocks in that case
         if !diverges {
@@ -2646,7 +2687,7 @@ fn typecheck_block<'hir, 'ast>(
         }
         //@hack but should be correct
         let block_ty = if diverges { hir::Type::Never } else { hir::Type::Void };
-        BlockResult::new(block_ty, hir_block, block_tail_range)
+        BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
     };
 
     ctx.scope.local.exit_block();
@@ -2838,12 +2879,13 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.start_block(BlockStatus::None);
             let value_id = ctx.scope.local.add_variable(value_var);
             let index_id = ctx.scope.local.add_variable(index_var);
+
+            let curr_block = ctx.scope.local.current_block_mut();
+            let index_change_op =
+                if header.reverse { hir::BinOp::Sub_Int } else { hir::BinOp::Add_Int };
+            curr_block.for_idx_change = Some((index_id, index_change_op));
+
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
-            // used to not insert index increment in forward iteration
-            let block_diverges = match ctx.scope.local.diverges() {
-                Diverges::Maybe => false,
-                Diverges::Always(_) | Diverges::AlwaysWarned => true,
-            };
             ctx.scope.local.exit_block();
 
             // iteration local:
@@ -2950,13 +2992,8 @@ fn typecheck_for<'hir, 'ast>(
                 init: hir::LocalInit::Init(value_initializer),
             }));
 
-            let index_change_op = if header.reverse {
-                hir::AssignOp::Bin(hir::BinOp::Sub_Int)
-            } else {
-                hir::AssignOp::Bin(hir::BinOp::Add_Int)
-            };
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: index_change_op,
+                op: hir::AssignOp::Bin(index_change_op),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
                 lhs_ty: hir::Type::Int(IntType::Usize),
@@ -2974,7 +3011,7 @@ fn typecheck_for<'hir, 'ast>(
                         stmt_for_block,
                     ]),
                 }
-            } else if block_diverges {
+            } else if block_res.diverges {
                 hir::Block {
                     stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_value_local, stmt_for_block]),
                 }
@@ -3085,12 +3122,12 @@ fn typecheck_for<'hir, 'ast>(
             let start_id = ctx.scope.local.add_variable(start_var);
             let end_id = ctx.scope.local.add_variable(end_var);
             let index_id = ctx.scope.local.add_variable(index_var);
+
+            let curr_block = ctx.scope.local.current_block_mut();
+            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int));
+            curr_block.for_value_change = Some((start_id, int_ty));
+
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
-            // used to not insert index increment
-            let block_diverges = match ctx.scope.local.diverges() {
-                Diverges::Maybe => false,
-                Diverges::Always(_) | Diverges::AlwaysWarned => true,
-            };
             ctx.scope.local.exit_block();
 
             // start, end, index locals:
@@ -3153,7 +3190,7 @@ fn typecheck_for<'hir, 'ast>(
             let expr_for_block = hir::Expr::Block { block: block_res.block };
             let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
 
-            let loop_block = if block_diverges {
+            let loop_block = if block_res.diverges {
                 hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_for_block]) }
             } else {
                 hir::Block {

@@ -69,11 +69,13 @@ pub enum LocalVariableID {
 }
 
 #[derive(Copy, Clone)]
-struct BlockData {
+pub struct BlockData {
     var_count: u32,
     defer_count: u32,
     status: BlockStatus,
     diverges: Diverges,
+    pub for_idx_change: Option<(hir::VariableID, hir::BinOp)>,
+    pub for_value_change: Option<(hir::VariableID, hir::IntType)>,
 }
 
 #[derive(Copy, Clone)]
@@ -325,6 +327,7 @@ impl GlobalScope {
     }
 }
 
+//@cleanup, remove useless wrappers, remove duplicated code
 impl<'hir> LocalScope<'hir> {
     fn new() -> LocalScope<'hir> {
         LocalScope {
@@ -371,7 +374,14 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn start_block(&mut self, status: BlockStatus) {
         let diverges = self.blocks.last().map(|b| b.diverges).unwrap_or(Diverges::Maybe);
-        let data = BlockData { var_count: 0, defer_count: 0, status, diverges };
+        let data = BlockData {
+            var_count: 0,
+            defer_count: 0,
+            status,
+            diverges,
+            for_idx_change: self.blocks.last().map(|b| b.for_idx_change).unwrap_or(None),
+            for_value_change: self.blocks.last().map(|b| b.for_value_change).unwrap_or(None),
+        };
         self.blocks.push(data);
     }
 
@@ -483,11 +493,11 @@ impl<'hir> LocalScope<'hir> {
     }
 
     #[inline]
-    fn current_block(&self) -> BlockData {
+    pub fn current_block(&self) -> BlockData {
         self.blocks.last().copied().unwrap()
     }
     #[inline]
-    fn current_block_mut(&mut self) -> &mut BlockData {
+    pub fn current_block_mut(&mut self) -> &mut BlockData {
         self.blocks.last_mut().unwrap()
     }
     #[inline]
