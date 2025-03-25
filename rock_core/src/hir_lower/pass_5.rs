@@ -621,7 +621,7 @@ fn typecheck_pat<'hir, 'ast>(
     ref_mut: Option<ast::Mut>,
     in_or_pat: bool,
 ) -> hir::Pat<'hir> {
-    let pat_res = match pat.kind {
+    let mut pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { expr } => typecheck_pat_lit(ctx, expect, expr),
         ast::PatKind::Item { path, bind_list } => {
@@ -632,6 +632,19 @@ fn typecheck_pat<'hir, 'ast>(
         }
         ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
+
+    //@temp hacky fix, using expression based promotion, refactor const value promotion
+    let with = expect.inner_type();
+    let expr = match pat_res.pat {
+        hir::Pat::Lit(value) => hir::Expr::Const { value },
+        _ => hir::Expr::Error,
+    };
+    let promoted = promote_untyped(ctx, pat.range, expr, &mut pat_res.pat_ty, with, true);
+    match promoted {
+        Some(Ok(value)) => pat_res.pat = hir::Pat::Lit(value),
+        Some(Err(())) => {} //@handle differently?
+        None => {}
+    }
 
     type_expectation_check(ctx, pat.range, pat_res.pat_ty, expect);
     pat_res.pat
