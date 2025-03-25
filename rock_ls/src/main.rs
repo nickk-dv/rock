@@ -155,55 +155,21 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
     }
 }
 
+//@update module errors in the session?
+fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
+    let module = session.module.get_mut(module_id);
+    let file = session.vfs.file(module.file_id());
+    if module.tree_version == file.version {
+        return;
+    }
+    let (tree, _) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
+    module.set_tree(tree);
+    module.tree_version = file.version;
+}
+
 fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
     match &req {
-        Request::Format(params) => {
-            let path = uri_to_path(&params.text_document.uri);
-            eprintln!("[Handle] Request::Format\n - document: {:?}", &path);
-
-            let session = &mut server.session;
-            let module_id = match module_id_from_path(session, &path) {
-                Some(module_id) => module_id,
-                None => {
-                    eprintln!(" - module not found by path");
-                    send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
-                    return;
-                }
-            };
-
-            //@hack always update the syntax tree before format
-            let module = session.module.get(module_id);
-            let file = session.vfs.file(module.file_id());
-            let (tree, errors) =
-                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
-            let _ = errors.collect();
-
-            let module = session.module.get_mut(module_id);
-            module.set_tree(tree);
-
-            let tree = module.tree_expect();
-            if !tree.complete() {
-                eprintln!(" - tree is incomplete"); //@remove?
-                send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
-                return;
-            }
-            let file = session.vfs.file(module.file_id());
-            let formatted = rock_core::syntax::format::format(
-                tree,
-                &file.source,
-                &file.line_ranges,
-                &mut server.fmt_cache,
-            );
-
-            //@hack overshoot by 1 line to ignore last line chars
-            let end_line = file.line_ranges.len() as u32 + 1;
-            let edit_start = lsp::Position::new(0, 0);
-            let edit_end = lsp::Position::new(end_line, 0);
-            let edit_range = lsp::Range::new(edit_start, edit_end);
-
-            let text_edit = lsp::TextEdit::new(edit_range, formatted);
-            send_response(server.conn, id, vec![text_edit]);
-        }
+        Request::Format(params) => handle_request_format(server, id, params),
         Request::SemanticTokens(params) => {
             let path = uri_to_path(&params.text_document.uri);
             eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
@@ -352,6 +318,39 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             send_response(server.conn, id, tree_display);
         }
     }
+}
+
+fn handle_request_format(
+    server: &mut ServerContext,
+    id: RequestId,
+    params: &lsp::DocumentFormattingParams,
+) {
+    let session = &mut server.session;
+    let path = uri_to_path(&params.text_document.uri);
+    let module_id = match module_id_from_path(session, &path) {
+        Some(module_id) => module_id,
+        None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
+    };
+
+    update_syntax_tree(session, module_id);
+    let module = session.module.get(module_id);
+    let tree = module.tree_expect();
+    if !tree.complete() {
+        return send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
+    }
+
+    let file = session.vfs.file(module.file_id());
+    let formatted = rock_core::syntax::format::format(
+        tree,
+        &file.source,
+        &file.line_ranges,
+        &mut server.fmt_cache,
+    );
+
+    let start = lsp::Position::new(0, 0);
+    let end = lsp::Position::new(file.line_ranges.len() as u32 + 1, 0);
+    let text_edit = lsp::TextEdit::new(lsp::Range::new(start, end), formatted);
+    send_response(server.conn, id, vec![text_edit]);
 }
 
 fn resolve_import_module(
