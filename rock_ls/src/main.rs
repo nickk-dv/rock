@@ -155,16 +155,16 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
     }
 }
 
-//@update module errors in the session?
 fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     let module = session.module.get_mut(module_id);
     let file = session.vfs.file(module.file_id());
     if module.tree_version == file.version {
         return;
     }
-    let (tree, _) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
+    let (tree, errors) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
     module.set_tree(tree);
     module.tree_version = file.version;
+    module.errors.replace_e(errors);
 }
 
 fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
@@ -561,7 +561,7 @@ fn create_diagnostic(
     severity: Severity,
 ) -> Option<lsp::Diagnostic> {
     let (main, related_info) = match diagnostic.data() {
-        DiagnosticData::Message => return None, //@some diagnostic messages dont have source for example session errors or manifest errors
+        DiagnosticData::Message => return None,
         DiagnosticData::Context { main, info } => {
             if let Some(info) = info {
                 let info_range = source_to_range(session, info.context().src());
@@ -613,10 +613,10 @@ fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsPar
     let session = &mut server.session;
     for module_id in session.module.ids() {
         let module = session.module.get_mut(module_id);
-        module.errors.clear();
+        module.errors.clear(); //@this clear removes errors produced by formatter syntax tree update
     }
 
-    let _ = check_impl(session);
+    let _ = check_impl(session); //@no new errors get set, since syntax tree version is up to date
     let mut publish_diagnostics = Vec::with_capacity(session.module.count());
 
     for module_id in session.module.ids() {

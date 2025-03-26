@@ -1,5 +1,4 @@
 pub mod manifest;
-pub mod resolver;
 pub mod semver;
 
 use crate::error::Error;

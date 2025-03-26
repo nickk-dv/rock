@@ -53,9 +53,9 @@ pub enum SymbolOrModule {
 //==================== LOCAL SCOPE ====================
 
 pub struct LocalScope<'hir> {
-    proc_id: Option<hir::ProcID>,
+    pub proc_id: Option<hir::ProcID>,
+    pub return_expect: Expectation<'hir>,
     params: &'hir [hir::Param<'hir>],
-    return_expect: Expectation<'hir>,
     blocks: Vec<BlockData>,
     variables: Vec<hir::Variable<'hir>>,
     variables_in_scope: Vec<hir::VariableID>,
@@ -327,13 +327,12 @@ impl GlobalScope {
     }
 }
 
-//@cleanup, remove useless wrappers, remove duplicated code
 impl<'hir> LocalScope<'hir> {
     fn new() -> LocalScope<'hir> {
         LocalScope {
             proc_id: None,
-            params: &[],
             return_expect: Expectation::None,
+            params: &[],
             blocks: Vec::with_capacity(32),
             variables: Vec::with_capacity(128),
             variables_in_scope: Vec::with_capacity(128),
@@ -343,11 +342,12 @@ impl<'hir> LocalScope<'hir> {
 
     pub fn reset(&mut self) {
         self.proc_id = None;
-        self.params = &[];
         self.return_expect = Expectation::None;
+        self.params = &[];
         self.blocks.clear();
         self.variables.clear();
         self.variables_in_scope.clear();
+        self.defer_blocks_in_scope.clear();
     }
 
     pub fn set_proc_context(
@@ -357,19 +357,12 @@ impl<'hir> LocalScope<'hir> {
         return_expect: Expectation<'hir>,
     ) {
         self.proc_id = proc_id;
-        self.params = params;
         self.return_expect = return_expect;
+        self.params = params;
     }
 
-    pub fn finish_proc_context(&self) -> &[hir::Variable<'hir>] {
+    pub fn end_proc_context(&self) -> &[hir::Variable<'hir>] {
         &self.variables
-    }
-
-    pub fn proc_id(&self) -> Option<hir::ProcID> {
-        self.proc_id
-    }
-    pub fn return_expect(&self) -> Expectation<'hir> {
-        self.return_expect
     }
 
     pub fn start_block(&mut self, status: BlockStatus) {

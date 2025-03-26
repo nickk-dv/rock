@@ -31,11 +31,10 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         ctx.scope.set_origin(data.origin_id);
         ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(proc_id)));
         ctx.scope.local.reset();
-        ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect); //shadowing params still added here
-        let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
+        ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
 
-        let variables = ctx.scope.local.finish_proc_context();
-        let variables = ctx.arena.alloc_slice(variables);
+        let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
+        let variables = ctx.arena.alloc_slice(ctx.scope.local.end_proc_context());
 
         let data = ctx.registry.proc_data_mut(proc_id);
         data.block = Some(block_res.block);
@@ -1399,7 +1398,7 @@ fn typecheck_directive<'hir, 'ast>(
                 }
             };
 
-            let proc_id = ctx.scope.local.proc_id().unwrap();
+            let proc_id = ctx.scope.local.proc_id.unwrap();
             let proc_data = ctx.registry.proc_data_mut(proc_id);
             proc_data.flag_set.set(hir::ProcFlag::CallerLocation);
 
@@ -2775,7 +2774,7 @@ fn typecheck_return<'hir, 'ast>(
         true
     };
 
-    let expect = ctx.scope.local.return_expect();
+    let expect = ctx.scope.local.return_expect;
     let expr = match expr {
         Some(expr) => {
             let expr_res = typecheck_expr(ctx, expect, expr);
