@@ -164,7 +164,7 @@ fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     let (tree, errors) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
     module.set_tree(tree);
     module.tree_version = file.version;
-    module.errors.replace_e(errors);
+    module.parse_errors = errors;
 }
 
 fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
@@ -612,20 +612,26 @@ fn create_diagnostic(
 fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsParams> {
     let session = &mut server.session;
     for module_id in session.module.ids() {
-        let module = session.module.get_mut(module_id);
-        module.errors.clear(); //@this clear removes errors produced by formatter syntax tree update
+        session.module.get_mut(module_id).errors.clear();
     }
 
-    let _ = check_impl(session); //@no new errors get set, since syntax tree version is up to date
+    let _ = check_impl(session);
     let mut publish_diagnostics = Vec::with_capacity(session.module.count());
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
 
-        let capacity = module.errors.errors.len() + module.errors.warnings.len();
+        let capacity = module.parse_errors.errors.len()
+            + module.errors.errors.len()
+            + module.errors.warnings.len();
         let mut diagnostics = Vec::with_capacity(capacity);
 
+        for error in &module.parse_errors.errors {
+            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
+                diagnostics.push(d);
+            }
+        }
         for error in &module.errors.errors {
             if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
                 diagnostics.push(d);

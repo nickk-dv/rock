@@ -3,7 +3,7 @@ pub mod vfs;
 
 use crate::ast::Ast;
 use crate::config::Config;
-use crate::error::{Error, ErrorSink, ErrorWarningBuffer};
+use crate::error::{Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::package;
@@ -56,6 +56,7 @@ pub struct Module<'s> {
     pub tree_version: u32,
     ast: Option<Ast<'s>>,
     pub ast_version: u32,
+    pub parse_errors: ErrorBuffer,
     pub errors: ErrorWarningBuffer,
 }
 
@@ -112,6 +113,9 @@ impl<'s> Modules<'s> {
 
     pub fn result(&self) -> Result<(), ()> {
         for module in &self.modules {
+            if module.parse_errors.did_error(0) {
+                return Err(());
+            }
             if module.errors.did_error(0) {
                 return Err(());
             }
@@ -394,6 +398,7 @@ fn process_module(
         origin, name_id, file_id,
         tree: None, tree_version: 0,
         ast: None, ast_version: 0,
+        parse_errors: ErrorBuffer::default(),
         errors: ErrorWarningBuffer::default(),
     };
     let module_id = session.module.add(module);

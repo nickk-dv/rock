@@ -35,7 +35,7 @@ pub fn parse_root(session: &mut Session) -> Result<(), ()> {
                 session.stats.token_count += tree.tokens().token_count() as u32;
                 module.set_tree(tree);
             }
-            Err(errors) => module.errors.replace_e(errors),
+            Err(errors) => module.parse_errors = errors,
         }
     }
     session.module.result()?;
@@ -57,7 +57,7 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
                 session.stats.token_count += tree.tokens().token_count() as u32;
                 module.set_tree(tree);
             }
-            Err(errors) => module.errors.replace_e(errors),
+            Err(errors) => module.parse_errors = errors,
         }
     }
     session.module.result()?;
@@ -92,7 +92,7 @@ pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) -> Result<(), ()>
         let module = session.module.get_mut(module_id);
         module.set_tree(tree);
         module.tree_version = file.version;
-        module.errors.replace_e(errors);
+        module.parse_errors = errors;
     }
     session.module.result()?;
 
