@@ -290,33 +290,7 @@ fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
             send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
             server.session.module.get_mut(module_id).set_tree(tree);
         }
-        Request::ShowSyntaxTree(params) => {
-            let path = uri_to_path(&params.text_document.uri);
-            eprintln!("[Handle] Request::ShowSyntaxTree\n - document: {:?}", &path);
-
-            let session = &mut server.session;
-            let module_id = match module_id_from_path(session, &path) {
-                Some(module_id) => module_id,
-                None => {
-                    eprintln!(" - module not found by path");
-                    return;
-                }
-            };
-
-            //@hack always update the syntax tree
-            let module = session.module.get(module_id);
-            let file = session.vfs.file(module.file_id());
-            let (tree, errors) =
-                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
-            let _ = errors.collect();
-
-            let module = session.module.get_mut(module_id);
-            module.set_tree(tree);
-            let tree = module.tree_expect();
-
-            let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
-            send_response(server.conn, id, tree_display);
-        }
+        Request::ShowSyntaxTree(params) => handle_request_show_syntax_tree(server, id, params),
     }
 }
 
@@ -333,6 +307,7 @@ fn handle_request_format(
     };
 
     update_syntax_tree(session, module_id);
+
     let module = session.module.get(module_id);
     let tree = module.tree_expect();
     if !tree.complete() {
@@ -351,6 +326,27 @@ fn handle_request_format(
     let end = lsp::Position::new(file.line_ranges.len() as u32 + 1, 0);
     let text_edit = lsp::TextEdit::new(lsp::Range::new(start, end), formatted);
     send_response(server.conn, id, vec![text_edit]);
+}
+
+fn handle_request_show_syntax_tree(
+    server: &mut ServerContext,
+    id: RequestId,
+    params: &message::ShowSyntaxTreeParams,
+) {
+    let session = &mut server.session;
+    let path = uri_to_path(&params.text_document.uri);
+    let module_id = match module_id_from_path(session, &path) {
+        Some(module_id) => module_id,
+        None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
+    };
+
+    update_syntax_tree(session, module_id);
+
+    let module = session.module.get(module_id);
+    let file = session.vfs.file(module.file_id());
+    let tree = module.tree_expect();
+    let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
+    send_response(server.conn, id, tree_display);
 }
 
 fn resolve_import_module(

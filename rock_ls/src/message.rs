@@ -45,7 +45,6 @@ impl lsp::request::Request for CustomShowSyntaxTree {
     const METHOD: &str = "custom/show_syntax_tree";
 }
 
-//@buffering only to avoid doing semantic tokens on each edit (16.12.24).
 impl MessageBuffer {
     pub fn new() -> MessageBuffer {
         MessageBuffer { messages: Vec::new() }
