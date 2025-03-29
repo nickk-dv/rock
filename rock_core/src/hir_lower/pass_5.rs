@@ -1210,7 +1210,7 @@ fn typecheck_cast<'hir, 'ast>(
             let into_size = layout::int_layout(ctx, into_ty).size;
 
             if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-                CastKind::Error //@maybe have custom message for this case
+                CastKind::Error
             } else {
                 match from_size.cmp(&into_size) {
                     Ordering::Less => {
@@ -1678,7 +1678,7 @@ fn typecheck_struct_init<'hir, 'ast>(
                     constant::error_cannot_use_in_constants(
                         &mut ctx.emit,
                         ctx.scope.origin(),
-                        struct_init.input[field.field_id.index()].expr.range, //@should be correct range?
+                        struct_init.input[field.field_id.index()].expr.range,
                         "non constant",
                     );
                     return TypeResult::error();
@@ -3313,8 +3313,6 @@ fn typecheck_local<'hir, 'ast>(
             let local = hir::Local { var_id, init };
             LocalResult::Local(ctx.arena.alloc(local))
         }
-        //allowing discard locals to have no type
-        //@emit a warning for useless variables? eg: let _ = zeroed;
         ast::Binding::Discard(_) => match init {
             hir::LocalInit::Init(expr) => LocalResult::Discard(Some(expr)),
             hir::LocalInit::Zeroed => LocalResult::Discard(None),
