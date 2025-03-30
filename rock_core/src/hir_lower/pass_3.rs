@@ -39,12 +39,16 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.cache.proc_params.clear();
 
     for param in item.params.iter() {
+        let ty = match param.kind {
+            ast::ParamKind::Normal(ty) => type_resolve(ctx, ty, true),
+            ast::ParamKind::Implicit(dir) => unimplemented!("directive param"), //@nocheckin
+        };
+
         if ctx
             .scope
             .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
             .is_err()
         {
-            let _ = type_resolve(ctx, param.ty, true);
             continue;
         }
 
@@ -57,12 +61,11 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             continue;
         }
 
-        let param = hir::Param {
-            mutt: param.mutt,
-            name: param.name,
-            ty: type_resolve(ctx, param.ty, true),
-            ty_range: param.ty.range,
+        let ty_range = match param.kind {
+            ast::ParamKind::Normal(ty) => ty.range,
+            ast::ParamKind::Implicit(dir) => dir.range,
         };
+        let param = hir::Param { mutt: param.mutt, name: param.name, ty, ty_range };
         ctx.cache.proc_params.push(param);
     }
 

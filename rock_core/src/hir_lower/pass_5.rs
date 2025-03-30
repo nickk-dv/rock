@@ -1389,6 +1389,7 @@ fn typecheck_directive<'hir, 'ast>(
     let src = ctx.src(directive.range);
     match directive.kind {
         ast::DirectiveKind::CallerLocation => {
+            unimplemented!("not an expr anymore");
             let struct_id = match core_find_struct(ctx, "panics", "Location") {
                 Some(value) => value,
                 None => {
@@ -1397,15 +1398,6 @@ fn typecheck_directive<'hir, 'ast>(
                     return TypeResult::error();
                 }
             };
-
-            let proc_id = ctx.scope.local.proc_id.unwrap();
-            let proc_data = ctx.registry.proc_data_mut(proc_id);
-            proc_data.flag_set.set(hir::ProcFlag::CallerLocation);
-
-            TypeResult::new(
-                hir::Type::Struct(struct_id, &[]),
-                hir::Expr::CallerLocation { struct_id },
-            )
         }
         ast::DirectiveKind::Error(name) => {
             let name = ctx.name(name.id);
@@ -3369,7 +3361,6 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Slice { .. } => Some("slice value"),
         hir::Expr::Cast { .. } => Some("cast value"),
         hir::Expr::Transmute { .. } => Some("transmute value"),
-        hir::Expr::CallerLocation { .. } => Some("caller location"),
         hir::Expr::ParamVar { .. } => Some("parameter value"),
         hir::Expr::Variable { .. } => Some("variable value"),
         hir::Expr::GlobalVar { .. } => Some("global value"),
@@ -3808,7 +3799,6 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::SliceField { .. } => AddrBase::SliceField,
             hir::Expr::Cast { .. } => AddrBase::Temporary,
             hir::Expr::Transmute { .. } => AddrBase::Temporary,
-            hir::Expr::CallerLocation { .. } => AddrBase::Temporary,
             hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,
             hir::Expr::CallIndirect { .. } => AddrBase::Temporary,

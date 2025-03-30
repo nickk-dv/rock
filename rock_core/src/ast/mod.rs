@@ -33,7 +33,13 @@ pub struct ProcItem<'ast> {
 pub struct Param<'ast> {
     pub mutt: Mut,
     pub name: Name,
-    pub ty: Type<'ast>,
+    pub kind: ParamKind<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum ParamKind<'ast> {
+    Normal(Type<'ast>),
+    Implicit(&'ast Directive<'ast>),
 }
 
 #[derive(Copy, Clone)]

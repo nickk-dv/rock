@@ -98,7 +98,6 @@ fn codegen_expr<'c>(
         hir::Expr::Slice { target, access } => unimplemented!("slicing"),
         hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
         hir::Expr::Transmute { target, into } => Some(codegen_transmute(cg, expect, target, into)),
-        hir::Expr::CallerLocation { .. } => Some(codegen_caller_location(cg, expect)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
         hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
@@ -594,17 +593,6 @@ fn codegen_transmute<'c>(
     }
 }
 
-fn codegen_caller_location(cg: &mut Codegen, expect: Expect) -> llvm::Value {
-    let param_ptr = cg.proc.param_ptrs.last().copied().unwrap();
-
-    match expect {
-        Expect::Value(_) | Expect::Store(_) => {
-            cg.build.load(cg.location_ty.as_ty(), param_ptr, "caller_location_val")
-        }
-        Expect::Pointer => param_ptr.as_val(),
-    }
-}
-
 fn codegen_param_var(cg: &mut Codegen, expect: Expect, param_id: hir::ParamID) -> llvm::Value {
     let param_ptr = cg.proc.param_ptrs[param_id.index()];
 
@@ -723,27 +711,6 @@ fn codegen_call_direct<'c>(
             codegen_expr_value(cg, expr)
         };
         cg.cache.values.push(value);
-    }
-
-    let proc_data = cg.hir.proc_data(proc_id);
-    if proc_data.flag_set.contains(hir::ProcFlag::CallerLocation) {
-        let call_origin_id = cg.hir.proc_data(cg.proc.proc_id).origin_id;
-        let call_origin = cg.session.module.get(call_origin_id);
-        let call_file = cg.session.vfs.file(call_origin.file_id());
-        let location = text::find_text_location(&call_file.source, start, &call_file.line_ranges);
-        let line = llvm::const_int(cg.int_type(hir::IntType::U32), location.line() as u64, false);
-        let col = llvm::const_int(cg.int_type(hir::IntType::U32), location.col() as u64, false);
-
-        let path = call_file.path.to_str().unwrap();
-        let string_val = llvm::const_string(&cg.context, path, true);
-        let string_ty = llvm::typeof_value(string_val);
-        let global = cg.module.add_global("rock.string.path", string_val, string_ty, true, true);
-
-        let slice_len = cg.const_usize(path.len() as u64);
-        let string_slice =
-            llvm::const_struct_named(cg.slice_type(), &[global.as_ptr().as_val(), slice_len]);
-        let location = llvm::const_struct_inline(&cg.context, &[line, col, string_slice], false);
-        cg.cache.values.push(location);
     }
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];

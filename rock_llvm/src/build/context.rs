@@ -20,7 +20,6 @@ pub struct Codegen<'c, 's, 'sref> {
     pub session: &'sref Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
-    pub location_ty: llvm::TypeStruct,
 }
 
 pub struct ProcCodegen {
@@ -87,8 +86,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let cache = CodegenCache::new(&mut context, &target);
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
-        let location_ty = context
-            .struct_type_inline(&[cache.int_32, cache.int_32, cache.slice_type.as_ty()], false);
 
         Codegen {
             proc: ProcCodegen::new(),
@@ -106,7 +103,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             session,
             string_buf: String::with_capacity(256),
             cache,
-            location_ty,
         }
     }
 

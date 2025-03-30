@@ -182,9 +182,6 @@ fn codegen_function_values(cg: &mut Codegen) {
             };
             param_types.push(ty);
         }
-        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
-            param_types.push(cg.location_ty.as_ty());
-        }
 
         let name = if is_external || is_entry {
             cg.session.intern_name.get(data.name.id)
@@ -255,16 +252,6 @@ fn codegen_function_bodies(cg: &mut Codegen) {
 
             let param_ty = cg.ty(param.ty);
             let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
-            cg.proc.param_ptrs.push(param_ptr);
-
-            let param_val = fn_val.param_val(param_idx as u32);
-            cg.build.store(param_val, param_ptr);
-        }
-
-        if data.flag_set.contains(hir::ProcFlag::CallerLocation) {
-            let param_idx = data.params.len();
-            let param_ty = cg.location_ty.as_ty();
-            let param_ptr = cg.build.alloca(param_ty, "caller_location");
             cg.proc.param_ptrs.push(param_ptr);
 
             let param_val = fn_val.param_val(param_idx as u32);

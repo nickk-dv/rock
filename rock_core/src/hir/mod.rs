@@ -240,7 +240,6 @@ pub enum Expr<'hir> {
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
     Transmute    { target: &'hir Expr<'hir>, into: &'hir Type<'hir> },
-    CallerLocation { struct_id: StructID }, //@pass as param, refer to as param, remove.
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
@@ -601,7 +600,6 @@ crate::enum_as_str! {
         External "external",
         Variadic "variadic",
         EntryPoint "entry point",
-        CallerLocation "caller location",
     }
 }
 crate::enum_as_str! {
@@ -672,7 +670,6 @@ impl ItemFlag for ProcFlag {
             External => matches!(other, EntryPoint),
             Variadic => matches!(other, EntryPoint),
             EntryPoint => matches!(other, External | Variadic),
-            CallerLocation => false,
         }
     }
 }
