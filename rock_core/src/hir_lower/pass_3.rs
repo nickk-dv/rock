@@ -41,7 +41,7 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     for param in item.params.iter() {
         let ty = match param.kind {
             ast::ParamKind::Normal(ty) => type_resolve(ctx, ty, true),
-            ast::ParamKind::Implicit(dir) => unimplemented!("directive param"), //@nocheckin
+            ast::ParamKind::Implicit(dir) => continue, //@todo
         };
 
         if ctx

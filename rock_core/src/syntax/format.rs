@@ -617,7 +617,11 @@ fn param<'syn>(fmt: &mut Formatter<'syn, '_>, param: cst::Param<'syn>) {
     name(fmt, param.name(fmt.tree).unwrap());
     fmt.write(':');
     fmt.space();
-    ty(fmt, param.ty(fmt.tree).unwrap());
+    if let Some(ty_cst) = param.ty(fmt.tree) {
+        ty(fmt, ty_cst);
+    } else {
+        directive(fmt, param.directive(fmt.tree).unwrap());
+    }
 }
 
 fn enum_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::EnumItem<'syn>) {

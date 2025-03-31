@@ -106,7 +106,12 @@ fn param(p: &mut Parser) {
     p.eat(T![mut]);
     name(p);
     p.expect(T![:]);
-    ty(p);
+
+    if p.at(T![#]) {
+        directive(p);
+    } else {
+        ty(p);
+    }
     m.complete(p, SyntaxKind::PARAM);
 }
 
@@ -407,6 +412,8 @@ fn directive_param(p: &mut Parser) {
         let m = p.start();
         p.bump(T![string_lit]);
         m.complete(p, SyntaxKind::LIT_STRING);
+    } else {
+        p.expect(T![string_lit]);
     }
     m.complete(p, SyntaxKind::DIRECTIVE_PARAM);
 }

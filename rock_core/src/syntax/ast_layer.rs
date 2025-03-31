@@ -885,6 +885,7 @@ impl<'syn> Param<'syn> {
     token_find!(t_mut, T![mut]);
     node_find!(name, Name);
     node_find!(ty, Type);
+    node_find!(directive, Directive);
 }
 
 impl<'syn> EnumItem<'syn> {

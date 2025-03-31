@@ -132,9 +132,17 @@ fn proc_item<'ast>(
 fn param(ctx: &mut AstBuild, param: cst::Param) {
     let mutt = mutt(param.t_mut(ctx.tree));
     let name = name(ctx, param.name(ctx.tree).unwrap());
-    let ty = ty(ctx, param.ty(ctx.tree).unwrap());
 
-    let param = ast::Param { mutt, name, ty };
+    let kind = if let Some(ty_cst) = param.ty(ctx.tree) {
+        let ty = ty(ctx, ty_cst);
+        ast::ParamKind::Normal(ty)
+    } else {
+        let dir = param.directive(ctx.tree).unwrap();
+        let dir = directive(ctx, dir);
+        ast::ParamKind::Implicit(ctx.arena.alloc(dir))
+    };
+
+    let param = ast::Param { mutt, name, kind };
     ctx.s.params.push(param);
 }
 
