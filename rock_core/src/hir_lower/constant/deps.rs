@@ -512,6 +512,7 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Void => {}
         hir::Type::Never => {}
         hir::Type::Rawptr => {}
+        hir::Type::UntypedChar => {}
         hir::Type::Int(_) => {}
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
@@ -612,6 +613,7 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Void => {}
         hir::Type::Never => {}
         hir::Type::Rawptr => {}
+        hir::Type::UntypedChar => {}
         hir::Type::Int(_) => {}
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}

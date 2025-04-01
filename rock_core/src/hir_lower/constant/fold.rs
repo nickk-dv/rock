@@ -93,7 +93,7 @@ impl<'hir> hir::ConstValue<'hir> {
     }
     pub fn into_char(&self) -> char {
         match *self {
-            hir::ConstValue::Char { val } => val,
+            hir::ConstValue::Char { val, .. } => val,
             _ => unreachable!(),
         }
     }

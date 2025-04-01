@@ -9,6 +9,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         hir::Type::Char => Ok(hir::Layout::equal(4)),
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
+        hir::Type::UntypedChar => unreachable!(),
         hir::Type::Rawptr => Ok(hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size())),
         hir::Type::Int(int_ty) => Ok(int_layout(ctx, int_ty)),
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),

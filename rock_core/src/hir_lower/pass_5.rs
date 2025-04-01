@@ -62,6 +62,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (hir::Type::Void, hir::Type::Void) => true,
         (hir::Type::Never, hir::Type::Never) => true,
         (hir::Type::Rawptr, hir::Type::Rawptr) => true,
+        (hir::Type::UntypedChar, hir::Type::UntypedChar) => true,
         (hir::Type::Int(ty), hir::Type::Int(ty2)) => ty == ty2,
         (hir::Type::Float(ty), hir::Type::Float(ty2)) => ty == ty2,
         (hir::Type::Bool(ty), hir::Type::Bool(ty2)) => ty == ty2,
@@ -128,6 +129,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Void => "void".into(),
         hir::Type::Never => "never".into(),
         hir::Type::Rawptr => "rawptr".into(),
+        hir::Type::UntypedChar => "untyped char".into(),
         hir::Type::Int(int_ty) => int_ty.as_str().into(),
         hir::Type::Float(float_ty) => float_ty.as_str().into(),
         hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),
@@ -487,7 +489,9 @@ fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
             hir::Type::Float(FloatType::Untyped),
             hir::ConstValue::Float { val, float_ty: FloatType::Untyped },
         ),
-        ast::Lit::Char(val) => (hir::Type::Char, hir::ConstValue::Char { val }),
+        ast::Lit::Char(val) => {
+            (hir::Type::UntypedChar, hir::ConstValue::Char { val, untyped: true })
+        }
         ast::Lit::String(val) => (
             hir::Type::String(StringType::Untyped),
             hir::ConstValue::String { val, string_ty: StringType::Untyped },
@@ -2041,6 +2045,26 @@ fn promote_untyped<'hir>(
                 _ => return None,
             }
         }
+        hir::ConstValue::Char { val, untyped } => {
+            if !untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::Char) => {
+                    *expr_ty = hir::Type::Char;
+                    Ok(hir::ConstValue::Char { val, untyped: false })
+                }
+                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
+                    *expr_ty = hir::Type::Int(with);
+                    fold::int_range_check(ctx, src, val as i128, with)
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::Char;
+                    Ok(hir::ConstValue::Char { val, untyped: false })
+                }
+                _ => return None,
+            }
+        }
         hir::ConstValue::String { val, string_ty } => {
             if string_ty != StringType::Untyped {
                 return None;
@@ -2190,7 +2214,7 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::Eq => match lhs_ty {
-            hir::Type::Char | hir::Type::Rawptr | hir::Type::Bool(_) => {
+            hir::Type::Char | hir::Type::UntypedChar | hir::Type::Rawptr | hir::Type::Bool(_) => {
                 Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
             }
             hir::Type::Int(int_ty) => {
@@ -2213,7 +2237,7 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::NotEq => match lhs_ty {
-            hir::Type::Char | hir::Type::Rawptr | hir::Type::Bool(_) => {
+            hir::Type::Char | hir::Type::UntypedChar | hir::Type::Rawptr | hir::Type::Bool(_) => {
                 Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
             }
             hir::Type::Int(int_ty) => {
@@ -2423,7 +2447,7 @@ fn constfold_binary<'hir>(
         }
         hir::BinOp::Eq_Int_Other(bool_ty) => {
             let val = match lhs {
-                hir::ConstValue::Char { val } => val == rhs.into_char(),
+                hir::ConstValue::Char { val, .. } => val == rhs.into_char(),
                 hir::ConstValue::Null => true, //only value: null == null
                 hir::ConstValue::Bool { val, .. } => val == rhs.into_bool(),
                 hir::ConstValue::Variant { variant_id, .. } => variant_id == rhs.into_enum().1,
@@ -2433,7 +2457,7 @@ fn constfold_binary<'hir>(
         }
         hir::BinOp::NotEq_Int_Other(bool_ty) => {
             let val = match lhs {
-                hir::ConstValue::Char { val } => val != rhs.into_char(),
+                hir::ConstValue::Char { val, .. } => val != rhs.into_char(),
                 hir::ConstValue::Null => false, //only value: null != null
                 hir::ConstValue::Bool { val, .. } => val != rhs.into_bool(),
                 hir::ConstValue::Variant { variant_id, .. } => variant_id != rhs.into_enum().1,

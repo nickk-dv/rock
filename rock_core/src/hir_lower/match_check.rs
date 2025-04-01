@@ -251,7 +251,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
 fn pat_cov_char(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
     let result = match pat {
         hir::Pat::Wild => ctx.pat.cov_char.cover_wild(),
-        hir::Pat::Lit(hir::ConstValue::Char { val }) => {
+        hir::Pat::Lit(hir::ConstValue::Char { val, .. }) => {
             ctx.pat.cov_char.cover(RangeInc::new(val as u32, val as u32))
         }
         _ => unreachable!(),

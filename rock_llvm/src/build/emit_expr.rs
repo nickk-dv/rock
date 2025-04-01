@@ -145,7 +145,7 @@ pub fn codegen_const(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
             llvm::const_int(cg.int_type(int_ty), ext_val, int_ty.is_signed())
         }
         hir::ConstValue::Float { val, float_ty } => llvm::const_float(cg.float_type(float_ty), val),
-        hir::ConstValue::Char { val } => llvm::const_int(cg.char_type(), val as u64, false),
+        hir::ConstValue::Char { val, .. } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
         hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
         hir::ConstValue::Variant { enum_id, variant_id } => {

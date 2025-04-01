@@ -113,6 +113,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::Void => self.cache.void_val_type.as_ty(),
             hir::Type::Never => self.cache.void_val_type.as_ty(),
             hir::Type::Rawptr => self.cache.ptr_type,
+            hir::Type::UntypedChar => unreachable!(),
             hir::Type::Int(int_ty) => self.int_type(int_ty),
             hir::Type::Float(float_ty) => self.float_type(float_ty),
             hir::Type::Bool(bool_ty) => self.bool_type(bool_ty),
