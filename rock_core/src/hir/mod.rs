@@ -40,6 +40,13 @@ pub struct Param<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub ty_range: TextRange,
+    pub flag: ParamFlag,
+}
+
+#[derive(Copy, Clone)]
+pub enum ParamFlag {
+    None,
+    CallerLocation,
 }
 
 #[derive(Copy, Clone)]

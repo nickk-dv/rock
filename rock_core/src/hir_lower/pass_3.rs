@@ -65,7 +65,13 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             ast::ParamKind::Normal(ty) => ty.range,
             ast::ParamKind::Implicit(dir) => dir.range,
         };
-        let param = hir::Param { mutt: param.mutt, name: param.name, ty, ty_range };
+        let param = hir::Param {
+            mutt: param.mutt,
+            name: param.name,
+            ty,
+            ty_range,
+            flag: hir::ParamFlag::None,
+        };
         ctx.cache.proc_params.push(param);
     }
 

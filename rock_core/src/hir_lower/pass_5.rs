@@ -434,7 +434,6 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
         ast::ExprKind::Builtin { builtin } => typecheck_builtin(ctx, expr.range, builtin),
-        ast::ExprKind::Directive { directive } => typecheck_directive(ctx, directive),
         ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
         ast::ExprKind::Variant { name, args_list } => {
             typecheck_variant(ctx, expect, name, args_list, expr.range)
@@ -1382,36 +1381,6 @@ fn typecheck_builtin<'hir, 'ast>(
             } else {
                 TypeResult::error()
             }
-        }
-    }
-}
-
-fn typecheck_directive<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    directive: &ast::Directive<'ast>,
-) -> TypeResult<'hir> {
-    let src = ctx.src(directive.range);
-    match directive.kind {
-        ast::DirectiveKind::CallerLocation => {
-            unimplemented!("not an expr anymore");
-            let struct_id = match core_find_struct(ctx, "panics", "Location") {
-                Some(value) => value,
-                None => {
-                    let msg = "failed to locate struct `Location` in `core:panics`";
-                    ctx.emit.error(Error::new(msg, src, None));
-                    return TypeResult::error();
-                }
-            };
-        }
-        ast::DirectiveKind::Error(name) => {
-            let name = ctx.name(name.id);
-            err::directive_unknown(&mut ctx.emit, src, name);
-            TypeResult::error()
-        }
-        _ => {
-            let name = directive.kind.as_str();
-            err::directive_cannot_use_as_expr(&mut ctx.emit, src, name);
-            TypeResult::error()
         }
     }
 }

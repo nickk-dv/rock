@@ -724,11 +724,6 @@ fn add_expr_const_dependencies<'ast>(
             );
             Err(parent_id)
         }
-        //@deprecate directive exprs soon 16/02/25
-        ast::ExprKind::Directive { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "directive");
-            Err(parent_id)
-        }
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path) {
                 ValueID::None => Err(parent_id),

@@ -722,7 +722,6 @@ pub enum Expr<'syn> {
     Call(ExprCall<'syn>),
     Cast(ExprCast<'syn>),
     Builtin(Builtin<'syn>),
-    Directive(Directive<'syn>),
     Item(ExprItem<'syn>),
     Variant(ExprVariant<'syn>),
     StructInit(ExprStructInit<'syn>),
@@ -760,8 +759,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
                     Some(Expr::Lit(lit))
                 } else if let Some(builtin) = Builtin::cast(node) {
                     Some(Expr::Builtin(builtin))
-                } else if let Some(directive) = Directive::cast(node) {
-                    Some(Expr::Directive(directive))
                 } else {
                     None
                 }
@@ -781,7 +778,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Call(expr) => expr.find_range(tree),
             Expr::Cast(expr) => expr.find_range(tree),
             Expr::Builtin(expr) => expr.find_range(tree),
-            Expr::Directive(expr) => expr.find_range(tree),
             Expr::Item(expr) => expr.find_range(tree),
             Expr::Variant(expr) => expr.find_range(tree),
             Expr::StructInit(expr) => expr.find_range(tree),
