@@ -1842,24 +1842,6 @@ pub fn core_find_struct(
     ctx.scope.global.find_defined_struct(target_id, struct_name)
 }
 
-//@move, re-use module finding logic
-pub fn core_find_proc(
-    ctx: &HirCtx,
-    module_name: &'static str,
-    proc_name: &'static str,
-) -> Option<hir::ProcID> {
-    let module_name = ctx.session.intern_name.get_id(module_name)?;
-    let proc_name = ctx.session.intern_name.get_id(proc_name)?;
-
-    let core_package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
-    let target_id = match core_package.src().find(ctx.session, module_name) {
-        session::ModuleOrDirectory::None => return None,
-        session::ModuleOrDirectory::Module(module_id) => module_id,
-        session::ModuleOrDirectory::Directory(_) => return None,
-    };
-    ctx.scope.global.find_defined_proc(target_id, proc_name)
-}
-
 fn typecheck_unary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     range: TextRange,

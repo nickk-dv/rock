@@ -1,5 +1,5 @@
 use super::check_directive;
-use super::context::scope::{Symbol, SymbolID};
+use super::context::scope::{self, Symbol, SymbolID};
 use super::context::HirCtx;
 use crate::ast;
 use crate::errors as err;
@@ -29,6 +29,12 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
             }
         }
     }
+
+    ctx.core.string_equals =
+        scope::find_core_proc(ctx, "slice", "string_equals").unwrap_or(hir::ProcID::dummy());
+    ctx.core.cstring_equals =
+        scope::find_core_proc(ctx, "slice", "cstring_equals").unwrap_or(hir::ProcID::dummy());
+    ctx.core.source_location = scope::find_core_struct(ctx, "panics", "SourceLocation");
 }
 
 fn add_proc_item<'ast>(

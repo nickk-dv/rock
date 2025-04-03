@@ -474,6 +474,11 @@ fn handle_compile_project(server: &mut ServerContext) {
     for publish in publish_diagnostics.iter() {
         send_notification::<lsp::notification::PublishDiagnostics>(server.conn, publish);
     }
+    for error in &server.session.errors.errors {
+        let message = error.diagnostic().msg().as_str().to_string();
+        let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
+        send_notification::<lsp::notification::ShowMessage>(server.conn, params);
+    }
 }
 
 fn send_response(conn: &Connection, id: RequestId, result: impl serde::Serialize) {
@@ -607,6 +612,7 @@ fn create_diagnostic(
 
 fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsParams> {
     let session = &mut server.session;
+    session.errors.errors.clear();
     for module_id in session.module.ids() {
         session.module.get_mut(module_id).errors.clear();
     }

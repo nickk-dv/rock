@@ -70,7 +70,7 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             name: param.name,
             ty,
             ty_range,
-            flag: hir::ParamFlag::None,
+            kind: hir::ParamKind::Normal,
         };
         ctx.cache.proc_params.push(param);
     }

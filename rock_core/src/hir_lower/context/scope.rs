@@ -6,7 +6,7 @@ use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::pass_5::Expectation;
 use crate::intern::NameID;
-use crate::session::{ModuleID, Session};
+use crate::session::{self, ModuleID, Session};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
@@ -569,6 +569,54 @@ impl LocalVariableID {
     }
 }
 
+pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::ProcID> {
+    let module_id = find_core_module(ctx, module)?;
+
+    let name_id = ctx.session.intern_name.get_id(name);
+    if name_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
+    }
+    let name_id = name_id?;
+
+    let proc_id = ctx.scope.global.find_defined_proc(module_id, name_id);
+    if proc_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
+    }
+    proc_id
+}
+
+pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::StructID> {
+    let module_id = find_core_module(ctx, module)?;
+
+    let name_id = ctx.session.intern_name.get_id(name);
+    if name_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
+    }
+    let name_id = name_id?;
+
+    let struct_id = ctx.scope.global.find_defined_struct(module_id, name_id);
+    if struct_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
+    }
+    struct_id
+}
+
+fn find_core_module(ctx: &mut HirCtx, name: &str) -> Option<ModuleID> {
+    let package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
+    let name_id = ctx.session.intern_name.get_id(name)?;
+
+    let module_id = match package.src().find(ctx.session, name_id) {
+        session::ModuleOrDirectory::None => None,
+        session::ModuleOrDirectory::Module(module_id) => Some(module_id),
+        session::ModuleOrDirectory::Directory(_) => None,
+    };
+
+    if module_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "module");
+    }
+    module_id
+}
+
 pub fn check_find_enum_variant(
     ctx: &mut HirCtx,
     enum_id: hir::EnumID,
@@ -590,7 +638,6 @@ pub fn check_find_enum_variant(
         let enum_name = ctx.name(data.name.id);
         err::scope_enum_variant_not_found(&mut ctx.emit, src, enum_src, name, enum_name);
     }
-
     variant_id
 }
 
@@ -613,9 +660,8 @@ pub fn check_find_struct_field(
         let struct_src = data.src();
         let name = ctx.name(name.id);
         let struct_name = ctx.name(data.name.id);
-        err::scope_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name)
+        err::scope_struct_field_not_found(&mut ctx.emit, src, struct_src, name, struct_name);
     }
-
     let field_id = field_id?;
     let field = data.field(field_id);
 

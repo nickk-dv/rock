@@ -20,6 +20,7 @@ pub struct Hir<'hir> {
 pub struct CoreItems {
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
+    pub source_location: Option<StructID>,
 }
 
 pub struct ProcData<'hir> {
@@ -40,12 +41,13 @@ pub struct Param<'hir> {
     pub name: ast::Name,
     pub ty: Type<'hir>,
     pub ty_range: TextRange,
-    pub flag: ParamFlag,
+    pub kind: ParamKind,
 }
 
 #[derive(Copy, Clone)]
-pub enum ParamFlag {
-    None,
+pub enum ParamKind {
+    Normal,
+    ErrorDirective,
     CallerLocation,
 }
 

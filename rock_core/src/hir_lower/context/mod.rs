@@ -19,8 +19,9 @@ pub struct HirCtx<'hir, 's, 'sref> {
     pub registry: registry::Registry<'hir, 's>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
     pub session: &'sref mut Session<'s>,
-    pub cache: Cache<'hir>,
     pub pat: PatCov,
+    pub core: hir::CoreItems,
+    pub cache: Cache<'hir>,
 }
 
 pub struct Cache<'hir> {
@@ -41,6 +42,11 @@ pub struct Cache<'hir> {
 
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
+        let core = hir::CoreItems {
+            string_equals: hir::ProcID::dummy(),
+            cstring_equals: hir::ProcID::dummy(),
+            source_location: None,
+        };
         let cache = Cache {
             proc_params: Vec::with_capacity(32),
             enum_variants: Vec::with_capacity(256),
@@ -64,8 +70,9 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             registry: registry::Registry::new(session),
             enum_tag_set: HashMap::with_capacity(128),
             session,
-            cache,
             pat: PatCov::new(),
+            core,
+            cache,
         }
     }
 
@@ -88,20 +95,16 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     }
 
     pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
-        //@dont unwrap, make all required core dependencies checked
-        let core = hir::CoreItems {
-            string_equals: super::pass_5::core_find_proc(&self, "slice", "string_equals").unwrap(),
-            cstring_equals: super::pass_5::core_find_proc(&self, "slice", "cstring_equals")
-                .unwrap(),
-        };
-
         //@moving errors from single buffer into per module storage (hack)
         let (errors, warnings) = self.emit.collect();
         let did_error = !errors.is_empty();
 
         for e in errors {
             let origin = match e.diagnostic().data() {
-                DiagnosticData::Message => todo!(),
+                DiagnosticData::Message => {
+                    self.session.errors.error(e);
+                    continue;
+                }
                 DiagnosticData::Context { main, .. } => main.src().module_id(),
                 DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
             };
@@ -109,7 +112,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         }
         for w in warnings {
             let origin = match w.diagnostic().data() {
-                DiagnosticData::Message => todo!(),
+                DiagnosticData::Message => unreachable!(),
                 DiagnosticData::Context { main, .. } => main.src().module_id(),
                 DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
             };
@@ -137,7 +140,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             globals: self.registry.hir_globals,
             const_eval_values,
             variant_eval_values,
-            core,
+            core: self.core,
         })
     }
 }

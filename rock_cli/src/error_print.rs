@@ -21,6 +21,7 @@ pub fn print_session_errors(session: &Session) {
         print_impl(Some(session), &module.parse_errors.errors, &[]);
         print_impl(Some(session), &module.errors.errors, &module.errors.warnings);
     }
+    print_impl(Some(session), &session.errors.errors, &[]);
 }
 
 fn print_impl(session: Option<&Session>, errors: &[Error], warnings: &[Warning]) {

@@ -330,6 +330,11 @@ pub fn scope_symbol_not_found(
     emit.error(Error::new(msg, name_src, None));
 }
 
+pub fn scope_core_symbol_not_found(emit: &mut impl ErrorSink, name: &str, kind: &'static str) {
+    let msg = format!("{kind} `{name}` is not found in core library");
+    emit.error(Error::message(msg));
+}
+
 pub fn scope_enum_variant_not_found(
     emit: &mut impl ErrorSink,
     src: SourceRange,
