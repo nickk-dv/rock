@@ -4,7 +4,7 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::hir::{self, CmpPred};
 use rock_core::intern::LitID;
-use rock_core::text::{self, TextOffset};
+use rock_core::text::TextOffset;
 
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();

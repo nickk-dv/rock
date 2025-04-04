@@ -82,7 +82,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         session: &'sref Session<'s>,
     ) -> Codegen<'c, 's, 'sref> {
         let mut context = llvm::IRContext::new();
-        let target = llvm::IRTarget::new(triple);
+        let target = llvm::IRTarget::new(triple, session.config.build_kind);
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let cache = CodegenCache::new(&mut context, &target);
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
