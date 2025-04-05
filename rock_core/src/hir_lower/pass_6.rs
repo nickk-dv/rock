@@ -5,12 +5,7 @@ use crate::hir;
 use crate::package::manifest::PackageKind;
 use crate::session::{ModuleID, ModuleOrDirectory};
 
-pub fn finalize_checks(ctx: &mut HirCtx) {
-    check_entry_point(ctx);
-    check_unused_items(ctx);
-}
-
-fn check_entry_point(ctx: &mut HirCtx) {
+pub fn check_entry_point(ctx: &mut HirCtx) {
     let root_package = ctx.session.graph.package(ctx.session.root_id);
     if root_package.manifest().package.kind != PackageKind::Bin {
         return;
@@ -71,76 +66,55 @@ fn check_main_procedure(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     }
 }
 
-fn check_unused_items(ctx: &mut HirCtx) {
+pub fn check_unused_items(ctx: &mut HirCtx) {
     for proc_id in ctx.registry.proc_ids() {
         let data = ctx.registry.proc_data(proc_id);
-        if data.flag_set.contains(hir::ProcFlag::WasUsed)
-            || data.flag_set.contains(hir::ProcFlag::EntryPoint)
+        if !data.flag_set.contains(hir::ProcFlag::WasUsed)
+            && !data.flag_set.contains(hir::ProcFlag::EntryPoint)
+            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
-            continue;
-        }
-        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
-            continue;
-        }
-        if !data.flag_set.contains(hir::ProcFlag::WasUsed) {
             let name = ctx.name(data.name.id);
-            err::scope_unused_procedure(&mut ctx.emit, data.src(), name);
+            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "procedure");
         }
     }
 
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
-        if data.flag_set.contains(hir::EnumFlag::WasUsed) {
-            continue;
-        }
-        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
-            continue;
-        }
-        if !data.flag_set.contains(hir::EnumFlag::WasUsed) {
+        if !data.flag_set.contains(hir::EnumFlag::WasUsed)
+            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        {
             let name = ctx.name(data.name.id);
-            err::scope_unused_enum(&mut ctx.emit, data.src(), name);
+            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "enum");
         }
     }
 
     for struct_id in ctx.registry.struct_ids() {
         let data = ctx.registry.struct_data(struct_id);
-        if data.flag_set.contains(hir::StructFlag::WasUsed) {
-            continue;
-        }
-        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
-            continue;
-        }
-        if !data.flag_set.contains(hir::StructFlag::WasUsed) {
+        if !data.flag_set.contains(hir::StructFlag::WasUsed)
+            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        {
             let name = ctx.name(data.name.id);
-            err::scope_unused_struct(&mut ctx.emit, data.src(), name);
+            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "struct");
         }
     }
 
     for const_id in ctx.registry.const_ids() {
         let data = ctx.registry.const_data(const_id);
-        if data.flag_set.contains(hir::ConstFlag::WasUsed) {
-            continue;
-        }
-        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
-            continue;
-        }
-        if !data.flag_set.contains(hir::ConstFlag::WasUsed) {
+        if !data.flag_set.contains(hir::ConstFlag::WasUsed)
+            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        {
             let name = ctx.name(data.name.id);
-            err::scope_unused_const(&mut ctx.emit, data.src(), name);
+            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "const");
         }
     }
 
     for global_id in ctx.registry.global_ids() {
         let data = ctx.registry.global_data(global_id);
-        if data.flag_set.contains(hir::GlobalFlag::WasUsed) {
-            continue;
-        }
-        if data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id) {
-            continue;
-        }
-        if !data.flag_set.contains(hir::GlobalFlag::WasUsed) {
+        if !data.flag_set.contains(hir::GlobalFlag::WasUsed)
+            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        {
             let name = ctx.name(data.name.id);
-            err::scope_unused_global(&mut ctx.emit, data.src(), name);
+            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "global");
         }
     }
 }

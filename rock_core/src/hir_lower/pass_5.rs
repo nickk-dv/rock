@@ -7,7 +7,7 @@ use super::context::scope::{self, BlockStatus, Diverges};
 use super::context::HirCtx;
 use super::match_check;
 use crate::ast;
-use crate::error::{Error, ErrorSink, SourceRange, StringOrStr};
+use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
 use crate::session;
@@ -40,11 +40,18 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         data.block = Some(block_res.block);
         data.variables = variables;
 
+        for (idx, param) in data.params.iter().enumerate() {
+            if !ctx.scope.local.params_was_used[idx] {
+                let src = ctx.src(param.name.range);
+                let name = ctx.name(param.name.id);
+                err::scope_symbol_unused(&mut ctx.emit, src, name, "parameter");
+            }
+        }
         for var in variables {
             if !var.was_used && var.name.id != ctx.session.discard_id {
                 let src = ctx.src(var.name.range);
                 let name = ctx.name(var.name.id);
-                err::scope_unused_variable(&mut ctx.emit, src, name);
+                err::scope_symbol_unused(&mut ctx.emit, src, name, "variable");
             }
         }
     }

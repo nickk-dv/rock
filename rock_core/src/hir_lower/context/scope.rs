@@ -56,6 +56,7 @@ pub struct LocalScope<'hir> {
     pub proc_id: Option<hir::ProcID>,
     pub return_expect: Expectation<'hir>,
     params: &'hir [hir::Param<'hir>],
+    pub params_was_used: Vec<bool>,
     blocks: Vec<BlockData>,
     variables: Vec<hir::Variable<'hir>>,
     variables_in_scope: Vec<hir::VariableID>,
@@ -333,6 +334,7 @@ impl<'hir> LocalScope<'hir> {
             proc_id: None,
             return_expect: Expectation::None,
             params: &[],
+            params_was_used: Vec::with_capacity(32),
             blocks: Vec::with_capacity(32),
             variables: Vec::with_capacity(128),
             variables_in_scope: Vec::with_capacity(128),
@@ -344,6 +346,7 @@ impl<'hir> LocalScope<'hir> {
         self.proc_id = None;
         self.return_expect = Expectation::None;
         self.params = &[];
+        self.params_was_used.clear();
         self.blocks.clear();
         self.variables.clear();
         self.variables_in_scope.clear();
@@ -359,6 +362,7 @@ impl<'hir> LocalScope<'hir> {
         self.proc_id = proc_id;
         self.return_expect = return_expect;
         self.params = params;
+        self.params_was_used.resize(params.len(), false);
     }
 
     pub fn end_proc_context(&self) -> &[hir::Variable<'hir>] {
@@ -413,6 +417,9 @@ impl<'hir> LocalScope<'hir> {
     ) -> Option<LocalVariableID> {
         for (idx, param) in self.params.iter().enumerate() {
             if name_id == param.name.id {
+                if set_usage_flag {
+                    self.params_was_used[idx] = true;
+                }
                 let param_id = hir::ParamID::new(idx);
                 return Some(LocalVariableID::Param(param_id));
             }
