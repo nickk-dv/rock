@@ -108,6 +108,27 @@ pub fn check_enum_directives(
     (config, flag_set)
 }
 
+pub fn check_param_directive<'hir>(
+    ctx: &mut HirCtx,
+    directive: &ast::Directive,
+) -> (hir::Type<'hir>, hir::ParamKind) {
+    if try_check_error_directive(ctx, directive) {
+        return (hir::Type::Error, hir::ParamKind::ErrorDirective);
+    }
+    match directive.kind {
+        DirectiveKind::CallerLocation => (
+            ctx.core.source_location.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[])),
+            hir::ParamKind::CallerLocation,
+        ),
+        _ => {
+            let src = ctx.src(directive.range);
+            let name = directive.kind.as_str();
+            err::directive_cannot_apply(&mut ctx.emit, src, name, "parameters");
+            (hir::Type::Error, hir::ParamKind::ErrorDirective)
+        }
+    }
+}
+
 pub fn check_expect_config(
     ctx: &mut HirCtx,
     dir_list: Option<&ast::DirectiveList>,

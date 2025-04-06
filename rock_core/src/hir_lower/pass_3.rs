@@ -39,9 +39,9 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.cache.proc_params.clear();
 
     for param in item.params.iter() {
-        let ty = match param.kind {
-            ast::ParamKind::Normal(ty) => type_resolve(ctx, ty, true),
-            ast::ParamKind::Implicit(dir) => continue, //@todo
+        let (ty, kind) = match param.kind {
+            ast::ParamKind::Normal(ty) => (type_resolve(ctx, ty, true), hir::ParamKind::Normal),
+            ast::ParamKind::Implicit(dir) => check_directive::check_param_directive(ctx, dir),
         };
 
         if ctx
@@ -65,13 +65,7 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             ast::ParamKind::Normal(ty) => ty.range,
             ast::ParamKind::Implicit(dir) => dir.range,
         };
-        let param = hir::Param {
-            mutt: param.mutt,
-            name: param.name,
-            ty,
-            ty_range,
-            kind: hir::ParamKind::Normal,
-        };
+        let param = hir::Param { mutt: param.mutt, name: param.name, ty, ty_range, kind };
         ctx.cache.proc_params.push(param);
     }
 
