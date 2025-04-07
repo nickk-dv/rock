@@ -44,7 +44,7 @@ pub struct Param<'hir> {
     pub kind: ParamKind,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ParamKind {
     Normal,
     ErrorDirective,
