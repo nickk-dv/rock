@@ -3537,13 +3537,15 @@ fn check_call_direct<'hir, 'ast>(
                 } else {
                     &hir::Expr::Error
                 };
-                eprintln!("caller location argument added");
                 ctx.cache.exprs.push(expr);
             }
         }
     }
     for expr in args {
-        let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+        let expr_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+        if is_variadic {
+            ctx.cache.exprs.push(expr_res.expr);
+        }
     }
 
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);

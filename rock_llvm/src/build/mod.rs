@@ -51,6 +51,15 @@ pub fn build(
         return Err(err::backend_module_verify_failed(error));
     }
 
+    // optimize
+    if session.config.build_kind == BuildKind::Release {
+        //@does this work at all? does default<O3> work?
+        module.run_optimization_passes(&target, "default<O3>");
+        if options.emit_llvm {
+            os::file_create(&build_path.join(format!("{bin_name}_opt.ll")), &module.to_string())?;
+        }
+    }
+
     // emit object
     let timer = Timer::start();
     let object_path = build_path.join(format!("{bin_name}.o"));

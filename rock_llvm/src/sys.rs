@@ -7,6 +7,8 @@ pub type LLVMTypeRef = *mut LLVMType;
 pub type LLVMValueRef = *mut LLVMValue;
 pub type LLVMAttributeRef = *mut LLVMAttribute;
 pub type LLVMBasicBlockRef = *mut LLVMBasicBlock;
+pub type LLVMErrorRef = *mut LLVMError;
+pub type LLVMPassBuilderOptionsRef = *mut LLVMPassBuilderOptions;
 pub type LLVMBool = std::ffi::c_int;
 
 pub enum LLVMContext {}
@@ -16,6 +18,8 @@ pub enum LLVMType {}
 pub enum LLVMValue {}
 pub enum LLVMBasicBlock {}
 pub enum LLVMAttribute {}
+pub enum LLVMError {}
+pub enum LLVMPassBuilderOptions {}
 
 #[repr(C)]
 #[allow(unused)]
@@ -660,5 +664,22 @@ pub mod target {
         pub fn LLVMInitializeAArch64TargetMC();
         pub fn LLVMInitializeAArch64TargetInfo();
         pub fn LLVMInitializeAArch64AsmPrinter();
+    }
+}
+
+pub mod pass {
+    use super::target::LLVMTargetMachineRef;
+    use super::*;
+    use std::ffi::c_char;
+
+    extern "C" {
+        pub fn LLVMRunPasses(
+            m: LLVMModuleRef,
+            passes: *const c_char,
+            tm: LLVMTargetMachineRef,
+            options: LLVMPassBuilderOptionsRef,
+        ) -> LLVMErrorRef;
+        pub fn LLVMCreatePassBuilderOptions() -> LLVMPassBuilderOptionsRef;
+        pub fn LLVMDisposePassBuilderOptions(options: LLVMPassBuilderOptionsRef);
     }
 }

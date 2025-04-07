@@ -3,6 +3,7 @@
 use crate::sys;
 use crate::sys::analysis;
 use crate::sys::core;
+use crate::sys::pass;
 use crate::sys::target;
 use rock_core::config::{BuildKind, TargetArch, TargetTriple};
 use rock_core::support::AsStr;
@@ -257,6 +258,19 @@ impl IRModule {
             Err(llvm_string_to_owned(err_str))
         } else {
             Ok(())
+        }
+    }
+
+    pub fn run_optimization_passes(&self, target: &IRTarget, passes: &str) {
+        unsafe {
+            let options = pass::LLVMCreatePassBuilderOptions();
+            pass::LLVMRunPasses(
+                self.module,
+                passes.as_ptr() as *mut c_char,
+                target.target_machine,
+                options,
+            );
+            pass::LLVMDisposePassBuilderOptions(options);
         }
     }
 
