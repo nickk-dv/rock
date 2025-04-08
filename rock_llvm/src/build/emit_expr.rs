@@ -712,9 +712,15 @@ fn codegen_call_direct<'c>(
 
     let (fn_val, fn_ty) = cg.procs[proc_id.index()];
     let input_values = cg.cache.values.view(offset.clone());
-    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val")?;
+    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val");
     cg.cache.values.pop_view(offset);
 
+    let proc_data = cg.hir.proc_data(proc_id);
+    if proc_data.return_ty.is_never() {
+        cg.build.unreachable();
+    }
+
+    let ret_val = ret_val?;
     match expect {
         Expect::Pointer => {
             let ty = llvm::typeof_value(ret_val);
@@ -746,9 +752,14 @@ fn codegen_call_indirect<'c>(
 
     let fn_ty = cg.proc_type(indirect.proc_ty);
     let input_values = cg.cache.values.view(offset.clone());
-    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "icall_val")?;
+    let ret_val = cg.build.call(fn_ty, fn_val, input_values, "icall_val");
     cg.cache.values.pop_view(offset);
 
+    if indirect.proc_ty.return_ty.is_never() {
+        cg.build.unreachable();
+    }
+
+    let ret_val = ret_val?;
     match expect {
         Expect::Pointer => {
             let ty = llvm::typeof_value(ret_val);
