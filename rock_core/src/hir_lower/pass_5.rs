@@ -3549,7 +3549,7 @@ fn check_call_direct<'hir, 'ast>(
     }
 
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
-    let expr = hir::Expr::CallDirect { proc_id, input: values, start };
+    let expr = hir::Expr::CallDirect { proc_id, input: values };
     TypeResult::new(return_ty, expr)
 }
 

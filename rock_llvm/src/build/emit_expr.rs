@@ -104,9 +104,7 @@ fn codegen_expr<'c>(
         hir::Expr::Variant { enum_id, variant_id, input } => {
             codegen_variant(cg, expect, enum_id, variant_id, input)
         }
-        hir::Expr::CallDirect { proc_id, input, start } => {
-            codegen_call_direct(cg, expect, proc_id, input, start)
-        }
+        hir::Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, expect, proc_id, input),
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
         }
@@ -690,7 +688,6 @@ fn codegen_call_direct<'c>(
     expect: Expect,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
-    start: TextOffset,
 ) -> Option<llvm::Value> {
     let offset = cg.cache.values.start();
     for (idx, expr) in input.iter().copied().enumerate() {

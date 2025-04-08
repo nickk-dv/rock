@@ -254,7 +254,7 @@ pub enum Expr<'hir> {
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
-    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>], start: TextOffset }, //@pass location in IR, no need for `start`
+    CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
@@ -595,7 +595,7 @@ pub type VariantEval<'hir> = Eval<(), ConstValue<'hir>>;
 
 crate::size_lock!(24, Type);
 crate::size_lock!(16, Stmt);
-crate::size_lock!(32, Expr);
+crate::size_lock!(24, Expr);
 crate::size_lock!(16, ConstValue);
 
 //==================== ITEM FLAGS ====================
