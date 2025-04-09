@@ -28,7 +28,6 @@ pub struct Session<'s> {
     pub config: Config,
     pub errors: ErrorBuffer,
     pub root_id: PackageID,
-    pub discard_id: NameID,
     pub ast_state: AstBuildState<'s>,
 }
 
@@ -272,10 +271,8 @@ pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
         config,
         errors: ErrorBuffer::default(),
         root_id: PackageID(0),
-        discard_id: NameID::dummy(),
         ast_state: AstBuildState::new(),
     };
-    session.discard_id = session.intern_name.intern("_");
 
     let core_dir = session.curr_exe_dir.join("core");
     process_package(&mut session, &core_dir, None, true)?;

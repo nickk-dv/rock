@@ -48,8 +48,9 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
                 err::scope_symbol_unused(&mut ctx.emit, src, name, "parameter");
             }
         }
+        let discard_id = ctx.session.intern_name.intern("_");
         for var in variables {
-            if !var.was_used && var.name.id != ctx.session.discard_id {
+            if !var.was_used && var.name.id != discard_id {
                 let src = ctx.src(var.name.range);
                 let name = ctx.name(var.name.id);
                 err::scope_symbol_unused(&mut ctx.emit, src, name, "variable");
@@ -906,8 +907,6 @@ fn check_field_from_slice(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::Slic
     }
 }
 
-//@emit temp variable with array assignment?
-// else `[side_effect()].len` would result in `1` without any code running.
 fn check_field_from_array<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     name: ast::Name,
@@ -2846,19 +2845,18 @@ fn typecheck_for<'hir, 'ast>(
                 collection.elem_ty
             };
 
+            let discard_id = ctx.session.intern_name.intern("_");
+            let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
+
             let value_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: header
-                    .value
-                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
+                name: header.value.unwrap_or(name_dummy),
                 ty: value_ty,
                 was_used: false,
             };
             let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: header
-                    .index
-                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
+                name: header.index.unwrap_or(name_dummy),
                 ty: hir::Type::Int(IntType::Usize),
                 was_used: false,
             };
@@ -2886,7 +2884,7 @@ fn typecheck_for<'hir, 'ast>(
             };
             let iter_var = hir::Variable {
                 mutt: ast::Mut::Mutable,
-                name: ast::Name { id: ctx.session.discard_id, range: TextRange::zero() },
+                name: name_dummy,
                 ty: iter_var_ty,
                 was_used: false,
             };
@@ -3082,25 +3080,24 @@ fn typecheck_for<'hir, 'ast>(
                 IntType::S32 //default
             };
 
+            let discard_id = ctx.session.intern_name.intern("_");
+            let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
+
             let start_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: header
-                    .value
-                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
+                name: header.value.unwrap_or(name_dummy),
                 ty: hir::Type::Int(int_ty),
                 was_used: false,
             };
             let end_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: ast::Name { id: ctx.session.discard_id, range: TextRange::zero() },
+                name: name_dummy,
                 ty: hir::Type::Int(int_ty),
                 was_used: false,
             };
             let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
-                name: header
-                    .index
-                    .unwrap_or(ast::Name { id: ctx.session.discard_id, range: TextRange::zero() }),
+                name: header.index.unwrap_or(name_dummy),
                 ty: hir::Type::Int(IntType::Usize),
                 was_used: false,
             };

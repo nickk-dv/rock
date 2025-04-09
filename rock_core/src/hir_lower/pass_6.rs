@@ -11,15 +11,9 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
         return;
     }
 
-    let main_id = match ctx.session.intern_name.get_id("main") {
-        Some(main_id) => main_id,
-        None => {
-            err::entry_main_mod_not_found(&mut ctx.emit);
-            return;
-        }
-    };
-
+    let main_id = ctx.session.intern_name.intern("main");
     let module_or_directory = root_package.src().find(ctx.session, main_id);
+
     let target_id = match module_or_directory {
         ModuleOrDirectory::Module(module_id) => module_id,
         _ => {
