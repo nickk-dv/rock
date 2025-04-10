@@ -4,7 +4,7 @@ use crate::error::SourceRange;
 use crate::intern::{LitID, NameID};
 use crate::session::ModuleID;
 use crate::support::{Arena, AsStr, BitSet};
-use crate::text::{TextOffset, TextRange};
+use crate::text::TextRange;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -18,6 +18,7 @@ pub struct Hir<'hir> {
 }
 
 pub struct CoreItems {
+    pub panic: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
     pub source_location: Option<StructID>,

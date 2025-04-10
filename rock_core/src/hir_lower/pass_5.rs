@@ -3503,12 +3503,17 @@ fn check_call_direct<'hir, 'ast>(
             }
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
-                    let call_module = ctx.session.module.get(ctx.scope.origin());
-                    let call_file = ctx.session.vfs.file(call_module.file_id());
+                    let origin_module = ctx.session.module.get(ctx.scope.origin());
+                    let origin_file = ctx.session.vfs.file(origin_module.file_id());
+                    let package_id = origin_module.origin();
+                    let package = ctx.session.graph.package(package_id);
+                    let path = origin_file.path.strip_prefix(package.root_dir()).unwrap();
+                    let path_id = ctx.session.intern_lit.intern(path.to_str().unwrap_or("")); //@add package directory for depependencies
+
                     let location = crate::text::find_text_location(
-                        &call_file.source,
+                        &origin_file.source,
                         start,
-                        &call_file.line_ranges,
+                        &origin_file.line_ranges,
                     );
                     let line = hir::ConstValue::Int {
                         val: location.line() as u64,
@@ -3520,14 +3525,13 @@ fn check_call_direct<'hir, 'ast>(
                         neg: false,
                         int_ty: hir::IntType::U32,
                     };
-                    //@temp 0 lit id
                     let filename = hir::ConstValue::String {
-                        val: LitID::new(0),
+                        val: path_id,
                         string_ty: hir::StringType::String,
                     };
-                    let fields = ctx.arena.alloc_slice(&[line, column, filename]);
 
-                    let struct_ = hir::ConstStruct { struct_id, values: fields };
+                    let values = ctx.arena.alloc_slice(&[line, column, filename]);
+                    let struct_ = hir::ConstStruct { struct_id, values };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_ };
                     ctx.arena.alloc(hir::Expr::Const { value })

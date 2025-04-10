@@ -31,6 +31,8 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
     }
 
     ctx.core.string_equals =
+        scope::find_core_proc(ctx, "panics", "panic").unwrap_or(hir::ProcID::dummy());
+    ctx.core.string_equals =
         scope::find_core_proc(ctx, "slice", "string_equals").unwrap_or(hir::ProcID::dummy());
     ctx.core.cstring_equals =
         scope::find_core_proc(ctx, "slice", "cstring_equals").unwrap_or(hir::ProcID::dummy());
