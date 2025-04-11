@@ -22,7 +22,6 @@ pub fn build(
     options: BuildOptions,
 ) -> Result<PathBuf, Error> {
     let config = session.config;
-    let root_manifest = session.graph.package(session.root_id).manifest();
 
     // generate the single ir module
     let timer = Timer::start();
@@ -34,6 +33,8 @@ pub fn build(
     os::dir_create(&build_path, false)?;
     build_path.push(config.build_kind.as_str());
     os::dir_create(&build_path, false)?;
+
+    let root_manifest = session.graph.package(session.root_id).manifest();
     let bin_name = match &root_manifest.build.bin_name {
         Some(name) => name.as_str(),
         None => root_manifest.package.name.as_str(),

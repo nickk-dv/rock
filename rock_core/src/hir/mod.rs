@@ -2,9 +2,9 @@ use crate::ast;
 use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
 use crate::intern::{LitID, NameID};
-use crate::session::ModuleID;
+use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, BitSet};
-use crate::text::TextRange;
+use crate::text::{self, TextOffset, TextRange};
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -369,6 +369,7 @@ pub struct IndexAccess<'hir> {
     pub elem_ty: Type<'hir>,
     pub kind: IndexKind,
     pub index: &'hir Expr<'hir>,
+    pub offset: TextOffset,
 }
 
 #[derive(Copy, Clone)]
@@ -964,4 +965,25 @@ impl CmpPred {
             CmpPred::GreaterEq => ">=",
         }
     }
+}
+
+pub fn source_location<'hir>(
+    session: &mut Session,
+    origin_id: ModuleID,
+    offset: TextOffset,
+) -> [ConstValue<'hir>; 3] {
+    let module = session.module.get(origin_id);
+    let file = session.vfs.file(module.file_id());
+
+    let package_id = module.origin();
+    let package = session.graph.package(package_id);
+    let path = file.path.strip_prefix(package.root_dir()).unwrap();
+    let path_id = session.intern_lit.intern(path.to_str().unwrap_or("")); //@add package directory for depependencies
+
+    let location = text::find_text_location(&file.source, offset, &file.line_ranges);
+    let line = ConstValue::Int { val: location.line() as u64, neg: false, int_ty: IntType::U32 };
+    let column = ConstValue::Int { val: location.col() as u64, neg: false, int_ty: IntType::U32 };
+    let filename = ConstValue::String { val: path_id, string_ty: StringType::String };
+
+    [line, column, filename]
 }

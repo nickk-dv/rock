@@ -491,8 +491,8 @@ fn codegen_index<'c>(
     };
 
     if let Some(bound) = bound {
-        let check_bb = cg.append_bb("bounds_check");
-        let exit_bb = cg.append_bb("bounds_exit");
+        let check_bb = cg.append_bb("bounds_check_error");
+        let exit_bb = cg.append_bb("bounds_check_ok");
         let cond = codegen_binary_op(
             cg,
             hir::BinOp::Cmp_Int(CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::Usize),
@@ -501,8 +501,21 @@ fn codegen_index<'c>(
         );
         cg.build.cond_br(cond, check_bb, exit_bb);
         cg.build.position_at_end(check_bb);
-        //@insert panic call (cannot get reference to it currently)
-        cg.build.br(exit_bb);
+
+        let struct_id = cg.hir.core.source_location.expect("");
+        let proc_data = cg.hir.proc_data(cg.proc.proc_id);
+        let fields = hir::source_location(cg.session, proc_data.origin_id, access.offset);
+        let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
+        let struct_ = hir::ConstStruct { struct_id, values };
+        let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
+        let value = hir::ConstValue::Struct { struct_: &struct_ };
+        let loc = hir::Expr::Const { value };
+
+        let message = cg.session.intern_lit.intern("index out of bounds");
+        let value = hir::ConstValue::String { val: message, string_ty: hir::StringType::String };
+        let message = hir::Expr::Const { value };
+
+        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, &[&message, &loc]);
         cg.build.position_at_end(exit_bb);
     }
 

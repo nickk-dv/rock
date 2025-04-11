@@ -17,7 +17,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
-    pub session: &'sref Session<'s>,
+    pub session: &'sref mut Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
 }
@@ -79,7 +79,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     pub fn new(
         hir: hir::Hir<'c>,
         triple: TargetTriple,
-        session: &'sref Session<'s>,
+        session: &'sref mut Session<'s>,
     ) -> Codegen<'c, 's, 'sref> {
         let mut context = llvm::IRContext::new();
         let target = llvm::IRTarget::new(triple, session.config.build_kind);

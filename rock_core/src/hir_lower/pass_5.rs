@@ -1039,6 +1039,7 @@ fn typecheck_index<'hir, 'ast>(
         elem_ty: collection.elem_ty,
         kind,
         index: index_res.expr,
+        offset: target.range.end(),
     };
 
     if let hir::Expr::Const { value: target } = target_res.expr {
@@ -2962,6 +2963,7 @@ fn typecheck_for<'hir, 'ast>(
                 elem_ty: collection.elem_ty,
                 kind: index_kind,
                 index: expr_index_var,
+                offset: header.expr.range.end(),
             };
             let access = ctx.arena.alloc(index_access);
             let iter_index_expr =
@@ -3503,34 +3505,8 @@ fn check_call_direct<'hir, 'ast>(
             }
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
-                    let origin_module = ctx.session.module.get(ctx.scope.origin());
-                    let origin_file = ctx.session.vfs.file(origin_module.file_id());
-                    let package_id = origin_module.origin();
-                    let package = ctx.session.graph.package(package_id);
-                    let path = origin_file.path.strip_prefix(package.root_dir()).unwrap();
-                    let path_id = ctx.session.intern_lit.intern(path.to_str().unwrap_or("")); //@add package directory for depependencies
-
-                    let location = crate::text::find_text_location(
-                        &origin_file.source,
-                        start,
-                        &origin_file.line_ranges,
-                    );
-                    let line = hir::ConstValue::Int {
-                        val: location.line() as u64,
-                        neg: false,
-                        int_ty: hir::IntType::U32,
-                    };
-                    let column = hir::ConstValue::Int {
-                        val: location.col() as u64,
-                        neg: false,
-                        int_ty: hir::IntType::U32,
-                    };
-                    let filename = hir::ConstValue::String {
-                        val: path_id,
-                        string_ty: hir::StringType::String,
-                    };
-
-                    let values = ctx.arena.alloc_slice(&[line, column, filename]);
+                    let values = hir::source_location(ctx.session, ctx.scope.origin(), start);
+                    let values = ctx.arena.alloc_slice(&values);
                     let struct_ = hir::ConstStruct { struct_id, values };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_ };
@@ -3542,6 +3518,7 @@ fn check_call_direct<'hir, 'ast>(
             }
         }
     }
+
     for expr in args {
         let expr_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
         if is_variadic {

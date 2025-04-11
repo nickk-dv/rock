@@ -10,7 +10,7 @@ use rock_core::session::Session;
 pub fn codegen_module(
     hir: hir::Hir,
     target: TargetTriple,
-    session: &Session,
+    session: &mut Session,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, session);
     codegen_string_lits(&mut cg);
@@ -25,6 +25,12 @@ pub fn codegen_module(
 
 //@NOTE(8.12.24) currently always null terminate, no "used as cstring" tracking in the compiler.
 fn codegen_string_lits(cg: &mut Codegen) {
+    //@hack prepare all possible required lit_id's (used in index expr)
+    cg.session.intern_lit.intern("index out of bounds");
+    for module_id in cg.session.module.ids() {
+        let _ = hir::source_location(cg.session, module_id, 0.into());
+    }
+
     for string in cg.session.intern_lit.get_all().iter().copied() {
         let string_val = llvm::const_string(&cg.context, string, true);
         let string_ty = llvm::typeof_value(string_val);
