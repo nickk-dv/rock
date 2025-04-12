@@ -5,14 +5,7 @@ use super::token::{Token, TokenSet, T};
 pub fn source_file(p: &mut Parser) {
     let m = p.start();
     while !p.at(T![eof]) {
-        if p.at_set(FIRST_ITEM) {
-            item(p);
-        } else {
-            p.error("expected item");
-            let me = p.start();
-            p.bump_sync(FIRST_ITEM);
-            me.complete(p, SyntaxKind::ERROR);
-        }
+        item(p);
     }
     m.complete(p, SyntaxKind::SOURCE_FILE);
 }
@@ -44,22 +37,6 @@ fn item(p: &mut Parser) {
         }
     }
 }
-
-const FIRST_ITEM: TokenSet =
-    TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![ident], T![let], T![import]]);
-
-//@add FIRST_EXPR FIRST_STMT `;` for these (can be anywhere)
-const RECOVER_DIRECTIVE_PARAM_LIST: TokenSet = FIRST_ITEM;
-const RECOVER_DIRECTIVE_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')']]));
-
-const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
-
-const RECOVER_PARAM_LIST: TokenSet =
-    TokenSet::new(&[T!['('], T!['{'], T![;]]).combine(FIRST_ITEM).combine(FIRST_TYPE);
-const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
-const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
-const RECOVER_IMPORT_PATH: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![as], T![.], T![;]]));
-const RECOVER_IMPORT_SYMBOL_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![;]]));
 
 fn proc_item(p: &mut Parser, m: Marker) {
     p.bump(T![proc]);
@@ -150,8 +127,6 @@ fn variant_list(p: &mut Parser) {
     m.complete(p, SyntaxKind::VARIANT_LIST);
 }
 
-const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
-
 fn variant(p: &mut Parser) {
     let m = if p.at(T![#]) {
         let mc = directive_list(p);
@@ -168,9 +143,6 @@ fn variant(p: &mut Parser) {
     }
     m.complete(p, SyntaxKind::VARIANT);
 }
-
-const RECOVER_VARIANT_FIELD_LIST: TokenSet =
-    FIRST_ITEM.combine(TokenSet::new(&[T![,], T![')'], T!['}'], T![ident]]));
 
 fn variant_field_list(p: &mut Parser) {
     let m = p.start();
@@ -203,8 +175,6 @@ fn struct_item(p: &mut Parser, m: Marker) {
     }
     m.complete(p, SyntaxKind::STRUCT_ITEM);
 }
-
-const FIRST_FIELD: TokenSet = TokenSet::new(&[T![#], T![ident]]);
 
 fn field_list(p: &mut Parser) {
     let m = p.start();
@@ -420,30 +390,6 @@ fn directive_param(p: &mut Parser) {
 
 //==================== TYPE ====================
 
-const FIRST_TYPE: TokenSet = TokenSet::new(&[
-    T![s8],
-    T![s16],
-    T![s32],
-    T![s64],
-    T![ssize],
-    T![u8],
-    T![u16],
-    T![u32],
-    T![u64],
-    T![usize],
-    T![f32],
-    T![f64],
-    T![bool],
-    T![char],
-    T![rawptr],
-    T![void],
-    T![never],
-    T![ident],
-    T![&],
-    T![proc],
-    T!['['],
-]);
-
 fn ty(p: &mut Parser) {
     if p.peek().as_basic_type().is_some() {
         let m = p.start();
@@ -482,9 +428,6 @@ fn type_proc(p: &mut Parser) {
     ty(p);
     m.complete(p, SyntaxKind::TYPE_PROCEDURE);
 }
-
-const RECOVER_PROC_TYPE_PARAM_LIST: TokenSet =
-    FIRST_ITEM.combine(FIRST_TYPE).combine(TokenSet::new(&[T![')']]));
 
 fn proc_type_param_list(p: &mut Parser) {
     let m = p.start();
@@ -1146,8 +1089,6 @@ fn name_bump(p: &mut Parser) {
     m.complete(p, SyntaxKind::NAME);
 }
 
-const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
-
 fn bind(p: &mut Parser) {
     let m = p.start();
     if p.eat(T![mut]) || p.at(T![ident]) {
@@ -1260,3 +1201,35 @@ fn polymorph_params(p: &mut Parser) {
     p.expect(T![')']);
     m.complete(p, SyntaxKind::POLYMORPH_PARAMS);
 }
+
+//==================== FIRST SETS ====================
+
+#[rustfmt::skip]
+const FIRST_ITEM: TokenSet = TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![ident], T![let], T![import]]);
+const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
+const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
+const FIRST_FIELD: TokenSet = TokenSet::new(&[T![#], T![ident]]);
+const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
+#[rustfmt::skip]
+const FIRST_TYPE: TokenSet = TokenSet::new(&[
+    T![char], T![void], T![never], T![rawptr],
+    T![s8], T![s16], T![s32], T![s64], T![ssize],
+    T![u8], T![u16], T![u32], T![u64], T![usize],
+    T![f32], T![f64], T![bool], T![bool16], T![bool32], T![bool64],
+    T![string], T![cstring], T![ident], T![&], T![proc], T!['['],
+]);
+
+//==================== RECOVER SETS ====================
+
+const RECOVER_DIRECTIVE_PARAM_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_DIRECTIVE_PARAM: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![')']]));
+const RECOVER_PARAM_LIST: TokenSet =
+    FIRST_ITEM.combine(FIRST_TYPE).combine(TokenSet::new(&[T!['('], T!['{'], T![;]]));
+const RECOVER_VARIANT_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_VARIANT_FIELD_LIST: TokenSet =
+    FIRST_ITEM.combine(TokenSet::new(&[T![,], T![')'], T!['}'], T![ident]]));
+const RECOVER_FIELD_LIST: TokenSet = FIRST_ITEM;
+const RECOVER_IMPORT_PATH: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![as], T![.], T![;]]));
+const RECOVER_IMPORT_SYMBOL_LIST: TokenSet = FIRST_ITEM.combine(TokenSet::new(&[T![;]]));
+const RECOVER_PROC_TYPE_PARAM_LIST: TokenSet =
+    FIRST_ITEM.combine(FIRST_TYPE).combine(TokenSet::new(&[T![')']]));
