@@ -1126,24 +1126,10 @@ fn typecheck_cast<'hir, 'ast>(
         | (hir::Type::Procedure(_), hir::Type::Rawptr) => CastKind::Rawptr_NoOp,
 
         (hir::Type::Int(from_ty), hir::Type::Int(into_ty)) => {
-            if from_ty == IntType::Untyped {
-                CastKind::Int_NoOp
-            } else if from_ty == into_ty {
+            if from_ty != IntType::Untyped && from_ty == into_ty {
                 CastKind::Error
             } else {
-                let from_size = layout::int_layout(ctx, from_ty).size;
-                let into_size = layout::int_layout(ctx, into_ty).size;
-                match from_size.cmp(&into_size) {
-                    Ordering::Less => {
-                        if from_ty.is_signed() {
-                            CastKind::IntS_Extend
-                        } else {
-                            CastKind::IntU_Extend
-                        }
-                    }
-                    Ordering::Equal => CastKind::Int_NoOp,
-                    Ordering::Greater => CastKind::Int_Trunc,
-                }
+                integer_cast_kind(ctx, from_ty, into_ty)
             }
         }
         (hir::Type::Int(from_ty), hir::Type::Float(_)) => {
@@ -1264,6 +1250,29 @@ fn typecheck_cast<'hir, 'ast>(
         }
         let cast = hir::Expr::Cast { target: target_res.expr, into: ctx.arena.alloc(into), kind };
         TypeResult::new(into, cast)
+    }
+}
+
+fn integer_cast_kind(ctx: &HirCtx, from_ty: IntType, into_ty: IntType) -> hir::CastKind {
+    use hir::CastKind;
+    use std::cmp::Ordering;
+
+    if from_ty == IntType::Untyped || into_ty == IntType::Untyped {
+        return hir::CastKind::Int_NoOp;
+    }
+
+    let from_size = layout::int_layout(ctx, from_ty).size;
+    let into_size = layout::int_layout(ctx, into_ty).size;
+    match from_size.cmp(&into_size) {
+        Ordering::Less => {
+            if from_ty.is_signed() {
+                CastKind::IntS_Extend
+            } else {
+                CastKind::IntU_Extend
+            }
+        }
+        Ordering::Equal => CastKind::Int_NoOp,
+        Ordering::Greater => CastKind::Int_Trunc,
     }
 }
 
@@ -2118,7 +2127,7 @@ fn check_binary_op<'hir>(
     lhs_ty: hir::Type<'hir>,
     rhs_ty: hir::Type,
 ) -> Result<hir::BinOp, ()> {
-    if !type_matches(ctx, lhs_ty, rhs_ty) {
+    if op != ast::BinOp::BitShl && op != ast::BinOp::BitShr && !type_matches(ctx, lhs_ty, rhs_ty) {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
         let lhs_ty = type_format(ctx, lhs_ty);
@@ -2164,12 +2173,18 @@ fn check_binary_op<'hir>(
             hir::Type::Int(_) => Ok(hir::BinOp::BitXor),
             _ => Err(()),
         },
-        ast::BinOp::BitShl => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitShl),
+        ast::BinOp::BitShl => match (lhs_ty, rhs_ty) {
+            (hir::Type::Int(lhs_ty), hir::Type::Int(rhs_ty)) => {
+                let cast = integer_cast_kind(ctx, rhs_ty, lhs_ty);
+                Ok(hir::BinOp::BitShl(lhs_ty, cast))
+            }
             _ => Err(()),
         },
-        ast::BinOp::BitShr => match lhs_ty {
-            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitShr(int_ty)),
+        ast::BinOp::BitShr => match (lhs_ty, rhs_ty) {
+            (hir::Type::Int(lhs_ty), hir::Type::Int(rhs_ty)) => {
+                let cast = integer_cast_kind(ctx, rhs_ty, lhs_ty);
+                Ok(hir::BinOp::BitShr(lhs_ty, cast))
+            }
             _ => Err(()),
         },
         ast::BinOp::Eq => match lhs_ty {
@@ -2400,7 +2415,7 @@ fn constfold_binary<'hir>(
                 Ok(hir::ConstValue::from_u64(val, int_ty))
             }
         }
-        hir::BinOp::BitShl | hir::BinOp::BitShr(_) => {
+        hir::BinOp::BitShl(_, _) | hir::BinOp::BitShr(_, _) => {
             err::internal_not_implemented(&mut ctx.emit, src, "binary shifts constfold");
             Err(())
         }

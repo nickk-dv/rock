@@ -549,11 +549,19 @@ fn codegen_cast<'c>(
     into: &hir::Type,
     kind: hir::CastKind,
 ) -> llvm::Value {
+    let val = codegen_expr_value(cg, target);
+    let into = cg.ty(*into);
+    codegen_cast_op(cg, val, into, kind)
+}
+
+fn codegen_cast_op<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    val: llvm::Value,
+    into: llvm::Type,
+    kind: hir::CastKind,
+) -> llvm::Value {
     use hir::CastKind;
     use llvm::OpCode;
-
-    let val = codegen_expr_value(cg, target);
-    let into_ty = cg.ty(*into);
 
     match kind {
         CastKind::Error => unreachable!(),
@@ -561,27 +569,27 @@ fn codegen_cast<'c>(
         CastKind::Rawptr_NoOp => val,
 
         CastKind::Int_NoOp => val,
-        CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "icast"),
-        CastKind::IntS_Extend => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "icast"),
-        CastKind::IntU_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "icast"),
-        CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into_ty, "icast"),
-        CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into_ty, "icast"),
+        CastKind::Int_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into, "icast"),
+        CastKind::IntS_Extend => cg.build.cast(OpCode::LLVMSExt, val, into, "icast"),
+        CastKind::IntU_Extend => cg.build.cast(OpCode::LLVMZExt, val, into, "icast"),
+        CastKind::IntS_to_Float => cg.build.cast(OpCode::LLVMSIToFP, val, into, "icast"),
+        CastKind::IntU_to_Float => cg.build.cast(OpCode::LLVMUIToFP, val, into, "icast"),
 
-        CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into_ty, "fcast"),
-        CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into_ty, "fcast"),
-        CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into_ty, "fcast"),
-        CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into_ty, "fcast"),
+        CastKind::Float_Trunc => cg.build.cast(OpCode::LLVMFPTrunc, val, into, "fcast"),
+        CastKind::Float_Extend => cg.build.cast(OpCode::LLVMFPExt, val, into, "fcast"),
+        CastKind::Float_to_IntS => cg.build.cast(OpCode::LLVMFPToSI, val, into, "fcast"),
+        CastKind::Float_to_IntU => cg.build.cast(OpCode::LLVMFPToUI, val, into, "fcast"),
 
-        CastKind::Bool_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "bcast"),
-        CastKind::Bool_Extend => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "bcast"),
+        CastKind::Bool_Trunc => cg.build.cast(OpCode::LLVMTrunc, val, into, "bcast"),
+        CastKind::Bool_Extend => cg.build.cast(OpCode::LLVMZExt, val, into, "bcast"),
         CastKind::Bool_NoOp_to_Int => val,
-        CastKind::Bool_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "bcast"),
-        CastKind::Bool_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "bcast"),
+        CastKind::Bool_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into, "bcast"),
+        CastKind::Bool_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into, "bcast"),
 
         CastKind::Enum_NoOp_to_Int => val,
-        CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into_ty, "ecast"),
-        CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into_ty, "ecast"),
-        CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into_ty, "ecast"),
+        CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into, "ecast"),
+        CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into, "ecast"),
+        CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into, "ecast"),
     }
 }
 
@@ -1001,9 +1009,13 @@ pub fn codegen_binary_op(
         hir::BinOp::BitAnd => cg.build.bin_op(OpCode::LLVMAnd, lhs, rhs, "bin"),
         hir::BinOp::BitOr => cg.build.bin_op(OpCode::LLVMOr, lhs, rhs, "bin"),
         hir::BinOp::BitXor => cg.build.bin_op(OpCode::LLVMXor, lhs, rhs, "bin"),
-        hir::BinOp::BitShl => cg.build.bin_op(OpCode::LLVMShl, lhs, rhs, "bin"),
-        hir::BinOp::BitShr(int_ty) => {
-            let op = if int_ty.is_signed() { OpCode::LLVMAShr } else { OpCode::LLVMLShr };
+        hir::BinOp::BitShl(lhs_ty, cast) => {
+            let rhs = codegen_cast_op(cg, rhs, cg.int_type(lhs_ty), cast);
+            cg.build.bin_op(OpCode::LLVMShl, lhs, rhs, "bin")
+        }
+        hir::BinOp::BitShr(lhs_ty, cast) => {
+            let op = if lhs_ty.is_signed() { OpCode::LLVMAShr } else { OpCode::LLVMLShr };
+            let rhs = codegen_cast_op(cg, rhs, cg.int_type(lhs_ty), cast);
             cg.build.bin_op(op, lhs, rhs, "bin")
         }
         hir::BinOp::Eq_Int_Other(bool_ty) => {
