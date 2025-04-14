@@ -356,6 +356,91 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
     }
 }
 
+trait FlexibleFormat<'syn> {
+    fn format(fmt: &mut Formatter<'syn, '_>, node: Self);
+}
+
+impl<'syn> FlexibleFormat<'syn> for cst::Expr<'syn> {
+    fn format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        expr(fmt, node);
+    }
+}
+
+fn flexible_break_node_list<'syn, N: AstNode<'syn> + FlexibleFormat<'syn>>(
+    fmt: &mut Formatter<'syn, '_>,
+    open: char,
+    close: char,
+    nodes: AstNodeIterator<'syn, N>,
+) {
+    let mut line_range = fmt.line_ranges[fmt.line_num_src as usize];
+
+    match nodes.clone().next() {
+        Some(first) => {
+            let start = first.find_range(fmt.tree).start();
+            while !line_range.contains_exclusive(start) {
+                fmt.line_num_src += 1;
+                line_range = fmt.line_ranges[fmt.line_num_src as usize];
+            }
+        }
+        None => {
+            fmt.write(open);
+            fmt.write(close);
+            return;
+        }
+    };
+
+    fmt.write(open);
+
+    if fmt.wrap_line_break_based(nodes.clone()) {
+        fmt.new_line();
+        fmt.tab_inc();
+        fmt.tab_depth();
+
+        let mut first = true;
+        for node in nodes {
+            let start = node.find_range(fmt.tree).start();
+            let wrapped = !line_range.contains_exclusive(start);
+
+            if wrapped {
+                first = true;
+                while !line_range.contains_exclusive(start) {
+                    fmt.line_num_src += 1;
+                    line_range = fmt.line_ranges[fmt.line_num_src as usize];
+                }
+            }
+
+            if wrapped {
+                fmt.write(',');
+                fmt.new_line();
+                fmt.tab_depth();
+            }
+
+            if !first {
+                fmt.write(',');
+                fmt.space();
+            }
+            first = false;
+            N::format(fmt, node);
+        }
+
+        fmt.new_line();
+        fmt.tab_dec();
+        fmt.tab_depth();
+    } else {
+        let mut first = true;
+        for node in nodes {
+            if !first {
+                fmt.write(',');
+                fmt.space();
+            }
+            first = false;
+            N::format(fmt, node);
+        }
+    }
+
+    fmt.write(close);
+}
+
 fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
     fmt: &mut Formatter<'syn, '_>,
     node_list: &Node<'syn>,
@@ -1521,19 +1606,7 @@ fn field_init<'syn>(fmt: &mut Formatter<'syn, '_>, field_init: cst::FieldInit<'s
 }
 
 fn expr_array_init<'syn>(fmt: &mut Formatter<'syn, '_>, array_init: cst::ExprArrayInit<'syn>) {
-    fmt.write('[');
-
-    let mut first = true;
-    for expr_cst in array_init.input(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            fmt.space();
-        }
-        first = false;
-        expr(fmt, expr_cst);
-    }
-
-    fmt.write(']');
+    flexible_break_node_list(fmt, '[', ']', array_init.input(fmt.tree));
 }
 
 fn expr_array_repeat<'syn>(

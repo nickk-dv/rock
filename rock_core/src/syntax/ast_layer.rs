@@ -5,13 +5,14 @@ use crate::ast;
 use crate::text::TextRange;
 use std::marker::PhantomData;
 
-pub trait AstNode<'syn> {
+pub trait AstNode<'syn>: Copy + Clone {
     fn cast(node: &'syn Node<'syn>) -> Option<Self>
     where
         Self: Sized;
     fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange;
 }
 
+#[derive(Clone)]
 pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
     tree: &'syn SyntaxTree<'syn>,
     iter: std::slice::Iter<'syn, NodeOrToken>,
