@@ -8,8 +8,6 @@ use crate::text::TextRange;
 
 const TAB_STR: &str = "    ";
 const TAB_LEN: u32 = TAB_STR.len() as u32;
-const WRAP_THRESHOLD: u32 = 90;
-const SUBWRAP_IMPORT_SYMBOL: u32 = 60;
 
 #[must_use]
 pub fn format<'syn>(
@@ -201,11 +199,6 @@ impl<'syn> Formatter<'syn, '_> {
         }
         false
     }
-
-    fn wrap_content_len_based(&self, node: &Node) -> bool {
-        let offset = self.line_offset + content_len(self, node);
-        offset > WRAP_THRESHOLD
-    }
 }
 
 impl FormatterCache {
@@ -311,25 +304,6 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
     true
 }
 
-#[must_use]
-fn content_len(fmt: &Formatter, node: &Node) -> u32 {
-    let mut len = 0;
-    for not in node.content {
-        match *not {
-            NodeOrToken::Node(node_id) => {
-                let node = fmt.tree.node(node_id);
-                len += content_len(fmt, node);
-            }
-            NodeOrToken::Token(token_id) => {
-                let range = fmt.tree.tokens().token_range(token_id);
-                len += range.len();
-            }
-            NodeOrToken::Trivia(_) => {}
-        }
-    }
-    len
-}
-
 fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
     for not in node.content {
         match *not {
@@ -363,6 +337,11 @@ trait FlexibleFormat<'syn> {
 impl<'syn> FlexibleFormat<'syn> for cst::Expr<'syn> {
     fn format(fmt: &mut Formatter<'syn, '_>, node: Self) {
         expr(fmt, node);
+    }
+}
+impl<'syn> FlexibleFormat<'syn> for cst::ImportSymbol<'syn> {
+    fn format(fmt: &mut Formatter<'syn, '_>, node: Self) {
+        import_symbol(fmt, node);
     }
 }
 
@@ -423,6 +402,7 @@ fn flexible_break_node_list<'syn, N: AstNode<'syn> + FlexibleFormat<'syn>>(
             N::format(fmt, node);
         }
 
+        fmt.write(','); //trailing comma for wrapped case
         fmt.new_line();
         fmt.tab_dec();
         fmt.tab_depth();
@@ -910,51 +890,11 @@ fn import_path(fmt: &mut Formatter, import_path: cst::ImportPath) {
     }
 }
 
-fn import_symbol_list(fmt: &mut Formatter, import_symbol_list: cst::ImportSymbolList) {
-    if import_symbol_list.import_symbols(fmt.tree).next().is_none() {
-        fmt.write('{');
-        fmt.write('}');
-        return;
-    }
-
-    fmt.write('{');
-    let wrap = fmt.wrap_content_len_based(import_symbol_list.0);
-    if wrap {
-        fmt.new_line();
-    }
-
-    let mut first = true;
-    let mut total_len = 0;
-
-    for import_symbol_cst in import_symbol_list.import_symbols(fmt.tree) {
-        let sub_wrap = total_len > SUBWRAP_IMPORT_SYMBOL;
-        if sub_wrap {
-            total_len = 0;
-        }
-        if wrap {
-            total_len += content_len(fmt, import_symbol_cst.0);
-        }
-
-        if !first {
-            fmt.write(',');
-            if wrap && sub_wrap {
-                fmt.new_line();
-            } else {
-                fmt.space();
-            }
-        }
-        if wrap && (first || sub_wrap) {
-            fmt.tab_single();
-        }
-        first = false;
-        import_symbol(fmt, import_symbol_cst);
-    }
-
-    if wrap {
-        fmt.write(',');
-        fmt.new_line();
-    }
-    fmt.write('}');
+fn import_symbol_list<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    import_symbol_list: cst::ImportSymbolList<'syn>,
+) {
+    flexible_break_node_list(fmt, '{', '}', import_symbol_list.import_symbols(fmt.tree));
 }
 
 fn import_symbol(fmt: &mut Formatter, import_symbol: cst::ImportSymbol) {
