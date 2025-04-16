@@ -3518,6 +3518,8 @@ fn check_call_direct<'hir, 'ast>(
             hir::ParamKind::ErrorDirective => {
                 ctx.cache.exprs.push(&hir::Expr::Error);
             }
+            hir::ParamKind::Variadic => break,
+            hir::ParamKind::CVariadic => break,
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
                     let values = hir::source_location(ctx.session, ctx.scope.origin(), start);

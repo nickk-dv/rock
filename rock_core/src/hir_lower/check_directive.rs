@@ -116,6 +116,8 @@ pub fn check_param_directive<'hir>(
         return (hir::Type::Error, hir::ParamKind::ErrorDirective);
     }
     match directive.kind {
+        DirectiveKind::Variadic => (hir::Type::Error, hir::ParamKind::Variadic), //@change ty to type info slice
+        DirectiveKind::CVariadic => (hir::Type::Error, hir::ParamKind::CVariadic),
         DirectiveKind::CallerLocation => (
             ctx.core.source_location.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[])),
             hir::ParamKind::CallerLocation,

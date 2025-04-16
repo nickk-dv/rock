@@ -348,10 +348,12 @@ fn directive<'ast>(
             let name = name(ctx, dir.name(ctx.tree).unwrap());
             match ctx.intern_name.get(name.id) {
                 "inline" => ast::DirectiveKind::Inline,
+                "variadic" => ast::DirectiveKind::Variadic,
+                "c_variadic" => ast::DirectiveKind::CVariadic,
+                "caller_location" => ast::DirectiveKind::CallerLocation,
                 "scope_public" => ast::DirectiveKind::ScopePublic,
                 "scope_package" => ast::DirectiveKind::ScopePackage,
                 "scope_private" => ast::DirectiveKind::ScopePrivate,
-                "caller_location" => ast::DirectiveKind::CallerLocation,
                 _ => ast::DirectiveKind::Error(name),
             }
         }

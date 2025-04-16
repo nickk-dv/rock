@@ -50,6 +50,8 @@ pub struct Param<'hir> {
 pub enum ParamKind {
     Normal,
     ErrorDirective,
+    Variadic,
+    CVariadic,
     CallerLocation,
 }
 
