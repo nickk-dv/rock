@@ -275,6 +275,10 @@ fn codegen_function_bodies(cg: &mut Codegen) {
         }
 
         if let Some(block) = data.block {
+            if data.flag_set.contains(hir::ProcFlag::EntryPoint) {
+                emit_expr::codegen_call_direct(cg, Expect::Value(None), cg.hir.core.start, &[]);
+            }
+
             let value_id = cg.proc.add_tail_value();
             emit_stmt::codegen_block(cg, Expect::Value(Some(value_id)), block);
 

@@ -43,6 +43,7 @@ pub struct Cache<'hir> {
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
         let core = hir::CoreItems {
+            start: hir::ProcID::dummy(),
             panic: hir::ProcID::dummy(),
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),

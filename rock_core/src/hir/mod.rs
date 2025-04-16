@@ -18,6 +18,7 @@ pub struct Hir<'hir> {
 }
 
 pub struct CoreItems {
+    pub start: ProcID,
     pub panic: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,

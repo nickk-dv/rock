@@ -703,7 +703,7 @@ fn codegen_variant<'c>(
 }
 
 //@set correct calling conv for the call itself?
-fn codegen_call_direct<'c>(
+pub fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     proc_id: hir::ProcID,
