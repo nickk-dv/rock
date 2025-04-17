@@ -24,7 +24,6 @@ pub struct ProcItem<'ast> {
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
     pub params: &'ast [Param<'ast>],
-    pub is_variadic: bool,
     pub return_ty: Type<'ast>,
     pub block: Option<Block<'ast>>,
 }
@@ -194,7 +193,6 @@ pub enum TypeKind<'ast> {
 #[derive(Copy, Clone)]
 pub struct ProcType<'ast> {
     pub param_types: &'ast [Type<'ast>],
-    pub variadic: bool,
     pub return_ty: Type<'ast>,
 }
 

@@ -876,7 +876,6 @@ impl<'syn> ProcItem<'syn> {
 }
 impl<'syn> ParamList<'syn> {
     node_iter!(params, Param);
-    token_find_rev!(t_dotdot, T![..]);
 }
 impl<'syn> Param<'syn> {
     token_find!(t_mut, T![mut]);
@@ -1017,7 +1016,6 @@ impl<'syn> TypeProcedure<'syn> {
 
 impl<'syn> ProcTypeParamList<'syn> {
     node_iter!(params, Param);
-    token_find_rev!(t_dotdot, T![..]);
 }
 
 impl<'syn> TypeArraySlice<'syn> {

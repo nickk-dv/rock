@@ -208,7 +208,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             param_types.push(self.ty(param_ty));
         }
         let return_ty = self.ty(proc_ty.return_ty);
-        llvm::function_type(return_ty, &param_types, proc_ty.variadic)
+        llvm::function_type(return_ty, &param_types, false) //@proc_ty variadic support
     }
 
     pub fn slice_type(&self) -> llvm::TypeStruct {

@@ -421,7 +421,7 @@ pub fn directive_not_compatible(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn dir_scope_vis_redundant(
+pub fn directive_scope_vis_redundant(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     prev_src: Option<SourceRange>,
@@ -430,6 +430,11 @@ pub fn dir_scope_vis_redundant(
     let msg = format!("scope visibility is already `{vis}`, remove this directive");
     let info = prev_src.map(|prev| Info::new_val("already set here", prev));
     emit.error(Error::new(msg, src, info));
+}
+
+pub fn directive_param_must_be_last(emit: &mut impl ErrorSink, src: SourceRange, dir_name: &str) {
+    let msg = format!("`#{dir_name}` parameter must be last");
+    emit.error(Error::new(msg, src, None));
 }
 
 pub fn flag_not_compatible(
@@ -443,13 +448,19 @@ pub fn flag_not_compatible(
     emit.error(Error::new(msg, item_src, None));
 }
 
-pub fn flag_proc_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
-    let msg = "`variadic` procedures must be `external`";
+pub fn flag_proc_variadic_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg =
+        "`variadic` procedures cannot be `external`\ndid you mean to use #c_variadic instead?";
     emit.error(Error::new(msg, proc_src, None));
 }
 
-pub fn flag_proc_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: SourceRange) {
-    let msg = "`variadic` procedures must have at least one parameter";
+pub fn flag_proc_c_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg = "`c_variadic` procedures must be `external`";
+    emit.error(Error::new(msg, proc_src, None));
+}
+
+pub fn flag_proc_c_variadic_zero_params(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg = "`c_variadic` procedures must have at least one parameter";
     emit.error(Error::new(msg, proc_src, None));
 }
 

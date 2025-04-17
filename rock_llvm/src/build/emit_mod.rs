@@ -176,11 +176,14 @@ fn codegen_function_values(cg: &mut Codegen) {
     for data in cg.hir.procs.iter() {
         //builtin takes precedence over external flag
         let is_external = data.flag_set.contains(hir::ProcFlag::External);
-        let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
+        let is_variadic = data.flag_set.contains(hir::ProcFlag::CVariadic);
         let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
 
         param_types.clear();
         for param in data.params {
+            if param.kind == hir::ParamKind::CVariadic {
+                break;
+            }
             let ty = if is_external && win64_abi_pass_by_pointer(cg, param.ty) {
                 cg.ptr_type()
             } else {

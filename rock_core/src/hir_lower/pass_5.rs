@@ -10,7 +10,6 @@ use crate::ast;
 use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
-use crate::intern::LitID;
 use crate::session;
 use crate::support::AsStr;
 use crate::text::{TextOffset, TextRange};
@@ -104,9 +103,9 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
         //@also check the calling convention? 11.01.25 using fastcc and ccall.
+        //@proc_ty variadic support
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
-                && (proc_ty.variadic == proc_ty2.variadic)
                 && type_matches(ctx, proc_ty.return_ty, proc_ty2.return_ty)
                 && (0..proc_ty.param_types.len()).all(|idx| {
                     type_matches(ctx, proc_ty.param_types[idx], proc_ty2.param_types[idx])
@@ -219,9 +218,6 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 if proc_ty.param_types.len() != idx + 1 {
                     format.push_str(", ");
                 }
-            }
-            if proc_ty.variadic {
-                format.push_str(", ..")
             }
             format.push_str(") ");
             let return_format = type_format(ctx, proc_ty.return_ty);
@@ -1425,9 +1421,9 @@ fn typecheck_item<'hir, 'ast>(
                 for param in data.params {
                     ctx.cache.types.push(param.ty);
                 }
+                //@todo correct variadics support
                 let proc_ty = hir::ProcType {
                     param_types: ctx.cache.types.take(offset, &mut ctx.arena),
-                    variadic: data.flag_set.contains(hir::ProcFlag::Variadic),
                     return_ty: data.return_ty,
                 };
 
@@ -3496,7 +3492,11 @@ fn check_call_direct<'hir, 'ast>(
 
     let proc_src = Some(data.src());
     let expected_count = data.params.iter().filter(|p| p.kind == hir::ParamKind::Normal).count();
-    let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic);
+    let is_variadic = data
+        .params
+        .last()
+        .map(|p| matches!(p.kind, hir::ParamKind::Variadic | hir::ParamKind::CVariadic))
+        .unwrap_or(false);
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
 
     let data = ctx.registry.proc_data(proc_id);
@@ -3518,8 +3518,18 @@ fn check_call_direct<'hir, 'ast>(
             hir::ParamKind::ErrorDirective => {
                 ctx.cache.exprs.push(&hir::Expr::Error);
             }
-            hir::ParamKind::Variadic => break,
-            hir::ParamKind::CVariadic => break,
+            hir::ParamKind::Variadic => {
+                //@pass `[]Any`, set correct #variadic param type
+                break;
+            }
+            hir::ParamKind::CVariadic => {
+                for expr in args {
+                    let expr_res =
+                        typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+                    ctx.cache.exprs.push(expr_res.expr);
+                }
+                break;
+            }
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
                     let values = hir::source_location(ctx.session, ctx.scope.origin(), start);
@@ -3536,12 +3546,10 @@ fn check_call_direct<'hir, 'ast>(
         }
     }
 
-    for expr in args {
-        let expr_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
-        if is_variadic {
-            ctx.cache.exprs.push(expr_res.expr);
-        }
-    }
+    //@restore default checking? iterator is moved in CVariadic case
+    //for expr in args {
+    //    let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+    //}
 
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
     let expr = hir::Expr::CallDirect { proc_id, input: values };
@@ -3571,8 +3579,7 @@ fn check_call_indirect<'hir, 'ast>(
 
     let proc_src = None;
     let expected_count = proc_ty.param_types.len();
-    let variadic = proc_ty.variadic;
-    check_call_arg_count(ctx, arg_list, proc_src, expected_count, variadic);
+    check_call_arg_count(ctx, arg_list, proc_src, expected_count, false); //@proc_ty variadic support
 
     let offset = ctx.cache.exprs.start();
     for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {

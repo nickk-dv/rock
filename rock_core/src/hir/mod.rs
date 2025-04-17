@@ -46,13 +46,15 @@ pub struct Param<'hir> {
     pub kind: ParamKind,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum ParamKind {
-    Normal,
-    ErrorDirective,
-    Variadic,
-    CVariadic,
-    CallerLocation,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum ParamKind {
+        Normal "normal",
+        ErrorDirective "<error directive>",
+        Variadic "variadic",
+        CVariadic "c_variadic",
+        CallerLocation "caller_location",
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -180,7 +182,6 @@ pub enum PolymorphDefID {
 pub struct ProcType<'hir> {
     pub param_types: &'hir [Type<'hir>],
     pub return_ty: Type<'hir>,
-    pub variadic: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -614,7 +615,7 @@ crate::enum_as_str! {
         // compile-time flags
         WasUsed "was used",
         External "external",
-        Variadic "variadic",
+        CVariadic "c_variadic",
         EntryPoint "entry point",
     }
 }
@@ -684,8 +685,8 @@ impl ItemFlag for ProcFlag {
             Inline => false,
             WasUsed => false,
             External => matches!(other, EntryPoint),
-            Variadic => matches!(other, EntryPoint),
-            EntryPoint => matches!(other, External | Variadic),
+            CVariadic => matches!(other, EntryPoint),
+            EntryPoint => matches!(other, External | CVariadic),
         }
     }
 }

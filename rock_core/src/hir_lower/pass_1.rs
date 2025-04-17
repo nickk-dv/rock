@@ -259,7 +259,7 @@ fn check_directive_item<'ast>(
     if *scope_vis == new_vis {
         let src = ctx.src(scope_dir.range);
         let prev_src = prev_scope.map(|s| ctx.src(s.range));
-        err::dir_scope_vis_redundant(&mut ctx.emit, src, prev_src, scope_vis.as_str());
+        err::directive_scope_vis_redundant(&mut ctx.emit, src, prev_src, scope_vis.as_str());
     }
     *scope_vis = new_vis;
     *prev_scope = Some(scope_dir);

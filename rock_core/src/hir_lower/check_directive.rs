@@ -26,18 +26,6 @@ pub fn check_proc_directives(
     if item.block.is_none() {
         flag_set.set(hir::ProcFlag::External);
     }
-    if item.is_variadic {
-        if flag_set.contains(hir::ProcFlag::External) {
-            flag_set.set(hir::ProcFlag::Variadic);
-        } else {
-            let proc_src = ctx.src(item.name.range);
-            err::flag_proc_variadic_not_external(&mut ctx.emit, proc_src);
-        }
-    }
-    if flag_set.contains(hir::ProcFlag::Variadic) && item.params.is_empty() {
-        let proc_src = ctx.src(item.name.range);
-        err::flag_proc_variadic_zero_params(&mut ctx.emit, proc_src);
-    }
 
     let directives = if let Some(dir_list) = item.dir_list {
         dir_list.directives

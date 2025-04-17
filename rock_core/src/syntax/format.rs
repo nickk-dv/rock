@@ -64,9 +64,6 @@ fn proc_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ProcItem<'syn>) {
 fn param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::ParamList<'syn>) {
     if param_list.params(fmt.tree).next().is_none() {
         fmt.write('(');
-        if param_list.t_dotdot(fmt.tree).is_some() {
-            fmt.write_str("..");
-        }
         fmt.write(')');
         return;
     }
@@ -94,17 +91,8 @@ fn param_list<'syn>(fmt: &mut Formatter<'syn, '_>, param_list: cst::ParamList<'s
         param(fmt, param_cst);
     }
 
-    let is_variadic = param_list.t_dotdot(fmt.tree).is_some();
-    if is_variadic {
-        fmt.write(',');
-        fmt.space();
-        fmt.write_str("..");
-    }
-
     if wrap {
-        if !is_variadic {
-            fmt.write(',');
-        }
+        fmt.write(',');
         fmt.new_line();
     }
     fmt.write(')');
@@ -476,14 +464,6 @@ fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn
         }
         first = false;
         param(fmt, param_cst);
-    }
-
-    if param_list.t_dotdot(fmt.tree).is_some() {
-        if param_list.params(fmt.tree).next().is_some() {
-            fmt.write(',');
-            fmt.space();
-        }
-        fmt.write_str("..");
     }
 
     fmt.write(')');

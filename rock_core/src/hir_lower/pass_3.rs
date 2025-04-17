@@ -4,8 +4,10 @@ use super::constant;
 use super::context::HirCtx;
 use super::pass_5::Expectation;
 use crate::ast;
+use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
+use crate::support::AsStr;
 
 pub fn process_items(ctx: &mut HirCtx) {
     for id in ctx.registry.proc_ids() {
@@ -67,6 +69,48 @@ pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
         };
         let param = hir::Param { mutt: param.mutt, name: param.name, ty, ty_range, kind };
         ctx.cache.proc_params.push(param);
+    }
+
+    let param_count = ctx.cache.proc_params.len();
+    for (idx, param) in ctx.cache.proc_params.iter_mut().enumerate() {
+        if idx + 1 != param_count {
+            if matches!(param.kind, hir::ParamKind::Variadic | hir::ParamKind::CVariadic) {
+                let src = SourceRange::new(ctx.scope.origin(), param.name.range);
+                let dir_name = param.kind.as_str();
+                err::directive_param_must_be_last(&mut ctx.emit, src, dir_name);
+
+                param.ty = hir::Type::Error;
+                param.kind = hir::ParamKind::ErrorDirective;
+            }
+        }
+    }
+
+    //@not checking flag compatibility, its always valid to set
+    //check if entire flag compat system could be removed?
+    if let Some(last) = ctx.cache.proc_params.last() {
+        let data = ctx.registry.proc_data_mut(id);
+
+        match last.kind {
+            hir::ParamKind::Variadic => {
+                if data.flag_set.contains(hir::ProcFlag::External) {
+                    let proc_src = ctx.src(item.name.range);
+                    err::flag_proc_variadic_external(&mut ctx.emit, proc_src);
+                }
+            }
+            hir::ParamKind::CVariadic => {
+                if !data.flag_set.contains(hir::ProcFlag::External) {
+                    let proc_src = ctx.src(item.name.range);
+                    err::flag_proc_c_variadic_not_external(&mut ctx.emit, proc_src);
+                } else {
+                    data.flag_set.set(hir::ProcFlag::CVariadic);
+                    if item.params.is_empty() {
+                        let proc_src = ctx.src(item.name.range);
+                        err::flag_proc_c_variadic_zero_params(&mut ctx.emit, proc_src);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     let return_ty = type_resolve(ctx, item.return_ty, true);
@@ -353,10 +397,9 @@ pub fn type_resolve<'hir, 'ast>(
                 ctx.cache.types.push(ty);
             }
             let param_types = ctx.cache.types.take(offset, &mut ctx.arena);
-            let variadic = proc_ty.variadic;
             let return_ty = type_resolve(ctx, proc_ty.return_ty, in_definition);
 
-            let proc_ty = hir::ProcType { param_types, variadic, return_ty };
+            let proc_ty = hir::ProcType { param_types, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {

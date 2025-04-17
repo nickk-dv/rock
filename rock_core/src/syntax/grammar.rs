@@ -67,8 +67,6 @@ fn param_list(p: &mut Parser) {
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
-        } else if p.eat(T![..]) {
-            break;
         } else {
             p.error_recover("expected parameter", RECOVER_PARAM_LIST);
             break;
@@ -443,8 +441,6 @@ fn proc_type_param_list(p: &mut Parser) {
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
-        } else if p.eat(T![..]) {
-            break;
         } else {
             p.error_recover("expected parameter", RECOVER_PROC_TYPE_PARAM_LIST);
             break;
