@@ -308,3 +308,67 @@ pub fn win64_abi_pass_by_pointer(cg: &Codegen, ty: hir::Type) -> bool {
     }
     false
 }
+
+struct ParamAbi {
+    pass_ty: llvm::Type,
+    by_pointer: bool,
+}
+
+//@empty struct should be {size: 4 align: 1}. handle on hir level? how to avoid #repr_c?
+//@need #repr_c like flagging for enums, disallow enums with fields, only allow i32 tag_ty.
+pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
+    let pass_ty: llvm::Type = match ty {
+        hir::Type::Error => unreachable!(),
+        hir::Type::Char => cg.char_type(),
+        hir::Type::Void => unimplemented!("win x64 void"),
+        hir::Type::Never => unimplemented!("win x64 never"),
+        hir::Type::Rawptr => cg.ptr_type(),
+        hir::Type::UntypedChar => unreachable!(),
+        hir::Type::Int(int_ty) => cg.int_type(int_ty),
+        hir::Type::Float(float_ty) => cg.float_type(float_ty),
+        hir::Type::Bool(bool_ty) => cg.bool_type(bool_ty),
+        hir::Type::String(string_type) => match string_type {
+            hir::StringType::String => {
+                return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true }
+            }
+            hir::StringType::CString => cg.ptr_type(),
+            hir::StringType::Untyped => unreachable!(),
+        },
+        hir::Type::InferDef(_, _) => unimplemented!("win x64 poly"),
+        hir::Type::Enum(enum_id, poly_types) => {
+            let data = cg.hir.enum_data(enum_id);
+
+            if !poly_types.is_empty() {
+                unimplemented!("win x64 poly enum");
+            }
+            if data.flag_set.contains(hir::EnumFlag::WithFields) {
+                unimplemented!("win x64 enum with fields");
+            }
+
+            cg.int_type(data.tag_ty.resolved_unwrap())
+        }
+        hir::Type::Struct(struct_id, poly_types) => {
+            let data = cg.hir.struct_data(struct_id);
+            let layout = data.layout.resolved_unwrap();
+
+            if !poly_types.is_empty() {
+                unimplemented!("win x64 poly struct");
+            }
+
+            return match layout.size {
+                1 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S8), by_pointer: true },
+                2 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S16), by_pointer: true },
+                4 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S32), by_pointer: true },
+                8 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S64), by_pointer: true },
+                _ => ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+            };
+        }
+        hir::Type::Reference(_, _) => cg.ptr_type(),
+        hir::Type::MultiReference(_, _) => cg.ptr_type(),
+        hir::Type::Procedure(_) => cg.ptr_type(),
+        hir::Type::ArraySlice(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+        hir::Type::ArrayStatic(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+    };
+
+    ParamAbi { pass_ty, by_pointer: false }
+}
