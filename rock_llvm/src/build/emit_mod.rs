@@ -184,8 +184,8 @@ fn codegen_function_values(cg: &mut Codegen) {
             if param.kind == hir::ParamKind::CVariadic {
                 break;
             }
-            let ty = if is_external && win64_abi_pass_by_pointer(cg, param.ty) {
-                cg.ptr_type()
+            let ty = if is_external {
+                win_x64_parameter_type(cg, param.ty).pass_ty
             } else {
                 cg.ty(param.ty)
             };
@@ -297,21 +297,9 @@ fn codegen_function_bodies(cg: &mut Codegen) {
     }
 }
 
-//@hack: trying to fix abi (also handle arrays!)
-pub fn win64_abi_pass_by_pointer(cg: &Codegen, ty: hir::Type) -> bool {
-    if let hir::Type::Struct(id, poly) = ty {
-        let data = cg.hir.struct_data(id);
-        let size = data.layout.resolved_unwrap().size;
-        if size != 1 && size != 2 && size != 4 && size != 8 {
-            return true;
-        }
-    }
-    false
-}
-
-struct ParamAbi {
-    pass_ty: llvm::Type,
-    by_pointer: bool,
+pub struct ParamAbi {
+    pub pass_ty: llvm::Type,
+    pub by_pointer: bool,
 }
 
 //@empty struct should be {size: 4 align: 1}. handle on hir level? how to avoid #repr_c?
@@ -356,10 +344,10 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
             }
 
             return match layout.size {
-                1 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S8), by_pointer: true },
-                2 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S16), by_pointer: true },
-                4 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S32), by_pointer: true },
-                8 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S64), by_pointer: true },
+                1 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S8), by_pointer: false },
+                2 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S16), by_pointer: false },
+                4 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S32), by_pointer: false },
+                8 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S64), by_pointer: false },
                 _ => ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
             };
         }

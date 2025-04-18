@@ -710,23 +710,41 @@ pub fn codegen_call_direct<'c>(
     input: &[&hir::Expr<'c>],
 ) -> Option<llvm::Value> {
     let offset = cg.cache.values.start();
+    let mut started_variadic = false;
+
     for (idx, expr) in input.iter().copied().enumerate() {
-        let proc_data = cg.hir.proc_data(proc_id);
-        //@hack for variadics
-        if idx >= proc_data.params.len() {
+        let data = cg.hir.proc_data(proc_id);
+        let is_external = data.flag_set.contains(hir::ProcFlag::External);
+
+        //@hack for variadics, needs to use same param passing rules? no types available.
+        if data.params.get(idx).map(|p| p.kind == hir::ParamKind::CVariadic).unwrap_or(true) {
+            started_variadic = true;
+        }
+        if started_variadic {
             let value = codegen_expr_value(cg, expr);
             cg.cache.values.push(value);
             continue;
         }
-        let param = proc_data.param(hir::ParamID::new(idx));
 
-        //@copy pasta from fn_val generation
-        let is_external = proc_data.flag_set.contains(hir::ProcFlag::External);
-        let value = if is_external && emit_mod::win64_abi_pass_by_pointer(cg, param.ty) {
-            codegen_expr_pointer(cg, expr).as_val()
+        let param = data.param(hir::ParamID::new(idx));
+
+        let value = if is_external {
+            let abi = emit_mod::win_x64_parameter_type(cg, param.ty);
+            if abi.by_pointer {
+                //@copy by caller to prevent mutation, check correctness.
+                let copy_ptr = cg.entry_alloca(cg.ty(param.ty), "c_call_copy");
+                codegen_expr_store(cg, expr, copy_ptr);
+                copy_ptr.as_val()
+            } else if let hir::Type::Struct(_, _) = param.ty {
+                let struct_ptr = codegen_expr_pointer(cg, expr);
+                cg.build.load(abi.pass_ty, struct_ptr, "c_call_struct_register")
+            } else {
+                codegen_expr_value(cg, expr)
+            }
         } else {
             codegen_expr_value(cg, expr)
         };
+
         cg.cache.values.push(value);
     }
 
@@ -752,10 +770,9 @@ pub fn codegen_call_direct<'c>(
     }
 }
 
-//@handle ABI for indirect calls aswell
-//@set correct calling conv,
+//@handle ABI for indirect calls aswell.
+//@set correct calling conv. does llvm fn_ty have call conv?
 // add calling conv to proc pointer type?
-// need to support #ccall directive specifically for proc pointer type
 fn codegen_call_indirect<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
