@@ -712,6 +712,19 @@ pub fn codegen_call_direct<'c>(
     let offset = cg.cache.values.start();
     let mut started_variadic = false;
 
+    let data = cg.hir.proc_data(proc_id);
+    let mut ret_ptr = None;
+
+    if data.flag_set.contains(hir::ProcFlag::External) {
+        //@perf: store as a flag on fn_val creation stage. not important.
+        if emit_mod::win_x64_parameter_type(cg, data.return_ty).by_pointer {
+            //@dont entry alloca when expect = store, use store ptr
+            let ptr = cg.entry_alloca(cg.ty(data.return_ty), "c_call_ptr_ret");
+            ret_ptr = Some(ptr);
+            cg.cache.values.push(ptr.as_val());
+        }
+    }
+
     for (idx, expr) in input.iter().copied().enumerate() {
         let data = cg.hir.proc_data(proc_id);
         let is_external = data.flag_set.contains(hir::ProcFlag::External);
@@ -756,6 +769,14 @@ pub fn codegen_call_direct<'c>(
     let proc_data = cg.hir.proc_data(proc_id);
     if proc_data.return_ty.is_never() {
         cg.build.unreachable();
+    }
+
+    let data = cg.hir.proc_data(proc_id);
+    if let Some(ptr) = ret_ptr {
+        return match expect {
+            Expect::Pointer => Some(ptr.as_val()),
+            _ => Some(cg.build.load(cg.ty(data.return_ty), ptr, "c_call_ptr_ret_val")),
+        };
     }
 
     let ret_val = ret_val?;

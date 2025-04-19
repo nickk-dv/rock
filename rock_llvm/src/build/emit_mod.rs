@@ -174,12 +174,30 @@ fn codegen_function_values(cg: &mut Codegen) {
     let mut param_types = Vec::with_capacity(64);
 
     for data in cg.hir.procs.iter() {
-        //builtin takes precedence over external flag
+        param_types.clear();
         let is_external = data.flag_set.contains(hir::ProcFlag::External);
         let is_variadic = data.flag_set.contains(hir::ProcFlag::CVariadic);
         let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
+        let mut by_pointer_return = false;
 
-        param_types.clear();
+        let return_ty = match data.return_ty {
+            hir::Type::Void | hir::Type::Never => cg.void_type(),
+            _ => {
+                if is_external {
+                    let abi = win_x64_parameter_type(cg, data.return_ty);
+                    if abi.by_pointer {
+                        by_pointer_return = true;
+                        param_types.push(cg.ptr_type());
+                        cg.void_type()
+                    } else {
+                        abi.pass_ty
+                    }
+                } else {
+                    cg.ty(data.return_ty)
+                }
+            }
+        };
+
         for param in data.params {
             if param.kind == hir::ParamKind::CVariadic {
                 break;
@@ -216,11 +234,6 @@ fn codegen_function_values(cg: &mut Codegen) {
             llvm::Linkage::LLVMInternalLinkage
         };
 
-        let return_ty = match data.return_ty {
-            hir::Type::Void | hir::Type::Never => cg.void_type(),
-            _ => cg.ty(data.return_ty),
-        };
-
         let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
         let fn_val = cg.module.add_function(name, fn_ty, linkage);
 
@@ -234,6 +247,9 @@ fn codegen_function_values(cg: &mut Codegen) {
         }
         if data.return_ty.is_never() {
             fn_val.set_attr(cg.cache.noreturn);
+        }
+        if by_pointer_return {
+            fn_val.set_param_attr(cg.cache.sret, 1);
         }
 
         cg.procs.push((fn_val, fn_ty));
@@ -308,8 +324,8 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
     let pass_ty: llvm::Type = match ty {
         hir::Type::Error => unreachable!(),
         hir::Type::Char => cg.char_type(),
-        hir::Type::Void => unimplemented!("win x64 void"),
-        hir::Type::Never => unimplemented!("win x64 never"),
+        hir::Type::Void => cg.void_type(),
+        hir::Type::Never => cg.void_type(),
         hir::Type::Rawptr => cg.ptr_type(),
         hir::Type::UntypedChar => unreachable!(),
         hir::Type::Int(int_ty) => cg.int_type(int_ty),

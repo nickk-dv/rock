@@ -586,6 +586,11 @@ impl ValueFn {
             core::LLVMAddAttributeAtIndex(self.0, sys::LLVM_ATTR_FUNCTION_INDEX, attr.0);
         }
     }
+    pub fn set_param_attr(self, attr: Attribute, param_n: u32) {
+        unsafe {
+            core::LLVMAddAttributeAtIndex(self.0, param_n, attr.0);
+        }
+    }
 }
 
 impl ValueGlobal {
