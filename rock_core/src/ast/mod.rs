@@ -192,7 +192,8 @@ pub enum TypeKind<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ProcType<'ast> {
-    pub param_types: &'ast [Type<'ast>],
+    pub directive: Option<&'ast Directive<'ast>>,
+    pub params: &'ast [ParamKind<'ast>],
     pub return_ty: Type<'ast>,
 }
 

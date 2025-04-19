@@ -452,23 +452,27 @@ fn ty_multi_ref<'syn>(fmt: &mut Formatter<'syn, '_>, ty_cst: cst::TypeMultiRefer
 
 fn ty_proc<'syn>(fmt: &mut Formatter<'syn, '_>, proc_ty: cst::TypeProcedure<'syn>) {
     fmt.write_str("proc");
-    fmt.write('(');
-
-    let mut first = true;
-    let param_list = proc_ty.param_list(fmt.tree).unwrap();
-
-    for param_cst in param_list.params(fmt.tree) {
-        if !first {
-            fmt.write(',');
-            fmt.space();
-        }
-        first = false;
-        param(fmt, param_cst);
+    if let Some(directive_cst) = proc_ty.directive(fmt.tree) {
+        fmt.space();
+        directive(fmt, directive_cst);
     }
-
-    fmt.write(')');
+    let nodes = proc_ty.param_list(fmt.tree).unwrap().params(fmt.tree);
+    single_line_comma_list(fmt, nodes, proc_ty_param, '(', ')');
     fmt.space();
     ty(fmt, proc_ty.return_ty(fmt.tree).unwrap());
+}
+
+fn proc_ty_param<'syn>(fmt: &mut Formatter<'syn, '_>, param: cst::ProcTypeParam<'syn>) {
+    if let Some(name_cst) = param.name(fmt.tree) {
+        name(fmt, name_cst);
+        fmt.write(':');
+        fmt.space();
+    }
+    if let Some(ty_cst) = param.ty(fmt.tree) {
+        ty(fmt, ty_cst);
+    } else {
+        directive(fmt, param.directive(fmt.tree).unwrap());
+    }
 }
 
 fn ty_slice<'syn>(fmt: &mut Formatter<'syn, '_>, slice: cst::TypeArraySlice<'syn>) {

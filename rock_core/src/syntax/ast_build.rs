@@ -22,6 +22,7 @@ pub struct AstBuildState<'ast> {
     directives: TempBuffer<ast::Directive<'ast>>,
     directive_params: TempBuffer<ast::DirectiveParam>,
     types: TempBuffer<ast::Type<'ast>>,
+    proc_type_params: TempBuffer<ast::ParamKind<'ast>>,
     stmts: TempBuffer<ast::Stmt<'ast>>,
     exprs: TempBuffer<&'ast ast::Expr<'ast>>,
     branches: TempBuffer<ast::Branch<'ast>>,
@@ -59,6 +60,7 @@ impl<'ast> AstBuildState<'ast> {
             directives: TempBuffer::new(32),
             directive_params: TempBuffer::new(32),
             types: TempBuffer::new(32),
+            proc_type_params: TempBuffer::new(32),
             stmts: TempBuffer::new(32),
             exprs: TempBuffer::new(32),
             branches: TempBuffer::new(32),
@@ -414,18 +416,23 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
             ast::TypeKind::MultiReference(mutt, ctx.arena.alloc(ref_ty))
         }
         cst::Type::Procedure(proc_ty) => {
-            let offset = ctx.s.types.start();
+            let directive = proc_ty.directive(ctx.tree).map(|d| {
+                let directive = directive(ctx, d);
+                ctx.arena.alloc(directive)
+            });
+
+            let offset = ctx.s.proc_type_params.start();
             let param_list = proc_ty.param_list(ctx.tree).unwrap();
             for param in param_list.params(ctx.tree) {
-                let ty = ty(ctx, param.ty(ctx.tree).unwrap());
-                ctx.s.types.push(ty);
+                let kind = proc_type_param(ctx, param);
+                ctx.s.proc_type_params.push(kind);
             }
-            let param_types = ctx.s.types.take(offset, &mut ctx.arena);
+            let params = ctx.s.proc_type_params.take(offset, &mut ctx.arena);
 
             let return_ty = proc_ty.return_ty(ctx.tree).unwrap();
             let return_ty = ty(ctx, return_ty);
 
-            let proc_ty = ast::ProcType { param_types, return_ty };
+            let proc_ty = ast::ProcType { directive, params, return_ty };
             ast::TypeKind::Procedure(ctx.arena.alloc(proc_ty))
         }
         cst::Type::ArraySlice(slice) => {
@@ -445,6 +452,20 @@ fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Typ
     };
 
     ast::Type { kind, range }
+}
+
+fn proc_type_param<'ast>(
+    ctx: &mut AstBuild<'ast, '_, '_, '_>,
+    param: cst::ProcTypeParam,
+) -> ast::ParamKind<'ast> {
+    if let Some(ty_cst) = param.ty(ctx.tree) {
+        let ty = ty(ctx, ty_cst);
+        ast::ParamKind::Normal(ty)
+    } else {
+        let dir = param.directive(ctx.tree).unwrap();
+        let dir = directive(ctx, dir);
+        ast::ParamKind::Implicit(ctx.arena.alloc(dir))
+    }
 }
 
 fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {

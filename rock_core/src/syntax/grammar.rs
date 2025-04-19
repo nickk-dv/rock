@@ -418,6 +418,9 @@ fn ty(p: &mut Parser) {
 fn type_proc(p: &mut Parser) {
     let m = p.start();
     p.bump(T![proc]);
+    if p.at(T![#]) {
+        directive(p);
+    }
     if p.at(T!['(']) {
         proc_type_param_list(p);
     } else {
@@ -431,13 +434,8 @@ fn proc_type_param_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at(T![ident]) {
-            let m = p.start();
-            name(p);
-            p.expect(T![:]);
-            ty(p);
-            m.complete(p, SyntaxKind::PARAM);
-
+        if p.at_set(FIRST_PROC_TYPE_PARAM) {
+            proc_type_param(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
@@ -448,6 +446,20 @@ fn proc_type_param_list(p: &mut Parser) {
     }
     p.expect(T![')']);
     m.complete(p, SyntaxKind::PROC_TYPE_PARAM_LIST);
+}
+
+fn proc_type_param(p: &mut Parser) {
+    let m = p.start();
+    if p.at_next(T![:]) {
+        name(p);
+        p.expect(T![:]);
+    }
+    if p.at(T![#]) {
+        directive(p);
+    } else {
+        ty(p);
+    }
+    m.complete(p, SyntaxKind::PROC_TYPE_PARAM);
 }
 
 fn type_at_bracket(p: &mut Parser) {
@@ -1135,15 +1147,6 @@ fn path_type(p: &mut Parser) {
     m.complete(p, SyntaxKind::PATH);
 }
 
-fn path_segment_type(p: &mut Parser) {
-    let m = p.start();
-    name(p);
-    if p.at(T!['(']) {
-        polymorph_args(p);
-    }
-    m.complete(p, SyntaxKind::PATH_SEGMENT);
-}
-
 fn path_expr(p: &mut Parser) {
     let m = p.start();
     path_segment_expr(p);
@@ -1151,6 +1154,15 @@ fn path_expr(p: &mut Parser) {
         path_segment_expr(p);
     }
     m.complete(p, SyntaxKind::PATH);
+}
+
+fn path_segment_type(p: &mut Parser) {
+    let m = p.start();
+    name(p);
+    if p.at(T!['(']) {
+        polymorph_args(p);
+    }
+    m.complete(p, SyntaxKind::PATH_SEGMENT);
 }
 
 fn path_segment_expr(p: &mut Parser) {
@@ -1214,6 +1226,7 @@ const FIRST_TYPE: TokenSet = TokenSet::new(&[
     T![f32], T![f64], T![bool], T![bool16], T![bool32], T![bool64],
     T![string], T![cstring], T![ident], T![&], T![proc], T!['['],
 ]);
+const FIRST_PROC_TYPE_PARAM: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![ident], T![#]]));
 
 //==================== RECOVER SETS ====================
 
