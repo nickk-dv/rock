@@ -106,6 +106,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         //@proc_ty variadic support
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
             (proc_ty.param_types.len() == proc_ty2.param_types.len())
+                && proc_ty.flag_set == proc_ty2.flag_set
                 && type_matches(ctx, proc_ty.return_ty, proc_ty2.return_ty)
                 && (0..proc_ty.param_types.len()).all(|idx| {
                     type_matches(ctx, proc_ty.param_types[idx], proc_ty2.param_types[idx])
@@ -211,7 +212,11 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             format.into()
         }
         hir::Type::Procedure(proc_ty) => {
-            let mut format = String::from("proc(");
+            let mut format = String::from("proc");
+            if proc_ty.flag_set.contains(hir::ProcFlag::External) {
+                format.push_str(" #c_call");
+            }
+            format.push_str("(");
             for (idx, param_ty) in proc_ty.param_types.iter().enumerate() {
                 let param_ty_format = type_format(ctx, *param_ty);
                 format.push_str(param_ty_format.as_str());
@@ -220,8 +225,8 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 }
             }
             format.push_str(") ");
-            let return_format = type_format(ctx, proc_ty.return_ty);
-            format.push_str(return_format.as_str());
+            let return_ty = type_format(ctx, proc_ty.return_ty);
+            format.push_str(return_ty.as_str());
             format.into()
         }
         hir::Type::ArraySlice(slice) => {
@@ -1419,10 +1424,11 @@ fn typecheck_item<'hir, 'ast>(
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let offset = ctx.cache.types.start();
                 for param in data.params {
-                    ctx.cache.types.push(param.ty);
+                    //@remove c_variadic as real parameter
+                    ctx.cache.types.push(param.ty); //@!will add c_variadic as parameter type (Type::Error)
                 }
-                //@todo correct variadics support
                 let proc_ty = hir::ProcType {
+                    flag_set: data.flag_set,
                     param_types: ctx.cache.types.take(offset, &mut ctx.arena),
                     return_ty: data.return_ty,
                 };

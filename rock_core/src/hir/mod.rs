@@ -180,6 +180,7 @@ pub enum PolymorphDefID {
 
 #[derive(Copy, Clone)]
 pub struct ProcType<'hir> {
+    pub flag_set: BitSet<ProcFlag>,
     pub param_types: &'hir [Type<'hir>],
     pub return_ty: Type<'hir>,
 }
@@ -615,6 +616,7 @@ crate::enum_as_str! {
         // compile-time flags
         WasUsed "was used",
         External "external",
+        Variadic "variadic",
         CVariadic "c_variadic",
         EntryPoint "entry point",
     }
@@ -685,8 +687,9 @@ impl ItemFlag for ProcFlag {
             Inline => false,
             WasUsed => false,
             External => matches!(other, EntryPoint),
-            CVariadic => matches!(other, EntryPoint),
-            EntryPoint => matches!(other, External | CVariadic),
+            Variadic => matches!(other, EntryPoint | CVariadic),
+            CVariadic => matches!(other, EntryPoint | Variadic),
+            EntryPoint => matches!(other, External | Variadic | CVariadic),
         }
     }
 }

@@ -119,6 +119,28 @@ pub fn check_param_directive<'hir>(
     }
 }
 
+pub fn check_proc_ty_directive(
+    ctx: &mut HirCtx,
+    directive: &ast::Directive,
+) -> BitSet<hir::ProcFlag> {
+    if try_check_error_directive(ctx, directive) {
+        return BitSet::empty();
+    }
+    match directive.kind {
+        DirectiveKind::CCall => {
+            let mut flag_set = BitSet::empty();
+            flag_set.set(hir::ProcFlag::External);
+            flag_set
+        }
+        _ => {
+            let src = ctx.src(directive.range);
+            let name = directive.kind.as_str();
+            err::directive_cannot_apply(&mut ctx.emit, src, name, "procedure types");
+            BitSet::empty()
+        }
+    }
+}
+
 pub fn check_expect_config(
     ctx: &mut HirCtx,
     dir_list: Option<&ast::DirectiveList>,

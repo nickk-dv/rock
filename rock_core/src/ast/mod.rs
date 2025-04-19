@@ -159,6 +159,7 @@ pub struct DirectiveParam {
 #[derive(Copy, Clone)]
 pub enum DirectiveKind<'ast> {
     Error(Name),
+    CCall,
     Inline,
     Variadic,
     CVariadic,
@@ -601,6 +602,7 @@ impl DirectiveKind<'_> {
     pub fn as_str(&self) -> &'static str {
         match self {
             DirectiveKind::Error(_) => "<error>",
+            DirectiveKind::CCall => "c_call",
             DirectiveKind::Inline => "inline",
             DirectiveKind::Variadic => "variadic",
             DirectiveKind::CVariadic => "c_variadic",

@@ -8,6 +8,7 @@ use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
 use crate::support::AsStr;
+use crate::support::BitSet;
 
 pub fn process_items(ctx: &mut HirCtx) {
     for id in ctx.registry.proc_ids() {
@@ -29,7 +30,7 @@ pub fn process_items(ctx: &mut HirCtx) {
     }
 }
 
-pub fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
+fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
     let item = ctx.registry.proc_item(id);
@@ -391,15 +392,23 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::Procedure(proc_ty) => {
+            let flag_set = if let Some(directive) = proc_ty.directive {
+                check_directive::check_proc_ty_directive(ctx, directive)
+            } else {
+                BitSet::empty()
+            };
             let offset = ctx.cache.types.start();
-            for param_ty in proc_ty.param_types {
-                let ty = type_resolve(ctx, *param_ty, in_definition);
+            for param in proc_ty.params {
+                let ty = match param {
+                    ast::ParamKind::Normal(ty) => type_resolve(ctx, *ty, in_definition),
+                    ast::ParamKind::Implicit(directive) => hir::Type::Error,
+                };
                 ctx.cache.types.push(ty);
             }
             let param_types = ctx.cache.types.take(offset, &mut ctx.arena);
             let return_ty = type_resolve(ctx, proc_ty.return_ty, in_definition);
 
-            let proc_ty = hir::ProcType { param_types, return_ty };
+            let proc_ty = hir::ProcType { flag_set, param_types, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {
