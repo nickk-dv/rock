@@ -4,10 +4,8 @@ use super::constant;
 use super::context::HirCtx;
 use super::pass_5::Expectation;
 use crate::ast;
-use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
-use crate::support::AsStr;
 use crate::support::BitSet;
 
 pub fn process_items(ctx: &mut HirCtx) {
@@ -41,12 +39,10 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     }
     ctx.cache.proc_params.clear();
 
-    for param in item.params.iter() {
-        let (ty, kind) = match param.kind {
-            ast::ParamKind::Normal(ty) => (type_resolve(ctx, ty, true), hir::ParamKind::Normal),
-            ast::ParamKind::Implicit(dir) => check_directive::check_param_directive(ctx, dir),
-        };
+    let mut flag_set = ctx.registry.proc_data(id).flag_set;
+    let param_count = item.params.len();
 
+    for (param_idx, param) in item.params.iter().enumerate() {
         if ctx
             .scope
             .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
@@ -64,6 +60,21 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
             continue;
         }
 
+        let (ty, kind) = match param.kind {
+            ast::ParamKind::Normal(ty) => (type_resolve(ctx, ty, true), hir::ParamKind::Normal),
+            ast::ParamKind::Implicit(dir) => {
+                match check_directive::check_param_directive(
+                    ctx,
+                    param_idx,
+                    param_count,
+                    &mut flag_set,
+                    dir,
+                ) {
+                    Some(ty_kind) => ty_kind,
+                    None => continue,
+                }
+            }
+        };
         let ty_range = match param.kind {
             ast::ParamKind::Normal(ty) => ty.range,
             ast::ParamKind::Implicit(dir) => dir.range,
@@ -72,50 +83,9 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
         ctx.cache.proc_params.push(param);
     }
 
-    let param_count = ctx.cache.proc_params.len();
-    for (idx, param) in ctx.cache.proc_params.iter_mut().enumerate() {
-        if idx + 1 != param_count {
-            if matches!(param.kind, hir::ParamKind::Variadic | hir::ParamKind::CVariadic) {
-                let src = SourceRange::new(ctx.scope.origin(), param.name.range);
-                let dir_name = param.kind.as_str();
-                err::directive_param_must_be_last(&mut ctx.emit, src, dir_name);
-
-                param.ty = hir::Type::Error;
-                param.kind = hir::ParamKind::ErrorDirective;
-            }
-        }
-    }
-
-    //@not checking flag compatibility, its always valid to set
-    //check if entire flag compat system could be removed?
-    if let Some(last) = ctx.cache.proc_params.last() {
-        let data = ctx.registry.proc_data_mut(id);
-
-        match last.kind {
-            hir::ParamKind::Variadic => {
-                if data.flag_set.contains(hir::ProcFlag::External) {
-                    let proc_src = ctx.src(item.name.range);
-                    err::flag_proc_variadic_external(&mut ctx.emit, proc_src);
-                }
-            }
-            hir::ParamKind::CVariadic => {
-                if !data.flag_set.contains(hir::ProcFlag::External) {
-                    let proc_src = ctx.src(item.name.range);
-                    err::flag_proc_c_variadic_not_external(&mut ctx.emit, proc_src);
-                } else {
-                    data.flag_set.set(hir::ProcFlag::CVariadic);
-                    if item.params.is_empty() {
-                        let proc_src = ctx.src(item.name.range);
-                        err::flag_proc_c_variadic_zero_params(&mut ctx.emit, proc_src);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     let return_ty = type_resolve(ctx, item.return_ty, true);
     let data = ctx.registry.proc_data_mut(id);
+    data.flag_set = flag_set;
     data.params = ctx.arena.alloc_slice(&ctx.cache.proc_params);
     data.return_ty = return_ty;
 }
@@ -392,23 +362,38 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::Procedure(proc_ty) => {
-            let flag_set = if let Some(directive) = proc_ty.directive {
+            let param_count = proc_ty.params.len();
+            let mut flag_set = if let Some(directive) = proc_ty.directive {
                 check_directive::check_proc_ty_directive(ctx, directive)
             } else {
                 BitSet::empty()
             };
-            let offset = ctx.cache.types.start();
-            for param in proc_ty.params {
-                let ty = match param {
-                    ast::ParamKind::Normal(ty) => type_resolve(ctx, *ty, in_definition),
-                    ast::ParamKind::Implicit(directive) => hir::Type::Error,
+            let offset = ctx.cache.proc_ty_params.start();
+            for (param_idx, param) in proc_ty.params.iter().enumerate() {
+                let (ty, kind) = match *param {
+                    ast::ParamKind::Normal(ty) => {
+                        (type_resolve(ctx, ty, in_definition), hir::ParamKind::Normal)
+                    }
+                    ast::ParamKind::Implicit(dir) => {
+                        match check_directive::check_param_directive(
+                            ctx,
+                            param_idx,
+                            param_count,
+                            &mut flag_set,
+                            dir,
+                        ) {
+                            Some(ty_kind) => ty_kind,
+                            None => continue,
+                        }
+                    }
                 };
-                ctx.cache.types.push(ty);
+                let param = hir::ProcTypeParam { ty, kind };
+                ctx.cache.proc_ty_params.push(param);
             }
-            let param_types = ctx.cache.types.take(offset, &mut ctx.arena);
+            let params = ctx.cache.proc_ty_params.take(offset, &mut ctx.arena);
             let return_ty = type_resolve(ctx, proc_ty.return_ty, in_definition);
 
-            let proc_ty = hir::ProcType { flag_set, param_types, return_ty };
+            let proc_ty = hir::ProcType { flag_set, params, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {

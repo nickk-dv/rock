@@ -4,6 +4,7 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::hir::{self, CmpPred};
 use rock_core::intern::LitID;
+use rock_core::support::BitSet;
 
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();
@@ -702,21 +703,19 @@ fn codegen_variant<'c>(
     }
 }
 
-//@set correct calling conv for the call itself?
 pub fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     proc_id: hir::ProcID,
     input: &[&hir::Expr<'c>],
 ) -> Option<llvm::Value> {
-    let offset = cg.cache.values.start();
-    let mut started_variadic = false;
-
     let data = cg.hir.proc_data(proc_id);
+    let is_external = data.flag_set.contains(hir::ProcFlag::External);
+
+    let offset = cg.cache.values.start();
     let mut ret_ptr = None;
 
-    if data.flag_set.contains(hir::ProcFlag::External) {
-        //@perf: store as a flag on fn_val creation stage. not important.
+    if is_external {
         if emit_mod::win_x64_parameter_type(cg, data.return_ty).by_pointer {
             //@dont entry alloca when expect = store, use store ptr
             let ptr = cg.entry_alloca(cg.ty(data.return_ty), "c_call_ptr_ret");
@@ -726,21 +725,15 @@ pub fn codegen_call_direct<'c>(
     }
 
     for (idx, expr) in input.iter().copied().enumerate() {
+        //@follow same param passing rules for c_variadics, no types available.
         let data = cg.hir.proc_data(proc_id);
-        let is_external = data.flag_set.contains(hir::ProcFlag::External);
-
-        //@hack for variadics, needs to use same param passing rules? no types available.
-        if data.params.get(idx).map(|p| p.kind == hir::ParamKind::CVariadic).unwrap_or(true) {
-            started_variadic = true;
-        }
-        if started_variadic {
+        if idx >= data.params.len() {
             let value = codegen_expr_value(cg, expr);
             cg.cache.values.push(value);
             continue;
         }
 
         let param = data.param(hir::ParamID::new(idx));
-
         let value = if is_external {
             let abi = emit_mod::win_x64_parameter_type(cg, param.ty);
             if abi.by_pointer {
@@ -766,12 +759,11 @@ pub fn codegen_call_direct<'c>(
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val");
     cg.cache.values.pop_view(offset);
 
-    let proc_data = cg.hir.proc_data(proc_id);
-    if proc_data.return_ty.is_never() {
+    let data = cg.hir.proc_data(proc_id);
+    if data.return_ty.is_never() {
         cg.build.unreachable();
     }
 
-    let data = cg.hir.proc_data(proc_id);
     if let Some(ptr) = ret_ptr {
         return match expect {
             Expect::Pointer => Some(ptr.as_val()),
@@ -801,20 +793,64 @@ fn codegen_call_indirect<'c>(
     indirect: &hir::CallIndirect<'c>,
 ) -> Option<llvm::Value> {
     let fn_val = codegen_expr_value(cg, target).into_fn();
+    let proc_ty = indirect.proc_ty;
+    let is_external = proc_ty.flag_set.contains(hir::ProcFlag::External);
 
     let offset = cg.cache.values.start();
-    for &expr in indirect.input {
-        let value = codegen_expr_value(cg, expr);
+    let mut ret_ptr = None;
+
+    if is_external {
+        if emit_mod::win_x64_parameter_type(cg, proc_ty.return_ty).by_pointer {
+            //@dont entry alloca when expect = store, use store ptr
+            let ptr = cg.entry_alloca(cg.ty(proc_ty.return_ty), "c_call_ptr_ret");
+            ret_ptr = Some(ptr);
+            cg.cache.values.push(ptr.as_val());
+        }
+    }
+
+    for (idx, expr) in indirect.input.iter().copied().enumerate() {
+        //@follow same param passing rules for c_variadics, no types available.
+        if idx >= proc_ty.params.len() {
+            let value = codegen_expr_value(cg, expr);
+            cg.cache.values.push(value);
+            continue;
+        }
+
+        let param = &proc_ty.params[idx];
+        let value = if is_external {
+            let abi = emit_mod::win_x64_parameter_type(cg, param.ty);
+            if abi.by_pointer {
+                //@copy by caller to prevent mutation, check correctness.
+                let copy_ptr = cg.entry_alloca(cg.ty(param.ty), "c_call_copy");
+                codegen_expr_store(cg, expr, copy_ptr);
+                copy_ptr.as_val()
+            } else if let hir::Type::Struct(_, _) = param.ty {
+                let struct_ptr = codegen_expr_pointer(cg, expr);
+                cg.build.load(abi.pass_ty, struct_ptr, "c_call_struct_register")
+            } else {
+                codegen_expr_value(cg, expr)
+            }
+        } else {
+            codegen_expr_value(cg, expr)
+        };
+
         cg.cache.values.push(value);
     }
 
-    let fn_ty = cg.proc_type(indirect.proc_ty);
+    let fn_ty = cg.proc_type(proc_ty);
     let input_values = cg.cache.values.view(offset.clone());
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "icall_val");
     cg.cache.values.pop_view(offset);
 
-    if indirect.proc_ty.return_ty.is_never() {
+    if proc_ty.return_ty.is_never() {
         cg.build.unreachable();
+    }
+
+    if let Some(ptr) = ret_ptr {
+        return match expect {
+            Expect::Pointer => Some(ptr.as_val()),
+            _ => Some(cg.build.load(cg.ty(proc_ty.return_ty), ptr, "c_call_ret_val")),
+        };
     }
 
     let ret_val = ret_val?;

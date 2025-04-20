@@ -201,6 +201,10 @@ mod bitset {
             self.mask |= 1 << flag.into();
         }
         #[inline]
+        pub fn clear(&mut self, flag: T) {
+            self.mask &= !(1 << flag.into());
+        }
+        #[inline]
         pub fn contains(&self, flag: T) -> bool {
             self.mask & (1 << flag.into()) != 0
         }

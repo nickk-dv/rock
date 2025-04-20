@@ -102,14 +102,14 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (hir::Type::MultiReference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
-        //@also check the calling convention? 11.01.25 using fastcc and ccall.
-        //@proc_ty variadic support
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
-            (proc_ty.param_types.len() == proc_ty2.param_types.len())
-                && proc_ty.flag_set == proc_ty2.flag_set
+            proc_ty.flag_set == proc_ty2.flag_set
                 && type_matches(ctx, proc_ty.return_ty, proc_ty2.return_ty)
-                && (0..proc_ty.param_types.len()).all(|idx| {
-                    type_matches(ctx, proc_ty.param_types[idx], proc_ty2.param_types[idx])
+                && (proc_ty.params.len() == proc_ty2.params.len())
+                && (0..proc_ty.params.len()).all(|idx| {
+                    let param = &proc_ty.params[idx];
+                    let param2 = &proc_ty2.params[idx];
+                    param.kind == param2.kind && type_matches(ctx, param.ty, param2.ty)
                 })
         }
         (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(slice2)) => {
@@ -217,12 +217,21 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 format.push_str(" #c_call");
             }
             format.push_str("(");
-            for (idx, param_ty) in proc_ty.param_types.iter().enumerate() {
-                let param_ty_format = type_format(ctx, *param_ty);
-                format.push_str(param_ty_format.as_str());
-                if proc_ty.param_types.len() != idx + 1 {
+            for (idx, param) in proc_ty.params.iter().enumerate() {
+                match param.kind {
+                    hir::ParamKind::Normal => {
+                        let param_ty = type_format(ctx, param.ty);
+                        format.push_str(param_ty.as_str());
+                    }
+                    hir::ParamKind::Variadic => format.push_str("#variadic"),
+                    hir::ParamKind::CallerLocation => format.push_str("#caller_location"),
+                }
+                if proc_ty.params.len() != idx + 1 {
                     format.push_str(", ");
                 }
+            }
+            if proc_ty.flag_set.contains(hir::ProcFlag::CVariadic) {
+                format.push_str(", #c_variadic");
             }
             format.push_str(") ");
             let return_ty = type_format(ctx, proc_ty.return_ty);
@@ -1420,18 +1429,22 @@ fn typecheck_item<'hir, 'ast>(
             if let Some(args_list) = args_list {
                 return check_call_direct(ctx, proc_id, args_list, expr_range.start());
             } else {
-                let data = ctx.registry.proc_data(proc_id);
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
-                let offset = ctx.cache.types.start();
+                let data = ctx.registry.proc_data(proc_id);
+                let offset = ctx.cache.proc_ty_params.start();
                 for param in data.params {
-                    //@remove c_variadic as real parameter
-                    ctx.cache.types.push(param.ty); //@!will add c_variadic as parameter type (Type::Error)
+                    let param = hir::ProcTypeParam { ty: param.ty, kind: param.kind };
+                    ctx.cache.proc_ty_params.push(param);
                 }
-                let proc_ty = hir::ProcType {
+                let mut proc_ty = hir::ProcType {
                     flag_set: data.flag_set,
-                    param_types: ctx.cache.types.take(offset, &mut ctx.arena),
+                    params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
                     return_ty: data.return_ty,
                 };
+                //@hack, clearing unrelated flags
+                proc_ty.flag_set.clear(hir::ProcFlag::Inline);
+                proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
+                proc_ty.flag_set.clear(hir::ProcFlag::EntryPoint);
 
                 let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
                 let proc_value = hir::ConstValue::Procedure { proc_id };
@@ -3543,11 +3556,8 @@ fn check_call_direct<'hir, 'ast>(
 
     let proc_src = Some(data.src());
     let expected_count = data.params.iter().filter(|p| p.kind == hir::ParamKind::Normal).count();
-    let is_variadic = data
-        .params
-        .last()
-        .map(|p| matches!(p.kind, hir::ParamKind::Variadic | hir::ParamKind::CVariadic))
-        .unwrap_or(false);
+    let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic)
+        || data.flag_set.contains(hir::ProcFlag::CVariadic);
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
 
     let data = ctx.registry.proc_data(proc_id);
@@ -3566,19 +3576,8 @@ fn check_call_direct<'hir, 'ast>(
                     ctx.cache.exprs.push(&hir::Expr::Error);
                 }
             }
-            hir::ParamKind::ErrorDirective => {
-                ctx.cache.exprs.push(&hir::Expr::Error);
-            }
             hir::ParamKind::Variadic => {
-                //@pass `[]Any`, set correct #variadic param type
-                break;
-            }
-            hir::ParamKind::CVariadic => {
-                for expr in args {
-                    let expr_res =
-                        typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
-                    ctx.cache.exprs.push(expr_res.expr);
-                }
+                //@pass `[]Any`
                 break;
             }
             hir::ParamKind::CallerLocation => {
@@ -3597,10 +3596,17 @@ fn check_call_direct<'hir, 'ast>(
         }
     }
 
-    //@restore default checking? iterator is moved in CVariadic case
-    //for expr in args {
-    //    let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
-    //}
+    let data = ctx.registry.proc_data(proc_id);
+    if data.flag_set.contains(hir::ProcFlag::CVariadic) {
+        for expr in args {
+            let expr_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+            ctx.cache.exprs.push(expr_res.expr);
+        }
+    } else {
+        for expr in args {
+            let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+        }
+    }
 
     let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
     let expr = hir::Expr::CallDirect { proc_id, input: values };
@@ -3628,21 +3634,58 @@ fn check_call_indirect<'hir, 'ast>(
         }
     };
 
-    let proc_src = None;
-    let expected_count = proc_ty.param_types.len();
-    check_call_arg_count(ctx, arg_list, proc_src, expected_count, false); //@proc_ty variadic support
+    let expected_count = proc_ty.params.iter().filter(|p| p.kind == hir::ParamKind::Normal).count();
+    let is_variadic = proc_ty.flag_set.contains(hir::ProcFlag::Variadic)
+        || proc_ty.flag_set.contains(hir::ProcFlag::CVariadic);
+    check_call_arg_count(ctx, arg_list, None, expected_count, is_variadic);
 
     let offset = ctx.cache.exprs.start();
-    for (idx, expr) in arg_list.exprs.iter().copied().enumerate() {
-        let expect = match proc_ty.param_types.get(idx) {
-            Some(param_ty) => Expectation::HasType(*param_ty, None),
-            None => Expectation::HasType(hir::Type::Error, None),
-        };
-        let expr_res = typecheck_expr(ctx, expect, expr);
-        ctx.cache.exprs.push(expr_res.expr);
-    }
-    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
+    let mut args = arg_list.exprs.iter().copied();
 
+    for param in proc_ty.params {
+        match param.kind {
+            hir::ParamKind::Normal => {
+                if let Some(expr) = args.next() {
+                    let expect = Expectation::HasType(param.ty, None);
+                    let expr_res = typecheck_expr(ctx, expect, expr);
+                    ctx.cache.exprs.push(expr_res.expr);
+                } else {
+                    ctx.cache.exprs.push(&hir::Expr::Error);
+                }
+            }
+            hir::ParamKind::Variadic => {
+                //@pass `[]Any`
+                break;
+            }
+            hir::ParamKind::CallerLocation => {
+                let expr = if let Some(struct_id) = ctx.core.source_location {
+                    let values =
+                        hir::source_location(ctx.session, ctx.scope.origin(), target_range.start());
+                    let values = ctx.arena.alloc_slice(&values);
+                    let struct_ = hir::ConstStruct { struct_id, values };
+                    let struct_ = ctx.arena.alloc(struct_);
+                    let value = hir::ConstValue::Struct { struct_ };
+                    ctx.arena.alloc(hir::Expr::Const { value })
+                } else {
+                    &hir::Expr::Error
+                };
+                ctx.cache.exprs.push(expr);
+            }
+        }
+    }
+
+    if proc_ty.flag_set.contains(hir::ProcFlag::CVariadic) {
+        for expr in args {
+            let expr_res = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+            ctx.cache.exprs.push(expr_res.expr);
+        }
+    } else {
+        for expr in args {
+            let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
+        }
+    }
+
+    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
     let indirect = hir::CallIndirect { proc_ty, input: values };
     let expr =
         hir::Expr::CallIndirect { target: target_res.expr, indirect: ctx.arena.alloc(indirect) };

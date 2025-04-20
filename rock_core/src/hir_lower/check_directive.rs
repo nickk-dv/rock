@@ -97,24 +97,63 @@ pub fn check_enum_directives(
 }
 
 pub fn check_param_directive<'hir>(
-    ctx: &mut HirCtx,
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    param_idx: usize,
+    param_count: usize,
+    flag_set: &mut BitSet<hir::ProcFlag>,
     directive: &ast::Directive,
-) -> (hir::Type<'hir>, hir::ParamKind) {
+) -> Option<(hir::Type<'hir>, hir::ParamKind)> {
     if try_check_error_directive(ctx, directive) {
-        return (hir::Type::Error, hir::ParamKind::ErrorDirective);
+        return Some((hir::Type::Error, hir::ParamKind::Normal));
     }
     match directive.kind {
-        DirectiveKind::Variadic => (hir::Type::Error, hir::ParamKind::Variadic), //@change ty to type info slice
-        DirectiveKind::CVariadic => (hir::Type::Error, hir::ParamKind::CVariadic),
-        DirectiveKind::CallerLocation => (
-            ctx.core.source_location.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[])),
-            hir::ParamKind::CallerLocation,
-        ),
+        DirectiveKind::Variadic => {
+            if param_idx + 1 != param_count {
+                let src = ctx.src(directive.range);
+                err::directive_param_must_be_last(&mut ctx.emit, src, directive.kind.as_str());
+                return None;
+            }
+            if flag_set.contains(hir::ProcFlag::External) {
+                let src = ctx.src(directive.range);
+                err::flag_proc_variadic_external(&mut ctx.emit, src);
+                return None;
+            }
+
+            flag_set.set(hir::ProcFlag::Variadic);
+            let elem_ty = ctx.core.any.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
+            let slice = hir::ArraySlice { mutt: ast::Mut::Immutable, elem_ty };
+            Some((hir::Type::ArraySlice(ctx.arena.alloc(slice)), hir::ParamKind::Variadic))
+        }
+        DirectiveKind::CVariadic => {
+            if param_idx + 1 != param_count {
+                let src = ctx.src(directive.range);
+                err::directive_param_must_be_last(&mut ctx.emit, src, directive.kind.as_str());
+                return None;
+            }
+            if !flag_set.contains(hir::ProcFlag::External) {
+                let src = ctx.src(directive.range);
+                err::flag_proc_c_variadic_not_external(&mut ctx.emit, src);
+                return None;
+            }
+            if param_count == 1 {
+                let src = ctx.src(directive.range);
+                err::flag_proc_c_variadic_zero_params(&mut ctx.emit, src);
+                return None;
+            }
+
+            flag_set.set(hir::ProcFlag::CVariadic);
+            None
+        }
+        DirectiveKind::CallerLocation => {
+            let ty =
+                ctx.core.source_location.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
+            Some((ty, hir::ParamKind::CallerLocation))
+        }
         _ => {
             let src = ctx.src(directive.range);
             let name = directive.kind.as_str();
             err::directive_cannot_apply(&mut ctx.emit, src, name, "parameters");
-            (hir::Type::Error, hir::ParamKind::ErrorDirective)
+            Some((hir::Type::Error, hir::ParamKind::Normal))
         }
     }
 }

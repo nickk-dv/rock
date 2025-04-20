@@ -204,12 +204,13 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     }
 
     pub fn proc_type(&self, proc_ty: &hir::ProcType) -> llvm::TypeFn {
-        let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.param_types.len());
-        for &param_ty in proc_ty.param_types {
-            param_types.push(self.ty(param_ty));
+        let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.params.len());
+        for param in proc_ty.params {
+            param_types.push(self.ty(param.ty));
         }
         let return_ty = self.ty(proc_ty.return_ty);
-        llvm::function_type(return_ty, &param_types, false) //@proc_ty variadic support
+        let is_variadic = proc_ty.flag_set.contains(hir::ProcFlag::CVariadic);
+        llvm::function_type(return_ty, &param_types, is_variadic)
     }
 
     pub fn slice_type(&self) -> llvm::TypeStruct {

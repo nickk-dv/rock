@@ -22,6 +22,7 @@ pub struct CoreItems {
     pub panic: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
+    pub any: Option<StructID>,
     pub source_location: Option<StructID>,
 }
 
@@ -50,9 +51,7 @@ crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum ParamKind {
         Normal "normal",
-        ErrorDirective "<error directive>",
         Variadic "variadic",
-        CVariadic "c_variadic",
         CallerLocation "caller_location",
     }
 }
@@ -181,8 +180,14 @@ pub enum PolymorphDefID {
 #[derive(Copy, Clone)]
 pub struct ProcType<'hir> {
     pub flag_set: BitSet<ProcFlag>,
-    pub param_types: &'hir [Type<'hir>],
+    pub params: &'hir [ProcTypeParam<'hir>],
     pub return_ty: Type<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ProcTypeParam<'hir> {
+    pub ty: Type<'hir>,
+    pub kind: ParamKind,
 }
 
 #[derive(Copy, Clone)]

@@ -38,6 +38,7 @@ pub struct Cache<'hir> {
     pub var_ids: TempBuffer<hir::VariableID>,
     pub field_inits: TempBuffer<hir::FieldInit<'hir>>,
     pub const_values: TempBuffer<hir::ConstValue<'hir>>,
+    pub proc_ty_params: TempBuffer<hir::ProcTypeParam<'hir>>,
 }
 
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
@@ -47,6 +48,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             panic: hir::ProcID::dummy(),
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
+            any: None,
             source_location: None,
         };
         let cache = Cache {
@@ -63,6 +65,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             var_ids: TempBuffer::new(32),
             field_inits: TempBuffer::new(32),
             const_values: TempBuffer::new(64),
+            proc_ty_params: TempBuffer::new(32),
         };
         HirCtx {
             arena: Arena::new(),

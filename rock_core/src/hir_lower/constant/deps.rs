@@ -651,8 +651,8 @@ fn add_type_usage_const_dependencies<'hir>(
             add_type_usage_const_dependencies(ctx, tree, parent_id, *ref_ty)?
         }
         hir::Type::Procedure(proc_ty) => {
-            for param_ty in proc_ty.param_types {
-                add_type_usage_const_dependencies(ctx, tree, parent_id, *param_ty)?
+            for param in proc_ty.params {
+                add_type_usage_const_dependencies(ctx, tree, parent_id, param.ty)?
             }
             add_type_usage_const_dependencies(ctx, tree, parent_id, proc_ty.return_ty)?
         }

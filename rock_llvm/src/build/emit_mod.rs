@@ -199,9 +199,6 @@ fn codegen_function_values(cg: &mut Codegen) {
         };
 
         for param in data.params {
-            if param.kind == hir::ParamKind::CVariadic {
-                break;
-            }
             let ty = if is_external {
                 win_x64_parameter_type(cg, param.ty).pass_ty
             } else {

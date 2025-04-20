@@ -36,6 +36,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         scope::find_core_proc(ctx, "slice", "string_equals").unwrap_or(hir::ProcID::dummy());
     ctx.core.cstring_equals =
         scope::find_core_proc(ctx, "slice", "cstring_equals").unwrap_or(hir::ProcID::dummy());
+    ctx.core.any = scope::find_core_struct(ctx, "type", "Any");
     ctx.core.source_location = scope::find_core_struct(ctx, "panics", "SourceLocation");
 }
 
