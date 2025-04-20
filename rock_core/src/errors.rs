@@ -753,6 +753,20 @@ pub fn const_int_out_of_range(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn const_int_shift_out_of_range(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    op: &'static str,
+    val: i128,
+    min: i128,
+    max: i128,
+) {
+    let msg = format!(
+        "integer constant out of range for binary `{op}`\nvalue `{val}` is outside `{min}..={max}` range",
+    );
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn const_float_out_of_range(
     emit: &mut impl ErrorSink,
     src: SourceRange,

@@ -2105,30 +2105,53 @@ fn typecheck_binary<'hir, 'ast>(
         None => {}
     }
 
-    if let Ok(hir_op) = check_binary_op(ctx, expect, op, op_start, lhs_res.ty, rhs_res.ty) {
-        let res_ty = match op {
-            ast::BinOp::Eq
-            | ast::BinOp::NotEq
-            | ast::BinOp::Less
-            | ast::BinOp::LessEq
-            | ast::BinOp::Greater
-            | ast::BinOp::GreaterEq => hir::Type::Bool(expect.infer_bool()),
-            _ => lhs_res.ty,
+    let hir_op = match check_binary_op(ctx, expect, op, op_start, lhs_res.ty, rhs_res.ty) {
+        Ok(hir_op) => hir_op,
+        Err(()) => return TypeResult::error(),
+    };
+    let res_ty = match op {
+        ast::BinOp::Eq
+        | ast::BinOp::NotEq
+        | ast::BinOp::Less
+        | ast::BinOp::LessEq
+        | ast::BinOp::Greater
+        | ast::BinOp::GreaterEq => hir::Type::Bool(expect.infer_bool()),
+        _ => lhs_res.ty,
+    };
+
+    if let hir::Expr::Const { value: rhsv } = *rhs_res.expr {
+        let shift_ty = match hir_op {
+            hir::BinOp::BitShl(int_ty, _) => Some(int_ty),
+            hir::BinOp::BitShr(int_ty, _) => Some(int_ty),
+            _ => None,
         };
-        if let hir::Expr::Const { value: lhs } = *lhs_res.expr {
-            if let hir::Expr::Const { value: rhs } = *rhs_res.expr {
-                if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhs) {
-                    return TypeResult::new(res_ty, hir::Expr::Const { value });
-                } else {
-                    return TypeResult::error();
-                }
+
+        if let Some(int_ty) = shift_ty {
+            let val = rhsv.into_int();
+            let layout = if int_ty == IntType::Untyped {
+                hir::Layout::equal(8)
+            } else {
+                layout::int_layout(ctx, int_ty)
+            };
+            let max = (layout.size * 8 - 1) as i128;
+            if val < 0 || val > max {
+                let src = ctx.src(rhs.range);
+                err::const_int_shift_out_of_range(&mut ctx.emit, src, op.as_str(), val, 0, max);
+                return TypeResult::error();
             }
         }
-        let binary = hir::Expr::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
-        TypeResult::new(res_ty, binary)
-    } else {
-        TypeResult::error()
+
+        if let hir::Expr::Const { value: lhs } = *lhs_res.expr {
+            if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhsv) {
+                return TypeResult::new(res_ty, hir::Expr::Const { value });
+            } else {
+                return TypeResult::error();
+            }
+        }
     }
+
+    let binary = hir::Expr::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
+    TypeResult::new(res_ty, binary)
 }
 
 //@dont force type equality for bitshifts?
@@ -2430,9 +2453,41 @@ fn constfold_binary<'hir>(
                 Ok(hir::ConstValue::from_u64(val, int_ty))
             }
         }
-        hir::BinOp::BitShl(_, _) | hir::BinOp::BitShr(_, _) => {
-            err::internal_not_implemented(&mut ctx.emit, src, "binary shifts constfold");
-            Err(())
+        hir::BinOp::BitShl(int_ty, _) => {
+            let lhs = lhs.into_int();
+            let rhs = rhs.into_int() as u32;
+
+            let layout = if int_ty == IntType::Untyped {
+                hir::Layout::equal(8)
+            } else {
+                layout::int_layout(ctx, int_ty)
+            };
+
+            let val = if int_ty == IntType::Untyped || int_ty.is_signed() {
+                match layout.size {
+                    1 => ((lhs as i8) << rhs) as i128,
+                    2 => ((lhs as i16) << rhs) as i128,
+                    4 => ((lhs as i32) << rhs) as i128,
+                    _ => ((lhs as i64) << rhs) as i128,
+                }
+            } else {
+                match layout.size {
+                    1 => ((lhs as u8) << rhs) as i128,
+                    2 => ((lhs as u16) << rhs) as i128,
+                    4 => ((lhs as u32) << rhs) as i128,
+                    _ => ((lhs as u64) << rhs) as i128,
+                }
+            };
+            let src = ctx.src(range);
+            fold::int_range_check(ctx, src, val, int_ty)
+        }
+        hir::BinOp::BitShr(int_ty, _) => {
+            let lhs = lhs.into_int();
+            let rhs = rhs.into_int() as u32;
+
+            let val = lhs >> rhs;
+            let src = ctx.src(range);
+            fold::int_range_check(ctx, src, val, int_ty)
         }
         hir::BinOp::Eq_Int_Other(bool_ty) => {
             let val = match lhs {

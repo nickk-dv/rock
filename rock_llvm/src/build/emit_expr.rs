@@ -703,6 +703,8 @@ fn codegen_variant<'c>(
     }
 }
 
+//@ret in function can cause type mismatch on ir level
+//example: i64 vs Handle.{ ptr }, external and normal fn confilict
 pub fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,

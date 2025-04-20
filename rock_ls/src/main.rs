@@ -894,6 +894,7 @@ fn semantic_visit_node(
                     SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
 
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
+                    SyntaxKind::PROC_TYPE_PARAM => Some(SemanticToken::Parameter),
 
                     SyntaxKind::FOR_BIND => Some(SemanticToken::Variable),
                     SyntaxKind::STMT_LOCAL => Some(SemanticToken::Variable),
