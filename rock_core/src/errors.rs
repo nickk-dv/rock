@@ -902,6 +902,11 @@ pub fn tycheck_cannot_index_on_ty(emit: &mut impl ErrorSink, src: SourceRange, t
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_cannot_slice_on_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("cannot slice value of type `{ty}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_cast_invalid(
     emit: &mut impl ErrorSink,
     src: SourceRange,

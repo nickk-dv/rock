@@ -1087,21 +1087,91 @@ fn typecheck_slice<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
 
+    //@check that expression value is addressable
+    let collection = match type_as_collection(target_res.ty) {
+        Ok(None) => return TypeResult::error(),
+        Ok(Some(collection)) => match collection.kind {
+            CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
+            CollectionKind::Multi(_) => {
+                let src = ctx.src(target.range);
+                let ty_fmt = type_format(ctx, target_res.ty);
+                err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+                return TypeResult::error();
+            }
+        },
+        Err(()) => {
+            let src = ctx.src(expr_range);
+            let ty_fmt = type_format(ctx, target_res.ty);
+            err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+            return TypeResult::error();
+        }
+    };
+
+    //@always allowing mutable access for now, fix!
+    let return_ty = hir::Type::ArraySlice(
+        ctx.arena.alloc(hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty }),
+    );
+
+    let target_ref = ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr });
+    let data = match collection.kind {
+        CollectionKind::Multi(_) => unreachable!(),
+        CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
+            target: target_ref,
+            access: hir::SliceFieldAccess {
+                deref: Some(ast::Mut::Immutable),
+                field: hir::SliceField::Ptr,
+            },
+        }),
+        CollectionKind::Array(_) => target_ref,
+    };
+
+    let len = match collection.kind {
+        CollectionKind::Array(array) => {
+            let len_value = hir::ConstValue::Int {
+                val: array.len.get_resolved(ctx).unwrap_or(0), //@using default 0
+                neg: false,
+                int_ty: IntType::Usize,
+            };
+            ctx.arena.alloc(hir::Expr::Const { value: len_value })
+        }
+        CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
+            target: target_ref,
+            access: hir::SliceFieldAccess {
+                deref: Some(ast::Mut::Immutable),
+                field: hir::SliceField::Len,
+            },
+        }),
+        CollectionKind::Multi(_) => unreachable!(),
+    };
+
+    let src = ctx.src(target.range);
+    let elem_size = match layout::type_layout(ctx, collection.elem_ty, src) {
+        Ok(layout) => layout.size,
+        Err(_) => return TypeResult::error(),
+    };
+    let value = hir::ConstValue::Int { val: elem_size, neg: false, int_ty: IntType::Usize };
+    let elem_size = ctx.arena.alloc(hir::Expr::Const { value });
+
     let start = if let Some(start) = range.start {
         typecheck_expr(ctx, Expectation::USIZE, start).expr
     } else {
-        &hir::Expr::Error //@ 0 usize
+        let value = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
+        ctx.arena.alloc(hir::Expr::Const { value })
     };
+
     let (end, kind) = if let Some((kind, end)) = range.end {
         (typecheck_expr(ctx, Expectation::USIZE, end).expr, kind)
     } else {
-        //@array.len or slice.len
-        (&hir::Expr::Error, ast::RangeKind::Exclusive)
+        (len, ast::RangeKind::Exclusive)
     };
 
-    let src = ctx.src(expr_range);
-    err::internal_not_implemented(&mut ctx.emit, src, "slice expression");
-    TypeResult::error()
+    let proc_id = match kind {
+        ast::RangeKind::Exclusive => ctx.core.slice_exclusive,
+        ast::RangeKind::Inclusive => ctx.core.slice_inclusive,
+    };
+    let input = ctx.arena.alloc_slice(&[data, len, elem_size, start, end]);
+    let expr = hir::Expr::CallDirect { proc_id, input };
+    TypeResult::new(return_ty, expr)
 }
 
 fn typecheck_call<'hir, 'ast>(
@@ -3668,8 +3738,8 @@ fn check_call_direct<'hir, 'ast>(
         }
     }
 
-    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
-    let expr = hir::Expr::CallDirect { proc_id, input: values };
+    let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
+    let expr = hir::Expr::CallDirect { proc_id, input };
     TypeResult::new(return_ty, expr)
 }
 
@@ -3745,8 +3815,8 @@ fn check_call_indirect<'hir, 'ast>(
         }
     }
 
-    let values = ctx.cache.exprs.take(offset, &mut ctx.arena);
-    let indirect = hir::CallIndirect { proc_ty, input: values };
+    let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
+    let indirect = hir::CallIndirect { proc_ty, input };
     let expr =
         hir::Expr::CallIndirect { target: target_res.expr, indirect: ctx.arena.alloc(indirect) };
     TypeResult::new(proc_ty.return_ty, expr)
