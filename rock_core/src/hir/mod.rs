@@ -22,7 +22,10 @@ pub struct CoreItems {
     pub panic: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
+    pub slice_exclusive: ProcID,
+    pub slice_inclusive: ProcID,
     pub any: Option<StructID>,
+    pub raw_slice: Option<StructID>,
     pub source_location: Option<StructID>,
 }
 

@@ -48,7 +48,10 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             panic: hir::ProcID::dummy(),
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
+            slice_exclusive: hir::ProcID::dummy(),
+            slice_inclusive: hir::ProcID::dummy(),
             any: None,
+            raw_slice: None,
             source_location: None,
         };
         let cache = Cache {

@@ -1087,12 +1087,17 @@ fn typecheck_slice<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
 
-    if let Some(start) = range.start {
-        let start_res = typecheck_expr(ctx, Expectation::USIZE, start);
-    }
-    if let Some((kind, end)) = range.end {
-        let end_res = typecheck_expr(ctx, Expectation::USIZE, end);
-    }
+    let start = if let Some(start) = range.start {
+        typecheck_expr(ctx, Expectation::USIZE, start).expr
+    } else {
+        &hir::Expr::Error //@ 0 usize
+    };
+    let (end, kind) = if let Some((kind, end)) = range.end {
+        (typecheck_expr(ctx, Expectation::USIZE, end).expr, kind)
+    } else {
+        //@array.len or slice.len
+        (&hir::Expr::Error, ast::RangeKind::Exclusive)
+    };
 
     let src = ctx.src(expr_range);
     err::internal_not_implemented(&mut ctx.emit, src, "slice expression");
