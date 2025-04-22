@@ -4,7 +4,6 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::hir::{self, CmpPred};
 use rock_core::intern::LitID;
-use rock_core::support::BitSet;
 
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();
@@ -95,7 +94,7 @@ fn codegen_expr<'c>(
             Some(codegen_slice_field(cg, expect, target, &access))
         }
         hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
-        hir::Expr::Slice { target, access } => unimplemented!("slicing"),
+        hir::Expr::Slice { access, .. } => codegen_expr(cg, &access.op_call, expect),
         hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
         hir::Expr::Transmute { target, into } => Some(codegen_transmute(cg, expect, target, into)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),

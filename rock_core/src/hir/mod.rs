@@ -395,27 +395,14 @@ pub enum IndexKind {
 #[derive(Copy, Clone)]
 pub struct SliceAccess<'hir> {
     pub deref: Option<ast::Mut>,
-    pub kind: SliceKind<'hir>,
-    pub range: SliceRange<'hir>,
+    pub kind: SliceKind,
+    pub op_call: Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]
-pub enum SliceKind<'hir> {
-    Slice { elem_size: u64 },
-    Array { array: &'hir ArrayStatic<'hir> },
-}
-
-#[derive(Copy, Clone)]
-pub struct SliceRange<'hir> {
-    pub lower: Option<&'hir Expr<'hir>>,
-    pub upper: SliceRangeEnd<'hir>,
-}
-
-#[derive(Copy, Clone)]
-pub enum SliceRangeEnd<'hir> {
-    Unbounded,
-    Exclusive(&'hir Expr<'hir>),
-    Inclusive(&'hir Expr<'hir>),
+pub enum SliceKind {
+    Slice(ast::Mut),
+    Array,
 }
 
 #[allow(non_camel_case_types)]

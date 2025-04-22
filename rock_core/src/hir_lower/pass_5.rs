@@ -1086,8 +1086,9 @@ fn typecheck_slice<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-
+    let addr_res = resolve_expr_addressability(ctx, target_res.expr);
     //@check that expression value is addressable
+
     let collection = match type_as_collection(target_res.ty) {
         Ok(None) => return TypeResult::error(),
         Ok(Some(collection)) => match collection.kind {
@@ -1112,7 +1113,11 @@ fn typecheck_slice<'hir, 'ast>(
         ctx.arena.alloc(hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty }),
     );
 
-    let target_ref = ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr });
+    let target_ref = if collection.deref.is_some() {
+        target_res.expr
+    } else {
+        ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
+    };
     let data = match collection.kind {
         CollectionKind::Multi(_) => unreachable!(),
         CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
@@ -1170,7 +1175,16 @@ fn typecheck_slice<'hir, 'ast>(
         ast::RangeKind::Inclusive => ctx.core.slice_inclusive,
     };
     let input = ctx.arena.alloc_slice(&[data, len, elem_size, start, end]);
-    let expr = hir::Expr::CallDirect { proc_id, input };
+    let op_call = hir::Expr::CallDirect { proc_id, input };
+
+    let kind = match collection.kind {
+        CollectionKind::Multi(_) => unreachable!(),
+        CollectionKind::Slice(slice) => hir::SliceKind::Slice(slice.mutt),
+        CollectionKind::Array(_) => hir::SliceKind::Array,
+    };
+    let access = hir::SliceAccess { deref: collection.deref, kind, op_call };
+    let access = ctx.arena.alloc(access);
+    let expr = hir::Expr::Slice { target: target_res.expr, access };
     TypeResult::new(return_ty, expr)
 }
 
@@ -4034,9 +4048,6 @@ impl AddrConstraint {
     }
 }
 
-//@for index access store brackets range?
-// unclear which access is the issue since entire index expr range is used
-// same bracket range is needed for typecheck_index errors + backend maybe
 fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
     let mut expr = expr;
     let mut constraint = AddrConstraint::None;
@@ -4122,8 +4133,23 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = target;
                 continue;
             }
-            hir::Expr::Slice { .. } => {
-                unimplemented!("slice expression addressability");
+            hir::Expr::Slice { target, access } => {
+                match access.deref {
+                    Some(ast::Mut::Mutable) => constraint.set(AddrConstraint::AllowMut),
+                    Some(ast::Mut::Immutable) => constraint.set(AddrConstraint::ImmutRef),
+                    None => {}
+                }
+                match access.kind {
+                    hir::SliceKind::Slice(ast::Mut::Mutable) => {
+                        constraint.set(AddrConstraint::AllowMut)
+                    }
+                    hir::SliceKind::Slice(ast::Mut::Immutable) => {
+                        constraint.set(AddrConstraint::ImmutSlice)
+                    }
+                    hir::SliceKind::Array => {}
+                }
+                expr = target;
+                continue;
             }
             hir::Expr::Deref { rhs, mutt, .. } => {
                 match mutt {
