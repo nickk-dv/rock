@@ -1177,99 +1177,36 @@ pub fn tycheck_bin_type_mismatch(
 
 //==================== TYPECHECK ADDRESSABILITY ====================
 
-pub fn tycheck_cannot_ref_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get reference to a slice field";
+pub fn tycheck_addr(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    action: &'static str,
+    subject: &'static str,
+) {
+    let msg = format!("cannot {action} to a {subject}");
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_cannot_assign_slice_field(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot assign to a slice field";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_ref_temporary(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get reference to a temporary value";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_ref_temporary_immut(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get `&mut` to this temporary value, only `&` is allowed";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_assign_temporary(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot assign to a temporary value";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_ref_constant(
+pub fn tycheck_addr_const(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     const_src: SourceRange,
+    action: &'static str,
 ) {
-    let msg = "cannot get reference to a constant, you can use `global` instead";
+    let msg = format!("cannot {action} to a constant, you can use global variable instead");
     let info = Info::new("constant defined here", const_src);
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_cannot_assign_constant(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    const_src: SourceRange,
-) {
-    let msg = "cannot assign to a constant, you can use `global` instead";
-    let info = Info::new("constant defined here", const_src);
-    emit.error(Error::new(msg, src, info));
-}
-
-pub fn tycheck_cannot_ref_var_immut(
+pub fn tycheck_addr_variable(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     var_src: SourceRange,
+    action: &'static str,
 ) {
-    let msg = "cannot get `&mut` to an immutable variable";
+    let msg = format!("cannot {action} to an immutable variable");
     let info = Info::new("variable defined here", var_src);
     emit.error(Error::new(msg, src, info));
-}
-
-pub fn tycheck_cannot_assign_var_immut(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    var_src: SourceRange,
-) {
-    let msg = "cannot assign to an immutable variable";
-    let info = Info::new("variable defined here", var_src);
-    emit.error(Error::new(msg, src, info));
-}
-
-pub fn tycheck_cannot_ref_val_behind_ref(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get `&mut` to a value behind an immutable reference";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_assign_val_behind_ref(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot assign to a value behind an immutable reference";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_ref_val_behind_multi_ref(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get `&mut` to a value behind an immutable multi-reference";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_assign_val_behind_multi_ref(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot assign to a value behind an immutable multi-reference";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_ref_val_behind_slice(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot get `&mut` to a value behind an immutable slice";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_cannot_assign_val_behind_slice(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot assign to a value behind an immutable slice";
-    emit.error(Error::new(msg, src, None));
 }
 
 //==================== ENTRY POINT ====================

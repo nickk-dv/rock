@@ -4050,6 +4050,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmut,
                 hir::ConstValue::Array { .. } => AddrBase::TemporaryImmut,
                 hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
+                hir::ConstValue::ArrayEmpty { .. } => AddrBase::TemporaryImmut,
                 _ => AddrBase::Temporary,
             },
             hir::Expr::If { .. } => AddrBase::Temporary,
@@ -4145,21 +4146,18 @@ fn check_address_addressability(
     expr_range: TextRange,
 ) {
     let src = ctx.src(expr_range);
+    let action = match mutt {
+        ast::Mut::Mutable => "get &mut",
+        ast::Mut::Immutable => "get &",
+    };
+
     match addr_res.base {
         AddrBase::Unknown => {}
-        AddrBase::SliceField => {
-            err::tycheck_cannot_ref_slice_field(&mut ctx.emit, src);
-        }
-        AddrBase::Temporary => {
-            err::tycheck_cannot_ref_temporary(&mut ctx.emit, src);
-        }
-        AddrBase::TemporaryImmut => {
-            if mutt == ast::Mut::Mutable {
-                err::tycheck_cannot_ref_temporary_immut(&mut ctx.emit, src);
-            }
-        }
+        AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
+        AddrBase::Temporary => err::tycheck_addr(&mut ctx.emit, src, action, "temporary value"),
+        AddrBase::TemporaryImmut => {}
         AddrBase::Constant(const_src) => {
-            err::tycheck_cannot_ref_constant(&mut ctx.emit, src, const_src)
+            err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
         }
         AddrBase::Variable(var_mutt, var_src) => {
             if mutt == ast::Mut::Immutable {
@@ -4168,18 +4166,21 @@ fn check_address_addressability(
             match addr_res.constraint {
                 AddrConstraint::None => {
                     if var_mutt == ast::Mut::Immutable {
-                        err::tycheck_cannot_ref_var_immut(&mut ctx.emit, src, var_src);
+                        err::tycheck_addr_variable(&mut ctx.emit, src, var_src, action);
                     }
                 }
                 AddrConstraint::AllowMut => {}
                 AddrConstraint::ImmutRef => {
-                    err::tycheck_cannot_ref_val_behind_ref(&mut ctx.emit, src);
+                    let subject = "value behind an immutable reference";
+                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
                 }
                 AddrConstraint::ImmutMulti => {
-                    err::tycheck_cannot_ref_val_behind_multi_ref(&mut ctx.emit, src);
+                    let subject = "value behind an immutable multi-reference";
+                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
                 }
                 AddrConstraint::ImmutSlice => {
-                    err::tycheck_cannot_ref_val_behind_slice(&mut ctx.emit, src);
+                    let subject = "value behind an immutable slice";
+                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
                 }
             }
         }
@@ -4188,32 +4189,35 @@ fn check_address_addressability(
 
 fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_range: TextRange) {
     let src = ctx.src(expr_range);
+    let action = "assign";
+
     match addr_res.base {
         AddrBase::Unknown => {}
-        AddrBase::SliceField => {
-            err::tycheck_cannot_assign_slice_field(&mut ctx.emit, src);
-        }
+        AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
         AddrBase::Temporary | AddrBase::TemporaryImmut => {
-            err::tycheck_cannot_assign_temporary(&mut ctx.emit, src)
+            err::tycheck_addr(&mut ctx.emit, src, action, "temporary value")
         }
         AddrBase::Constant(const_src) => {
-            err::tycheck_cannot_assign_constant(&mut ctx.emit, src, const_src);
+            err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
         }
         AddrBase::Variable(var_mutt, var_src) => match addr_res.constraint {
             AddrConstraint::None => {
                 if var_mutt == ast::Mut::Immutable {
-                    err::tycheck_cannot_assign_var_immut(&mut ctx.emit, src, var_src);
+                    err::tycheck_addr_variable(&mut ctx.emit, src, var_src, action);
                 }
             }
             AddrConstraint::AllowMut => {}
             AddrConstraint::ImmutRef => {
-                err::tycheck_cannot_assign_val_behind_ref(&mut ctx.emit, src);
+                let subject = "value behind an immutable reference";
+                err::tycheck_addr(&mut ctx.emit, src, action, subject);
             }
             AddrConstraint::ImmutMulti => {
-                err::tycheck_cannot_assign_val_behind_multi_ref(&mut ctx.emit, src);
+                let subject = "value behind an immutable multi-reference";
+                err::tycheck_addr(&mut ctx.emit, src, action, subject);
             }
             AddrConstraint::ImmutSlice => {
-                err::tycheck_cannot_assign_val_behind_slice(&mut ctx.emit, src);
+                let subject = "value behind an immutable slice";
+                err::tycheck_addr(&mut ctx.emit, src, action, subject);
             }
         },
     }
