@@ -108,8 +108,8 @@ struct ModuleData {
 }
 
 fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
-    use rock_core::config::{BuildKind, Config, TargetTriple};
-    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+    use rock_core::config::{Build, Config, TargetTriple};
+    let config = Config::new(TargetTriple::host(), Build::Debug);
 
     let session = match session::create_session(config) {
         Ok(value) => value,

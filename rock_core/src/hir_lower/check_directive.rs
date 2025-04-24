@@ -278,8 +278,8 @@ fn check_config_parameter(
             Some(value) => Ok(ConfigState(value == ctx.session.config.target_ptr_width)),
             None => Err(()),
         },
-        "build_kind" => match config::BuildKind::from_str(param_value) {
-            Some(value) => Ok(ConfigState(value == ctx.session.config.build_kind)),
+        "build" => match config::Build::from_str(param_value) {
+            Some(value) => Ok(ConfigState(value == ctx.session.config.build)),
             None => Err(()),
         },
         _ => {

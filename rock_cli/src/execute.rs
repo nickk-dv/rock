@@ -1,7 +1,7 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
-use rock_core::config::{BuildKind, Config, TargetTriple};
+use rock_core::config::{Build, Config, TargetTriple};
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir_lower;
@@ -41,52 +41,32 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
     package::verify_name(&data.name)?;
     os::dir_create(&root_dir, true)?;
     os::dir_create(&src_dir, true)?;
+    if let PackageKind::Bin = data.kind {
+        os::file_create(&src_dir.join("main.rock"), "")?;
+    }
 
-    const IMPORT_PRINTF: &str = "import core:libc.{ printf };\n\n";
-    match data.kind {
-        PackageKind::Bin => {
-            let bin_content = format!(
-                "{IMPORT_PRINTF}proc main() s32 {{\n    let _ = printf(c\"Bin `{}` works\\n\");\n    return 0;\n}}\n",
-                data.name
-            );
-            os::file_create(&src_dir.join("main.rock"), &bin_content)?
-        }
+    let package = PackageManifest {
+        name: data.name.clone(),
+        kind: data.kind,
+        version: Semver::new(0, 1, 0),
+        owner: None,
+        authors: None,
+        description: None,
+    };
+    let build = match data.kind {
+        PackageKind::Bin => BuildManifest {
+            bin_name: Some(data.name.clone()),
+            nodefaultlib: None,
+            lib_paths: None,
+            links: None,
+        },
         PackageKind::Lib => {
-            let lib_content = format!(
-                "{IMPORT_PRINTF}proc test() void {{\n    let _ = printf(c\"Lib `{}` works\\n\");\n}}\n",
-                data.name
-            );
-            os::file_create(&src_dir.join("test.rock"), &lib_content)?;
+            BuildManifest { bin_name: None, nodefaultlib: None, lib_paths: None, links: None }
         }
-    }
-
-    {
-        let package = PackageManifest {
-            name: data.name.clone(),
-            kind: data.kind,
-            version: Semver::new(0, 1, 0),
-            owner: None,
-            authors: None,
-            description: None,
-        };
-
-        let build = match data.kind {
-            PackageKind::Bin => BuildManifest {
-                bin_name: Some(data.name.clone()),
-                nodefaultlib: None,
-                lib_paths: None,
-                links: None,
-            },
-            PackageKind::Lib => {
-                BuildManifest { bin_name: None, nodefaultlib: None, lib_paths: None, links: None }
-            }
-        };
-
-        let manifest = Manifest { package, build, dependencies: BTreeMap::new() };
-
-        let manifest_text = package::manifest_serialize(&manifest)?;
-        os::file_create(&root_dir.join("Rock.toml"), &manifest_text)?;
-    }
+    };
+    let manifest = Manifest { package, build, dependencies: BTreeMap::new() };
+    let manifest_text = package::manifest_serialize(&manifest)?;
+    os::file_create(&root_dir.join("Rock.toml"), &manifest_text)?;
 
     if !data.no_git {
         os::file_create(&root_dir.join(".gitignore"), "build/\n")?;
@@ -111,7 +91,7 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
 
 fn check(data: CommandCheck) -> Result<(), Error> {
     let timer = Timer::start();
-    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+    let config = Config::new(TargetTriple::host(), Build::Debug);
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
@@ -142,7 +122,7 @@ fn check(data: CommandCheck) -> Result<(), Error> {
 
 fn build(data: CommandBuild) -> Result<(), Error> {
     let timer = Timer::start();
-    let config = Config::new(TargetTriple::host(), data.build_kind);
+    let config = Config::new(TargetTriple::host(), data.build);
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
@@ -181,7 +161,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
 
 fn run(data: CommandRun) -> Result<(), Error> {
     let timer = Timer::start();
-    let config = Config::new(TargetTriple::host(), data.build_kind);
+    let config = Config::new(TargetTriple::host(), data.build);
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
@@ -248,16 +228,16 @@ fn print_stats(style: &AnsiStyle, stats: &BuildStats, build: bool) {
 }
 
 fn print_build_finished(session: &Session, style: &AnsiStyle, stats: &BuildStats) {
-    let build_kind = session.config.build_kind;
-    let description = match build_kind {
-        BuildKind::Debug => "unoptimized",
-        BuildKind::Release => "optimized",
+    let build = session.config.build;
+    let description = match build {
+        Build::Debug => "unoptimized",
+        Build::Release => "optimized",
     };
     let g = style.out.green_bold;
     let r = style.out.reset;
     println!(
         "  {g}Finished{r} `{}` ({}) in {:.2} sec",
-        build_kind.as_str(),
+        build.as_str(),
         description,
         stats.total_secs(),
     );
@@ -271,7 +251,7 @@ fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &PathBuf)
 }
 
 fn fmt() -> Result<(), Error> {
-    let config = Config::new(TargetTriple::host(), BuildKind::Debug);
+    let config = Config::new(TargetTriple::host(), Build::Debug);
     let mut session = session::create_session(config)?;
 
     if let Err(()) = fmt_impl(&mut session) {

@@ -1,4 +1,4 @@
-use rock_core::config::BuildKind;
+use rock_core::config::Build;
 use rock_core::error::ErrorBuffer;
 use rock_core::errors as err;
 use rock_core::package::manifest::PackageKind;
@@ -27,13 +27,13 @@ pub struct CommandCheck {
 }
 
 pub struct CommandBuild {
-    pub build_kind: BuildKind,
+    pub build: Build,
     pub stats: bool,
     pub options: BuildOptions,
 }
 
 pub struct CommandRun {
-    pub build_kind: BuildKind,
+    pub build: Build,
     pub stats: bool,
     pub options: BuildOptions,
     pub args: Vec<String>,
@@ -89,25 +89,25 @@ fn command_check(p: &mut CommandParser) -> Command {
 
 fn command_build(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let build_kind = parse_option_enum(p, BuildKind::Debug);
+    let build = parse_option_enum(p, Build::Debug);
     let stats = parse_option_flag(p, false, "stats");
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     parse_trail_args_none(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandBuild { build_kind, stats, options };
+    let data = CommandBuild { build, stats, options };
     Command::Build(data)
 }
 
 fn command_run(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let build_kind = parse_option_enum(p, BuildKind::Debug);
+    let build = parse_option_enum(p, Build::Debug);
     let stats = parse_option_flag(p, false, "stats");
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     let args = parse_trail_args(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandRun { build_kind, stats, options, args };
+    let data = CommandRun { build, stats, options, args };
     Command::Run(data)
 }
 

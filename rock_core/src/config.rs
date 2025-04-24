@@ -6,7 +6,7 @@ pub struct Config {
     pub target_os: TargetOS,
     pub target_arch: TargetArch,
     pub target_ptr_width: TargetPtrWidth,
-    pub build_kind: BuildKind,
+    pub build: Build,
 }
 
 crate::enum_as_str! {
@@ -48,20 +48,20 @@ crate::enum_as_str! {
 
 crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
-    pub enum BuildKind {
+    pub enum Build {
         Debug "debug",
         Release "release",
     }
 }
 
 impl Config {
-    pub fn new(target: TargetTriple, build_kind: BuildKind) -> Config {
+    pub fn new(target: TargetTriple, build: Build) -> Config {
         Config {
             target,
             target_os: target.os(),
             target_arch: target.arch(),
             target_ptr_width: target.arch().ptr_width(),
-            build_kind,
+            build,
         }
     }
 }

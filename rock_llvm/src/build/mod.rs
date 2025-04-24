@@ -3,7 +3,7 @@ mod emit_expr;
 mod emit_mod;
 mod emit_stmt;
 
-use rock_core::config::{BuildKind, TargetOS};
+use rock_core::config::{Build, TargetOS};
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir;
@@ -31,7 +31,7 @@ pub fn build(
     // setup build output directories
     let mut build_path = session.curr_work_dir.join("build");
     os::dir_create(&build_path, false)?;
-    build_path.push(config.build_kind.as_str());
+    build_path.push(config.build.as_str());
     os::dir_create(&build_path, false)?;
 
     let root_manifest = session.graph.package(session.root_id).manifest();
@@ -53,7 +53,7 @@ pub fn build(
     }
 
     // optimize
-    if session.config.build_kind == BuildKind::Release {
+    if session.config.build == Build::Release {
         //@does this work at all? does default<O3> work?
         module.run_optimization_passes(&target, "default<O3>");
         if options.emit_llvm {
@@ -86,12 +86,12 @@ pub fn build(
         TargetOS::Windows => args.push("/opt:ref".into()),
         TargetOS::Linux => args.push("--gc-sections".into()),
     }
-    match config.build_kind {
-        BuildKind::Debug => match config.target_os {
+    match config.build {
+        Build::Debug => match config.target_os {
             TargetOS::Windows => args.push("/debug".into()),
             TargetOS::Linux => args.push("-g".into()),
         },
-        BuildKind::Release => match config.target_os {
+        Build::Release => match config.target_os {
             TargetOS::Windows => args.push("/opt:icf".into()),
             TargetOS::Linux => {
                 args.push("--icf=all".into());

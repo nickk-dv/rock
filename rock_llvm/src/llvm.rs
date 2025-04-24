@@ -5,7 +5,7 @@ use crate::sys::analysis;
 use crate::sys::core;
 use crate::sys::pass;
 use crate::sys::target;
-use rock_core::config::{BuildKind, TargetArch, TargetTriple};
+use rock_core::config::{Build, TargetArch, TargetTriple};
 use rock_core::support::AsStr;
 use std::ffi::c_char;
 
@@ -131,7 +131,7 @@ impl IRContext {
 }
 
 impl IRTarget {
-    pub fn new(triple: TargetTriple, kind: BuildKind) -> IRTarget {
+    pub fn new(triple: TargetTriple, build: Build) -> IRTarget {
         match triple.arch() {
             TargetArch::x86_64 => unsafe {
                 target::LLVMInitializeX86Target();
@@ -168,9 +168,9 @@ impl IRTarget {
         let target = unsafe { target.assume_init() };
         assert!(!target.is_null());
 
-        let opt_level = match kind {
-            BuildKind::Debug => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
-            BuildKind::Release => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelAggressive,
+        let opt_level = match build {
+            Build::Debug => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+            Build::Release => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelAggressive,
         };
         let target_machine = unsafe {
             target::LLVMCreateTargetMachine(
