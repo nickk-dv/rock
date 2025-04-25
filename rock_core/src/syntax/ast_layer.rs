@@ -5,11 +5,9 @@ use crate::ast;
 use crate::text::TextRange;
 use std::marker::PhantomData;
 
-pub trait AstNode<'syn>: Copy + Clone {
-    fn cast(node: &'syn Node<'syn>) -> Option<Self>
-    where
-        Self: Sized;
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange;
+pub trait AstNode<'syn>: Copy + Clone + Sized {
+    fn cast(node: &'syn Node<'syn>) -> Option<Self>;
+    fn range(self) -> TextRange;
 }
 
 #[derive(Clone)]
@@ -337,8 +335,9 @@ macro_rules! ast_node_impl {
                     None
                 }
             }
-            fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
-                self.0.find_range(tree)
+            #[inline]
+            fn range(self) -> TextRange {
+                self.0.range
             }
         }
     };
@@ -564,15 +563,15 @@ impl<'syn> AstNode<'syn> for Item<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Item::Proc(item) => item.find_range(tree),
-            Item::Enum(item) => item.find_range(tree),
-            Item::Struct(item) => item.find_range(tree),
-            Item::Const(item) => item.find_range(tree),
-            Item::Global(item) => item.find_range(tree),
-            Item::Import(item) => item.find_range(tree),
-            Item::Directive(item) => item.find_range(tree),
+            Item::Proc(item) => item.0.range,
+            Item::Enum(item) => item.0.range,
+            Item::Struct(item) => item.0.range,
+            Item::Const(item) => item.0.range,
+            Item::Global(item) => item.0.range,
+            Item::Import(item) => item.0.range,
+            Item::Directive(item) => item.0.range,
         }
     }
 }
@@ -593,10 +592,10 @@ impl<'syn> AstNode<'syn> for Directive<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Directive::Simple(dir) => dir.find_range(tree),
-            Directive::WithParams(dir) => dir.find_range(tree),
+            Directive::Simple(dir) => dir.0.range,
+            Directive::WithParams(dir) => dir.0.range,
         }
     }
 }
@@ -617,11 +616,11 @@ impl<'syn> AstNode<'syn> for Builtin<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Builtin::Error(builtin) => builtin.find_range(tree),
-            Builtin::WithType(builtin) => builtin.find_range(tree),
-            Builtin::Transmute(builtin) => builtin.find_range(tree),
+            Builtin::Error(builtin) => builtin.0.range,
+            Builtin::WithType(builtin) => builtin.0.range,
+            Builtin::Transmute(builtin) => builtin.0.range,
         }
     }
 }
@@ -652,15 +651,15 @@ impl<'syn> AstNode<'syn> for Type<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Type::Basic(ty) => ty.find_range(tree),
-            Type::Custom(ty) => ty.find_range(tree),
-            Type::Reference(ty) => ty.find_range(tree),
-            Type::MultiReference(ty) => ty.find_range(tree),
-            Type::Procedure(ty) => ty.find_range(tree),
-            Type::ArraySlice(ty) => ty.find_range(tree),
-            Type::ArrayStatic(ty) => ty.find_range(tree),
+            Type::Basic(ty) => ty.0.range,
+            Type::Custom(ty) => ty.0.range,
+            Type::Reference(ty) => ty.0.range,
+            Type::MultiReference(ty) => ty.0.range,
+            Type::Procedure(ty) => ty.0.range,
+            Type::ArraySlice(ty) => ty.0.range,
+            Type::ArrayStatic(ty) => ty.0.range,
         }
     }
 }
@@ -695,18 +694,18 @@ impl<'syn> AstNode<'syn> for Stmt<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Stmt::Break(stmt) => stmt.find_range(tree),
-            Stmt::Continue(stmt) => stmt.find_range(tree),
-            Stmt::Return(stmt) => stmt.find_range(tree),
-            Stmt::Defer(stmt) => stmt.find_range(tree),
-            Stmt::For(stmt) => stmt.find_range(tree),
-            Stmt::Local(stmt) => stmt.find_range(tree),
-            Stmt::Assign(stmt) => stmt.find_range(tree),
-            Stmt::ExprSemi(stmt) => stmt.find_range(tree),
-            Stmt::ExprTail(stmt) => stmt.find_range(tree),
-            Stmt::WithDirective(stmt) => stmt.find_range(tree),
+            Stmt::Break(stmt) => stmt.0.range,
+            Stmt::Continue(stmt) => stmt.0.range,
+            Stmt::Return(stmt) => stmt.0.range,
+            Stmt::Defer(stmt) => stmt.0.range,
+            Stmt::For(stmt) => stmt.0.range,
+            Stmt::Local(stmt) => stmt.0.range,
+            Stmt::Assign(stmt) => stmt.0.range,
+            Stmt::ExprSemi(stmt) => stmt.0.range,
+            Stmt::ExprTail(stmt) => stmt.0.range,
+            Stmt::WithDirective(stmt) => stmt.0.range,
         }
     }
 }
@@ -767,28 +766,28 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             }
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Expr::Paren(expr) => expr.find_range(tree),
-            Expr::Lit(lit) => lit.find_range(tree),
-            Expr::If(expr) => expr.find_range(tree),
-            Expr::Block(block) => block.find_range(tree),
-            Expr::Match(expr) => expr.find_range(tree),
-            Expr::Field(expr) => expr.find_range(tree),
-            Expr::Index(expr) => expr.find_range(tree),
-            Expr::Slice(expr) => expr.find_range(tree),
-            Expr::Call(expr) => expr.find_range(tree),
-            Expr::Cast(expr) => expr.find_range(tree),
-            Expr::Builtin(expr) => expr.find_range(tree),
-            Expr::Item(expr) => expr.find_range(tree),
-            Expr::Variant(expr) => expr.find_range(tree),
-            Expr::StructInit(expr) => expr.find_range(tree),
-            Expr::ArrayInit(expr) => expr.find_range(tree),
-            Expr::ArrayRepeat(expr) => expr.find_range(tree),
-            Expr::Deref(expr) => expr.find_range(tree),
-            Expr::Address(expr) => expr.find_range(tree),
-            Expr::Unary(expr) => expr.find_range(tree),
-            Expr::Binary(expr) => expr.find_range(tree),
+            Expr::Paren(expr) => expr.0.range,
+            Expr::Lit(lit) => lit.range(),
+            Expr::If(expr) => expr.0.range,
+            Expr::Block(expr) => expr.0.range,
+            Expr::Match(expr) => expr.0.range,
+            Expr::Field(expr) => expr.0.range,
+            Expr::Index(expr) => expr.0.range,
+            Expr::Slice(expr) => expr.0.range,
+            Expr::Call(expr) => expr.0.range,
+            Expr::Cast(expr) => expr.0.range,
+            Expr::Builtin(builtin) => builtin.range(),
+            Expr::Item(expr) => expr.0.range,
+            Expr::Variant(expr) => expr.0.range,
+            Expr::StructInit(expr) => expr.0.range,
+            Expr::ArrayInit(expr) => expr.0.range,
+            Expr::ArrayRepeat(expr) => expr.0.range,
+            Expr::Deref(expr) => expr.0.range,
+            Expr::Address(expr) => expr.0.range,
+            Expr::Unary(expr) => expr.0.range,
+            Expr::Binary(expr) => expr.0.range,
         }
     }
 }
@@ -813,13 +812,13 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Pat::Wild(pat) => pat.find_range(tree),
-            Pat::Lit(pat) => pat.find_range(tree),
-            Pat::Item(pat) => pat.find_range(tree),
-            Pat::Variant(pat) => pat.find_range(tree),
-            Pat::Or(pat) => pat.find_range(tree),
+            Pat::Wild(pat) => pat.0.range,
+            Pat::Lit(pat) => pat.0.range,
+            Pat::Item(pat) => pat.0.range,
+            Pat::Variant(pat) => pat.0.range,
+            Pat::Or(pat) => pat.0.range,
         }
     }
 }
@@ -848,15 +847,15 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
             _ => None,
         }
     }
-    fn find_range(self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
+    fn range(self) -> TextRange {
         match self {
-            Lit::Void(lit) => lit.find_range(tree),
-            Lit::Null(lit) => lit.find_range(tree),
-            Lit::Bool(lit) => lit.find_range(tree),
-            Lit::Int(lit) => lit.find_range(tree),
-            Lit::Float(lit) => lit.find_range(tree),
-            Lit::Char(lit) => lit.find_range(tree),
-            Lit::String(lit) => lit.find_range(tree),
+            Lit::Void(lit) => lit.0.range,
+            Lit::Null(lit) => lit.0.range,
+            Lit::Bool(lit) => lit.0.range,
+            Lit::Int(lit) => lit.0.range,
+            Lit::Float(lit) => lit.0.range,
+            Lit::Char(lit) => lit.0.range,
+            Lit::String(lit) => lit.0.range,
         }
     }
 }

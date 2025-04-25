@@ -158,6 +158,10 @@ mod temp_buffer {
             &self.buffer[offset.idx..]
         }
         #[inline]
+        pub fn view_all(&self) -> &[T] {
+            &self.buffer
+        }
+        #[inline]
         pub fn pop_view(&mut self, offset: TempOffset<T>) {
             self.buffer.truncate(offset.idx);
         }

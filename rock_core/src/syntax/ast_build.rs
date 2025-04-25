@@ -187,7 +187,7 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);
 
-        let field_list = ast::VariantFieldList { types, range: field_list.find_range(ctx.tree) };
+        let field_list = ast::VariantFieldList { types, range: field_list.range() };
         let field_list = ctx.arena.alloc(field_list);
         ast::VariantKind::HasFields(field_list)
     } else {
@@ -370,7 +370,7 @@ fn directive<'ast>(
         }
     };
 
-    ast::Directive { kind, range: directive.find_range(ctx.tree) }
+    ast::Directive { kind, range: directive.range() }
 }
 
 fn directive_param_list<'ast>(
@@ -389,13 +389,13 @@ fn directive_param(ctx: &mut AstBuild, param: cst::DirectiveParam) -> ast::Direc
     let name = name(ctx, param.name(ctx.tree).unwrap());
     let lit_string = param.value(ctx.tree).unwrap();
     let value = string_lit(ctx, lit_string);
-    let value_range = lit_string.find_range(ctx.tree);
+    let value_range = lit_string.range();
 
     ast::DirectiveParam { name, value, value_range }
 }
 
 fn ty<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, ty_cst: cst::Type) -> ast::Type<'ast> {
-    let range = ty_cst.find_range(ctx.tree);
+    let range = ty_cst.range();
 
     let kind = match ty_cst {
         cst::Type::Basic(ty_cst) => {
@@ -470,7 +470,7 @@ fn proc_type_param<'ast>(
 }
 
 fn stmt<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, stmt_cst: cst::Stmt) -> ast::Stmt<'ast> {
-    let range = stmt_cst.find_range(ctx.tree);
+    let range = stmt_cst.range();
 
     let kind = match stmt_cst {
         cst::Stmt::Break(_) => ast::StmtKind::Break,
@@ -616,7 +616,7 @@ fn stmt_assign<'ast>(
 }
 
 fn expr<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, expr_cst: cst::Expr) -> &'ast ast::Expr<'ast> {
-    let range = expr_cst.find_range(ctx.tree);
+    let range = expr_cst.range();
     let kind = expr_kind(ctx, expr_cst);
     let expr = ast::Expr { kind, range };
     ctx.arena.alloc(expr)
@@ -741,7 +741,7 @@ fn expr_kind<'ast>(
 
             let offset = ctx.s.field_inits.start();
             let field_init_list = struct_init.field_init_list(ctx.tree).unwrap();
-            let field_init_range = field_init_list.find_range(ctx.tree);
+            let field_init_range = field_init_list.range();
 
             for field_init_cst in field_init_list.field_inits(ctx.tree) {
                 let name = name(ctx, field_init_cst.name(ctx.tree).unwrap());
@@ -833,7 +833,7 @@ fn match_arm<'ast>(
 }
 
 fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
-    let range = pat_cst.find_range(ctx.tree);
+    let range = pat_cst.range();
 
     let kind = match pat_cst {
         cst::Pat::Wild(_) => ast::PatKind::Wild,
@@ -841,14 +841,13 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, pat_cst: cst::Pat) -> ast::Pa
             let lit_cst = pat.lit(ctx.tree).unwrap();
             let lit = lit(ctx, lit_cst);
 
-            let lit_expr =
-                ast::Expr { kind: ast::ExprKind::Lit { lit }, range: lit_cst.find_range(ctx.tree) };
+            let lit_expr = ast::Expr { kind: ast::ExprKind::Lit { lit }, range: lit_cst.range() };
             let lit_expr = ctx.arena.alloc(lit_expr);
 
             let expr = if let Some((op, op_range)) = pat.un_op(ctx.tree) {
                 let un_expr = ast::Expr {
                     kind: ast::ExprKind::Unary { op, op_range, rhs: lit_expr },
-                    range: pat.find_range(ctx.tree),
+                    range: pat.range(),
                 };
                 ctx.arena.alloc(un_expr)
             } else {
@@ -915,7 +914,7 @@ fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> LitID {
 }
 
 fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::Block<'ast> {
-    let range = block.find_range(ctx.tree);
+    let range = block.range();
 
     let offset = ctx.s.stmts.start();
     for stmt_cst in block.stmts(ctx.tree) {
@@ -928,7 +927,7 @@ fn block<'ast>(ctx: &mut AstBuild<'ast, '_, '_, '_>, block: cst::Block) -> ast::
 }
 
 fn name(ctx: &mut AstBuild, name: cst::Name) -> ast::Name {
-    let range = name.find_range(ctx.tree);
+    let range = name.range();
     let string = &ctx.source[range.as_usize()];
     let id = ctx.intern_name.intern(string);
     ast::Name { range, id }
@@ -949,7 +948,7 @@ fn bind_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     bind_list: cst::BindList,
 ) -> &'ast ast::BindingList<'ast> {
-    let range = bind_list.find_range(ctx.tree);
+    let range = bind_list.range();
 
     let offset = ctx.s.binds.start();
     for bind_cst in bind_list.binds(ctx.tree) {
@@ -966,7 +965,7 @@ fn args_list<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     args_list: cst::ArgsList,
 ) -> &'ast ast::ArgumentList<'ast> {
-    let range = args_list.find_range(ctx.tree);
+    let range = args_list.range();
 
     let offset = ctx.s.exprs.start();
     for expr_cst in args_list.exprs(ctx.tree) {
@@ -1004,7 +1003,7 @@ fn polymorph_args<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     poly_args: cst::PolymorphArgs,
 ) -> &'ast ast::PolymorphArgs<'ast> {
-    let range = poly_args.find_range(ctx.tree);
+    let range = poly_args.range();
 
     let offset = ctx.s.types.start();
     for ty_cst in poly_args.types(ctx.tree) {
@@ -1021,7 +1020,7 @@ fn polymorph_params<'ast>(
     ctx: &mut AstBuild<'ast, '_, '_, '_>,
     poly_params: cst::PolymorphParams,
 ) -> &'ast ast::PolymorphParams<'ast> {
-    let range = poly_params.find_range(ctx.tree);
+    let range = poly_params.range();
 
     let offset = ctx.s.names.start();
     for name_cst in poly_params.names(ctx.tree) {

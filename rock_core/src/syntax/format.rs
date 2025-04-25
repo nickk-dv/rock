@@ -403,7 +403,7 @@ fn directive_param(fmt: &mut Formatter, param: cst::DirectiveParam) {
     fmt.write('=');
     fmt.space();
     let lit_string = param.value(fmt.tree).unwrap();
-    fmt.write_range(lit_string.find_range(fmt.tree));
+    fmt.write_range(lit_string.range());
 }
 
 //==================== TYPE ====================
@@ -1057,7 +1057,7 @@ fn pat_or<'syn>(fmt: &mut Formatter<'syn, '_>, pat_or: cst::PatOr<'syn>) {
 }
 
 fn lit(fmt: &mut Formatter, lit: cst::Lit) {
-    fmt.write_range(lit.find_range(fmt.tree));
+    fmt.write_range(lit.range());
 }
 
 //==================== COMMON ====================
@@ -1266,7 +1266,7 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
             Some(node) => node,
             None => return false,
         };
-        let first_start = first.find_range(self.tree).start();
+        let first_start = first.range().start();
 
         // seek `line_num_src` to the first node's range.start
         let mut line_range = self.line_ranges[self.line_num_src as usize];
@@ -1277,7 +1277,7 @@ impl<'syn, 'cache> Formatter<'syn, 'cache> {
 
         // any subsequent node on different line indicates a wrap
         for node in node_iter {
-            let range = node.find_range(self.tree);
+            let range = node.range();
             if !line_range.contains_exclusive(range.start()) {
                 return true;
             }
@@ -1455,7 +1455,7 @@ fn flexible_break_node_list<'syn, N: AstNode<'syn>>(
 
     match nodes.clone().next() {
         Some(first) => {
-            let start = first.find_range(fmt.tree).start();
+            let start = first.range().start();
             while !line_range.contains_exclusive(start) {
                 fmt.line_num_src += 1;
                 line_range = fmt.line_ranges[fmt.line_num_src as usize];
@@ -1480,7 +1480,7 @@ fn flexible_break_node_list<'syn, N: AstNode<'syn>>(
 
     let mut first = true;
     for node in nodes {
-        let start = node.find_range(fmt.tree).start();
+        let start = node.range().start();
 
         if !line_range.contains_exclusive(start) {
             first = true;

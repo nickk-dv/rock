@@ -5,6 +5,7 @@ use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::session::ModuleID;
 use crate::support::{Arena, TempBuffer, TempOffset};
+use crate::text::TextRange;
 
 pub struct SyntaxTree<'syn> {
     #[allow(unused)]
@@ -17,6 +18,7 @@ pub struct SyntaxTree<'syn> {
 crate::define_id!(pub NodeID);
 pub struct Node<'syn> {
     pub kind: SyntaxKind,
+    pub range: TextRange,
     pub content: &'syn [NodeOrToken],
 }
 
@@ -53,7 +55,7 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
         for _ in 0..depth {
             buffer.push_str("  ");
         }
-        let _ = writeln!(buffer, "{:?}", node.kind);
+        let _ = writeln!(buffer, "{:?}@{:?}", node.kind, node.range);
 
         for not in node.content.iter().copied() {
             match not {
@@ -165,7 +167,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
     // SOURCE_FILE StartNode:
     {
-        let node = Node { kind: SyntaxKind::SOURCE_FILE, content: &[] };
+        let node = Node { kind: SyntaxKind::SOURCE_FILE, range: TextRange::zero(), content: &[] };
         let node_id = NodeID::new(b.nodes.len());
         let offset = b.content.start();
 
@@ -199,7 +201,8 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
                 eat_n_outher_trivias(b, node_trivia.n_outher);
 
                 while let Some(kind) = b.parent_stack.pop() {
-                    let node = Node { kind, content: &[] };
+                    let start = node_or_token_range(b, b.content.view_all().last().copied()).end();
+                    let node = Node { kind, range: TextRange::new(start, start), content: &[] };
                     let node_id = NodeID::new(b.nodes.len());
                     b.content.push(NodeOrToken::Node(node_id));
                     let offset = b.content.start();
@@ -215,8 +218,10 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
             }
             Event::EndNode => {
                 let (offset, node_id) = b.node_stack.pop().unwrap();
-                let node_content = b.content.take(offset, &mut b.arena);
-                b.nodes[node_id.index()].content = node_content;
+                let end = node_or_token_range(b, b.content.view_all().last().copied()).end();
+                let node = &mut b.nodes[node_id.index()];
+                node.content = b.content.take(offset, &mut b.arena);
+                node.range = TextRange::new(node.range.start(), end);
             }
             Event::Token => {
                 let token_trivia = attached_token_trivia(b);
@@ -235,14 +240,25 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
         eat_n_outher_trivias(b, OutherTrivia(n_remaining));
 
         let (offset, node_id) = b.node_stack.pop().unwrap();
-        let node_content = b.content.take(offset, &mut b.arena);
-        b.nodes[node_id.index()].content = node_content;
+        let end = node_or_token_range(b, b.content.view_all().last().copied()).end();
+        let node = &mut b.nodes[node_id.index()];
+        node.content = b.content.take(offset, &mut b.arena);
+        node.range = TextRange::new(node.range.start(), end);
     }
 
     assert!(b.content.is_empty()); // all content has been taken
     assert!(b.node_stack.is_empty()); // each node had start & end event
     assert_eq!(b.curr_token.index() + 2, b.tokens.token_count()); // all tokens have been consumed (except 2 eof tokens)
     assert_eq!(b.curr_trivia.index(), b.tokens.trivia_count()); // all trivias have been consumed
+}
+
+fn node_or_token_range(b: &SyntaxTreeBuild, not: Option<NodeOrToken>) -> TextRange {
+    match not {
+        Some(NodeOrToken::Node(id)) => b.nodes[id.index()].range,
+        Some(NodeOrToken::Token(id)) => b.tokens.token_range(id),
+        Some(NodeOrToken::Trivia(id)) => b.tokens.trivia_range(id),
+        None => TextRange::zero(),
+    }
 }
 
 fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia {
