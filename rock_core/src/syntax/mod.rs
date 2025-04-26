@@ -25,8 +25,7 @@ pub fn parse_root(session: &mut Session) -> Result<(), ()> {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
 
-        let tree_result =
-            parse_tree_complete(&file.source, module_id, true, &mut session.intern_lit);
+        let tree_result = parse_tree_complete(&file.source, module_id, &mut session.intern_lit);
         let module = session.module.get_mut(module_id);
 
         match tree_result {
@@ -42,13 +41,12 @@ pub fn parse_root(session: &mut Session) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
+pub fn parse_all(session: &mut Session) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
 
-        let tree_result =
-            parse_tree_complete(&file.source, module_id, with_trivia, &mut session.intern_lit);
+        let tree_result = parse_tree_complete(&file.source, module_id, &mut session.intern_lit);
         let module = session.module.get_mut(module_id);
 
         match tree_result {
@@ -78,7 +76,7 @@ pub fn parse_all(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) -> Result<(), ()> {
+pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         let file = session.vfs.file(module.file_id());
@@ -86,8 +84,7 @@ pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) -> Result<(), ()>
             continue;
         }
 
-        let (tree, errors) =
-            parse_tree(&file.source, module_id, with_trivia, &mut session.intern_lit);
+        let (tree, errors) = parse_tree(&file.source, module_id, &mut session.intern_lit);
 
         let module = session.module.get_mut(module_id);
         module.set_tree(tree);
@@ -119,10 +116,9 @@ pub fn parse_all_lsp(session: &mut Session, with_trivia: bool) -> Result<(), ()>
 pub fn parse_tree<'syn>(
     source: &str,
     module_id: ModuleID,
-    with_trivia: bool,
     intern_lit: &mut InternPool<'_, LitID>,
 ) -> (SyntaxTree<'syn>, ErrorBuffer) {
-    let (tokens, lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
+    let (tokens, lex_errors) = lexer::lex(source, module_id, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id, source);
     grammar::source_file(&mut parser);
@@ -139,10 +135,9 @@ pub fn parse_tree<'syn>(
 pub fn parse_tree_complete<'syn>(
     source: &str,
     module_id: ModuleID,
-    with_trivia: bool,
     intern_lit: &mut InternPool<'_, LitID>,
 ) -> Result<SyntaxTree<'syn>, ErrorBuffer> {
-    let (tokens, mut lex_errors) = lexer::lex(source, module_id, with_trivia, intern_lit);
+    let (tokens, mut lex_errors) = lexer::lex(source, module_id, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id, source);
     grammar::source_file(&mut parser);

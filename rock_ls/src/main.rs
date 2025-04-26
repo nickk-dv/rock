@@ -163,7 +163,7 @@ fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     }
     module.tree_version = file.version;
 
-    let (tree, errors) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
+    let (tree, errors) = syntax::parse_tree(&file.source, module_id, &mut session.intern_lit);
     module.set_tree(tree);
     module.parse_errors = errors;
 }
@@ -680,7 +680,7 @@ fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsPar
 }
 
 fn check_impl(session: &mut Session) -> Result<(), ()> {
-    syntax::parse_all_lsp(session, true)?;
+    syntax::parse_all_lsp(session)?;
     hir_lower::check(session)?;
     Ok(())
 }

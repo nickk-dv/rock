@@ -102,7 +102,7 @@ fn check(data: CommandCheck) -> Result<(), Error> {
 
     fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
         let timer = Timer::start();
-        syntax::parse_all(session, false)?;
+        syntax::parse_all(session)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
@@ -137,7 +137,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
 
     fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
         let timer = Timer::start();
-        syntax::parse_all(session, false)?;
+        syntax::parse_all(session)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();
@@ -176,7 +176,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
 
     fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ()> {
         let timer = Timer::start();
-        syntax::parse_all(session, false)?;
+        syntax::parse_all(session)?;
         session.stats.parse_ms = timer.measure_ms();
 
         let timer = Timer::start();

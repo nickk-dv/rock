@@ -8,7 +8,6 @@ use crate::text::{TextOffset, TextRange};
 pub fn lex<'sref>(
     source: &'sref str,
     module_id: ModuleID,
-    with_trivia: bool,
     intern_lit: &'sref mut InternPool<LitID>,
 ) -> (TokenList, ErrorBuffer) {
     let mut lex = Lexer {
@@ -18,7 +17,6 @@ pub fn lex<'sref>(
         buffer: String::with_capacity(128),
         source,
         module_id,
-        with_trivia,
         intern_lit,
     };
     source_file(&mut lex);
@@ -32,7 +30,6 @@ struct Lexer<'s, 'sref> {
     buffer: String,
     source: &'sref str,
     module_id: ModuleID,
-    with_trivia: bool,
     intern_lit: &'sref mut InternPool<'s, LitID>,
 }
 
@@ -136,10 +133,8 @@ fn lex_whitespace(lex: &mut Lexer) {
                 lex.bump();
             }
 
-            if lex.with_trivia {
-                let range = lex.make_range(start);
-                lex.tokens.add_trivia(Trivia::Whitespace, range);
-            }
+            let range = lex.make_range(start);
+            lex.tokens.add_trivia(Trivia::Whitespace, range);
         } else if c == b'/' && lex.at_next(b'/') {
             let start = lex.start_range();
             lex.bump();
@@ -168,10 +163,8 @@ fn lex_whitespace(lex: &mut Lexer) {
                 }
             }
 
-            if lex.with_trivia {
-                let range = lex.make_range(start);
-                lex.tokens.add_trivia(trivia, range);
-            }
+            let range = lex.make_range(start);
+            lex.tokens.add_trivia(trivia, range);
         } else {
             break;
         }
