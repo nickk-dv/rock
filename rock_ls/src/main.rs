@@ -7,7 +7,6 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{InternPool, NameID};
-use rock_core::support::Timer;
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::syntax_kind::SyntaxKind;
@@ -61,6 +60,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
 
     let capabilities = lsp::ServerCapabilities {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
+        definition_provider: Some(lsp::OneOf::Left(true)),
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
         semantic_tokens_provider: Some(
             lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(semantic_tokens),
@@ -161,135 +161,134 @@ fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     if module.tree_version == file.version {
         return;
     }
+    module.tree_version = file.version;
+
     let (tree, errors) = syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
     module.set_tree(tree);
-    module.tree_version = file.version;
     module.parse_errors = errors;
 }
+
+fn name_id_2(
+    name: cst::Name,
+    tree: &SyntaxTree,
+    file: &session::FileData,
+    intern: &mut InternPool<NameID>,
+) -> NameID {
+    let range = name.ident(tree).unwrap();
+    let text = &file.source[range.as_usize()];
+    intern.intern(text)
+}
+
+fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
+    let module = server.session.module.get(module_id);
+    let data = &mut server.modules[module_id.index()];
+    if data.symbols_version == module.tree_version {
+        return;
+    }
+    data.symbols_version = module.tree_version;
+
+    let tree = module.tree_expect();
+    let file = server.session.vfs.file(module.file_id());
+    data.symbols.clear();
+    data.symbols.reserve(tree.root().content.len());
+
+    let root = cst::SourceFile::cast(tree.root()).unwrap();
+    for item in root.items(tree) {
+        match item {
+            cst::Item::Proc(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Proc);
+                }
+            }
+            cst::Item::Enum(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Enum);
+                }
+            }
+            cst::Item::Struct(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Struct);
+                }
+            }
+            cst::Item::Const(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Const);
+                }
+            }
+            cst::Item::Global(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Global);
+                }
+            }
+            cst::Item::Import(item) => {}
+            cst::Item::Directive(_) => {}
+        }
+    }
+}
+
+/* import resolution
+
+let module_name = if let Some(rename) = item.rename(&tree) {
+        rename.alias(&tree).map(|n| name_id(session, module_id, &tree, n))
+    } else if let Some(path) = item.import_path(&tree) {
+        path.names(&tree).last().map(|n| name_id(session, module_id, &tree, n))
+    } else {
+        None
+    };
+    let module_name = match module_name {
+        Some(id) => id,
+        None => continue,
+    };
+
+    let source_module = resolve_import_module(session, &tree, module_id, item);
+    server.modules[module_id.index()]
+        .symbols
+        .insert(module_name, Symbol::Module(source_module));
+    let source_module = match source_module {
+        Some(id) => id,
+        None => continue,
+    };
+
+    if let Some(symbol_list) = item.import_symbol_list(&tree) {
+        for symbol in symbol_list.import_symbols(&tree) {
+            let mut import_name;
+
+            let import_symbol = if let Some(name) = symbol.name(&tree) {
+                import_name = Some(name);
+                let id = name_id(session, module_id, &tree, name);
+                server.modules[source_module.index()].symbols.get(&id).copied()
+            } else {
+                continue;
+            };
+
+            if let Some(rename) = symbol.rename(&tree) {
+                if let Some(name) = rename.alias(&tree) {
+                    import_name = Some(name);
+                }
+            }
+
+            if let Some(symbol) = import_symbol {
+                if let Some(name) = import_name {
+                    let id = name_id(session, module_id, &tree, name);
+                    server.modules[module_id.index()]
+                        .symbols
+                        .insert(id, symbol);
+                }
+            }
+        }
+    }
+*/
 
 fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
     match &req {
         Request::Format(params) => handle_request_format(server, id, params),
-        Request::SemanticTokens(params) => {
-            let path = uri_to_path(&params.text_document.uri);
-            eprintln!("[Handle] Request::SemanticTokens\n - document: {:?}", &path);
-
-            let session = &mut server.session;
-            let module_id = match module_id_from_path(session, &path) {
-                Some(module_id) => module_id,
-                None => {
-                    eprintln!(" - module not found by path");
-                    return;
-                }
-            };
-
-            //@hack always update the syntax tree before semantic tokens
-            let module = session.module.get(module_id);
-            let file = session.vfs.file(module.file_id());
-
-            let (tree, errors) =
-                syntax::parse_tree(&file.source, module_id, true, &mut session.intern_lit);
-            let _ = errors.collect();
-
-            //@always updating, so far sufficient
-            let root = cst::SourceFile::cast(tree.root()).unwrap();
-            let data = &mut server.modules[module_id.index()];
-            data.symbols.clear();
-            data.symbols.reserve(root.0.content.len());
-
-            for item in root.items(&tree) {
-                match item {
-                    cst::Item::Proc(item) => {
-                        if let Some(name) = item.name(&tree) {
-                            let id = name_id(session, module_id, &tree, name);
-                            server.modules[module_id.index()].symbols.insert(id, Symbol::Proc);
-                        }
-                    }
-                    cst::Item::Enum(item) => {
-                        if let Some(name) = item.name(&tree) {
-                            let id = name_id(session, module_id, &tree, name);
-                            server.modules[module_id.index()].symbols.insert(id, Symbol::Enum);
-                        }
-                    }
-                    cst::Item::Struct(item) => {
-                        if let Some(name) = item.name(&tree) {
-                            let id = name_id(session, module_id, &tree, name);
-                            server.modules[module_id.index()].symbols.insert(id, Symbol::Struct);
-                        }
-                    }
-                    cst::Item::Const(item) => {
-                        if let Some(name) = item.name(&tree) {
-                            let id = name_id(session, module_id, &tree, name);
-                            server.modules[module_id.index()].symbols.insert(id, Symbol::Const);
-                        }
-                    }
-                    cst::Item::Global(item) => {
-                        if let Some(name) = item.name(&tree) {
-                            let id = name_id(session, module_id, &tree, name);
-                            server.modules[module_id.index()].symbols.insert(id, Symbol::Global);
-                        }
-                    }
-                    cst::Item::Import(item) => {
-                        let module_name = if let Some(rename) = item.rename(&tree) {
-                            rename.alias(&tree).map(|n| name_id(session, module_id, &tree, n))
-                        } else if let Some(path) = item.import_path(&tree) {
-                            path.names(&tree).last().map(|n| name_id(session, module_id, &tree, n))
-                        } else {
-                            None
-                        };
-                        let module_name = match module_name {
-                            Some(id) => id,
-                            None => continue,
-                        };
-
-                        let source_module = resolve_import_module(session, &tree, module_id, item);
-                        server.modules[module_id.index()]
-                            .symbols
-                            .insert(module_name, Symbol::Module(source_module));
-                        let source_module = match source_module {
-                            Some(id) => id,
-                            None => continue,
-                        };
-
-                        if let Some(symbol_list) = item.import_symbol_list(&tree) {
-                            for symbol in symbol_list.import_symbols(&tree) {
-                                let mut import_name;
-
-                                let import_symbol = if let Some(name) = symbol.name(&tree) {
-                                    import_name = Some(name);
-                                    let id = name_id(session, module_id, &tree, name);
-                                    server.modules[source_module.index()].symbols.get(&id).copied()
-                                } else {
-                                    continue;
-                                };
-
-                                if let Some(rename) = symbol.rename(&tree) {
-                                    if let Some(name) = rename.alias(&tree) {
-                                        import_name = Some(name);
-                                    }
-                                }
-
-                                if let Some(symbol) = import_symbol {
-                                    if let Some(name) = import_name {
-                                        let id = name_id(session, module_id, &tree, name);
-                                        server.modules[module_id.index()]
-                                            .symbols
-                                            .insert(id, symbol);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    cst::Item::Directive(_) => continue,
-                };
-            }
-
-            let timer = Timer::start();
-            let data = semantic_tokens(server, &tree, module_id);
-            eprintln!("[semantic tokens] ms: {}, count: {}", timer.measure_ms(), data.len());
-            send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
-            server.session.module.get_mut(module_id).set_tree(tree);
-        }
+        Request::SemanticTokens(params) => handle_request_semantic_tokens(server, id, params),
+        Request::GotoDefinition(params) => handle_request_goto_definition(server, id, params),
         Request::ShowSyntaxTree(params) => handle_request_show_syntax_tree(server, id, params),
     }
 }
@@ -326,6 +325,33 @@ fn handle_request_format(
     let end = lsp::Position::new(file.line_ranges.len() as u32 + 1, 0);
     let text_edit = lsp::TextEdit::new(lsp::Range::new(start, end), formatted);
     send_response(server.conn, id, vec![text_edit]);
+}
+
+fn handle_request_semantic_tokens(
+    server: &mut ServerContext,
+    id: RequestId,
+    params: &lsp::SemanticTokensParams,
+) {
+    let session = &mut server.session;
+    let path = uri_to_path(&params.text_document.uri);
+    let module_id = match module_id_from_path(session, &path) {
+        Some(module_id) => module_id,
+        None => return,
+    };
+
+    update_syntax_tree(session, module_id);
+    update_module_symbols(server, module_id);
+
+    let data = semantic_tokens(server, module_id);
+    send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
+}
+
+fn handle_request_goto_definition(
+    server: &mut ServerContext,
+    id: RequestId,
+    params: &lsp::GotoDefinitionParams,
+) {
+    //send_response(server.conn, id, serde_json::Value::Null)
 }
 
 fn handle_request_show_syntax_tree(
@@ -502,7 +528,7 @@ fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
 use rock_core::hir_lower;
-use rock_core::session::{self, ModuleID, Session};
+use rock_core::session::{self, FileData, ModuleID, Session};
 use rock_core::syntax;
 use rock_core::text::{self, TextRange};
 use std::path::PathBuf;
@@ -659,12 +685,24 @@ fn check_impl(session: &mut Session) -> Result<(), ()> {
     Ok(())
 }
 
-struct SemanticTokenBuilder {
+struct SemanticTokenBuilder<'s_ref, 's> {
     module_id: ModuleID,
     curr_line: u32,
     prev_range: Option<TextRange>,
     params_in_scope: Vec<NameID>,
     semantic_tokens: Vec<lsp::SemanticToken>,
+    tree: &'s_ref SyntaxTree<'s>,
+    file: &'s_ref session::FileData,
+    modules: &'s_ref [ModuleData],
+    intern_name: &'s_ref mut InternPool<'s, NameID>,
+}
+
+impl<'s_ref, 's> SemanticTokenBuilder<'s_ref, 's> {
+    fn name_id(&mut self, name: cst::Name) -> NameID {
+        let range = name.ident(self.tree).unwrap();
+        let text = &self.file.source[range.as_usize()];
+        self.intern_name.intern(text)
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -677,21 +715,27 @@ enum Symbol {
     Module(Option<ModuleID>),
 }
 
-fn semantic_tokens(
-    server: &mut ServerContext,
-    tree: &SyntaxTree,
-    module_id: ModuleID,
-) -> Vec<lsp::SemanticToken> {
-    let mut builder = SemanticTokenBuilder {
+fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::SemanticToken> {
+    let module = server.session.module.get(module_id);
+    let tree = module.tree_expect();
+    let file = server.session.vfs.file(module.file_id());
+    let modules = server.modules.as_slice();
+    let intern_name = &mut server.session.intern_name;
+
+    let mut b = SemanticTokenBuilder {
         module_id,
         curr_line: 0,
         prev_range: None,
         params_in_scope: Vec::with_capacity(16),
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2), //@estimate better count
+        tree,
+        file,
+        modules,
+        intern_name,
     };
 
-    semantic_visit_node(server, &mut builder, tree.root(), tree, None);
-    builder.semantic_tokens
+    semantic_visit_node(&mut b, tree.root(), None);
+    b.semantic_tokens
 }
 
 fn name_id(
@@ -722,141 +766,21 @@ fn name_id_rust_bad(
     intern_name.intern(name_text)
 }
 
-fn semantic_visit_path(
-    server: &mut ServerContext,
-    builder: &mut SemanticTokenBuilder,
-    path: cst::Path,
-    tree: &SyntaxTree,
-    mut parent: SyntaxKind,
-) {
-    let mut origin_id = builder.module_id;
-    let mut segments = path.segments(tree).peekable();
-
-    if let Some(first) = segments.peek() {
-        if let Some(name) = first.name(tree) {
-            let id = name_id(&mut server.session, builder.module_id, tree, name);
-            let data = &server.modules[origin_id.index()];
-
-            if let Some(Symbol::Module(module_id)) = data.symbols.get(&id).copied() {
-                let style = Some(SemanticToken::Namespace);
-                semantic_visit_node(server, builder, first.0, tree, style);
-
-                segments.next();
-                if let Some(module_id) = module_id {
-                    origin_id = module_id;
-                } else {
-                    eprintln!("unknown module symbol found");
-                    parent = SyntaxKind::ERROR;
-                }
-            }
-        }
-    }
-
-    let data = &server.modules[origin_id.index()];
-
-    match parent {
-        SyntaxKind::TYPE_CUSTOM | SyntaxKind::EXPR_STRUCT_INIT => {
-            for segment in segments.by_ref() {
-                semantic_visit_node(server, builder, segment.0, tree, Some(SemanticToken::Type));
-            }
-        }
-        SyntaxKind::EXPR_ITEM | SyntaxKind::PAT_ITEM => {
-            let mut is_enum = false;
-
-            if let Some(segment) = segments.next() {
-                if let Some(name) = segment.name(tree) {
-                    let id = name_id(&mut server.session, builder.module_id, tree, name);
-
-                    let style = if let Some(symbol) = data.symbols.get(&id).copied() {
-                        Some(match symbol {
-                            Symbol::Proc => SemanticToken::Function,
-                            Symbol::Enum => {
-                                is_enum = true;
-                                SemanticToken::Type
-                            }
-                            Symbol::Struct => SemanticToken::Type,
-                            Symbol::Const | Symbol::Global => SemanticToken::Variable,
-                            Symbol::Module(_) => SemanticToken::Namespace,
-                        })
-                    } else if builder.params_in_scope.iter().any(|&n| n == id) {
-                        Some(SemanticToken::Parameter)
-                    } else {
-                        None
-                    };
-                    semantic_visit_node(server, builder, segment.0, tree, style);
-                }
-            }
-
-            if is_enum {
-                let style = Some(SemanticToken::EnumMember);
-                if let Some(segment) = segments.next() {
-                    semantic_visit_node(server, builder, segment.0, tree, style);
-                }
-            }
-
-            for segment in segments.by_ref() {
-                let style = Some(SemanticToken::Property);
-                semantic_visit_node(server, builder, segment.0, tree, style);
-            }
-        }
-        _ => semantic_visit_node(server, builder, path.0, tree, None),
-    }
-}
-
-fn semantic_visit_import_symbols(
-    server: &mut ServerContext,
-    builder: &mut SemanticTokenBuilder,
-    symbols: cst::ImportSymbolList,
-    tree: &SyntaxTree,
-) {
-    for symbol in symbols.import_symbols(tree) {
-        let mut name = match symbol.name(tree) {
-            Some(name) => name,
-            None => {
-                semantic_visit_node(server, builder, symbol.0, tree, None);
-                continue;
-            }
-        };
-        if let Some(rename) = symbol.rename(tree) {
-            if let Some(rename) = rename.alias(tree) {
-                name = rename;
-            }
-        }
-
-        let data = &server.modules[builder.module_id.index()];
-        let id = name_id(&mut server.session, builder.module_id, tree, name);
-
-        let style = if let Some(symbol) = data.symbols.get(&id).copied() {
-            Some(match symbol {
-                Symbol::Proc => SemanticToken::Function,
-                Symbol::Enum | Symbol::Struct => SemanticToken::Type,
-                Symbol::Const | Symbol::Global => SemanticToken::Variable,
-                Symbol::Module(_) => SemanticToken::Namespace,
-            })
-        } else {
-            None
-        };
-        semantic_visit_node(server, builder, symbol.0, tree, style);
-    }
-}
-
 fn semantic_visit_node(
-    server: &mut ServerContext,
-    builder: &mut SemanticTokenBuilder,
+    b: &mut SemanticTokenBuilder,
     node: &Node,
-    tree: &SyntaxTree,
     ident_style: Option<SemanticToken>,
 ) {
     let parent = node.kind;
 
     if cst::Item::cast(node).is_some() {
-        builder.params_in_scope.clear();
+        b.params_in_scope.clear();
     }
     if let Some(params) = cst::ParamList::cast(node) {
-        for param in params.params(tree) {
-            if let Some(name) = param.name(tree) {
-                let id = name_id(&mut server.session, builder.module_id, tree, name);
-                builder.params_in_scope.push(id);
+        for param in params.params(b.tree) {
+            if let Some(name) = param.name(b.tree) {
+                let id = b.name_id(name);
+                b.params_in_scope.push(id);
             }
         }
     }
@@ -864,13 +788,13 @@ fn semantic_visit_node(
     for not in node.content {
         match *not {
             NodeOrToken::Node(node_id) => {
-                let node = tree.node(node_id);
+                let node = b.tree.node(node_id);
 
                 if let Some(path) = cst::Path::cast(node) {
-                    semantic_visit_path(server, builder, path, tree, parent);
+                    semantic_visit_path(b, path, parent);
                     continue;
                 } else if let Some(symbols) = cst::ImportSymbolList::cast(node) {
-                    semantic_visit_import_symbols(server, builder, symbols, tree);
+                    semantic_visit_import_symbols(b, symbols);
                     continue;
                 }
 
@@ -911,20 +835,20 @@ fn semantic_visit_node(
                     _ => None,
                 };
 
-                semantic_visit_node(server, builder, node, tree, ident_style);
+                semantic_visit_node(b, node, ident_style);
             }
             NodeOrToken::Token(token_id) => {
-                let (token, range) = tree.tokens().token_and_range(token_id);
+                let (token, range) = b.tree.tokens().token_and_range(token_id);
                 if let Some(semantic) = semantic_token_style(token, node.kind, ident_style) {
-                    semantic_token_add(server, builder, semantic, range);
+                    semantic_token_add(b, semantic, range);
                 }
             }
             NodeOrToken::Trivia(id) => {
-                let (trivia, range) = tree.tokens().trivia_and_range(id);
+                let (trivia, range) = b.tree.tokens().trivia_and_range(id);
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
-                        semantic_token_add(server, builder, SemanticToken::Comment, range)
+                        semantic_token_add(b, SemanticToken::Comment, range)
                     }
                 };
             }
@@ -932,33 +856,133 @@ fn semantic_visit_node(
     }
 }
 
-fn semantic_token_add(
-    server: &ServerContext,
-    builder: &mut SemanticTokenBuilder,
-    semantic: SemanticToken,
-    range: TextRange,
-) {
-    let module = server.session.module.get(builder.module_id);
-    let file = server.session.vfs.file(module.file_id());
-    let source = &file.source;
-    let line_ranges = file.line_ranges.as_slice();
+fn semantic_visit_path(b: &mut SemanticTokenBuilder, path: cst::Path, mut parent: SyntaxKind) {
+    let mut origin_id = b.module_id;
+    let mut segments = path.segments(b.tree).peekable();
+
+    if let Some(first) = segments.peek() {
+        if let Some(name) = first.name(b.tree) {
+            let id = b.name_id(name);
+            let data = &b.modules[origin_id.index()];
+
+            if let Some(Symbol::Module(module_id)) = data.symbols.get(&id).copied() {
+                let style = Some(SemanticToken::Namespace);
+                semantic_visit_node(b, first.0, style);
+
+                segments.next();
+                if let Some(module_id) = module_id {
+                    origin_id = module_id;
+                } else {
+                    eprintln!("unknown module symbol found");
+                    parent = SyntaxKind::ERROR;
+                }
+            }
+        }
+    }
+
+    let data = &b.modules[origin_id.index()];
+
+    match parent {
+        SyntaxKind::TYPE_CUSTOM | SyntaxKind::EXPR_STRUCT_INIT => {
+            for segment in segments.by_ref() {
+                semantic_visit_node(b, segment.0, Some(SemanticToken::Type));
+            }
+        }
+        SyntaxKind::EXPR_ITEM | SyntaxKind::PAT_ITEM => {
+            let mut is_enum = false;
+
+            if let Some(segment) = segments.next() {
+                if let Some(name) = segment.name(b.tree) {
+                    let id = b.name_id(name);
+
+                    let style = if let Some(symbol) = data.symbols.get(&id).copied() {
+                        Some(match symbol {
+                            Symbol::Proc => SemanticToken::Function,
+                            Symbol::Enum => {
+                                is_enum = true;
+                                SemanticToken::Type
+                            }
+                            Symbol::Struct => SemanticToken::Type,
+                            Symbol::Const | Symbol::Global => SemanticToken::Variable,
+                            Symbol::Module(_) => SemanticToken::Namespace,
+                        })
+                    } else if b.params_in_scope.iter().any(|&n| n == id) {
+                        Some(SemanticToken::Parameter)
+                    } else {
+                        None
+                    };
+                    semantic_visit_node(b, segment.0, style);
+                }
+            }
+
+            if is_enum {
+                let style = Some(SemanticToken::EnumMember);
+                if let Some(segment) = segments.next() {
+                    semantic_visit_node(b, segment.0, style);
+                }
+            }
+
+            for segment in segments.by_ref() {
+                let style = Some(SemanticToken::Property);
+                semantic_visit_node(b, segment.0, style);
+            }
+        }
+        _ => semantic_visit_node(b, path.0, None),
+    }
+}
+
+fn semantic_visit_import_symbols(b: &mut SemanticTokenBuilder, symbols: cst::ImportSymbolList) {
+    for symbol in symbols.import_symbols(b.tree) {
+        let mut name = match symbol.name(b.tree) {
+            Some(name) => name,
+            None => {
+                semantic_visit_node(b, symbol.0, None);
+                continue;
+            }
+        };
+        if let Some(rename) = symbol.rename(b.tree) {
+            if let Some(rename) = rename.alias(b.tree) {
+                name = rename;
+            }
+        }
+
+        let data = &b.modules[b.module_id.index()];
+        let id = b.name_id(name);
+
+        let style = if let Some(symbol) = data.symbols.get(&id).copied() {
+            Some(match symbol {
+                Symbol::Proc => SemanticToken::Function,
+                Symbol::Enum | Symbol::Struct => SemanticToken::Type,
+                Symbol::Const | Symbol::Global => SemanticToken::Variable,
+                Symbol::Module(_) => SemanticToken::Namespace,
+            })
+        } else {
+            None
+        };
+        semantic_visit_node(b, symbol.0, style);
+    }
+}
+
+fn semantic_token_add(b: &mut SemanticTokenBuilder, semantic: SemanticToken, range: TextRange) {
+    let source = &b.file.source;
+    let line_ranges = b.file.line_ranges.as_slice();
 
     let mut delta_line: u32 = 0;
-    while range.start() >= line_ranges[builder.curr_line as usize].end() {
-        builder.curr_line += 1;
+    while range.start() >= line_ranges[b.curr_line as usize].end() {
+        b.curr_line += 1;
         delta_line += 1;
     }
 
     let (start, offset) = if delta_line == 0 {
-        if let Some(prev_range) = builder.prev_range {
+        if let Some(prev_range) = b.prev_range {
             let start = prev_range.start();
             (start, range.start() - start)
         } else {
-            let start = line_ranges[builder.curr_line as usize].start();
+            let start = line_ranges[b.curr_line as usize].start();
             (start, range.start() - start)
         }
     } else {
-        let start = line_ranges[builder.curr_line as usize].start();
+        let start = line_ranges[b.curr_line as usize].start();
         (start, range.start() - start)
     };
 
@@ -970,8 +994,8 @@ fn semantic_token_add(
     let token_str = &source[range.as_usize()];
     let length = text_ops::str_char_len_utf16(token_str);
 
-    builder.prev_range = Some(range);
-    builder.semantic_tokens.push(lsp::SemanticToken {
+    b.prev_range = Some(range);
+    b.semantic_tokens.push(lsp::SemanticToken {
         delta_line,
         delta_start,
         length,

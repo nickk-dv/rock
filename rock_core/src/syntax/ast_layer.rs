@@ -270,51 +270,6 @@ impl<'syn> Node<'syn> {
         }
         None
     }
-
-    fn find_range(&self, tree: &'syn SyntaxTree<'syn>) -> TextRange {
-        let start;
-        let end;
-
-        let mut content_curr = self.content;
-
-        'outher: loop {
-            for not in content_curr.iter().copied() {
-                match not {
-                    NodeOrToken::Node(node_id) => {
-                        content_curr = tree.node(node_id).content;
-                        continue 'outher;
-                    }
-                    NodeOrToken::Token(token_id) => {
-                        start = tree.tokens().token_range(token_id).start();
-                        break 'outher;
-                    }
-                    NodeOrToken::Trivia(_) => {}
-                }
-            }
-            unreachable!("node start not found");
-        }
-
-        content_curr = self.content;
-
-        'outher: loop {
-            for node_or_token in content_curr.iter().rev().copied() {
-                match node_or_token {
-                    NodeOrToken::Node(node_id) => {
-                        content_curr = tree.node(node_id).content;
-                        continue 'outher;
-                    }
-                    NodeOrToken::Token(token_id) => {
-                        end = tree.tokens().token_range(token_id).end();
-                        break 'outher;
-                    }
-                    NodeOrToken::Trivia(_) => {}
-                }
-            }
-            unreachable!("node end not found");
-        }
-
-        TextRange::new(start, end)
-    }
 }
 
 //==================== AST NODE MACROS ====================

@@ -45,17 +45,16 @@ impl<'syn> SyntaxTree<'syn> {
 }
 
 pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
-    use std::fmt::Write;
-
     let mut buffer = String::with_capacity(source.len() * 8);
     print_node(&mut buffer, tree, source, tree.root(), 0);
     return buffer;
 
     fn print_node(buffer: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
+        use std::fmt::Write;
         for _ in 0..depth {
             buffer.push_str("  ");
         }
-        let _ = writeln!(buffer, "{:?}@{:?}", node.kind, node.range);
+        let _ = writeln!(buffer, "{:?} {:?}", node.kind, node.range);
 
         for not in node.content.iter().copied() {
             match not {
@@ -64,28 +63,20 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
                     print_node(buffer, tree, source, node, depth + 1);
                 }
                 NodeOrToken::Token(id) => {
+                    for _ in 0..=depth {
+                        buffer.push_str("  ");
+                    }
                     let range = tree.tokens.token_range(id);
                     let text = &source[range.as_usize()];
-
-                    for _ in 0..=depth {
-                        buffer.push_str("  ");
-                    }
-                    let _ = writeln!(buffer, "@{range:?} {text:?}");
+                    let _ = writeln!(buffer, "{range:?} {text:?}");
                 }
                 NodeOrToken::Trivia(id) => {
-                    let (trivia, range) = tree.tokens().trivia_and_range(id);
-                    let text = &source[range.as_usize()];
-                    let kind = match trivia {
-                        Trivia::Whitespace => "WHITESPACE",
-                        Trivia::LineComment => "LINE_COMMENT",
-                        Trivia::DocComment => "DOC_COMMENT",
-                        Trivia::ModComment => "MOD_COMMENT",
-                    };
-
                     for _ in 0..=depth {
                         buffer.push_str("  ");
                     }
-                    let _ = writeln!(buffer, "{kind}@{range:?} {text:?}");
+                    let range = tree.tokens().trivia_range(id);
+                    let text = &source[range.as_usize()];
+                    let _ = writeln!(buffer, "{range:?} {text:?}");
                 }
             }
         }

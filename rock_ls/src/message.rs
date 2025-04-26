@@ -21,6 +21,7 @@ pub enum Message {
 pub enum Request {
     Format(lsp::DocumentFormattingParams),
     SemanticTokens(lsp::SemanticTokensParams),
+    GotoDefinition(lsp::GotoDefinitionParams),
     ShowSyntaxTree(ShowSyntaxTreeParams),
 }
 
@@ -105,6 +106,10 @@ fn parse_request(req: lsr::Request) -> Option<Message> {
         r::SemanticTokensFullRequest::METHOD => {
             let params = cast_request::<r::SemanticTokensFullRequest>(req);
             Request::SemanticTokens(params)
+        }
+        r::GotoDefinition::METHOD => {
+            let params = cast_request::<r::GotoDefinition>(req);
+            Request::GotoDefinition(params)
         }
         CustomShowSyntaxTree::METHOD => {
             let params = cast_request::<CustomShowSyntaxTree>(req);
