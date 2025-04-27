@@ -2717,7 +2717,8 @@ fn typecheck_block<'hir, 'ast>(
                 match local_res {
                     LocalResult::Error => continue,
                     LocalResult::Local(local) => hir::Stmt::Local(local),
-                    LocalResult::Discard(value) => hir::Stmt::Discard(value),
+                    LocalResult::Discard(None) => continue,
+                    LocalResult::Discard(Some(expr)) => hir::Stmt::Discard(expr),
                 }
             }
             ast::StmtKind::Assign(assign) => {

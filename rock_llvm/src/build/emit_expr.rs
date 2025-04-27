@@ -5,6 +5,10 @@ use crate::llvm;
 use rock_core::hir::{self, CmpPred};
 use rock_core::intern::LitID;
 
+pub fn codegen_expr_discard<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
+    codegen_expr(cg, expr, Expect::Value(None));
+}
+
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();
     if let Some(value) = codegen_expr(cg, expr, Expect::Value(Some(value_id))) {

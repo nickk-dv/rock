@@ -13,31 +13,23 @@ pub fn codegen_block<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, block: hi
 
 fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stmt<'c>) {
     match stmt {
-        hir::Stmt::Break => codegen_break(cg),
-        hir::Stmt::Continue => codegen_continue(cg),
+        hir::Stmt::Break => cg.build.br(cg.proc.last_loop_info().break_bb),
+        hir::Stmt::Continue => cg.build.br(cg.proc.last_loop_info().continue_bb),
         hir::Stmt::Return(expr) => codegen_return(cg, expr),
         hir::Stmt::Loop(block) => codegen_loop(cg, block),
         hir::Stmt::Local(local) => codegen_local(cg, local),
-        hir::Stmt::Discard(value) => codegen_discard(cg, value),
+        hir::Stmt::Discard(expr) => emit_expr::codegen_expr_discard(cg, expr),
         hir::Stmt::Assign(assign) => codegen_assign(cg, assign),
-        hir::Stmt::ExprSemi(expr) => codegen_expr_semi(cg, expr),
-        hir::Stmt::ExprTail(expr) => codegen_expr_tail(cg, expect, expr),
+        hir::Stmt::ExprSemi(expr) => emit_expr::codegen_expr_discard(cg, expr),
+        hir::Stmt::ExprTail(expr) => emit_expr::codegen_expr_tail(cg, expect, expr),
     }
 }
 
-fn codegen_break(cg: &mut Codegen) {
-    let loop_info = cg.proc.last_loop_info();
-    cg.build.br(loop_info.break_bb);
-}
-
-fn codegen_continue(cg: &mut Codegen) {
-    let loop_info = cg.proc.last_loop_info();
-    cg.build.br(loop_info.continue_bb);
-}
-
 fn codegen_return<'c>(cg: &mut Codegen<'c, '_, '_>, expr: Option<&hir::Expr<'c>>) {
-    let value =
-        if let Some(expr) = expr { emit_expr::codegen_expr_value_opt(cg, expr) } else { None };
+    let value = match expr {
+        Some(expr) => emit_expr::codegen_expr_value_opt(cg, expr),
+        None => None,
+    };
     cg.build.ret(value);
 }
 
@@ -72,14 +64,6 @@ fn codegen_local<'c>(cg: &mut Codegen<'c, '_, '_>, local: &hir::Local<'c>) {
     }
 }
 
-//@generates not needed load for tail values
-// values should be fully ignored and not stored anywhere
-fn codegen_discard<'c>(cg: &mut Codegen<'c, '_, '_>, value: Option<&hir::Expr<'c>>) {
-    if let Some(expr) = value {
-        emit_expr::codegen_expr_value_opt(cg, expr);
-    }
-}
-
 fn codegen_assign<'c>(cg: &mut Codegen<'c, '_, '_>, assign: &hir::Assign<'c>) {
     let lhs_ptr = emit_expr::codegen_expr_pointer(cg, assign.lhs);
 
@@ -95,12 +79,4 @@ fn codegen_assign<'c>(cg: &mut Codegen<'c, '_, '_>, assign: &hir::Assign<'c>) {
             cg.build.store(bin_val, lhs_ptr);
         }
     }
-}
-
-fn codegen_expr_semi<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
-    let _ = emit_expr::codegen_expr_value_opt(cg, expr);
-}
-
-fn codegen_expr_tail<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, expr: &hir::Expr<'c>) {
-    emit_expr::codegen_expr_tail(cg, expect, expr);
 }

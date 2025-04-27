@@ -223,7 +223,7 @@ pub enum Stmt<'hir> {
     Return(Option<&'hir Expr<'hir>>),
     Loop(&'hir Block<'hir>),
     Local(&'hir Local<'hir>),
-    Discard(Option<&'hir Expr<'hir>>),
+    Discard(&'hir Expr<'hir>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
