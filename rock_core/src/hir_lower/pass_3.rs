@@ -10,6 +10,16 @@ use crate::support::BitSet;
 
 pub fn process_items(ctx: &mut HirCtx) {
     for id in ctx.registry.proc_ids() {
+        process_proc_poly_params(ctx, id)
+    }
+    for id in ctx.registry.enum_ids() {
+        process_enum_poly_params(ctx, id)
+    }
+    for id in ctx.registry.struct_ids() {
+        process_struct_poly_params(ctx, id)
+    }
+
+    for id in ctx.registry.proc_ids() {
         process_proc_data(ctx, id)
     }
     for id in ctx.registry.enum_ids() {
@@ -28,17 +38,39 @@ pub fn process_items(ctx: &mut HirCtx) {
     }
 }
 
-fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
+fn process_proc_poly_params(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
-    ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
     let item = ctx.registry.proc_item(id);
-
     if let Some(poly_params) = item.poly_params {
         let poly_params = process_polymorph_params(ctx, poly_params);
         ctx.registry.proc_data_mut(id).poly_params = poly_params;
     }
+}
+
+fn process_enum_poly_params(ctx: &mut HirCtx, id: hir::EnumID) {
+    ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
+    let item = ctx.registry.enum_item(id);
+    if let Some(poly_params) = item.poly_params {
+        let poly_params = process_polymorph_params(ctx, poly_params);
+        ctx.registry.enum_data_mut(id).poly_params = poly_params;
+    }
+}
+
+fn process_struct_poly_params(ctx: &mut HirCtx, id: hir::StructID) {
+    ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
+    let item = ctx.registry.struct_item(id);
+    if let Some(poly_params) = item.poly_params {
+        let poly_params = process_polymorph_params(ctx, poly_params);
+        ctx.registry.struct_data_mut(id).poly_params = poly_params;
+    }
+}
+
+fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
+    ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
+    ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
     ctx.cache.proc_params.clear();
 
+    let item = ctx.registry.proc_item(id);
     let mut flag_set = ctx.registry.proc_data(id).flag_set;
     let param_count = item.params.len();
 
@@ -93,14 +125,9 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
 fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Enum(id)));
-    let item = ctx.registry.enum_item(id);
-
-    if let Some(poly_params) = item.poly_params {
-        let poly_params = process_polymorph_params(ctx, poly_params);
-        ctx.registry.enum_data_mut(id).poly_params = poly_params;
-    }
     ctx.cache.enum_variants.clear();
 
+    let item = ctx.registry.enum_item(id);
     let mut any_constant = false;
 
     for variant in item.variants.iter() {
@@ -225,14 +252,9 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
 fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
     ctx.scope.set_poly(Some(hir::PolymorphDefID::Struct(id)));
-    let item = ctx.registry.struct_item(id);
-
-    if let Some(poly_params) = item.poly_params {
-        let poly_params = process_polymorph_params(ctx, poly_params);
-        ctx.registry.struct_data_mut(id).poly_params = poly_params;
-    }
     ctx.cache.struct_fields.clear();
 
+    let item = ctx.registry.struct_item(id);
     let struct_vis = ctx.registry.struct_data(id).vis;
 
     //@process visibility directives, allow stronger vis only

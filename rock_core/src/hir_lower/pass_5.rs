@@ -152,7 +152,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
 
             if !poly_types.is_empty() {
                 let mut format = String::with_capacity(64);
-                let mut first = false;
+                let mut first = true;
                 format.push_str(name);
                 format.push('(');
                 for gen_type in poly_types {
@@ -175,7 +175,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
 
             if !poly_types.is_empty() {
                 let mut format = String::with_capacity(64);
-                let mut first = false;
+                let mut first = true;
                 format.push_str(name);
                 format.push('(');
                 for gen_type in poly_types {
