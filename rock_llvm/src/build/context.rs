@@ -123,7 +123,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 hir::StringType::CString => self.cache.ptr_type,
                 hir::StringType::Untyped => unreachable!(),
             },
-            hir::Type::InferDef(_, _) => unimplemented!("codegen infer_def type"),
+            hir::Type::PolyProc(_, _) => unimplemented!("codegen poly_proc type"),
+            hir::Type::PolyEnum(_, _) => unimplemented!("codegen poly_enum type"),
+            hir::Type::PolyStruct(_, _) => unimplemented!("codegen poly_struct type"),
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic enum type")

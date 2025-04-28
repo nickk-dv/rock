@@ -93,15 +93,6 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         self.session.intern_name.get(name_id)
     }
 
-    pub fn poly_param_name(&self, poly_def: hir::PolymorphDefID, poly_param_idx: u32) -> ast::Name {
-        let poly_params = match poly_def {
-            hir::PolymorphDefID::Proc(id) => self.registry.proc_data(id).poly_params.unwrap(),
-            hir::PolymorphDefID::Enum(id) => self.registry.enum_data(id).poly_params.unwrap(),
-            hir::PolymorphDefID::Struct(id) => self.registry.struct_data(id).poly_params.unwrap(),
-        };
-        poly_params[poly_param_idx as usize]
-    }
-
     pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
         //@moving errors from single buffer into per module storage (hack)
         let (errors, warnings) = self.emit.collect();

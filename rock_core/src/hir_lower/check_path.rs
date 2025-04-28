@@ -6,17 +6,17 @@ use crate::hir;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
-struct PathResolved<'ast> {
-    kind: PathResolvedKind,
+struct PathResolved<'ast, 'hir> {
+    kind: PathResolvedKind<'hir>,
     at_segment: ast::PathSegment<'ast>,
     names: &'ast [ast::PathSegment<'ast>],
 }
 
-enum PathResolvedKind {
+enum PathResolvedKind<'hir> {
     Symbol(SymbolID),
     Variable(LocalVariableID),
     Module(ModuleID),
-    PolyParam(hir::PolymorphDefID, u32),
+    PolyParam(hir::Type<'hir>, TextRange),
 }
 
 pub enum ValueID<'ast> {
@@ -29,7 +29,10 @@ pub enum ValueID<'ast> {
     Variable(hir::VariableID, &'ast [ast::PathSegment<'ast>]),
 }
 
-fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathResolved<'ast>, ()> {
+fn path_resolve<'ast, 'hir>(
+    ctx: &mut HirCtx,
+    path: &ast::Path<'ast>,
+) -> Result<PathResolved<'ast, 'hir>, ()> {
     let segment_0 = path.segments.first().copied().expect("non empty path");
 
     // <variable> | <poly_param> | <symbol> | <module>
@@ -40,11 +43,10 @@ fn path_resolve<'ast>(ctx: &mut HirCtx, path: &ast::Path<'ast>) -> Result<PathRe
             names: path.segments.split_at(1).1,
         });
     }
-    if let Some((poly_def, poly_param_idx)) =
-        ctx.scope.poly.find_poly_param(segment_0.name.id, &ctx.registry)
+    if let Some((poly_ty, range)) = ctx.scope.poly.find_poly_param(segment_0.name.id, &ctx.registry)
     {
         return Ok(PathResolved {
-            kind: PathResolvedKind::PolyParam(poly_def, poly_param_idx),
+            kind: PathResolvedKind::PolyParam(poly_ty, range),
             at_segment: segment_0,
             names: path.segments.split_at(1).1,
         });
@@ -194,11 +196,11 @@ pub fn path_resolve_type<'hir, 'ast>(
             err::path_not_expected(&mut ctx.emit, src, None, name, "type", "module");
             return hir::Type::Error;
         }
-        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+        PathResolvedKind::PolyParam(poly_ty, _) => {
             if check_unexpected_poly_args(ctx, path.at_segment, "type parameter").is_err() {
                 return hir::Type::Error;
             }
-            hir::Type::InferDef(poly_def, poly_param_idx)
+            poly_ty
         }
     };
 
@@ -320,9 +322,9 @@ pub fn path_resolve_struct<'ast>(
             err::path_not_expected(&mut ctx.emit, src, None, name, "struct", "module");
             return None;
         }
-        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+        PathResolvedKind::PolyParam(_, range) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = Some(ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range));
+            let defined_src = Some(ctx.src(range));
             let name = ctx.name(path.at_segment.name.id);
             #[rustfmt::skip]
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", "type parameter");
@@ -408,9 +410,9 @@ pub fn path_resolve_value<'ast>(
             err::path_not_expected(&mut ctx.emit, src, None, name, "value", "module");
             ValueID::None
         }
-        PathResolvedKind::PolyParam(poly_def, poly_param_idx) => {
+        PathResolvedKind::PolyParam(_, range) => {
             let src = ctx.src(path.at_segment.name.range);
-            let defined_src = Some(ctx.src(ctx.poly_param_name(poly_def, poly_param_idx).range));
+            let defined_src = Some(ctx.src(range));
             let name = ctx.name(path.at_segment.name.id);
             #[rustfmt::skip]
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "type parameter");

@@ -335,7 +335,9 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
             hir::StringType::CString => cg.ptr_type(),
             hir::StringType::Untyped => unreachable!(),
         },
-        hir::Type::InferDef(_, _) => unimplemented!("win x64 poly"),
+        hir::Type::PolyProc(_, _) => unimplemented!("win x64 poly_proc"),
+        hir::Type::PolyEnum(_, _) => unimplemented!("win x64 poly_enum"),
+        hir::Type::PolyStruct(_, _) => unimplemented!("win x64 poly_struct"),
         hir::Type::Enum(enum_id, poly_types) => {
             let data = cg.hir.enum_data(enum_id);
 

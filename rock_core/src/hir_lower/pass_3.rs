@@ -1,7 +1,7 @@
 use super::check_directive;
 use super::check_path;
 use super::constant;
-use super::context::HirCtx;
+use super::context::{scope, HirCtx};
 use super::pass_5::Expectation;
 use crate::ast;
 use crate::errors as err;
@@ -29,7 +29,7 @@ pub fn process_items(ctx: &mut HirCtx) {
         process_struct_data(ctx, id)
     }
 
-    ctx.scope.set_poly(None);
+    ctx.scope.set_poly(scope::PolyScope::None);
     for id in ctx.registry.const_ids() {
         process_const_data(ctx, id)
     }
@@ -67,7 +67,7 @@ fn process_struct_poly_params(ctx: &mut HirCtx, id: hir::StructID) {
 
 fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
-    ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(id)));
+    ctx.scope.set_poly(scope::PolyScope::Proc(id));
     ctx.cache.proc_params.clear();
 
     let item = ctx.registry.proc_item(id);
@@ -124,7 +124,7 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
 
 fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
-    ctx.scope.set_poly(Some(hir::PolymorphDefID::Enum(id)));
+    ctx.scope.set_poly(scope::PolyScope::Enum(id));
     ctx.cache.enum_variants.clear();
 
     let item = ctx.registry.enum_item(id);
@@ -251,7 +251,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
 
 fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
-    ctx.scope.set_poly(Some(hir::PolymorphDefID::Struct(id)));
+    ctx.scope.set_poly(scope::PolyScope::Struct(id));
     ctx.cache.struct_fields.clear();
 
     let item = ctx.registry.struct_item(id);

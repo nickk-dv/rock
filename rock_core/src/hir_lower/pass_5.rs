@@ -29,7 +29,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
 
         ctx.scope.set_origin(data.origin_id);
-        ctx.scope.set_poly(Some(hir::PolymorphDefID::Proc(proc_id)));
+        ctx.scope.set_poly(scope::PolyScope::Proc(proc_id));
         ctx.scope.local.reset();
         ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
 
@@ -75,8 +75,14 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
         (hir::Type::Float(ty), hir::Type::Float(ty2)) => ty == ty2,
         (hir::Type::Bool(ty), hir::Type::Bool(ty2)) => ty == ty2,
         (hir::Type::String(ty), hir::Type::String(ty2)) => ty == ty2,
-        (hir::Type::InferDef(id, param_idx), hir::Type::InferDef(id2, param_idx2)) => {
-            id == id2 && param_idx == param_idx2
+        (hir::Type::PolyProc(id, poly_idx), hir::Type::PolyProc(id2, poly_idx2)) => {
+            id == id2 && poly_idx == poly_idx2
+        }
+        (hir::Type::PolyEnum(id, poly_idx), hir::Type::PolyEnum(id2, poly_idx2)) => {
+            id == id2 && poly_idx == poly_idx2
+        }
+        (hir::Type::PolyStruct(id, poly_idx), hir::Type::PolyStruct(id2, poly_idx2)) => {
+            id == id2 && poly_idx == poly_idx2
         }
         (hir::Type::Enum(id, poly_types), hir::Type::Enum(id2, poly_types2)) => {
             id == id2
@@ -143,8 +149,16 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Float(float_ty) => float_ty.as_str().into(),
         hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),
         hir::Type::String(string_ty) => string_ty.as_str().into(),
-        hir::Type::InferDef(poly_def_id, poly_param_idx) => {
-            let name = ctx.poly_param_name(poly_def_id, poly_param_idx);
+        hir::Type::PolyProc(id, poly_idx) => {
+            let name = ctx.registry.proc_data(id).poly_params.unwrap()[poly_idx];
+            ctx.name(name.id).to_string().into()
+        }
+        hir::Type::PolyEnum(id, poly_idx) => {
+            let name = ctx.registry.enum_data(id).poly_params.unwrap()[poly_idx];
+            ctx.name(name.id).to_string().into()
+        }
+        hir::Type::PolyStruct(id, poly_idx) => {
+            let name = ctx.registry.struct_data(id).poly_params.unwrap()[poly_idx];
             ctx.name(name.id).to_string().into()
         }
         hir::Type::Enum(id, poly_types) => {

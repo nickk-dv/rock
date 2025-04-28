@@ -95,8 +95,12 @@ pub enum Diverges {
 
 //==================== POLY SCOPE ====================
 
-pub struct PolyScope {
-    poly_def: Option<hir::PolymorphDefID>,
+#[derive(Copy, Clone)]
+pub enum PolyScope {
+    None,
+    Proc(hir::ProcID),
+    Enum(hir::EnumID),
+    Struct(hir::StructID),
 }
 
 //==================== SCOPES IMPL ====================
@@ -107,7 +111,7 @@ impl<'hir> Scope<'hir> {
             origin_id: ModuleID::dummy(),
             global: GlobalScope::new(session),
             local: LocalScope::new(),
-            poly: PolyScope::new(),
+            poly: PolyScope::None,
         }
     }
 
@@ -120,8 +124,8 @@ impl<'hir> Scope<'hir> {
         self.origin_id = origin_id;
     }
     #[inline]
-    pub fn set_poly(&mut self, poly_def: Option<hir::PolymorphDefID>) {
-        self.poly.poly_def = poly_def;
+    pub fn set_poly(&mut self, scope: PolyScope) {
+        self.poly = scope;
     }
 
     pub fn check_already_defined(
@@ -511,24 +515,26 @@ impl<'hir> LocalScope<'hir> {
 }
 
 impl PolyScope {
-    fn new() -> PolyScope {
-        PolyScope { poly_def: None }
-    }
-
-    pub fn find_poly_param(
-        &self,
+    pub fn find_poly_param<'hir>(
+        self,
         name_id: NameID,
         registry: &Registry,
-    ) -> Option<(hir::PolymorphDefID, u32)> {
-        let poly_def = self.poly_def?;
-        let poly_params = match poly_def {
-            hir::PolymorphDefID::Proc(id) => registry.proc_data(id).poly_params,
-            hir::PolymorphDefID::Enum(id) => registry.enum_data(id).poly_params,
-            hir::PolymorphDefID::Struct(id) => registry.struct_data(id).poly_params,
-        }?;
-        for (idx, param) in poly_params.iter().enumerate() {
+    ) -> Option<(hir::Type<'hir>, TextRange)> {
+        let poly_params = match self {
+            PolyScope::None => return None,
+            PolyScope::Proc(id) => registry.proc_data(id).poly_params?,
+            PolyScope::Enum(id) => registry.enum_data(id).poly_params?,
+            PolyScope::Struct(id) => registry.struct_data(id).poly_params?,
+        };
+        for (poly_idx, param) in poly_params.iter().enumerate() {
             if name_id == param.id {
-                return Some((poly_def, idx as u32));
+                let ty = match self {
+                    PolyScope::None => unreachable!(),
+                    PolyScope::Proc(id) => hir::Type::PolyProc(id, poly_idx),
+                    PolyScope::Enum(id) => hir::Type::PolyEnum(id, poly_idx),
+                    PolyScope::Struct(id) => hir::Type::PolyStruct(id, poly_idx),
+                };
+                return Some((ty, param.range));
             }
         }
         None

@@ -517,8 +517,8 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::InferDef(_, _) => {
-            eprintln!("unhandled infer_def in (add_type_size_const_dependencies)");
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
+            eprintln!("unhandled poly param in (add_type_size_const_dependencies)");
             return Err(parent_id);
         }
         hir::Type::Enum(id, poly_types) => {
@@ -618,8 +618,8 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::InferDef(_, _) => {
-            eprintln!("unhandled infer_def in (add_type_usage_const_dependencies)");
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
+            eprintln!("unhandled poly param in (add_type_usage_const_dependencies)");
             return Err(parent_id);
         }
         hir::Type::Enum(id, poly_types) => {

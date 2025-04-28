@@ -163,7 +163,9 @@ pub enum Type<'hir> {
     Float(FloatType),
     Bool(BoolType),
     String(StringType),
-    InferDef(PolymorphDefID, u32),
+    PolyProc(ProcID, usize),
+    PolyEnum(EnumID, usize),
+    PolyStruct(StructID, usize),
     Enum(EnumID, &'hir [Type<'hir>]),
     Struct(StructID, &'hir [Type<'hir>]),
     Reference(ast::Mut, &'hir Type<'hir>),
@@ -171,13 +173,6 @@ pub enum Type<'hir> {
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum PolymorphDefID {
-    Proc(ProcID),
-    Enum(EnumID),
-    Struct(StructID),
 }
 
 #[derive(Copy, Clone)]
