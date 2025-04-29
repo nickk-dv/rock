@@ -727,7 +727,7 @@ fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::
         curr_line: 0,
         prev_range: None,
         params_in_scope: Vec::with_capacity(16),
-        semantic_tokens: Vec::with_capacity(tree.tokens().token_count() / 2), //@estimate better count
+        semantic_tokens: Vec::with_capacity(tree.tokens().token_count().next_power_of_two() / 2),
         tree,
         file,
         modules,

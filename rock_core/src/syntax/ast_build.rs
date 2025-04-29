@@ -907,7 +907,6 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
     }
 }
 
-//@separated due to being used for attr param value
 fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> LitID {
     let token_id = lit.t_string_lit_id(ctx.tree).unwrap();
     ctx.tree.tokens().string(token_id)

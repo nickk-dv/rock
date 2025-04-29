@@ -111,9 +111,6 @@ impl<'src> Parser<'src> {
         recovery: TokenSet,
     ) -> MarkerClosed {
         self.error(msg);
-        //@only when not recoving make Error node?
-        // so that it has at least 1 member, test.
-        // some nodes expect marker, error is required to be created
         let m = self.start();
         if !self.at_set(recovery) && !self.at(Token::Eof) {
             self.do_bump();

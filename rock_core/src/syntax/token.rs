@@ -29,9 +29,9 @@ impl TokenList {
         TokenList {
             tokens: Vec::with_capacity(source.len() / 8),
             token_data: Vec::with_capacity(source.len() / 8),
-            token_encode: Vec::with_capacity(source.len() / 16), //@find best ratio
-            trivias: Vec::new(),
-            trivia_ranges: Vec::new(),
+            token_encode: Vec::with_capacity(source.len() / 16),
+            trivias: Vec::with_capacity(source.len() / 16),
+            trivia_ranges: Vec::with_capacity(source.len() / 16),
         }
     }
 

@@ -976,7 +976,6 @@ fn expr_address(p: &mut Parser) -> MarkerClosed {
 
 fn pat(p: &mut Parser) {
     let mc = primary_pat(p);
-
     if p.at(T![|]) {
         let m = p.start_before(mc);
         while p.eat(T![|]) {
