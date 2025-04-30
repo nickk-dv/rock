@@ -1073,6 +1073,11 @@ pub fn tycheck_cannot_infer_empty_array(emit: &mut impl ErrorSink, src: SourceRa
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_cannot_infer_poly_params(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "cannot infer polymorphic type parameters";
+    emit.error(Error::new(msg, src, None));
+}
+
 //==================== TYPECHECK CALL & INPUT ====================
 
 pub fn tycheck_cannot_call_value_of_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {

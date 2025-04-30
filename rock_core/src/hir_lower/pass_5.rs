@@ -710,7 +710,8 @@ fn typecheck_pat_item<'hir, 'ast>(
     in_or_pat: bool,
     range: TextRange,
 ) -> PatResult<'hir> {
-    match check_path::path_resolve_value(ctx, path) {
+    //@pass correct in_definition
+    match check_path::path_resolve_value(ctx, path, false) {
         ValueID::None => {
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             PatResult::error()
@@ -1525,7 +1526,8 @@ fn typecheck_item<'hir, 'ast>(
     args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let (item_res, fields) = match check_path::path_resolve_value(ctx, path) {
+    //@pass correct in_definition
+    let (item_res, fields) = match check_path::path_resolve_value(ctx, path, false) {
         ValueID::None => {
             if let Some(arg_list) = args_list {
                 default_check_arg_list(ctx, arg_list);
@@ -1639,6 +1641,150 @@ fn typecheck_variant<'hir, 'ast>(
     check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range)
 }
 
+fn type_has_poly_param(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error
+        | hir::Type::Char
+        | hir::Type::Void
+        | hir::Type::Never
+        | hir::Type::Rawptr
+        | hir::Type::UntypedChar
+        | hir::Type::Int(_)
+        | hir::Type::Float(_)
+        | hir::Type::Bool(_)
+        | hir::Type::String(_)
+        | hir::Type::Infer(_) => false,
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => true,
+        hir::Type::Enum(_, poly_types) => {
+            poly_types.iter().copied().any(|ty| type_has_poly_param(ty))
+        }
+        hir::Type::Struct(_, poly_types) => {
+            poly_types.iter().copied().any(|ty| type_has_poly_param(ty))
+        }
+        hir::Type::Reference(_, ref_ty) => type_has_poly_param(*ref_ty),
+        hir::Type::MultiReference(_, ref_ty) => type_has_poly_param(*ref_ty),
+        hir::Type::Procedure(proc_ty) => {
+            type_has_poly_param(proc_ty.return_ty)
+                || proc_ty.params.iter().any(|p| type_has_poly_param(p.ty))
+        }
+        hir::Type::ArraySlice(slice) => type_has_poly_param(slice.elem_ty),
+        hir::Type::ArrayStatic(array) => type_has_poly_param(array.elem_ty),
+    }
+}
+
+fn type_substitute_poly<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    inferred: &[hir::Type<'hir>],
+    ty: hir::Type<'hir>,
+) -> hir::Type<'hir> {
+    match ty {
+        hir::Type::Error
+        | hir::Type::Char
+        | hir::Type::Void
+        | hir::Type::Never
+        | hir::Type::Rawptr
+        | hir::Type::UntypedChar
+        | hir::Type::Int(_)
+        | hir::Type::Float(_)
+        | hir::Type::Bool(_)
+        | hir::Type::String(_)
+        | hir::Type::Infer(_) => ty,
+        hir::Type::PolyProc(_, idx) => match inferred[idx] {
+            //@using Error will silence cannot infer errors for structs, enums.
+            hir::Type::Infer(infer_id) => {
+                ctx.scope.infer.infer_type(infer_id).unwrap_or(hir::Type::Error)
+            }
+            _ => inferred[idx],
+        },
+        hir::Type::PolyEnum(_, idx) => match inferred[idx] {
+            //@using Error will silence cannot infer errors for structs, enums.
+            hir::Type::Infer(infer_id) => {
+                ctx.scope.infer.infer_type(infer_id).unwrap_or(hir::Type::Error)
+            }
+            _ => inferred[idx],
+        },
+        hir::Type::PolyStruct(_, idx) => match inferred[idx] {
+            //@using Error will silence cannot infer errors for structs, enums.
+            hir::Type::Infer(infer_id) => {
+                ctx.scope.infer.infer_type(infer_id).unwrap_or(hir::Type::Error)
+            }
+            _ => inferred[idx],
+        },
+        hir::Type::Enum(enum_id, poly_types) => {
+            let offset = ctx.cache.types.start();
+            for ty in poly_types {
+                let ty = type_substitute_poly(ctx, inferred, *ty);
+                ctx.cache.types.push(ty);
+            }
+            let poly_types = ctx.cache.types.take(offset, &mut ctx.arena);
+            hir::Type::Enum(enum_id, poly_types)
+        }
+        hir::Type::Struct(struct_id, poly_types) => {
+            let offset = ctx.cache.types.start();
+            for ty in poly_types {
+                let ty = type_substitute_poly(ctx, inferred, *ty);
+                ctx.cache.types.push(ty);
+            }
+            let poly_types = ctx.cache.types.take(offset, &mut ctx.arena);
+            hir::Type::Struct(struct_id, poly_types)
+        }
+        hir::Type::Reference(mutt, ref_ty) => {
+            let ref_ty = type_substitute_poly(ctx, inferred, *ref_ty);
+            hir::Type::Reference(mutt, ctx.arena.alloc(ref_ty))
+        }
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            let ref_ty = type_substitute_poly(ctx, inferred, *ref_ty);
+            hir::Type::MultiReference(mutt, ctx.arena.alloc(ref_ty))
+        }
+        hir::Type::Procedure(proc_ty) => {
+            let offset = ctx.cache.proc_ty_params.start();
+            for param in proc_ty.params {
+                let param = hir::ProcTypeParam {
+                    ty: type_substitute_poly(ctx, inferred, param.ty),
+                    kind: param.kind,
+                };
+                ctx.cache.proc_ty_params.push(param);
+            }
+            let proc_ty = hir::ProcType {
+                flag_set: proc_ty.flag_set,
+                params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
+                return_ty: type_substitute_poly(ctx, inferred, proc_ty.return_ty),
+            };
+            hir::Type::Procedure(ctx.arena.alloc(proc_ty))
+        }
+        hir::Type::ArraySlice(slice) => {
+            let elem_ty = type_substitute_poly(ctx, inferred, slice.elem_ty);
+            let slice = hir::ArraySlice { mutt: slice.mutt, elem_ty };
+            hir::Type::ArraySlice(ctx.arena.alloc(slice))
+        }
+        hir::Type::ArrayStatic(array) => {
+            let elem_ty = type_substitute_poly(ctx, inferred, array.elem_ty);
+            let array = hir::ArrayStatic { elem_ty, len: array.len };
+            hir::Type::ArrayStatic(ctx.arena.alloc(array))
+        }
+    }
+}
+
+fn type_apply_inference<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    inferred: &[hir::Type],
+    ty: hir::Type<'hir>,
+    def_ty: hir::Type,
+) {
+    let poly_idx = match def_ty {
+        hir::Type::PolyProc(_, idx) => idx,
+        hir::Type::PolyEnum(_, idx) => idx,
+        hir::Type::PolyStruct(_, idx) => idx,
+        _ => return,
+    };
+    //@walk down the other types
+    if let hir::Type::Infer(infer_id) = inferred[poly_idx] {
+        if ctx.scope.infer.infer_type(infer_id).is_none() {
+            ctx.scope.infer.infer_type_resolve(infer_id, ty);
+        }
+    }
+}
+
 fn typecheck_struct_init<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -1654,14 +1800,25 @@ fn typecheck_struct_init<'hir, 'ast>(
     }
 
     let struct_res = match struct_init.path {
-        Some(path) => check_path::path_resolve_struct(ctx, path),
+        //@pass correct in_definition
+        Some(path) => check_path::path_resolve_struct(ctx, path, false),
         None => {
             let src = ctx.src(error_range(struct_init, expr_range));
             infer_struct_type(ctx, expect, src)
         }
     };
     let (struct_id, poly_types) = match struct_res {
-        Some(res) => res,
+        Some(res) => {
+            //replacing poly_types from path, by inferred ones
+            if let Some(hir::Type::Infer(_)) = res.1.get(0) {
+                match infer_struct_poly_types(res.0, expect) {
+                    Some(poly_types) => (res.0, poly_types),
+                    None => res,
+                }
+            } else {
+                res
+            }
+        }
         None => {
             default_check_field_init_list(ctx, struct_init.input);
             return TypeResult::error();
@@ -1704,8 +1861,18 @@ fn typecheck_struct_init<'hir, 'ast>(
         let field = data.field(field_id);
 
         let expect_src = SourceRange::new(struct_origin_id, field.ty_range);
-        let expect = Expectation::HasType(field.ty, Some(expect_src));
+        let expect = if poly_types.is_empty() {
+            Expectation::HasType(field.ty, Some(expect_src))
+        } else if !type_has_poly_param(field.ty) {
+            Expectation::HasType(field.ty, Some(expect_src))
+        } else {
+            Expectation::HasType(type_substitute_poly(ctx, poly_types, field.ty), Some(expect_src))
+        };
+
         let input_res = typecheck_expr(ctx, expect, input.expr);
+        if !poly_types.is_empty() {
+            type_apply_inference(ctx, poly_types, input_res.ty, field.ty);
+        }
 
         if let FieldStatus::Init(range) = field_status[field_id.index()] {
             let src = ctx.src(input.name.range);
@@ -1800,7 +1967,36 @@ fn typecheck_struct_init<'hir, 'ast>(
         hir::Expr::StructInit { struct_id, input }
     };
 
-    TypeResult::new(hir::Type::Struct(struct_id, poly_types), expr)
+    let mut all_resolved = true;
+    for poly in poly_types {
+        if let hir::Type::Infer(infer_id) = poly {
+            if ctx.scope.infer.infer_type(*infer_id).is_none() {
+                all_resolved = false;
+                break;
+            }
+        }
+    }
+
+    if !all_resolved {
+        let src = ctx.src(error_range(struct_init, expr_range));
+        err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+        TypeResult::error()
+    } else {
+        let poly_types = if !poly_types.is_empty() {
+            let offset = ctx.cache.types.start();
+            for ty in poly_types.iter().copied() {
+                let ty = match ty {
+                    hir::Type::Infer(infer_id) => ctx.scope.infer.infer_type_expect(infer_id),
+                    _ => ty,
+                };
+                ctx.cache.types.push(ty);
+            }
+            ctx.cache.types.take(offset, &mut ctx.arena)
+        } else {
+            poly_types
+        };
+        TypeResult::new(hir::Type::Struct(struct_id, poly_types), expr)
+    }
 }
 
 fn typecheck_array_init<'hir, 'ast>(
@@ -3646,6 +3842,26 @@ fn infer_struct_type<'hir>(
         err::tycheck_cannot_infer_struct_type(&mut ctx.emit, error_src);
     }
     struct_res
+}
+
+fn infer_struct_poly_types<'hir>(
+    struct_id: hir::StructID,
+    expect: Expectation<'hir>,
+) -> Option<&'hir [hir::Type<'hir>]> {
+    match expect {
+        Expectation::None => None,
+        Expectation::HasType(ty, _) => match ty {
+            hir::Type::Error => None,
+            hir::Type::Struct(id, poly_types) => {
+                if id == struct_id {
+                    Some(poly_types)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+    }
 }
 
 //==================== DEFAULT CHECK ====================

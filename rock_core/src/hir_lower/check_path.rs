@@ -138,7 +138,7 @@ fn check_unexpected_poly_args(
 pub fn path_resolve_type<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
-    require_poly: bool,
+    in_definition: bool,
 ) -> hir::Type<'hir> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
@@ -156,7 +156,8 @@ pub fn path_resolve_type<'hir, 'ast>(
                     ctx,
                     path.at_segment,
                     data.poly_params,
-                    require_poly,
+                    true,
+                    in_definition,
                     data.name,
                     "enum",
                 );
@@ -168,7 +169,8 @@ pub fn path_resolve_type<'hir, 'ast>(
                     ctx,
                     path.at_segment,
                     data.poly_params,
-                    require_poly,
+                    true,
+                    in_definition,
                     data.name,
                     "struct",
                 );
@@ -215,6 +217,7 @@ fn resolve_type_poly_args<'hir, 'ast>(
     segment: ast::PathSegment<'ast>,
     poly_params: Option<&'hir [ast::Name]>,
     require_poly: bool,
+    in_definition: bool,
     item_name: ast::Name,
     item_kind: &'static str,
 ) -> &'hir [hir::Type<'hir>] {
@@ -258,7 +261,7 @@ fn resolve_type_poly_args<'hir, 'ast>(
             let offset = ctx.cache.types.start();
             for idx in 0..poly_params.len() {
                 let ty = if let Some(arg_type) = poly_args.types.get(idx) {
-                    super::pass_3::type_resolve(ctx, *arg_type, require_poly)
+                    super::pass_3::type_resolve(ctx, *arg_type, in_definition)
                 } else {
                     hir::Type::Error
                 };
@@ -281,6 +284,7 @@ fn poly_args_range(poly_args: &ast::PolymorphArgs) -> TextRange {
 pub fn path_resolve_struct<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
+    in_definition: bool,
 ) -> Option<(hir::StructID, &'hir [hir::Type<'hir>])> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
@@ -299,6 +303,7 @@ pub fn path_resolve_struct<'hir, 'ast>(
                     path.at_segment,
                     data.poly_params,
                     false,
+                    in_definition,
                     data.name,
                     "struct",
                 );
@@ -345,6 +350,7 @@ pub fn path_resolve_struct<'hir, 'ast>(
 pub fn path_resolve_value<'ast>(
     ctx: &mut HirCtx<'_, 'ast, '_>,
     path: &ast::Path<'ast>,
+    in_definition: bool,
 ) -> ValueID<'ast> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
@@ -378,6 +384,7 @@ pub fn path_resolve_value<'ast>(
                                 path.at_segment,
                                 data.poly_params,
                                 false,
+                                in_definition,
                                 data.name,
                                 "enum",
                             );

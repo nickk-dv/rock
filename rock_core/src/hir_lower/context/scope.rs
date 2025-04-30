@@ -562,6 +562,9 @@ impl<'hir> InferScope<'hir> {
     pub fn infer_type_expect(&self, infer_id: hir::InferID) -> hir::Type<'hir> {
         self.types[infer_id.index()].unwrap()
     }
+    pub fn infer_type_resolve(&mut self, infer_id: hir::InferID, ty: hir::Type<'hir>) {
+        self.types[infer_id.index()] = Some(ty);
+    }
 }
 
 impl SymbolID {

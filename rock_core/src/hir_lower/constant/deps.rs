@@ -731,7 +731,7 @@ fn add_expr_const_dependencies<'ast>(
             Err(parent_id)
         }
         ast::ExprKind::Item { path, args_list } => {
-            match check_path::path_resolve_value(ctx, path) {
+            match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => Err(parent_id),
                 ValueID::Proc(proc_id) => {
                     //@borrowing hacks, just get data once here
@@ -808,7 +808,9 @@ fn add_expr_const_dependencies<'ast>(
             //@make sure dependency order is correct for typecheck to work
             // both with & without known struct type in the struct_init
             if let Some(path) = struct_init.path {
-                if let Some((struct_id, poly_types)) = check_path::path_resolve_struct(ctx, path) {
+                if let Some((struct_id, poly_types)) =
+                    check_path::path_resolve_struct(ctx, path, true)
+                {
                     let struct_ty = hir::Type::Struct(struct_id, poly_types);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
                 } else {
