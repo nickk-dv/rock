@@ -139,7 +139,7 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
 
 pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
     match ty {
-        hir::Type::Error => "<unknown>".into(),
+        hir::Type::Error => "<error>".into(),
         hir::Type::Char => "char".into(),
         hir::Type::Void => "void".into(),
         hir::Type::Never => "never".into(),
@@ -149,6 +149,10 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
         hir::Type::Float(float_ty) => float_ty.as_str().into(),
         hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),
         hir::Type::String(string_ty) => string_ty.as_str().into(),
+        hir::Type::Infer(id) => match ctx.scope.infer.infer_type(id) {
+            Some(ty) => type_format(ctx, ty),
+            None => "<unknown>".into(),
+        },
         hir::Type::PolyProc(id, poly_idx) => {
             let name = ctx.registry.proc_data(id).poly_params.unwrap()[poly_idx];
             ctx.name(name.id).to_string().into()
@@ -1649,15 +1653,15 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
     }
 
-    let struct_id = match struct_init.path {
+    let struct_res = match struct_init.path {
         Some(path) => check_path::path_resolve_struct(ctx, path),
         None => {
             let src = ctx.src(error_range(struct_init, expr_range));
             infer_struct_type(ctx, expect, src)
         }
     };
-    let struct_id = match struct_id {
-        Some(found) => found,
+    let (struct_id, poly_types) = match struct_res {
+        Some(res) => res,
         None => {
             default_check_field_init_list(ctx, struct_init.input);
             return TypeResult::error();
@@ -1796,8 +1800,7 @@ fn typecheck_struct_init<'hir, 'ast>(
         hir::Expr::StructInit { struct_id, input }
     };
 
-    //@ignored poly_types
-    TypeResult::new(hir::Type::Struct(struct_id, &[]), expr)
+    TypeResult::new(hir::Type::Struct(struct_id, poly_types), expr)
 }
 
 fn typecheck_array_init<'hir, 'ast>(
@@ -2257,7 +2260,6 @@ fn typecheck_binary<'hir, 'ast>(
     TypeResult::new(res_ty, binary)
 }
 
-//@dont force type equality for bitshifts?
 //@extra checks when part of the operation is invalid: <lhs> / 0
 //@allow `==`, `!=` with implicit conversions between ref and rawptr's?
 fn check_binary_op<'hir>(
@@ -3627,24 +3629,23 @@ fn infer_enum_type(
     enum_id
 }
 
-fn infer_struct_type(
-    ctx: &mut HirCtx,
-    expect: Expectation,
+fn infer_struct_type<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    expect: Expectation<'hir>,
     error_src: SourceRange,
-) -> Option<hir::StructID> {
-    let struct_id = match expect {
+) -> Option<(hir::StructID, &'hir [hir::Type<'hir>])> {
+    let struct_res = match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            //@ignored poly_types
-            hir::Type::Struct(struct_id, _) => Some(struct_id),
+            hir::Type::Struct(struct_id, poly_types) => Some((struct_id, poly_types)),
             _ => None,
         },
     };
-    if struct_id.is_none() {
+    if struct_res.is_none() {
         err::tycheck_cannot_infer_struct_type(&mut ctx.emit, error_src);
     }
-    struct_id
+    struct_res
 }
 
 //==================== DEFAULT CHECK ====================

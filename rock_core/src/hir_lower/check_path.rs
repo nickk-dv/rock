@@ -233,8 +233,12 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 err::path_type_missing_poly_args(&mut ctx.emit, src, name, item_kind);
                 ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.len())
             } else {
-                //@use Type::Infer when its supported
-                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.len())
+                let offset = ctx.cache.types.start();
+                for _ in 0..poly_params.len() {
+                    let infer_id = ctx.scope.infer.add_type();
+                    ctx.cache.types.push(hir::Type::Infer(infer_id));
+                }
+                ctx.cache.types.take(offset, &mut ctx.arena)
             }
         }
         (Some(poly_params), Some(poly_args)) => {
@@ -274,10 +278,10 @@ fn poly_args_range(poly_args: &ast::PolymorphArgs) -> TextRange {
     }
 }
 
-pub fn path_resolve_struct<'ast>(
-    ctx: &mut HirCtx<'_, 'ast, '_>,
+pub fn path_resolve_struct<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
-) -> Option<hir::StructID> {
+) -> Option<(hir::StructID, &'hir [hir::Type<'hir>])> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return None,
@@ -286,7 +290,7 @@ pub fn path_resolve_struct<'ast>(
         set_symbol_used_flag(ctx, symbol_id);
     }
 
-    let struct_id = match path.kind {
+    let (struct_id, poly_types) = match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
             SymbolID::Struct(struct_id) => {
                 let data = ctx.registry.struct_data(struct_id);
@@ -298,7 +302,7 @@ pub fn path_resolve_struct<'ast>(
                     data.name,
                     "struct",
                 );
-                struct_id
+                (struct_id, poly_types)
             }
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
@@ -335,7 +339,7 @@ pub fn path_resolve_struct<'ast>(
     if check_unexpected_segments(ctx, path.names, "struct").is_err() {
         return None;
     }
-    Some(struct_id)
+    Some((struct_id, poly_types))
 }
 
 pub fn path_resolve_value<'ast>(

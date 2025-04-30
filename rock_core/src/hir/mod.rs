@@ -163,6 +163,7 @@ pub enum Type<'hir> {
     Float(FloatType),
     Bool(BoolType),
     String(StringType),
+    Infer(InferID),
     PolyProc(ProcID, usize),
     PolyEnum(EnumID, usize),
     PolyStruct(StructID, usize),
@@ -583,6 +584,7 @@ crate::define_id!(pub VariantID);
 crate::define_id!(pub VariantFieldID);
 crate::define_id!(pub FieldID);
 
+crate::define_id!(pub InferID);
 crate::define_id!(pub ConstEvalID);
 crate::define_id!(pub VariantEvalID);
 

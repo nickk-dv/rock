@@ -517,7 +517,10 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
+        hir::Type::Infer(_)
+        | hir::Type::PolyProc(_, _)
+        | hir::Type::PolyEnum(_, _)
+        | hir::Type::PolyStruct(_, _) => {
             eprintln!("unhandled poly param in (add_type_size_const_dependencies)");
             return Err(parent_id);
         }
@@ -618,7 +621,10 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
+        hir::Type::Infer(_)
+        | hir::Type::PolyProc(_, _)
+        | hir::Type::PolyEnum(_, _)
+        | hir::Type::PolyStruct(_, _) => {
             eprintln!("unhandled poly param in (add_type_usage_const_dependencies)");
             return Err(parent_id);
         }
@@ -802,9 +808,8 @@ fn add_expr_const_dependencies<'ast>(
             //@make sure dependency order is correct for typecheck to work
             // both with & without known struct type in the struct_init
             if let Some(path) = struct_init.path {
-                if let Some(struct_id) = check_path::path_resolve_struct(ctx, path) {
-                    //@poly_types not handled
-                    let struct_ty = hir::Type::Struct(struct_id, &[]);
+                if let Some((struct_id, poly_types)) = check_path::path_resolve_struct(ctx, path) {
+                    let struct_ty = hir::Type::Struct(struct_id, poly_types);
                     add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
                 } else {
                     return Err(parent_id);

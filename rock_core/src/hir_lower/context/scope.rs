@@ -15,6 +15,7 @@ pub struct Scope<'hir> {
     pub global: GlobalScope,
     pub local: LocalScope<'hir>,
     pub poly: PolyScope,
+    pub infer: InferScope<'hir>,
 }
 
 //==================== GLOBAL SCOPE ====================
@@ -103,6 +104,10 @@ pub enum PolyScope {
     Struct(hir::StructID),
 }
 
+pub struct InferScope<'hir> {
+    types: Vec<Option<hir::Type<'hir>>>,
+}
+
 //==================== SCOPES IMPL ====================
 
 impl<'hir> Scope<'hir> {
@@ -112,6 +117,7 @@ impl<'hir> Scope<'hir> {
             global: GlobalScope::new(session),
             local: LocalScope::new(),
             poly: PolyScope::None,
+            infer: InferScope::new(),
         }
     }
 
@@ -538,6 +544,23 @@ impl PolyScope {
             }
         }
         None
+    }
+}
+
+impl<'hir> InferScope<'hir> {
+    fn new() -> InferScope<'hir> {
+        InferScope { types: Vec::with_capacity(32) }
+    }
+    pub fn add_type(&mut self) -> hir::InferID {
+        let infer_id = hir::InferID::new(self.types.len());
+        self.types.push(None);
+        infer_id
+    }
+    pub fn infer_type(&self, infer_id: hir::InferID) -> Option<hir::Type<'hir>> {
+        self.types[infer_id.index()]
+    }
+    pub fn infer_type_expect(&self, infer_id: hir::InferID) -> hir::Type<'hir> {
+        self.types[infer_id.index()].unwrap()
     }
 }
 
