@@ -7,6 +7,7 @@ use crate::ast;
 use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir;
+use crate::hir_lower::pass_3;
 use crate::session::ModuleID;
 use crate::text::TextRange;
 
@@ -518,23 +519,20 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
-            eprintln!("unhandled poly param in (add_type_size_const_dependencies)");
-            return Err(parent_id);
-        }
+        hir::Type::PolyProc(_, _) => {}   //@unrechable?
+        hir::Type::PolyEnum(_, _) => {}   //@pass poly_types and add deps?
+        hir::Type::PolyStruct(_, _) => {} //@pass poly_types and add deps?
         hir::Type::Enum(id, poly_types) => {
-            if !poly_types.is_empty() {
-                eprintln!("unhandled poly_types in enum (add_type_size_const_dependencies)");
-                return Err(parent_id);
-            }
             add_enum_size_const_dependency(ctx, tree, parent_id, id)?;
+            for ty in poly_types {
+                add_type_size_const_dependencies(ctx, tree, parent_id, *ty)?;
+            }
         }
         hir::Type::Struct(id, poly_types) => {
-            if !poly_types.is_empty() {
-                eprintln!("unhandled poly_types in struct (add_type_size_const_dependencies)");
-                return Err(parent_id);
-            }
             add_struct_size_const_dependency(ctx, tree, parent_id, id)?;
+            for ty in poly_types {
+                add_type_size_const_dependencies(ctx, tree, parent_id, *ty)?;
+            }
         }
         hir::Type::Reference(_, _) => {}
         hir::Type::MultiReference(_, _) => {}
@@ -716,16 +714,26 @@ fn add_expr_const_dependencies<'ast>(
             add_expr_const_dependencies(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
         }
-        //@allow size_of and align_of in constants? and transmute?
-        ast::ExprKind::Builtin { .. } => {
-            error_cannot_use_in_constants(
-                &mut ctx.emit,
-                origin_id,
-                expr.range,
-                "builtin procedures",
-            );
-            Err(parent_id)
-        }
+        ast::ExprKind::Builtin { builtin } => match builtin {
+            ast::Builtin::Error(_) => Err(parent_id),
+            ast::Builtin::SizeOf(ty) => {
+                let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
+                add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+            }
+            ast::Builtin::AlignOf(ty) => {
+                let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
+                add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+            }
+            ast::Builtin::Transmute(_, _) => {
+                error_cannot_use_in_constants(
+                    &mut ctx.emit,
+                    origin_id,
+                    expr.range,
+                    "builtin @transmute",
+                );
+                Err(parent_id)
+            }
+        },
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => Err(parent_id),
@@ -930,14 +938,28 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 }
             }
             ConstDependency::EnumLayout(id) => {
-                let layout_res = layout::resolve_enum_layout(ctx, id);
-                let layout = hir::Eval::from_res(layout_res);
-                ctx.registry.enum_data_mut(id).layout = layout;
+                let data = ctx.registry.enum_data(id);
+                if data.poly_params.is_some() {
+                    //@hack, placeholder layout for polymorphic type
+                    let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
+                    ctx.registry.enum_data_mut(id).layout = layout;
+                } else {
+                    let layout_res = layout::resolve_enum_layout(ctx, id, &[]);
+                    let layout = hir::Eval::from_res(layout_res);
+                    ctx.registry.enum_data_mut(id).layout = layout;
+                }
             }
             ConstDependency::StructLayout(id) => {
-                let layout_res = layout::resolve_struct_layout(ctx, id);
-                let layout = hir::Eval::from_res(layout_res);
-                ctx.registry.struct_data_mut(id).layout = layout;
+                let data = ctx.registry.struct_data(id);
+                if data.poly_params.is_some() {
+                    //@hack, placeholder layout for polymorphic type
+                    let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
+                    ctx.registry.struct_data_mut(id).layout = layout;
+                } else {
+                    let layout_res = layout::resolve_struct_layout(ctx, id, &[]);
+                    let layout = hir::Eval::from_res(layout_res);
+                    ctx.registry.struct_data_mut(id).layout = layout;
+                }
             }
             ConstDependency::Const(id) => {
                 let data = ctx.registry.const_data(id);

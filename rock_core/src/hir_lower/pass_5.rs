@@ -1168,7 +1168,7 @@ fn typecheck_slice<'hir, 'ast>(
     };
 
     let src = ctx.src(target.range);
-    let elem_size = match layout::type_layout(ctx, collection.elem_ty, src) {
+    let elem_size = match layout::type_layout(ctx, collection.elem_ty, &[], src) {
         Ok(layout) => layout.size,
         Err(_) => return TypeResult::error(),
     };
@@ -1460,7 +1460,7 @@ fn typecheck_builtin<'hir, 'ast>(
         }
         ast::Builtin::SizeOf(ty) => {
             let ty = super::pass_3::type_resolve(ctx, ty, false);
-            let expr = constant::type_layout(ctx, ty, src)
+            let expr = constant::type_layout(ctx, ty, &[], src)
                 .map(|layout| {
                     fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
                         .map(|value| hir::Expr::Const { value })
@@ -1471,7 +1471,7 @@ fn typecheck_builtin<'hir, 'ast>(
         }
         ast::Builtin::AlignOf(ty) => {
             let ty = super::pass_3::type_resolve(ctx, ty, false);
-            let expr = constant::type_layout(ctx, ty, src)
+            let expr = constant::type_layout(ctx, ty, &[], src)
                 .map(|layout| {
                     fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
                         .map(|value| hir::Expr::Const { value })
@@ -1486,8 +1486,8 @@ fn typecheck_builtin<'hir, 'ast>(
 
             let from_src = ctx.src(expr.range);
             let into_src = ctx.src(into.range);
-            let from_layout = constant::type_layout(ctx, expr_res.ty, from_src);
-            let into_layout = constant::type_layout(ctx, into_ty, into_src);
+            let from_layout = constant::type_layout(ctx, expr_res.ty, &[], from_src);
+            let into_layout = constant::type_layout(ctx, into_ty, &[], into_src);
 
             if let (Ok(from_layout), Ok(into_layout)) = (from_layout, into_layout) {
                 let subject = if from_layout.size != into_layout.size {

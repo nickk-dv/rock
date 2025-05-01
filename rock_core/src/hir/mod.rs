@@ -150,6 +150,13 @@ pub struct Layout {
     pub align: u64,
 }
 
+#[derive(Copy, Clone)]
+pub struct StructLayout<'hir> {
+    pub total: Layout,
+    pub field_pad: &'hir [u8],
+    pub field_offset: &'hir [u8],
+}
+
 #[must_use]
 #[derive(Copy, Clone)]
 pub enum Type<'hir> {
