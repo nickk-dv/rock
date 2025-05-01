@@ -19,10 +19,10 @@ enum PathResolvedKind<'hir> {
     PolyParam(hir::Type<'hir>, TextRange),
 }
 
-pub enum ValueID<'ast> {
+pub enum ValueID<'ast, 'hir> {
     None,
-    Proc(hir::ProcID),
-    Enum(hir::EnumID, hir::VariantID),
+    Proc(hir::ProcID, Option<&'hir [hir::Type<'hir>]>),
+    Enum(hir::EnumID, hir::VariantID, Option<&'hir [hir::Type<'hir>]>),
     Const(hir::ConstID, &'ast [ast::PathSegment<'ast>]),
     Global(hir::GlobalID, &'ast [ast::PathSegment<'ast>]),
     Param(hir::ParamID, &'ast [ast::PathSegment<'ast>]),
@@ -257,16 +257,23 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 );
             }
 
+            let mut error = false;
             let offset = ctx.cache.types.start();
             for idx in 0..poly_params.len() {
-                let ty = if let Some(arg_type) = poly_args.types.get(idx) {
-                    super::pass_3::type_resolve(ctx, *arg_type, in_definition)
+                if let Some(arg_type) = poly_args.types.get(idx) {
+                    let ty = super::pass_3::type_resolve(ctx, *arg_type, in_definition);
+                    ctx.cache.types.push(ty);
                 } else {
-                    hir::Type::Error
+                    error = true;
                 };
-                ctx.cache.types.push(ty);
             }
-            Some(ctx.cache.types.take(offset, &mut ctx.arena))
+
+            if error {
+                ctx.cache.types.pop_view(offset);
+                None
+            } else {
+                Some(ctx.cache.types.take(offset, &mut ctx.arena))
+            }
         }
     }
 }
@@ -346,11 +353,11 @@ pub fn path_resolve_struct<'hir, 'ast>(
     Some((struct_id, poly_types))
 }
 
-pub fn path_resolve_value<'ast>(
-    ctx: &mut HirCtx<'_, 'ast, '_>,
+pub fn path_resolve_value<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
     in_definition: bool,
-) -> ValueID<'ast> {
+) -> ValueID<'ast, 'hir> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return ValueID::None,
@@ -365,7 +372,17 @@ pub fn path_resolve_value<'ast>(
                 if check_unexpected_segments(ctx, path.names, "procedure").is_err() {
                     ValueID::None
                 } else {
-                    ValueID::Proc(proc_id)
+                    let data = ctx.registry.proc_data(proc_id);
+                    let poly_types = resolve_type_poly_args(
+                        ctx,
+                        path.at_segment,
+                        data.poly_params,
+                        false,
+                        in_definition,
+                        data.name,
+                        "procedure",
+                    );
+                    ValueID::Proc(proc_id, poly_types)
                 }
             }
             SymbolID::Enum(enum_id) => {
@@ -387,7 +404,7 @@ pub fn path_resolve_value<'ast>(
                                 data.name,
                                 "enum",
                             );
-                            ValueID::Enum(enum_id, variant_id)
+                            ValueID::Enum(enum_id, variant_id, poly_types)
                         }
                     } else {
                         ValueID::None

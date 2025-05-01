@@ -729,7 +729,7 @@ fn add_expr_const_dependencies<'ast>(
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => Err(parent_id),
-                ValueID::Proc(proc_id) => {
+                ValueID::Proc(proc_id, poly_types) => {
                     //@borrowing hacks, just get data once here
                     // change the result Err type with delayed mutation of HirData only at top lvl?
                     for param in ctx.registry.proc_data(proc_id).params {
@@ -745,7 +745,7 @@ fn add_expr_const_dependencies<'ast>(
                     }
                     Ok(())
                 }
-                ValueID::Enum(enum_id, variant_id) => {
+                ValueID::Enum(enum_id, variant_id, poly_types) => {
                     add_variant_const_dependency(ctx, tree, parent_id, enum_id, variant_id)?;
                     if let Some(arg_list) = args_list {
                         for arg in arg_list.exprs {

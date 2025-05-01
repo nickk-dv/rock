@@ -468,7 +468,9 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
         ast::ExprKind::Builtin { builtin } => typecheck_builtin(ctx, expr.range, builtin),
-        ast::ExprKind::Item { path, args_list } => typecheck_item(ctx, path, args_list, expr.range),
+        ast::ExprKind::Item { path, args_list } => {
+            typecheck_item(ctx, expect, path, args_list, expr.range)
+        }
         ast::ExprKind::Variant { name, args_list } => {
             typecheck_variant(ctx, expect, name, args_list, expr.range)
         }
@@ -713,7 +715,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
             PatResult::error()
         }
-        ValueID::Enum(enum_id, variant_id) => {
+        ValueID::Enum(enum_id, variant_id, poly_types) => {
             check_variant_bind_count(ctx, bind_list, enum_id, variant_id, range);
             let variant = Some(ctx.registry.enum_data(enum_id).variant(variant_id));
             let bind_ids = check_variant_bind_list(ctx, bind_list, variant, ref_mut, in_or_pat);
@@ -751,7 +753,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             };
             PatResult::new(pat, data.ty.expect("typed const var pattern"))
         }
-        ValueID::Proc(_)
+        ValueID::Proc(_, _)
         | ValueID::Global(_, _)
         | ValueID::Param(_, _)
         | ValueID::Variable(_, _) => {
@@ -773,7 +775,7 @@ fn typecheck_pat_variant<'hir>(
     pat_range: TextRange,
 ) -> PatResult<'hir> {
     let name_src = ctx.src(name.range);
-    let enum_id = match infer_enum_type(ctx, expect, name_src) {
+    let (enum_id, _) = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
@@ -1519,6 +1521,7 @@ fn typecheck_builtin<'hir, 'ast>(
 
 fn typecheck_item<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
     path: &ast::Path<'ast>,
     args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
@@ -1531,12 +1534,27 @@ fn typecheck_item<'hir, 'ast>(
             }
             return TypeResult::error();
         }
-        ValueID::Proc(proc_id) => {
+        ValueID::Proc(proc_id, poly_types) => {
             if let Some(args_list) = args_list {
-                return check_call_direct(ctx, proc_id, args_list, expr_range.start());
+                return check_call_direct(
+                    ctx,
+                    expect,
+                    proc_id,
+                    poly_types,
+                    args_list,
+                    expr_range.start(),
+                );
             } else {
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let data = ctx.registry.proc_data(proc_id);
+                if data.poly_params.is_some() {
+                    let src = ctx.src(expr_range);
+                    err::internal_not_implemented(
+                        &mut ctx.emit,
+                        src,
+                        "polymorphic procedure pointer",
+                    );
+                }
                 let offset = ctx.cache.proc_ty_params.start();
                 for param in data.params {
                     let param = hir::ProcTypeParam { ty: param.ty, kind: param.kind };
@@ -1557,8 +1575,10 @@ fn typecheck_item<'hir, 'ast>(
                 return TypeResult::new(proc_ty, hir::Expr::Const { value: proc_value });
             }
         }
-        ValueID::Enum(enum_id, variant_id) => {
-            return check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range);
+        ValueID::Enum(enum_id, variant_id, poly_types) => {
+            return check_variant_input_opt(
+                ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range,
+            );
         }
         ValueID::Const(id, fields) => {
             let data = ctx.registry.const_data(id);
@@ -1616,7 +1636,7 @@ fn typecheck_variant<'hir, 'ast>(
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
     let name_src = ctx.src(name.range);
-    let enum_id = match infer_enum_type(ctx, expect, name_src) {
+    let (enum_id, poly_types) = match infer_enum_type(ctx, expect, name_src) {
         Some(found) => found,
         None => {
             if let Some(arg_list) = args_list {
@@ -1635,7 +1655,7 @@ fn typecheck_variant<'hir, 'ast>(
         }
     };
 
-    check_variant_input_opt(ctx, enum_id, variant_id, args_list, expr_range)
+    check_variant_input_opt(ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range)
 }
 
 fn type_has_poly_param(ty: hir::Type) -> bool {
@@ -1879,9 +1899,7 @@ fn typecheck_struct_init<'hir, 'ast>(
         let field = data.field(field_id);
 
         let expect_src = SourceRange::new(struct_origin_id, field.ty_range);
-        let expect = if poly_count == 0 {
-            Expectation::HasType(field.ty, Some(expect_src))
-        } else if !type_has_poly_param(field.ty) {
+        let expect = if poly_count == 0 || !type_has_poly_param(field.ty) {
             Expectation::HasType(field.ty, Some(expect_src))
         } else {
             Expectation::HasType(type_substitute_poly(ctx, infer_ctx, field.ty), Some(expect_src))
@@ -1957,6 +1975,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     if any_unresolved {
         let src = ctx.src(error_range(struct_init, expr_range));
         err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+        ctx.scope.infer.end_context(infer_ctx);
         return TypeResult::error();
     }
 
@@ -3814,18 +3833,19 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
 
 //==================== INFER ====================
 
-fn infer_enum_type(
-    ctx: &mut HirCtx,
-    expect: Expectation,
+fn infer_enum_type<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    expect: Expectation<'hir>,
     error_src: SourceRange,
-) -> Option<hir::EnumID> {
+) -> Option<(hir::EnumID, Option<&'hir [hir::Type<'hir>]>)> {
     let enum_id = match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
             hir::Type::Error => return None,
-            //@ignored poly_types
-            hir::Type::Enum(enum_id, _) => Some(enum_id),
-            hir::Type::Reference(_, hir::Type::Enum(enum_id, _)) => Some(*enum_id),
+            hir::Type::Enum(enum_id, poly_types) => Some((enum_id, Some(poly_types))),
+            hir::Type::Reference(_, hir::Type::Enum(enum_id, poly_types)) => {
+                Some((*enum_id, Some(*poly_types)))
+            }
             _ => None,
         },
     };
@@ -3833,6 +3853,26 @@ fn infer_enum_type(
         err::tycheck_cannot_infer_enum_type(&mut ctx.emit, error_src);
     }
     enum_id
+}
+
+fn infer_enum_poly_types<'hir>(
+    enum_id: hir::EnumID,
+    expect: Expectation<'hir>,
+) -> Option<&'hir [hir::Type<'hir>]> {
+    match expect {
+        Expectation::None => None,
+        Expectation::HasType(ty, _) => match ty {
+            hir::Type::Error => None,
+            hir::Type::Enum(id, poly_types) => {
+                if id == enum_id {
+                    Some(poly_types)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        },
+    }
 }
 
 fn infer_struct_type<'hir>(
@@ -3932,19 +3972,34 @@ fn bind_list_opt_range(bind_list: Option<&ast::BindingList>, default: TextRange)
 
 fn check_call_direct<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
     proc_id: hir::ProcID,
+    poly_types: Option<&'hir [hir::Type<'hir>]>,
     arg_list: &ast::ArgumentList<'ast>,
     start: TextOffset,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.proc_data(proc_id);
     let origin_id = data.origin_id;
     let return_ty = data.return_ty;
-
     let proc_src = Some(data.src());
+    let poly_count = data.poly_params.map_or(0, |p| p.len());
+    let infer_ctx = ctx.scope.infer.start_context(poly_count);
+
     let expected_count = data.params.iter().filter(|p| p.kind == hir::ParamKind::Normal).count();
     let is_variadic = data.flag_set.contains(hir::ProcFlag::Variadic)
         || data.flag_set.contains(hir::ProcFlag::CVariadic);
     check_call_arg_count(ctx, arg_list, proc_src, expected_count, is_variadic);
+
+    if let Some(poly_types) = poly_types {
+        for (poly_idx, ty) in poly_types.iter().enumerate() {
+            ctx.scope.infer.resolve(infer_ctx, poly_idx, *ty);
+        }
+    }
+    if poly_count != 0 {
+        if let Expectation::HasType(expect_ty, _) = expect {
+            type_apply_inference(ctx, infer_ctx, expect_ty, return_ty);
+        }
+    }
 
     let data = ctx.registry.proc_data(proc_id);
     let offset = ctx.cache.exprs.start();
@@ -3955,8 +4010,19 @@ fn check_call_direct<'hir, 'ast>(
             hir::ParamKind::Normal => {
                 if let Some(expr) = args.next() {
                     let expect_src = SourceRange::new(origin_id, param.ty_range);
-                    let expect = Expectation::HasType(param.ty, Some(expect_src));
+                    let expect = if poly_count == 0 || !type_has_poly_param(param.ty) {
+                        Expectation::HasType(param.ty, Some(expect_src))
+                    } else {
+                        Expectation::HasType(
+                            type_substitute_poly(ctx, infer_ctx, param.ty),
+                            Some(expect_src),
+                        )
+                    };
+
                     let expr_res = typecheck_expr(ctx, expect, expr);
+                    if poly_count != 0 {
+                        type_apply_inference(ctx, infer_ctx, expr_res.ty, param.ty);
+                    }
                     ctx.cache.exprs.push(expr_res.expr);
                 } else {
                     ctx.cache.exprs.push(&hir::Expr::Error);
@@ -3993,6 +4059,35 @@ fn check_call_direct<'hir, 'ast>(
             let _ = typecheck_expr(ctx, Expectation::HasType(hir::Type::Error, None), expr);
         }
     }
+
+    let any_unresolved =
+        (0..poly_count).any(|poly_idx| ctx.scope.infer.inferred(infer_ctx, poly_idx).is_unknown());
+    if any_unresolved {
+        let src = ctx.src(TextRange::new(start, arg_list.range.start()));
+        err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+        ctx.cache.exprs.pop_view(offset);
+        ctx.scope.infer.end_context(infer_ctx);
+        return TypeResult::error();
+    }
+
+    //@add to direct call hir
+    let poly_types = match poly_types {
+        Some(poly_types) => poly_types,
+        None => {
+            let offset = ctx.cache.types.start();
+            for poly_idx in 0..poly_count {
+                let ty = ctx.scope.infer.inferred(infer_ctx, poly_idx);
+                ctx.cache.types.push(ty);
+            }
+            ctx.cache.types.take(offset, &mut ctx.arena)
+        }
+    };
+    let return_ty = if poly_count != 0 && type_has_poly_param(return_ty) {
+        type_substitute_poly(ctx, infer_ctx, return_ty)
+    } else {
+        return_ty
+    };
+    ctx.scope.infer.end_context(infer_ctx);
 
     let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
     let expr = hir::Expr::CallDirect { proc_id, input };
@@ -4104,8 +4199,10 @@ fn check_call_arg_count(
 
 fn check_variant_input_opt<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
+    mut poly_types: Option<&'hir [hir::Type<'hir>]>,
     arg_list: Option<&ast::ArgumentList<'ast>>,
     range: TextRange,
 ) -> TypeResult<'hir> {
@@ -4113,6 +4210,17 @@ fn check_variant_input_opt<'hir, 'ast>(
     let variant = data.variant(variant_id);
     let origin_id = data.origin_id;
     let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
+    let poly_count = data.poly_params.map_or(0, |p| p.len());
+    let infer_ctx = ctx.scope.infer.start_context(poly_count);
+
+    if poly_count != 0 && poly_types.is_none() {
+        poly_types = infer_enum_poly_types(enum_id, expect);
+    }
+    if let Some(poly_types) = poly_types {
+        for (poly_idx, ty) in poly_types.iter().enumerate() {
+            ctx.scope.infer.resolve(infer_ctx, poly_idx, *ty);
+        }
+    }
 
     let input_count = arg_list.map(|arg_list| arg_list.exprs.len()).unwrap_or(0);
     let expected_count = variant.fields.len();
@@ -4139,11 +4247,24 @@ fn check_variant_input_opt<'hir, 'ast>(
             let expect = match variant.fields.get(idx) {
                 Some(field) => {
                     let expect_src = SourceRange::new(origin_id, field.ty_range);
-                    Expectation::HasType(field.ty, Some(expect_src))
+                    if poly_count == 0 || !type_has_poly_param(field.ty) {
+                        Expectation::HasType(field.ty, Some(expect_src))
+                    } else {
+                        Expectation::HasType(
+                            type_substitute_poly(ctx, infer_ctx, field.ty),
+                            Some(expect_src),
+                        )
+                    }
                 }
                 None => Expectation::HasType(hir::Type::Error, None),
             };
+
             let expr_res = typecheck_expr(ctx, expect, expr);
+            if poly_count != 0 {
+                if let Some(field) = variant.fields.get(idx) {
+                    type_apply_inference(ctx, infer_ctx, expr_res.ty, field.ty);
+                }
+            }
             ctx.cache.exprs.push(expr_res.expr);
         }
         let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
@@ -4152,6 +4273,28 @@ fn check_variant_input_opt<'hir, 'ast>(
         let empty: &[&hir::Expr] = &[];
         ctx.arena.alloc(empty)
     };
+
+    let any_unresolved =
+        (0..poly_count).any(|poly_idx| ctx.scope.infer.inferred(infer_ctx, poly_idx).is_unknown());
+    if any_unresolved {
+        let src = ctx.src(range); //@improve range to include everything up to arg list same as struct_init and proc call
+        err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+        ctx.scope.infer.end_context(infer_ctx);
+        return TypeResult::error();
+    }
+
+    let poly_types = match poly_types {
+        Some(poly_types) => poly_types,
+        None => {
+            let offset = ctx.cache.types.start();
+            for poly_idx in 0..poly_count {
+                let ty = ctx.scope.infer.inferred(infer_ctx, poly_idx);
+                ctx.cache.types.push(ty);
+            }
+            ctx.cache.types.take(offset, &mut ctx.arena)
+        }
+    };
+    ctx.scope.infer.end_context(infer_ctx);
 
     let expr = if with_fields {
         if ctx.in_const {
@@ -4164,8 +4307,8 @@ fn check_variant_input_opt<'hir, 'ast>(
         let value = hir::ConstValue::Variant { enum_id, variant_id };
         hir::Expr::Const { value }
     };
-    //@ignored poly_types
-    TypeResult::new(hir::Type::Enum(enum_id, &[]), expr)
+
+    TypeResult::new(hir::Type::Enum(enum_id, poly_types), expr)
 }
 
 fn check_variant_bind_count(
