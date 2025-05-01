@@ -319,7 +319,7 @@ pub struct ParamAbi {
 //@need #repr_c like flagging for enums, disallow enums with fields, only allow i32 tag_ty.
 pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
     let pass_ty: llvm::Type = match ty {
-        hir::Type::Error => unreachable!(),
+        hir::Type::Error | hir::Type::Unknown => unreachable!(),
         hir::Type::Char => cg.char_type(),
         hir::Type::Void => cg.void_type(),
         hir::Type::Never => cg.void_type(),
@@ -335,7 +335,6 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
             hir::StringType::CString => cg.ptr_type(),
             hir::StringType::Untyped => unreachable!(),
         },
-        hir::Type::Infer(_) => unimplemented!("win x64 infer"),
         hir::Type::PolyProc(_, _) => unimplemented!("win x64 poly_proc"),
         hir::Type::PolyEnum(_, _) => unimplemented!("win x64 poly_enum"),
         hir::Type::PolyStruct(_, _) => unimplemented!("win x64 poly_struct"),

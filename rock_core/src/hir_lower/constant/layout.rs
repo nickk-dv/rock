@@ -6,6 +6,7 @@ use crate::hir_lower::context::HirCtx;
 pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<hir::Layout, ()> {
     match ty {
         hir::Type::Error => Err(()),
+        hir::Type::Unknown => unreachable!(),
         hir::Type::Char => Ok(hir::Layout::equal(4)),
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
@@ -15,10 +16,7 @@ pub fn type_layout(ctx: &mut HirCtx, ty: hir::Type, src: SourceRange) -> Result<
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
         hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
         hir::Type::String(string_ty) => Ok(string_layout(ctx, string_ty)),
-        hir::Type::Infer(_)
-        | hir::Type::PolyProc(_, _)
-        | hir::Type::PolyEnum(_, _)
-        | hir::Type::PolyStruct(_, _) => {
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
             eprintln!("unhandled poly param in (type_layout)");
             return Err(());
         }

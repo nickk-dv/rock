@@ -508,6 +508,7 @@ fn add_type_size_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Unknown => {}
         hir::Type::Char => {}
         hir::Type::Void => {}
         hir::Type::Never => {}
@@ -517,10 +518,7 @@ fn add_type_size_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::Infer(_)
-        | hir::Type::PolyProc(_, _)
-        | hir::Type::PolyEnum(_, _)
-        | hir::Type::PolyStruct(_, _) => {
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
             eprintln!("unhandled poly param in (add_type_size_const_dependencies)");
             return Err(parent_id);
         }
@@ -612,6 +610,7 @@ fn add_type_usage_const_dependencies<'hir>(
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
+        hir::Type::Unknown => {}
         hir::Type::Char => {}
         hir::Type::Void => {}
         hir::Type::Never => {}
@@ -621,10 +620,7 @@ fn add_type_usage_const_dependencies<'hir>(
         hir::Type::Float(_) => {}
         hir::Type::Bool(_) => {}
         hir::Type::String(_) => {}
-        hir::Type::Infer(_)
-        | hir::Type::PolyProc(_, _)
-        | hir::Type::PolyEnum(_, _)
-        | hir::Type::PolyStruct(_, _) => {
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
             eprintln!("unhandled poly param in (add_type_usage_const_dependencies)");
             return Err(parent_id);
         }
@@ -811,7 +807,8 @@ fn add_expr_const_dependencies<'ast>(
                 if let Some((struct_id, poly_types)) =
                     check_path::path_resolve_struct(ctx, path, true)
                 {
-                    let struct_ty = hir::Type::Struct(struct_id, poly_types);
+                    //@temp hack using empty poly_types if missing, is it correct?
+                    let struct_ty = hir::Type::Struct(struct_id, poly_types.unwrap_or(&[]));
                     add_type_usage_const_dependencies(ctx, tree, parent_id, struct_ty)?;
                 } else {
                     return Err(parent_id);

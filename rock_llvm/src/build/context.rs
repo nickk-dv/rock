@@ -109,7 +109,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
 
     pub fn ty(&self, ty: hir::Type) -> llvm::Type {
         match ty {
-            hir::Type::Error => unreachable!(),
+            hir::Type::Error | hir::Type::Unknown => unreachable!(),
             hir::Type::Char => self.cache.int_32,
             hir::Type::Void => self.cache.void_val_type.as_ty(),
             hir::Type::Never => self.cache.void_val_type.as_ty(),
@@ -123,7 +123,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 hir::StringType::CString => self.cache.ptr_type,
                 hir::StringType::Untyped => unreachable!(),
             },
-            hir::Type::Infer(_) => unimplemented!("codegen infer type"),
             hir::Type::PolyProc(_, _) => unimplemented!("codegen poly_proc type"),
             hir::Type::PolyEnum(_, _) => unimplemented!("codegen poly_enum type"),
             hir::Type::PolyStruct(_, _) => unimplemented!("codegen poly_struct type"),

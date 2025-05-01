@@ -161,7 +161,10 @@ pub fn path_resolve_type<'hir, 'ast>(
                     data.name,
                     "enum",
                 );
-                hir::Type::Enum(enum_id, poly_types)
+                match poly_types {
+                    Some(poly_types) => hir::Type::Enum(enum_id, poly_types),
+                    None => hir::Type::Error,
+                }
             }
             SymbolID::Struct(struct_id) => {
                 let data = ctx.registry.struct_data(struct_id);
@@ -174,7 +177,10 @@ pub fn path_resolve_type<'hir, 'ast>(
                     data.name,
                     "struct",
                 );
-                hir::Type::Struct(struct_id, poly_types)
+                match poly_types {
+                    Some(poly_types) => hir::Type::Struct(struct_id, poly_types),
+                    None => hir::Type::Error,
+                }
             }
             _ => {
                 let src = ctx.src(path.at_segment.name.range);
@@ -220,29 +226,22 @@ fn resolve_type_poly_args<'hir, 'ast>(
     in_definition: bool,
     item_name: ast::Name,
     item_kind: &'static str,
-) -> &'hir [hir::Type<'hir>] {
+) -> Option<&'hir [hir::Type<'hir>]> {
     match (poly_params, segment.poly_args) {
-        (None, None) => &[],
+        (None, None) => Some(&[]),
         (None, Some(poly_args)) => {
             let src = ctx.src(poly_args.range);
             let name = ctx.name(item_name.id);
             err::path_type_unexpected_poly_args(&mut ctx.emit, src, name, item_kind);
-            &[]
+            Some(&[])
         }
-        (Some(poly_params), None) => {
+        (Some(_), None) => {
             if require_poly {
                 let src = ctx.src(segment.name.range);
                 let name = ctx.name(item_name.id);
                 err::path_type_missing_poly_args(&mut ctx.emit, src, name, item_kind);
-                ctx.arena.alloc_slice_with_value(hir::Type::Error, poly_params.len())
-            } else {
-                let offset = ctx.cache.types.start();
-                for _ in 0..poly_params.len() {
-                    let infer_id = ctx.scope.infer.add_type();
-                    ctx.cache.types.push(hir::Type::Infer(infer_id));
-                }
-                ctx.cache.types.take(offset, &mut ctx.arena)
             }
+            None
         }
         (Some(poly_params), Some(poly_args)) => {
             let input_count = poly_args.types.len();
@@ -267,7 +266,7 @@ fn resolve_type_poly_args<'hir, 'ast>(
                 };
                 ctx.cache.types.push(ty);
             }
-            ctx.cache.types.take(offset, &mut ctx.arena)
+            Some(ctx.cache.types.take(offset, &mut ctx.arena))
         }
     }
 }
@@ -285,7 +284,7 @@ pub fn path_resolve_struct<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     path: &ast::Path<'ast>,
     in_definition: bool,
-) -> Option<(hir::StructID, &'hir [hir::Type<'hir>])> {
+) -> Option<(hir::StructID, Option<&'hir [hir::Type<'hir>]>)> {
     let path = match path_resolve(ctx, path) {
         Ok(path) => path,
         Err(()) => return None,

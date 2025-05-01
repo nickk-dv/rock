@@ -105,7 +105,12 @@ pub enum PolyScope {
 }
 
 pub struct InferScope<'hir> {
-    types: Vec<Option<hir::Type<'hir>>>,
+    types: Vec<hir::Type<'hir>>,
+}
+
+#[derive(Copy, Clone)]
+pub struct InferContext {
+    offset: usize,
 }
 
 //==================== SCOPES IMPL ====================
@@ -549,21 +554,28 @@ impl PolyScope {
 
 impl<'hir> InferScope<'hir> {
     fn new() -> InferScope<'hir> {
-        InferScope { types: Vec::with_capacity(32) }
+        InferScope { types: Vec::with_capacity(64) }
     }
-    pub fn add_type(&mut self) -> hir::InferID {
-        let infer_id = hir::InferID::new(self.types.len());
-        self.types.push(None);
-        infer_id
+    pub fn start_context(&mut self, poly_count: usize) -> InferContext {
+        let offset = self.types.len();
+        for _ in 0..poly_count {
+            self.types.push(hir::Type::Unknown);
+        }
+        InferContext { offset }
     }
-    pub fn infer_type(&self, infer_id: hir::InferID) -> Option<hir::Type<'hir>> {
-        self.types[infer_id.index()]
+    pub fn end_context(&mut self, ctx: InferContext) {
+        while self.types.len() > ctx.offset {
+            self.types.pop();
+        }
     }
-    pub fn infer_type_expect(&self, infer_id: hir::InferID) -> hir::Type<'hir> {
-        self.types[infer_id.index()].unwrap()
+    pub fn resolve(&mut self, ctx: InferContext, poly_idx: usize, ty: hir::Type<'hir>) {
+        let poly_type = &mut self.types[ctx.offset + poly_idx];
+        if poly_type.is_unknown() {
+            *poly_type = ty;
+        }
     }
-    pub fn infer_type_resolve(&mut self, infer_id: hir::InferID, ty: hir::Type<'hir>) {
-        self.types[infer_id.index()] = Some(ty);
+    pub fn inferred(&self, ctx: InferContext, poly_idx: usize) -> hir::Type<'hir> {
+        self.types[ctx.offset + poly_idx]
     }
 }
 
