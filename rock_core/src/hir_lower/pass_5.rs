@@ -1772,16 +1772,52 @@ fn type_apply_inference<'hir>(
     def_ty: hir::Type,
 ) {
     let poly_idx = match def_ty {
-        hir::Type::PolyProc(_, idx) => idx,
-        hir::Type::PolyEnum(_, idx) => idx,
-        hir::Type::PolyStruct(_, idx) => idx,
-        _ => return,
+        hir::Type::PolyProc(_, idx) => Some(idx),
+        hir::Type::PolyEnum(_, idx) => Some(idx),
+        hir::Type::PolyStruct(_, idx) => Some(idx),
+        _ => None,
     };
-    //@walk down the other types
-    if let hir::Type::Infer(infer_id) = inferred[poly_idx] {
-        if ctx.scope.infer.infer_type(infer_id).is_none() {
-            ctx.scope.infer.infer_type_resolve(infer_id, ty);
+    if let Some(poly_idx) = poly_idx {
+        if let hir::Type::Infer(infer_id) = inferred[poly_idx] {
+            if ctx.scope.infer.infer_type(infer_id).is_none() {
+                ctx.scope.infer.infer_type_resolve(infer_id, ty);
+            }
+            return;
         }
+        return;
+    }
+    match (ty, def_ty) {
+        (hir::Type::Enum(_, types), hir::Type::Enum(_, def_types)) => {
+            for idx in 0..types.len() {
+                type_apply_inference(ctx, inferred, types[idx], def_types[idx]);
+            }
+        }
+        (hir::Type::Struct(_, types), hir::Type::Struct(_, def_types)) => {
+            for idx in 0..types.len() {
+                type_apply_inference(ctx, inferred, types[idx], def_types[idx]);
+            }
+        }
+        (hir::Type::Reference(_, ref_ty), hir::Type::Reference(_, def_ref_ty)) => {
+            type_apply_inference(ctx, inferred, *ref_ty, *def_ref_ty)
+        }
+        (hir::Type::MultiReference(_, ref_ty), hir::Type::MultiReference(_, def_ref_ty)) => {
+            type_apply_inference(ctx, inferred, *ref_ty, *def_ref_ty)
+        }
+        (hir::Type::Procedure(proc_ty), hir::Type::Procedure(def_proc_ty)) => {
+            for (idx, def_param) in def_proc_ty.params.iter().enumerate() {
+                if let Some(param) = proc_ty.params.get(idx) {
+                    type_apply_inference(ctx, inferred, param.ty, def_param.ty)
+                }
+            }
+            type_apply_inference(ctx, inferred, proc_ty.return_ty, def_proc_ty.return_ty)
+        }
+        (hir::Type::ArraySlice(slice), hir::Type::ArraySlice(def_slice)) => {
+            type_apply_inference(ctx, inferred, slice.elem_ty, def_slice.elem_ty)
+        }
+        (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(def_array)) => {
+            type_apply_inference(ctx, inferred, array.elem_ty, def_array.elem_ty)
+        }
+        _ => {}
     }
 }
 
