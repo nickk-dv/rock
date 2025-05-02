@@ -89,12 +89,17 @@ fn codegen_struct_types(cg: &mut Codegen) {
 
     let mut field_types = Vec::with_capacity(64);
 
-    for (idx, struct_data) in cg.hir.structs.iter().enumerate() {
+    for struct_id in (0..cg.hir.structs.len()).map(hir::StructID::new) {
+        let data = cg.hir.struct_data(struct_id);
+        if data.poly_params.is_some() {
+            continue;
+        }
+
         field_types.clear();
-        for field in struct_data.fields {
+        for field in data.fields {
             field_types.push(cg.ty(field.ty));
         }
-        let opaque = cg.structs[idx];
+        let opaque = cg.structs[struct_id.index()];
         cg.context.struct_named_set_body(opaque, &field_types, false)
     }
 }
@@ -102,24 +107,25 @@ fn codegen_struct_types(cg: &mut Codegen) {
 //@non optimized memory storage for variant type info
 fn codegen_variant_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
-        let enum_data = cg.hir.enum_data(enum_id);
+        let data = cg.hir.enum_data(enum_id);
+        let origin_id = data.origin_id;
+        let tag_ty = cg.int_type(data.tag_ty.resolved_unwrap());
 
-        if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-            let mut variant_types = Vec::with_capacity(enum_data.variants.len());
-            let enum_name = cg.session.intern_name.get(enum_data.name.id);
+        if data.flag_set.contains(hir::EnumFlag::WithFields) {
+            let mut variant_types = Vec::with_capacity(data.variants.len());
+            let enum_name = cg.session.intern_name.get(data.name.id);
 
-            for variant in enum_data.variants {
+            for variant in data.variants {
                 if variant.fields.is_empty() {
                     variant_types.push(None);
                 } else {
                     let mut field_types = Vec::with_capacity(variant.fields.len());
-                    let tag_ty = cg.int_type(enum_data.tag_ty.resolved_unwrap());
                     field_types.push(tag_ty);
                     for field in variant.fields {
                         field_types.push(cg.ty(field.ty));
                     }
 
-                    let module_origin = cg.session.module.get(enum_data.origin_id);
+                    let module_origin = cg.session.module.get(origin_id);
                     let package_origin = cg.session.graph.package(module_origin.origin());
                     let package_name = cg.session.intern_name.get(package_origin.name());
                     let variant_name = cg.session.intern_name.get(variant.name.id);
@@ -146,6 +152,7 @@ fn codegen_variant_types(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     for idx in 0..cg.hir.globals.len() {
         let data = cg.hir.global_data(hir::GlobalID::new(idx));
+        let init = data.init;
 
         let module = cg.session.module.get(data.origin_id);
         let package = cg.session.graph.package(module.origin());
@@ -158,7 +165,7 @@ fn codegen_globals(cg: &mut Codegen) {
 
         let constant = data.mutt == ast::Mut::Immutable;
         let global_ty = cg.ty(data.ty);
-        let value = match data.init {
+        let value = match init {
             hir::GlobalInit::Init(eval_id) => {
                 emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
             }
@@ -173,7 +180,8 @@ fn codegen_globals(cg: &mut Codegen) {
 fn codegen_function_values(cg: &mut Codegen) {
     let mut param_types = Vec::with_capacity(64);
 
-    for data in cg.hir.procs.iter() {
+    for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
+        let data = cg.hir.proc_data(proc_id);
         param_types.clear();
         let is_external = data.flag_set.contains(hir::ProcFlag::External);
         let is_variadic = data.flag_set.contains(hir::ProcFlag::CVariadic);
@@ -198,6 +206,7 @@ fn codegen_function_values(cg: &mut Codegen) {
             }
         };
 
+        let data = cg.hir.proc_data(proc_id);
         for param in data.params {
             let ty = if is_external {
                 win_x64_parameter_type(cg, param.ty).pass_ty
@@ -207,6 +216,7 @@ fn codegen_function_values(cg: &mut Codegen) {
             param_types.push(ty);
         }
 
+        let data = cg.hir.proc_data(proc_id);
         let name = if is_external || is_entry {
             cg.session.intern_name.get(data.name.id)
         } else {
@@ -280,6 +290,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             cg.build.store(param_val, param_ptr);
         }
 
+        let data = cg.hir.proc_data(proc_id);
         for var in data.variables {
             let name = cg.session.intern_name.get(var.name.id);
             cg.string_buf.clear();
@@ -290,6 +301,7 @@ fn codegen_function_bodies(cg: &mut Codegen) {
             cg.proc.variable_ptrs.push(var_ptr);
         }
 
+        let data = cg.hir.proc_data(proc_id);
         if let Some(block) = data.block {
             if data.flag_set.contains(hir::ProcFlag::EntryPoint) {
                 emit_expr::codegen_call_direct(cg, Expect::Value(None), cg.hir.core.start, &[]);

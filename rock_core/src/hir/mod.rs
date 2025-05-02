@@ -15,9 +15,9 @@ pub struct Hir<'hir> {
     pub globals: Vec<GlobalData<'hir>>,
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
-    pub enum_layout: HashMap<EnumLayoutKey<'hir>, Layout>,
-    pub struct_layout: HashMap<StructLayoutKey<'hir>, StructLayout<'hir>>,
-    pub variant_layout: HashMap<VariantLayoutKey<'hir>, StructLayout<'hir>>,
+    pub enum_layout: HashMap<EnumKey<'hir>, Layout>,
+    pub struct_layout: HashMap<StructKey<'hir>, StructLayout<'hir>>,
+    pub variant_layout: HashMap<VariantKey<'hir>, StructLayout<'hir>>,
     pub core: CoreItems,
 }
 
@@ -161,9 +161,9 @@ pub struct StructLayout<'hir> {
     pub field_offset: &'hir [u64],
 }
 
-pub type EnumLayoutKey<'hir> = (EnumID, &'hir [Type<'hir>]);
-pub type StructLayoutKey<'hir> = (StructID, &'hir [Type<'hir>]);
-pub type VariantLayoutKey<'hir> = (EnumID, VariantID, &'hir [Type<'hir>]);
+pub type EnumKey<'hir> = (EnumID, &'hir [Type<'hir>]);
+pub type StructKey<'hir> = (StructID, &'hir [Type<'hir>]);
+pub type VariantKey<'hir> = (EnumID, VariantID, &'hir [Type<'hir>]);
 
 #[must_use]
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]

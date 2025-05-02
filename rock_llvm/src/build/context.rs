@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::llvm;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
@@ -20,6 +22,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub session: &'sref mut Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
+    pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
 }
 
 pub struct ProcCodegen {
@@ -104,10 +107,15 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             session,
             string_buf: String::with_capacity(256),
             cache,
+            poly_structs: HashMap::with_capacity(256),
         }
     }
 
-    pub fn ty(&self, ty: hir::Type) -> llvm::Type {
+    pub fn ty(&mut self, ty: hir::Type<'c>) -> llvm::Type {
+        self.ty_impl(ty, &[])
+    }
+
+    pub fn ty_impl(&mut self, ty: hir::Type<'c>, poly_types: &[hir::Type<'c>]) -> llvm::Type {
         match ty {
             hir::Type::Error | hir::Type::Unknown => unreachable!(),
             hir::Type::Char => self.cache.int_32,
@@ -125,7 +133,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             },
             hir::Type::PolyProc(_, _) => unimplemented!("codegen poly_proc type"),
             hir::Type::PolyEnum(_, _) => unimplemented!("codegen poly_enum type"),
-            hir::Type::PolyStruct(_, _) => unimplemented!("codegen poly_struct type"),
+            hir::Type::PolyStruct(_, idx) => self.ty(poly_types[idx]),
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic enum type")
@@ -133,10 +141,31 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 self.enum_type(enum_id)
             }
             hir::Type::Struct(struct_id, poly_types) => {
-                if !poly_types.is_empty() {
-                    unimplemented!("codegen polymorphic struct type")
+                if poly_types.is_empty() {
+                    self.struct_type(struct_id).as_ty()
+                } else {
+                    let key = (struct_id, poly_types);
+                    if let Some(t) = self.poly_structs.get(&key) {
+                        t.as_ty()
+                    } else {
+                        let data = self.hir.struct_data(struct_id);
+                        let name = self.session.intern_name.get(data.name.id);
+                        self.string_buf.clear();
+                        self.string_buf.push_str(name);
+                        self.string_buf.push_str("_Poly_");
+
+                        let opaque = self.context.struct_named_create(&self.string_buf);
+                        self.poly_structs.insert(key, opaque);
+
+                        let mut field_types = Vec::with_capacity(64); //@cache
+                        for field in data.fields {
+                            field_types.push(self.ty_impl(field.ty, poly_types));
+                        }
+                        self.context.struct_named_set_body(opaque, &field_types, false);
+
+                        opaque.as_ty()
+                    }
                 }
-                self.struct_type(struct_id).as_ty()
             }
             hir::Type::Reference(_, _) => self.cache.ptr_type,
             hir::Type::MultiReference(_, _) => self.cache.ptr_type,
@@ -205,7 +234,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         self.cache.ptr_sized_int
     }
 
-    pub fn proc_type(&self, proc_ty: &hir::ProcType) -> llvm::TypeFn {
+    pub fn proc_type(&mut self, proc_ty: &hir::ProcType<'c>) -> llvm::TypeFn {
         let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.params.len());
         for param in proc_ty.params {
             param_types.push(self.ty(param.ty));
