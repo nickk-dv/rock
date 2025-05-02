@@ -22,6 +22,9 @@ pub struct HirCtx<'hir, 's, 'sref> {
     pub pat: PatCov,
     pub core: hir::CoreItems,
     pub cache: Cache<'hir>,
+    pub enum_layout: HashMap<hir::EnumLayoutKey<'hir>, hir::Layout>,
+    pub struct_layout: HashMap<hir::StructLayoutKey<'hir>, hir::StructLayout<'hir>>,
+    pub variant_layout: HashMap<hir::VariantLayoutKey<'hir>, hir::StructLayout<'hir>>,
 }
 
 pub struct Cache<'hir> {
@@ -81,6 +84,9 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             pat: PatCov::new(),
             core,
             cache,
+            enum_layout: HashMap::with_capacity(128),
+            struct_layout: HashMap::with_capacity(128),
+            variant_layout: HashMap::with_capacity(128),
         }
     }
 
@@ -139,6 +145,9 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             globals: self.registry.hir_globals,
             const_eval_values,
             variant_eval_values,
+            enum_layout: self.enum_layout,
+            struct_layout: self.struct_layout,
+            variant_layout: self.variant_layout,
             core: self.core,
         })
     }

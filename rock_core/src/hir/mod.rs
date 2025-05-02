@@ -5,6 +5,7 @@ use crate::intern::{LitID, NameID};
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::{self, TextOffset, TextRange};
+use std::collections::HashMap;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -14,6 +15,9 @@ pub struct Hir<'hir> {
     pub globals: Vec<GlobalData<'hir>>,
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
+    pub enum_layout: HashMap<EnumLayoutKey<'hir>, Layout>,
+    pub struct_layout: HashMap<StructLayoutKey<'hir>, StructLayout<'hir>>,
+    pub variant_layout: HashMap<VariantLayoutKey<'hir>, StructLayout<'hir>>,
     pub core: CoreItems,
 }
 
@@ -51,7 +55,7 @@ pub struct Param<'hir> {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum ParamKind {
         Normal "normal",
         Variadic "variadic",
@@ -154,11 +158,15 @@ pub struct Layout {
 pub struct StructLayout<'hir> {
     pub total: Layout,
     pub field_pad: &'hir [u8],
-    pub field_offset: &'hir [u8],
+    pub field_offset: &'hir [u64],
 }
 
+pub type EnumLayoutKey<'hir> = (EnumID, &'hir [Type<'hir>]);
+pub type StructLayoutKey<'hir> = (StructID, &'hir [Type<'hir>]);
+pub type VariantLayoutKey<'hir> = (EnumID, VariantID, &'hir [Type<'hir>]);
+
 #[must_use]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum Type<'hir> {
     Error,
     Unknown,
@@ -183,32 +191,32 @@ pub enum Type<'hir> {
     ArrayStatic(&'hir ArrayStatic<'hir>),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct ProcType<'hir> {
     pub flag_set: BitSet<ProcFlag>,
     pub params: &'hir [ProcTypeParam<'hir>],
     pub return_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct ProcTypeParam<'hir> {
     pub ty: Type<'hir>,
     pub kind: ParamKind,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct ArraySlice<'hir> {
     pub mutt: ast::Mut,
     pub elem_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub struct ArrayStatic<'hir> {
     pub len: ArrayStaticLen,
     pub elem_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
 pub enum ArrayStaticLen {
     Immediate(u64),
     ConstEval(ConstEvalID),
@@ -485,7 +493,7 @@ where
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum IntType {
         S8 "s8",
         S16 "s16",
@@ -502,7 +510,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum FloatType {
         F32 "f32",
         F64 "f64",
@@ -511,7 +519,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum BoolType {
         Bool "bool",
         Bool16 "bool16",
@@ -522,7 +530,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum StringType {
         String "string",
         CString "cstring",
@@ -607,7 +615,7 @@ crate::size_lock!(16, ConstValue);
 //==================== ITEM FLAGS ====================
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub enum ProcFlag {
         // directives
         Inline "inline",

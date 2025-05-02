@@ -3,10 +3,10 @@ use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::context::HirCtx;
 
-pub fn type_layout(
-    ctx: &mut HirCtx,
-    ty: hir::Type,
-    poly_types: &[hir::Type],
+pub fn type_layout<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    ty: hir::Type<'hir>,
+    poly_types: &[hir::Type<'hir>],
     src: SourceRange,
 ) -> Result<hir::Layout, ()> {
     match ty {
@@ -29,7 +29,15 @@ pub fn type_layout(
                 ctx.registry.enum_data(id).layout.resolved()
             } else {
                 let _ = ctx.registry.enum_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                resolve_enum_layout(ctx, id, poly_types) //@cache
+                if let Some(layout) = ctx.enum_layout.get(&(id, poly_types)) {
+                    Ok(*layout)
+                } else {
+                    let layout_res = resolve_enum_layout(ctx, id, poly_types);
+                    if let Ok(layout) = layout_res {
+                        ctx.enum_layout.insert((id, poly_types), layout);
+                    }
+                    layout_res
+                }
             }
         }
         hir::Type::Struct(id, poly_types) => {
@@ -37,7 +45,15 @@ pub fn type_layout(
                 ctx.registry.struct_data(id).layout.resolved()
             } else {
                 let _ = ctx.registry.struct_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                resolve_struct_layout(ctx, id, poly_types) //@cache
+                if let Some(layout) = ctx.struct_layout.get(&(id, poly_types)) {
+                    Ok(layout.total)
+                } else {
+                    let layout_res = resolve_struct_layout(ctx, id, poly_types);
+                    if let Ok(layout) = layout_res {
+                        ctx.struct_layout.insert((id, poly_types), layout);
+                    }
+                    layout_res.map(|l| l.total)
+                }
             }
         }
         hir::Type::Reference(_, _) | hir::Type::MultiReference(_, _) | hir::Type::Procedure(_) => {
@@ -107,70 +123,83 @@ pub fn string_layout(ctx: &HirCtx, string_ty: hir::StringType) -> hir::Layout {
     }
 }
 
-pub fn resolve_struct_layout(
-    ctx: &mut HirCtx,
+pub fn resolve_struct_layout<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     struct_id: hir::StructID,
-    poly_types: &[hir::Type],
-) -> Result<hir::Layout, ()> {
+    poly_types: &[hir::Type<'hir>],
+) -> Result<hir::StructLayout<'hir>, ()> {
     let data = ctx.registry.struct_data(struct_id);
     let src = SourceRange::new(data.origin_id, data.name.range);
+
     let types = data.fields.iter().map(|f| f.ty);
     resolve_aggregate_layout(ctx, src, "struct", types, poly_types)
 }
 
-fn resolve_variant_layout(
-    ctx: &mut HirCtx,
+fn resolve_variant_layout<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     enum_id: hir::EnumID,
-    variant: &hir::Variant,
-    poly_types: &[hir::Type],
-) -> Result<hir::Layout, ()> {
+    variant_id: hir::VariantID,
+    poly_types: &[hir::Type<'hir>],
+) -> Result<hir::StructLayout<'hir>, ()> {
     let data = ctx.registry.enum_data(enum_id);
+    let variant = data.variant(variant_id);
     let src = SourceRange::new(data.origin_id, variant.name.range);
+
     let tag_ty = [hir::Type::Int(data.tag_ty.resolved()?)];
-    let types = tag_ty.iter().copied().chain(variant.fields.iter().map(|f| &f.ty).copied());
+    let types = tag_ty.into_iter().chain(variant.fields.iter().map(|f| f.ty));
     resolve_aggregate_layout(ctx, src, "variant", types, poly_types)
 }
 
 fn resolve_aggregate_layout<'hir>(
-    ctx: &mut HirCtx,
+    ctx: &mut HirCtx<'hir, '_, '_>,
     src: SourceRange,
     item_kind: &'static str,
     types: impl Iterator<Item = hir::Type<'hir>>,
-    poly_types: &[hir::Type],
-) -> Result<hir::Layout, ()> {
+    poly_types: &[hir::Type<'hir>],
+) -> Result<hir::StructLayout<'hir>, ()> {
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for ty in types {
-        let elem_layout = type_layout(ctx, ty, poly_types, src)?;
-        size = aligned_size(size, elem_layout.align);
-        align = align.max(elem_layout.align);
+        let layout = type_layout(ctx, ty, poly_types, src)?;
+        size = aligned_size(size, layout.align);
+        align = align.max(layout.align);
 
-        if let Some(total) = size.checked_add(elem_layout.size) {
+        if let Some(total) = size.checked_add(layout.size) {
             size = total;
         } else {
-            err::const_item_size_overflow(&mut ctx.emit, src, item_kind, size, elem_layout.size);
+            err::const_item_size_overflow(&mut ctx.emit, src, item_kind, size, layout.size);
             return Err(());
         }
     }
 
     size = aligned_size(size, align);
-    Ok(hir::Layout::new(size, align))
+    let total = hir::Layout::new(size, align);
+    let layout = hir::StructLayout { total, field_pad: &[], field_offset: &[] }; //@compute real values
+    Ok(layout)
 }
 
-pub fn resolve_enum_layout(
-    ctx: &mut HirCtx,
+pub fn resolve_enum_layout<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     enum_id: hir::EnumID,
-    poly_types: &[hir::Type],
+    poly_types: &'hir [hir::Type<'hir>],
 ) -> Result<hir::Layout, ()> {
+    let data = ctx.registry.enum_data(enum_id);
+    if !data.flag_set.contains(hir::EnumFlag::WithFields) {
+        let tag_ty = data.tag_ty.resolved()?;
+        return Ok(int_layout(ctx, tag_ty));
+    }
+
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
-    let data = ctx.registry.enum_data(enum_id);
-    for variant in data.variants {
-        let variant_layout = resolve_variant_layout(ctx, enum_id, variant, poly_types)?;
-        size = size.max(variant_layout.size);
-        align = align.max(variant_layout.align);
+    for variant_id in (0..data.variants.len()).map(hir::VariantID::new) {
+        let layout = resolve_variant_layout(ctx, enum_id, variant_id, poly_types)?;
+        size = size.max(layout.total.size);
+        align = align.max(layout.total.align);
+
+        let key = (enum_id, variant_id, poly_types);
+        ctx.variant_layout.insert(key, layout);
     }
 
     size = aligned_size(size, align);

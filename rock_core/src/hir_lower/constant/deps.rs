@@ -957,7 +957,7 @@ fn resolve_const_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                     ctx.registry.struct_data_mut(id).layout = layout;
                 } else {
                     let layout_res = layout::resolve_struct_layout(ctx, id, &[]);
-                    let layout = hir::Eval::from_res(layout_res);
+                    let layout = hir::Eval::from_res(layout_res.map(|l| l.total));
                     ctx.registry.struct_data_mut(id).layout = layout;
                 }
             }

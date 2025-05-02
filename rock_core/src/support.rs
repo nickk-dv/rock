@@ -183,7 +183,7 @@ mod temp_buffer {
 mod bitset {
     use std::marker::PhantomData;
 
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
     pub struct BitSet<T>
     where
         T: Copy + Clone + Into<u32>,
