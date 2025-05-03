@@ -565,8 +565,8 @@ impl ValueFn {
         ValueFn(std::ptr::null_mut())
     }
     #[inline]
-    pub fn as_ptr(self) -> ValuePtr {
-        ValuePtr(self.0)
+    pub fn as_val(self) -> Value {
+        Value(self.0)
     }
     pub fn entry_bb(&self) -> BasicBlock {
         BasicBlock(unsafe { core::LLVMGetEntryBasicBlock(self.0) })
@@ -611,7 +611,18 @@ impl ValueInstr {
     }
 }
 
+impl TypeFn {
+    #[inline]
+    pub fn null() -> TypeFn {
+        TypeFn(std::ptr::null_mut())
+    }
+}
+
 impl TypeStruct {
+    #[inline]
+    pub fn from_ty(ty: Type) -> TypeStruct {
+        TypeStruct(ty.0)
+    }
     #[inline]
     pub fn as_ty(self) -> Type {
         Type(self.0)

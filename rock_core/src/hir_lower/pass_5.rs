@@ -2022,7 +2022,11 @@ fn typecheck_struct_init<'hir, 'ast>(
         hir::Expr::Const { value: struct_ }
     } else {
         let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
-        hir::Expr::StructInit { struct_id, input }
+        if poly_types.is_empty() {
+            hir::Expr::StructInit { struct_id, input }
+        } else {
+            hir::Expr::StructInitPoly { struct_id, input: ctx.arena.alloc((poly_types, input)) }
+        }
     };
 
     TypeResult::new(hir::Type::Struct(struct_id, poly_types), expr)
@@ -3812,11 +3816,15 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
             let ty = ctx.registry.proc_data(proc_id).return_ty;
             unused_return_type(ty, "procedure return value")
         }
+        hir::Expr::CallDirectPoly { proc_id, .. } => {
+            let ty = ctx.registry.proc_data(proc_id).return_ty;
+            unused_return_type(ty, "procedure return value")
+        }
         hir::Expr::CallIndirect { indirect, .. } => {
             let ty = indirect.proc_ty.return_ty;
             unused_return_type(ty, "indirect call return value")
         }
-        hir::Expr::StructInit { .. } => Some("struct value"),
+        hir::Expr::StructInit { .. } | hir::Expr::StructInitPoly { .. } => Some("struct value"),
         hir::Expr::ArrayInit { .. } => Some("array value"),
         hir::Expr::ArrayRepeat { .. } => Some("array value"),
         hir::Expr::Deref { .. } => Some("dereference"),
@@ -4090,7 +4098,11 @@ fn check_call_direct<'hir, 'ast>(
     ctx.scope.infer.end_context(infer_ctx);
 
     let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
-    let expr = hir::Expr::CallDirect { proc_id, input };
+    let expr = if poly_types.is_empty() {
+        hir::Expr::CallDirect { proc_id, input }
+    } else {
+        hir::Expr::CallDirectPoly { proc_id, input: ctx.arena.alloc((poly_types, input)) }
+    };
     TypeResult::new(return_ty, expr)
 }
 
@@ -4457,8 +4469,10 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::Transmute { .. } => AddrBase::Temporary,
             hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,
+            hir::Expr::CallDirectPoly { .. } => AddrBase::Temporary,
             hir::Expr::CallIndirect { .. } => AddrBase::Temporary,
             hir::Expr::StructInit { .. } => AddrBase::TemporaryImmut,
+            hir::Expr::StructInitPoly { .. } => AddrBase::TemporaryImmut,
             hir::Expr::ArrayInit { .. } => AddrBase::TemporaryImmut,
             hir::Expr::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::Expr::Address { .. } => AddrBase::Temporary,

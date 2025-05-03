@@ -21,7 +21,7 @@ pub fn type_layout<'hir>(
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
         hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
         hir::Type::String(string_ty) => Ok(string_layout(ctx, string_ty)),
-        hir::Type::PolyProc(_, _) => unreachable!(),
+        hir::Type::PolyProc(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
         hir::Type::PolyEnum(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
         hir::Type::PolyStruct(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
         hir::Type::Enum(id, poly_types) => {

@@ -107,12 +107,20 @@ fn codegen_expr<'c>(
         hir::Expr::Variant { enum_id, variant_id, input } => {
             codegen_variant(cg, expect, enum_id, variant_id, input)
         }
-        hir::Expr::CallDirect { proc_id, input } => codegen_call_direct(cg, expect, proc_id, input),
+        hir::Expr::CallDirect { proc_id, input } => {
+            codegen_call_direct(cg, expect, proc_id, &[], input)
+        }
+        hir::Expr::CallDirectPoly { proc_id, input } => {
+            codegen_call_direct(cg, expect, proc_id, input.0, input.1)
+        }
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
         }
         hir::Expr::StructInit { struct_id, input } => {
-            codegen_struct_init(cg, expect, struct_id, input)
+            codegen_struct_init(cg, expect, struct_id, &[], input)
+        }
+        hir::Expr::StructInitPoly { struct_id, input } => {
+            codegen_struct_init(cg, expect, struct_id, input.0, input.1)
         }
         hir::Expr::ArrayInit { array } => codegen_array_init(cg, expect, array),
         hir::Expr::ArrayRepeat { array } => codegen_array_repeat(cg, expect, array),
@@ -152,7 +160,7 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Float { val, float_ty } => llvm::const_float(cg.float_type(float_ty), val),
         hir::ConstValue::Char { val, .. } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
-        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_ptr().as_val(),
+        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_val(),
         hir::ConstValue::Variant { enum_id, variant_id } => {
             codegen_const_variant(cg, enum_id, variant_id)
         }
@@ -532,7 +540,8 @@ fn codegen_index<'c>(
         let value = hir::ConstValue::String { val: message, string_ty: hir::StringType::String };
         let message = hir::Expr::Const { value };
 
-        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, &[&message, &loc]);
+        let input = &[&message, &loc];
+        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, &[], input);
         cg.build.position_at_end(exit_bb);
     }
 
@@ -728,6 +737,7 @@ pub fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     proc_id: hir::ProcID,
+    poly_types: &'c [hir::Type<'c>],
     input: &[&hir::Expr<'c>],
 ) -> Option<llvm::Value> {
     let data = cg.hir.proc_data(proc_id);
@@ -777,7 +787,17 @@ pub fn codegen_call_direct<'c>(
         cg.cache.values.push(value);
     }
 
-    let (fn_val, fn_ty) = cg.procs[proc_id.index()];
+    let (fn_val, fn_ty) = if poly_types.is_empty() {
+        cg.procs[proc_id.index()]
+    } else if let Some(fn_res) = cg.poly_procs.get(&(proc_id, poly_types)) {
+        *fn_res
+    } else {
+        let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
+        cg.poly_procs.insert((proc_id, poly_types), fn_res);
+        cg.poly_proc_queue.push((proc_id, poly_types));
+        fn_res
+    };
+
     let input_values = cg.cache.values.view(offset.clone());
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val");
     cg.cache.values.pop_view(offset);
@@ -900,9 +920,10 @@ fn codegen_struct_init<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     struct_id: hir::StructID,
+    poly_types: &'c [hir::Type<'c>],
     input: &[hir::FieldInit<'c>],
 ) -> Option<llvm::Value> {
-    let struct_ty = cg.struct_type(struct_id);
+    let struct_ty = llvm::TypeStruct::from_ty(cg.ty(hir::Type::Struct(struct_id, poly_types))); //@hack with making a struct_ty
     let struct_ptr = match expect {
         Expect::Value(_) | Expect::Pointer => cg.entry_alloca(struct_ty.as_ty(), "struct_init"),
         Expect::Store(ptr_val) => ptr_val,

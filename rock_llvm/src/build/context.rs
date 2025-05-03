@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-
 use crate::llvm;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;
 use rock_core::support::TempBuffer;
+use std::collections::HashMap;
 
 pub struct Codegen<'c, 's, 'sref> {
-    pub proc: ProcCodegen,
+    pub proc: ProcCodegen<'c>,
     pub context: llvm::IRContext,
     pub target: llvm::IRTarget,
     pub module: llvm::IRModule,
@@ -22,14 +21,17 @@ pub struct Codegen<'c, 's, 'sref> {
     pub session: &'sref mut Session<'s>,
     pub string_buf: String,
     pub cache: CodegenCache,
+    pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
+    pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
 }
 
-pub struct ProcCodegen {
+pub struct ProcCodegen<'c> {
     pub proc_id: hir::ProcID,
     pub fn_val: llvm::ValueFn,
     pub param_ptrs: Vec<llvm::ValuePtr>,
     pub variable_ptrs: Vec<llvm::ValuePtr>,
+    pub poly_types: &'c [hir::Type<'c>],
     tail_values: Vec<Option<TailValue>>,
     block_stack: Vec<BlockInfo>,
     next_loop_info: Option<LoopInfo>,
@@ -75,6 +77,7 @@ pub struct CodegenCache {
     pub sret: llvm::Attribute,
     pub noreturn: llvm::Attribute,
     pub inlinehint: llvm::Attribute,
+    pub types: TempBuffer<llvm::Type>,
     pub values: TempBuffer<llvm::Value>,
     pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
 }
@@ -107,7 +110,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             session,
             string_buf: String::with_capacity(256),
             cache,
+            poly_procs: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
+            poly_proc_queue: Vec::with_capacity(128),
         }
     }
 
@@ -131,7 +136,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 hir::StringType::CString => self.cache.ptr_type,
                 hir::StringType::Untyped => unreachable!(),
             },
-            hir::Type::PolyProc(_, _) => unimplemented!("codegen poly_proc type"),
+            hir::Type::PolyProc(_, idx) => self.ty(self.proc.poly_types[idx]),
             hir::Type::PolyEnum(_, _) => unimplemented!("codegen poly_enum type"),
             hir::Type::PolyStruct(_, idx) => self.ty(poly_types[idx]),
             hir::Type::Enum(enum_id, poly_types) => {
@@ -144,6 +149,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 if poly_types.is_empty() {
                     self.struct_type(struct_id).as_ty()
                 } else {
+                    //@non concrete type becomes a key when in proc poly context, need to substitute
                     let key = (struct_id, poly_types);
                     if let Some(t) = self.poly_structs.get(&key) {
                         t.as_ty()
@@ -157,11 +163,14 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                         let opaque = self.context.struct_named_create(&self.string_buf);
                         self.poly_structs.insert(key, opaque);
 
-                        let mut field_types = Vec::with_capacity(64); //@cache
+                        let offset = self.cache.types.start();
                         for field in data.fields {
-                            field_types.push(self.ty_impl(field.ty, poly_types));
+                            let ty = self.ty_impl(field.ty, poly_types);
+                            self.cache.types.push(ty);
                         }
+                        let field_types = self.cache.types.view(offset.clone());
                         self.context.struct_named_set_body(opaque, &field_types, false);
+                        self.cache.types.pop_view(offset);
 
                         opaque.as_ty()
                     }
@@ -296,24 +305,31 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     }
 }
 
-impl ProcCodegen {
-    pub fn new() -> ProcCodegen {
+impl<'c> ProcCodegen<'c> {
+    pub fn new() -> ProcCodegen<'c> {
         ProcCodegen {
             proc_id: hir::ProcID::dummy(),
             fn_val: llvm::ValueFn::null(),
             param_ptrs: Vec::with_capacity(16),
             variable_ptrs: Vec::with_capacity(128),
+            poly_types: &[],
             tail_values: Vec::with_capacity(32),
             block_stack: Vec::with_capacity(16),
             next_loop_info: None,
         }
     }
 
-    pub fn reset(&mut self, proc_id: hir::ProcID, fn_val: llvm::ValueFn) {
+    pub fn reset(
+        &mut self,
+        proc_id: hir::ProcID,
+        fn_val: llvm::ValueFn,
+        poly_types: &'c [hir::Type<'c>],
+    ) {
         self.proc_id = proc_id;
         self.fn_val = fn_val;
         self.param_ptrs.clear();
         self.variable_ptrs.clear();
+        self.poly_types = poly_types;
         self.tail_values.clear();
         self.block_stack.clear();
         self.next_loop_info = None;
@@ -392,6 +408,7 @@ impl CodegenCache {
             sret: context.attr_create("sret"),
             noreturn: context.attr_create("noreturn"),
             inlinehint: context.attr_create("inlinehint"),
+            types: TempBuffer::new(64),
             values: TempBuffer::new(128),
             cases: TempBuffer::new(128),
         }

@@ -161,6 +161,7 @@ pub struct StructLayout<'hir> {
     pub field_offset: &'hir [u64],
 }
 
+pub type ProcKey<'hir> = (ProcID, &'hir [Type<'hir>]);
 pub type EnumKey<'hir> = (EnumID, &'hir [Type<'hir>]);
 pub type StructKey<'hir> = (StructID, &'hir [Type<'hir>]);
 pub type VariantKey<'hir> = (EnumID, VariantID, &'hir [Type<'hir>]);
@@ -280,8 +281,10 @@ pub enum Expr<'hir> {
     GlobalVar    { global_id: GlobalID },
     Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
+    CallDirectPoly { proc_id: ProcID, input: &'hir (&'hir [Type<'hir>], &'hir [&'hir Expr<'hir>]) },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
+    StructInitPoly { struct_id: StructID, input: &'hir (&'hir [Type<'hir>], &'hir [FieldInit<'hir>]) },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },

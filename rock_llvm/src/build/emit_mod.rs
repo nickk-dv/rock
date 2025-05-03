@@ -17,8 +17,8 @@ pub fn codegen_module(
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_variant_types(&mut cg);
-    codegen_globals(&mut cg);
     codegen_function_values(&mut cg);
+    codegen_globals(&mut cg);
     codegen_function_bodies(&mut cg);
     (cg.target, cg.module)
 }
@@ -150,8 +150,8 @@ fn codegen_variant_types(cg: &mut Codegen) {
 }
 
 fn codegen_globals(cg: &mut Codegen) {
-    for idx in 0..cg.hir.globals.len() {
-        let data = cg.hir.global_data(hir::GlobalID::new(idx));
+    for global_id in (0..cg.hir.globals.len()).map(hir::GlobalID::new) {
+        let data = cg.hir.global_data(global_id);
         let init = data.init;
 
         let module = cg.session.module.get(data.origin_id);
@@ -178,146 +178,179 @@ fn codegen_globals(cg: &mut Codegen) {
 }
 
 fn codegen_function_values(cg: &mut Codegen) {
-    let mut param_types = Vec::with_capacity(64);
-
     for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
         let data = cg.hir.proc_data(proc_id);
-        param_types.clear();
-        let is_external = data.flag_set.contains(hir::ProcFlag::External);
-        let is_variadic = data.flag_set.contains(hir::ProcFlag::CVariadic);
-        let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
-        let mut by_pointer_return = false;
-
-        let return_ty = match data.return_ty {
-            hir::Type::Void | hir::Type::Never => cg.void_type(),
-            _ => {
-                if is_external {
-                    let abi = win_x64_parameter_type(cg, data.return_ty);
-                    if abi.by_pointer {
-                        by_pointer_return = true;
-                        param_types.push(cg.ptr_type());
-                        cg.void_type()
-                    } else {
-                        abi.pass_ty
-                    }
-                } else {
-                    cg.ty(data.return_ty)
-                }
-            }
-        };
-
-        let data = cg.hir.proc_data(proc_id);
-        for param in data.params {
-            let ty = if is_external {
-                win_x64_parameter_type(cg, param.ty).pass_ty
-            } else {
-                cg.ty(param.ty)
-            };
-            param_types.push(ty);
-        }
-
-        let data = cg.hir.proc_data(proc_id);
-        let name = if is_external || is_entry {
-            cg.session.intern_name.get(data.name.id)
+        if data.poly_params.is_none() {
+            let fn_res = codegen_function_value(cg, proc_id, &[]);
+            cg.procs.push(fn_res);
         } else {
-            let module_origin = cg.session.module.get(data.origin_id);
-            let module_name = cg.session.intern_name.get(module_origin.name());
-            let package_origin = cg.session.graph.package(module_origin.origin());
-            let package_name = cg.session.intern_name.get(package_origin.name());
-            let proc_name = cg.session.intern_name.get(data.name.id);
-
-            cg.string_buf.clear();
-            cg.string_buf.push_str(package_name);
-            cg.string_buf.push(':');
-            cg.string_buf.push_str(module_name);
-            cg.string_buf.push(':');
-            cg.string_buf.push_str(proc_name);
-            cg.string_buf.as_str()
-        };
-
-        let linkage = if is_external || is_entry {
-            llvm::Linkage::LLVMExternalLinkage
-        } else {
-            llvm::Linkage::LLVMInternalLinkage
-        };
-
-        let fn_ty = llvm::function_type(return_ty, &param_types, is_variadic);
-        let fn_val = cg.module.add_function(name, fn_ty, linkage);
-
-        if is_external || is_entry {
-            fn_val.set_call_conv(llvm::CallConv::LLVMCCallConv);
-        } else {
-            fn_val.set_call_conv(llvm::CallConv::LLVMFastCallConv);
+            cg.procs.push((llvm::ValueFn::null(), llvm::TypeFn::null()));
         }
-        if data.flag_set.contains(hir::ProcFlag::Inline) {
-            fn_val.set_attr(cg.cache.inlinehint);
-        }
-        if data.return_ty.is_never() {
-            fn_val.set_attr(cg.cache.noreturn);
-        }
-        if by_pointer_return {
-            fn_val.set_param_attr(cg.cache.sret, 1);
-        }
-
-        cg.procs.push((fn_val, fn_ty));
     }
 }
 
 fn codegen_function_bodies(cg: &mut Codegen) {
-    for proc_idx in 0..cg.hir.procs.len() {
-        let fn_val = cg.procs[proc_idx].0;
-        let proc_id = hir::ProcID::new(proc_idx);
+    for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
         let data = cg.hir.proc_data(proc_id);
-        cg.proc.reset(proc_id, fn_val);
-
-        if data.flag_set.contains(hir::ProcFlag::External) {
-            continue;
+        if data.poly_params.is_none() {
+            codegen_function_body(cg, proc_id, &[]);
         }
+    }
+    while let Some((proc_id, poly_types)) = cg.poly_proc_queue.pop() {
+        codegen_function_body(cg, proc_id, poly_types);
+    }
+}
 
-        let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
-        cg.build.position_at_end(entry_bb);
+pub fn codegen_function_value<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    proc_id: hir::ProcID,
+    poly_types: &'c [hir::Type<'c>],
+) -> (llvm::ValueFn, llvm::TypeFn) {
+    //@hack setting these poly_types to be used from PolyProc types in proc definition
+    let curr_poly = cg.proc.poly_types;
+    cg.proc.poly_types = poly_types;
 
-        for (param_idx, param) in data.params.iter().enumerate() {
-            let name = cg.session.intern_name.get(param.name.id);
-            cg.string_buf.clear();
-            cg.string_buf.push_str(name);
+    let data = cg.hir.proc_data(proc_id);
+    let is_external = data.flag_set.contains(hir::ProcFlag::External);
+    let is_variadic = data.flag_set.contains(hir::ProcFlag::CVariadic);
+    let is_entry = data.flag_set.contains(hir::ProcFlag::EntryPoint);
+    let mut by_pointer_ret = false;
 
-            let param_ty = cg.ty(param.ty);
-            let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
-            cg.proc.param_ptrs.push(param_ptr);
-
-            let param_val = fn_val.param_val(param_idx as u32);
-            cg.build.store(param_val, param_ptr);
-        }
-
-        let data = cg.hir.proc_data(proc_id);
-        for var in data.variables {
-            let name = cg.session.intern_name.get(var.name.id);
-            cg.string_buf.clear();
-            cg.string_buf.push_str(name);
-
-            let var_ty = cg.ty(var.ty);
-            let var_ptr = cg.build.alloca(var_ty, &cg.string_buf);
-            cg.proc.variable_ptrs.push(var_ptr);
-        }
-
-        let data = cg.hir.proc_data(proc_id);
-        if let Some(block) = data.block {
-            if data.flag_set.contains(hir::ProcFlag::EntryPoint) {
-                emit_expr::codegen_call_direct(cg, Expect::Value(None), cg.hir.core.start, &[]);
-            }
-
-            let value_id = cg.proc.add_tail_value();
-            emit_stmt::codegen_block(cg, Expect::Value(Some(value_id)), block);
-
-            let value = if let Some(tail) = cg.proc.tail_value(value_id) {
-                Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
+    let offset = cg.cache.types.start();
+    let return_ty = match data.return_ty {
+        hir::Type::Void | hir::Type::Never => cg.void_type(),
+        _ => {
+            if is_external {
+                let abi = win_x64_parameter_type(cg, data.return_ty);
+                if abi.by_pointer {
+                    by_pointer_ret = true;
+                    cg.cache.types.push(cg.ptr_type());
+                    cg.void_type()
+                } else {
+                    abi.pass_ty
+                }
             } else {
-                None
-            };
-            if !cg.insert_bb_terminated() {
-                cg.build.ret(value);
+                cg.ty(data.return_ty)
             }
+        }
+    };
+
+    let data = cg.hir.proc_data(proc_id);
+    for param in data.params {
+        let ty = if is_external {
+            win_x64_parameter_type(cg, param.ty).pass_ty
+        } else {
+            cg.ty(param.ty)
+        };
+        cg.cache.types.push(ty);
+    }
+
+    let data = cg.hir.proc_data(proc_id);
+    let name = if is_external || is_entry {
+        cg.session.intern_name.get(data.name.id)
+    } else {
+        let module_origin = cg.session.module.get(data.origin_id);
+        let module_name = cg.session.intern_name.get(module_origin.name());
+        let package_origin = cg.session.graph.package(module_origin.origin());
+        let package_name = cg.session.intern_name.get(package_origin.name());
+        let proc_name = cg.session.intern_name.get(data.name.id);
+
+        cg.string_buf.clear();
+        cg.string_buf.push_str(package_name);
+        cg.string_buf.push(':');
+        cg.string_buf.push_str(module_name);
+        cg.string_buf.push(':');
+        cg.string_buf.push_str(proc_name);
+        cg.string_buf.as_str()
+    };
+
+    let param_types = cg.cache.types.view(offset.clone());
+    let fn_ty = llvm::function_type(return_ty, param_types, is_variadic);
+    cg.cache.types.pop_view(offset);
+
+    let (linkage, call_conv) = if is_external || is_entry {
+        (llvm::Linkage::LLVMExternalLinkage, llvm::CallConv::LLVMCCallConv)
+    } else {
+        (llvm::Linkage::LLVMInternalLinkage, llvm::CallConv::LLVMFastCallConv)
+    };
+    let fn_val = cg.module.add_function(name, fn_ty, linkage);
+    fn_val.set_call_conv(call_conv);
+
+    if by_pointer_ret {
+        fn_val.set_param_attr(cg.cache.sret, 1);
+    }
+    //@non polymorphed type! might be `never` through poly
+    if data.return_ty.is_never() {
+        fn_val.set_attr(cg.cache.noreturn);
+    }
+    if data.flag_set.contains(hir::ProcFlag::Inline) {
+        fn_val.set_attr(cg.cache.inlinehint);
+    }
+
+    cg.proc.poly_types = curr_poly;
+    (fn_val, fn_ty)
+}
+
+fn codegen_function_body<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    proc_id: hir::ProcID,
+    poly_types: &'c [hir::Type<'c>],
+) {
+    let data = cg.hir.proc_data(proc_id);
+    if data.flag_set.contains(hir::ProcFlag::External) {
+        return;
+    }
+
+    let fn_val = if poly_types.is_empty() {
+        cg.procs[proc_id.index()].0
+    } else {
+        cg.poly_procs.get(&(proc_id, poly_types)).unwrap().0
+    };
+    cg.proc.reset(proc_id, fn_val, poly_types);
+
+    let entry_bb = cg.context.append_bb(fn_val, "entry_bb");
+    cg.build.position_at_end(entry_bb);
+
+    for (param_idx, param) in data.params.iter().enumerate() {
+        let name = cg.session.intern_name.get(param.name.id);
+        cg.string_buf.clear();
+        cg.string_buf.push_str(name);
+
+        let param_ty = cg.ty(param.ty);
+        let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
+        cg.proc.param_ptrs.push(param_ptr);
+
+        let param_val = fn_val.param_val(param_idx as u32);
+        cg.build.store(param_val, param_ptr);
+    }
+
+    let data = cg.hir.proc_data(proc_id);
+    for var in data.variables {
+        let name = cg.session.intern_name.get(var.name.id);
+        cg.string_buf.clear();
+        cg.string_buf.push_str(name);
+
+        let var_ty = cg.ty(var.ty);
+        let var_ptr = cg.build.alloca(var_ty, &cg.string_buf);
+        cg.proc.variable_ptrs.push(var_ptr);
+    }
+
+    let data = cg.hir.proc_data(proc_id);
+    if let Some(block) = data.block {
+        if data.flag_set.contains(hir::ProcFlag::EntryPoint) {
+            emit_expr::codegen_call_direct(cg, Expect::Value(None), cg.hir.core.start, &[], &[]);
+        }
+
+        let value_id = cg.proc.add_tail_value();
+        emit_stmt::codegen_block(cg, Expect::Value(Some(value_id)), block);
+
+        let value = if let Some(tail) = cg.proc.tail_value(value_id) {
+            Some(cg.build.load(tail.value_ty, tail.value_ptr, "tail_val"))
+        } else {
+            None
+        };
+        if !cg.insert_bb_terminated() {
+            cg.build.ret(value);
         }
     }
 }
