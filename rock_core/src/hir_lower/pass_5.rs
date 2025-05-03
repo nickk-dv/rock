@@ -1658,7 +1658,7 @@ fn typecheck_variant<'hir, 'ast>(
     check_variant_input_opt(ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range)
 }
 
-fn type_has_poly_param(ty: hir::Type) -> bool {
+pub fn type_has_poly_param(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error
         | hir::Type::Unknown

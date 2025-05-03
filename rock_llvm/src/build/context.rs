@@ -20,7 +20,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
     pub string_buf: String,
-    pub cache: CodegenCache,
+    pub cache: CodegenCache<'c>,
     pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
@@ -61,7 +61,7 @@ pub struct TailValue {
     pub value_ty: llvm::Type,
 }
 
-pub struct CodegenCache {
+pub struct CodegenCache<'c> {
     int_1: llvm::Type,
     int_8: llvm::Type,
     int_16: llvm::Type,
@@ -80,6 +80,7 @@ pub struct CodegenCache {
     pub types: TempBuffer<llvm::Type>,
     pub values: TempBuffer<llvm::Value>,
     pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
+    pub hir_types: TempBuffer<hir::Type<'c>>,
 }
 
 impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
@@ -149,8 +150,32 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 if poly_types.is_empty() {
                     self.struct_type(struct_id).as_ty()
                 } else {
-                    //@non concrete type becomes a key when in proc poly context, need to substitute
-                    let key = (struct_id, poly_types);
+                    use rock_core::hir_lower::pass_5;
+
+                    //when in polymorphic procedure context substitute poly params
+                    let key = if self.proc.poly_types.is_empty() {
+                        (struct_id, poly_types)
+                    } else {
+                        let offset = self.cache.hir_types.start();
+                        let mut any_poly = false;
+                        for ty in poly_types {
+                            if pass_5::type_has_poly_param(*ty) {
+                                let ty = self.type_substitute_poly(*ty);
+                                self.cache.hir_types.push(ty);
+                                any_poly = true;
+                            } else {
+                                self.cache.hir_types.push(*ty);
+                            }
+                        }
+                        let poly_types = if any_poly {
+                            self.cache.hir_types.take(offset, &mut self.hir.arena)
+                        } else {
+                            self.cache.hir_types.pop_view(offset);
+                            poly_types
+                        };
+                        (struct_id, poly_types)
+                    };
+
                     if let Some(t) = self.poly_structs.get(&key) {
                         t.as_ty()
                     } else {
@@ -182,6 +207,52 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
             hir::Type::ArrayStatic(array) => {
                 llvm::array_type(self.ty(array.elem_ty), self.array_len(array.len))
+            }
+        }
+    }
+
+    fn type_substitute_poly(&mut self, ty: hir::Type<'c>) -> hir::Type<'c> {
+        match ty {
+            hir::Type::Error
+            | hir::Type::Unknown
+            | hir::Type::Char
+            | hir::Type::Void
+            | hir::Type::Never
+            | hir::Type::Rawptr
+            | hir::Type::UntypedChar
+            | hir::Type::Int(_)
+            | hir::Type::Float(_)
+            | hir::Type::Bool(_)
+            | hir::Type::String(_) => ty,
+            hir::Type::PolyProc(_, idx) => self.proc.poly_types[idx],
+            hir::Type::PolyEnum(_, _) => unreachable!(),
+            hir::Type::PolyStruct(_, _) => unreachable!(),
+            hir::Type::Enum(enum_id, poly_types) => {
+                let offset = self.cache.hir_types.start();
+                for ty in poly_types {
+                    let ty = self.type_substitute_poly(*ty);
+                    self.cache.hir_types.push(ty);
+                }
+                let poly_types = self.cache.hir_types.take(offset, &mut self.hir.arena);
+                hir::Type::Enum(enum_id, poly_types)
+            }
+            hir::Type::Struct(struct_id, poly_types) => {
+                let offset = self.cache.hir_types.start();
+                for ty in poly_types {
+                    let ty = self.type_substitute_poly(*ty);
+                    self.cache.hir_types.push(ty);
+                }
+                let poly_types = self.cache.hir_types.take(offset, &mut self.hir.arena);
+                hir::Type::Struct(struct_id, poly_types)
+            }
+            hir::Type::Reference(_, _) => ty,
+            hir::Type::MultiReference(_, _) => ty,
+            hir::Type::Procedure(_) => ty,
+            hir::Type::ArraySlice(_) => ty,
+            hir::Type::ArrayStatic(array) => {
+                let elem_ty = self.type_substitute_poly(array.elem_ty);
+                let array = hir::ArrayStatic { elem_ty, len: array.len };
+                hir::Type::ArrayStatic(self.hir.arena.alloc(array))
             }
         }
     }
@@ -383,8 +454,8 @@ impl<'c> ProcCodegen<'c> {
     }
 }
 
-impl CodegenCache {
-    fn new(context: &mut llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache {
+impl<'c> CodegenCache<'c> {
+    fn new(context: &mut llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache<'c> {
         let ptr_type = context.ptr_type();
         let ptr_sized_int = target.ptr_sized_int(context);
         let slice_type = context.struct_named_create("rock.slice");
@@ -411,6 +482,7 @@ impl CodegenCache {
             types: TempBuffer::new(64),
             values: TempBuffer::new(128),
             cases: TempBuffer::new(128),
+            hir_types: TempBuffer::new(32),
         }
     }
 }
