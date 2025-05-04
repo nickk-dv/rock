@@ -718,11 +718,25 @@ fn add_expr_const_dependencies<'ast>(
             ast::Builtin::Error(_) => Err(parent_id),
             ast::Builtin::SizeOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
-                add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+                if pass_5::type_has_poly_param_layout_dep(ty) {
+                    let ty = pass_5::type_format(ctx, ty);
+                    let src = SourceRange::new(origin_id, expr.range);
+                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "size_of");
+                    Err(parent_id)
+                } else {
+                    add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+                }
             }
             ast::Builtin::AlignOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
-                add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+                if pass_5::type_has_poly_param_layout_dep(ty) {
+                    let ty = pass_5::type_format(ctx, ty);
+                    let src = SourceRange::new(origin_id, expr.range);
+                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "align_of");
+                    Err(parent_id)
+                } else {
+                    add_type_size_const_dependencies(ctx, tree, parent_id, ty)
+                }
             }
             ast::Builtin::Transmute(_, _) => {
                 error_cannot_use_in_constants(

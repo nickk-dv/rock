@@ -275,7 +275,7 @@ pub enum Expr<'hir> {
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
     Cast         { target: &'hir Expr<'hir>, into: &'hir Type<'hir>, kind: CastKind },
-    Transmute    { target: &'hir Expr<'hir>, into: &'hir Type<'hir> },
+    Builtin      { builtin: &'hir Builtin<'hir> },
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
@@ -448,6 +448,13 @@ pub enum CastKind {
     Enum_Trunc_to_Int,
     EnumS_Extend_to_Int,
     EnumU_Extend_to_Int,
+}
+
+#[derive(Copy, Clone)]
+pub enum Builtin<'hir> {
+    SizeOf(Type<'hir>),
+    AlignOf(Type<'hir>),
+    Transmute(&'hir Expr<'hir>, Type<'hir>),
 }
 
 #[derive(Copy, Clone)]

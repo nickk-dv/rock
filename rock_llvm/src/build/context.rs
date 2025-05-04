@@ -152,15 +152,17 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 } else {
                     use rock_core::hir_lower::pass_5;
 
+                    //@hack: always substitute
                     //when in polymorphic procedure context substitute poly params
-                    let key = if self.proc.poly_types.is_empty() {
-                        (struct_id, poly_types)
-                    } else {
+                    //let key = if self.proc.poly_types.is_empty() {
+                    //    (struct_id, poly_types)
+                    //} else {
+                    let key = {
                         let offset = self.cache.hir_types.start();
                         let mut any_poly = false;
                         for ty in poly_types {
                             if pass_5::type_has_poly_param(*ty) {
-                                let ty = self.type_substitute_poly(*ty);
+                                let ty = self.type_substitute_poly(*ty, poly_types);
                                 self.cache.hir_types.push(ty);
                                 any_poly = true;
                             } else {
@@ -175,6 +177,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                         };
                         (struct_id, poly_types)
                     };
+
+                    // check that struct key is a concrete type
+                    debug_assert!(key.1.iter().all(|ty| !pass_5::type_has_poly_param(*ty)));
 
                     if let Some(t) = self.poly_structs.get(&key) {
                         t.as_ty()
@@ -211,7 +216,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         }
     }
 
-    fn type_substitute_poly(&mut self, ty: hir::Type<'c>) -> hir::Type<'c> {
+    fn type_substitute_poly(&mut self, ty: hir::Type<'c>, ctx: &[hir::Type<'c>]) -> hir::Type<'c> {
         match ty {
             hir::Type::Error
             | hir::Type::Unknown
@@ -225,12 +230,12 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             | hir::Type::Bool(_)
             | hir::Type::String(_) => ty,
             hir::Type::PolyProc(_, idx) => self.proc.poly_types[idx],
-            hir::Type::PolyEnum(_, _) => unreachable!(),
-            hir::Type::PolyStruct(_, _) => unreachable!(),
+            hir::Type::PolyEnum(_, idx) => ctx[idx],
+            hir::Type::PolyStruct(_, idx) => ctx[idx],
             hir::Type::Enum(enum_id, poly_types) => {
                 let offset = self.cache.hir_types.start();
                 for ty in poly_types {
-                    let ty = self.type_substitute_poly(*ty);
+                    let ty = self.type_substitute_poly(*ty, ctx);
                     self.cache.hir_types.push(ty);
                 }
                 let poly_types = self.cache.hir_types.take(offset, &mut self.hir.arena);
@@ -239,18 +244,19 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::Struct(struct_id, poly_types) => {
                 let offset = self.cache.hir_types.start();
                 for ty in poly_types {
-                    let ty = self.type_substitute_poly(*ty);
+                    let ty = self.type_substitute_poly(*ty, ctx);
                     self.cache.hir_types.push(ty);
                 }
                 let poly_types = self.cache.hir_types.take(offset, &mut self.hir.arena);
                 hir::Type::Struct(struct_id, poly_types)
             }
+            //@still replace these? does it affect codegen?
             hir::Type::Reference(_, _) => ty,
             hir::Type::MultiReference(_, _) => ty,
             hir::Type::Procedure(_) => ty,
             hir::Type::ArraySlice(_) => ty,
             hir::Type::ArrayStatic(array) => {
-                let elem_ty = self.type_substitute_poly(array.elem_ty);
+                let elem_ty = self.type_substitute_poly(array.elem_ty, ctx);
                 let array = hir::ArrayStatic { elem_ty, len: array.len };
                 hir::Type::ArrayStatic(self.hir.arena.alloc(array))
             }

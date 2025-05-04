@@ -922,6 +922,23 @@ pub fn tycheck_builtin_unknown(emit: &mut impl ErrorSink, src: SourceRange, name
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_const_poly_dep(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    ty: &str,
+    builtin: &str,
+) {
+    let msg = format!(
+        "constant @{builtin} type layout of `{ty}` cannot depend on polymorphic parameters"
+    );
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_transumute_poly_dep(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
+    let msg = format!("@transmute type layout of `{ty}` cannot depend on polymorphic parameters");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_transmute_mismatch(
     emit: &mut impl ErrorSink,
     src: SourceRange,
@@ -929,7 +946,7 @@ pub fn tycheck_transmute_mismatch(
     from_ty: &str,
     into_ty: &str,
 ) {
-    let msg = format!("{subject} mismatch in @transmute from `{from_ty}` into `{into_ty}`");
+    let msg = format!("{subject} mismatch in @transmute: `{from_ty}` vs `{into_ty}`");
     emit.error(Error::new(msg, src, None));
 }
 

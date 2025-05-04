@@ -1459,46 +1459,65 @@ fn typecheck_builtin<'hir, 'ast>(
             TypeResult::error()
         }
         ast::Builtin::SizeOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, ty, false);
-            let expr = constant::type_layout(ctx, ty, &[], src)
-                .map(|layout| {
-                    fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
-                        .map(|value| hir::Expr::Const { value })
-                        .unwrap_or(hir::Expr::Error)
-                })
-                .unwrap_or(hir::Expr::Error);
+            let ty = super::pass_3::type_resolve(ctx, ty, false); //@in def?
+            let expr = if type_has_poly_param_layout_dep(ty) {
+                let builtin = hir::Builtin::SizeOf(ty);
+                hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
+            } else {
+                constant::type_layout(ctx, ty, &[], src)
+                    .map(|layout| {
+                        fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
+                            .map(|value| hir::Expr::Const { value })
+                            .unwrap_or(hir::Expr::Error)
+                    })
+                    .unwrap_or(hir::Expr::Error)
+            };
             TypeResult::new(hir::Type::Int(IntType::Usize), expr)
         }
         ast::Builtin::AlignOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, ty, false);
-            let expr = constant::type_layout(ctx, ty, &[], src)
-                .map(|layout| {
-                    fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
-                        .map(|value| hir::Expr::Const { value })
-                        .unwrap_or(hir::Expr::Error)
-                })
-                .unwrap_or(hir::Expr::Error);
+            let ty = super::pass_3::type_resolve(ctx, ty, false); //@in def?
+            let expr = if type_has_poly_param_layout_dep(ty) {
+                let builtin = hir::Builtin::AlignOf(ty);
+                hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
+            } else {
+                constant::type_layout(ctx, ty, &[], src)
+                    .map(|layout| {
+                        fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
+                            .map(|value| hir::Expr::Const { value })
+                            .unwrap_or(hir::Expr::Error)
+                    })
+                    .unwrap_or(hir::Expr::Error)
+            };
             TypeResult::new(hir::Type::Int(IntType::Usize), expr)
         }
         ast::Builtin::Transmute(expr, into) => {
+            let from_src = ctx.src(expr.range);
+            let into_src = ctx.src(into.range);
             let expr_res = typecheck_expr(ctx, Expectation::None, expr);
             let into_ty = super::pass_3::type_resolve(ctx, into, false);
 
-            let from_src = ctx.src(expr.range);
-            let into_src = ctx.src(into.range);
-            let from_layout = constant::type_layout(ctx, expr_res.ty, &[], from_src);
-            let into_layout = constant::type_layout(ctx, into_ty, &[], into_src);
+            if type_has_poly_param_layout_dep(expr_res.ty) {
+                let ty = type_format(ctx, expr_res.ty);
+                err::tycheck_transumute_poly_dep(&mut ctx.emit, from_src, ty.as_str());
+                return TypeResult::error();
+            }
+            if type_has_poly_param_layout_dep(into_ty) {
+                let ty = type_format(ctx, into_ty);
+                err::tycheck_transumute_poly_dep(&mut ctx.emit, into_src, ty.as_str());
+                return TypeResult::error();
+            }
 
-            if let (Ok(from_layout), Ok(into_layout)) = (from_layout, into_layout) {
+            let from_res = constant::type_layout(ctx, expr_res.ty, &[], from_src);
+            let into_res = constant::type_layout(ctx, into_ty, &[], into_src);
+
+            if let (Ok(from_layout), Ok(into_layout)) = (from_res, into_res) {
                 let subject = if from_layout.size != into_layout.size {
                     "size"
                 } else if from_layout.align != into_layout.align {
                     "alignment"
                 } else {
-                    let expr = hir::Expr::Transmute {
-                        target: expr_res.expr,
-                        into: ctx.arena.alloc(into_ty),
-                    };
+                    let builtin = hir::Builtin::Transmute(expr_res.expr, into_ty);
+                    let expr = hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) };
                     return TypeResult::new(into_ty, expr);
                 };
 
@@ -1686,6 +1705,35 @@ pub fn type_has_poly_param(ty: hir::Type) -> bool {
         }
         hir::Type::ArraySlice(slice) => type_has_poly_param(slice.elem_ty),
         hir::Type::ArrayStatic(array) => type_has_poly_param(array.elem_ty),
+    }
+}
+
+//@assuming that enum and struct poly_types always affect their layout
+pub fn type_has_poly_param_layout_dep(ty: hir::Type) -> bool {
+    match ty {
+        hir::Type::Error
+        | hir::Type::Unknown
+        | hir::Type::Char
+        | hir::Type::Void
+        | hir::Type::Never
+        | hir::Type::Rawptr
+        | hir::Type::UntypedChar
+        | hir::Type::Int(_)
+        | hir::Type::Float(_)
+        | hir::Type::Bool(_)
+        | hir::Type::String(_) => false,
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => true,
+        hir::Type::Enum(_, poly_types) => {
+            poly_types.iter().copied().any(|ty| type_has_poly_param_layout_dep(ty))
+        }
+        hir::Type::Struct(_, poly_types) => {
+            poly_types.iter().copied().any(|ty| type_has_poly_param_layout_dep(ty))
+        }
+        hir::Type::Reference(_, _)
+        | hir::Type::MultiReference(_, _)
+        | hir::Type::Procedure(_)
+        | hir::Type::ArraySlice(_) => false,
+        hir::Type::ArrayStatic(array) => type_has_poly_param_layout_dep(array.elem_ty),
     }
 }
 
@@ -3807,7 +3855,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Index { .. } => Some("index access"),
         hir::Expr::Slice { .. } => Some("slice value"),
         hir::Expr::Cast { .. } => Some("cast value"),
-        hir::Expr::Transmute { .. } => Some("transmute value"),
+        hir::Expr::Builtin { .. } => Some("builtin value"),
         hir::Expr::ParamVar { .. } => Some("parameter value"),
         hir::Expr::Variable { .. } => Some("variable value"),
         hir::Expr::GlobalVar { .. } => Some("global value"),
@@ -4466,7 +4514,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::Match { .. } => AddrBase::Temporary,
             hir::Expr::SliceField { .. } => AddrBase::SliceField,
             hir::Expr::Cast { .. } => AddrBase::Temporary,
-            hir::Expr::Transmute { .. } => AddrBase::Temporary,
+            hir::Expr::Builtin { .. } => AddrBase::Temporary,
             hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,
             hir::Expr::CallDirectPoly { .. } => AddrBase::Temporary,
