@@ -1,5 +1,4 @@
-use super::registry::Registry;
-use super::HirCtx;
+use super::context::{HirCtx, Registry};
 use crate::ast;
 use crate::error::{ErrorWarningBuffer, SourceRange};
 use crate::errors as err;
@@ -11,7 +10,7 @@ use crate::text::TextRange;
 use std::collections::HashMap;
 
 pub struct Scope<'hir> {
-    origin_id: ModuleID,
+    pub origin: ModuleID,
     pub global: GlobalScope,
     pub local: LocalScope<'hir>,
     pub poly: PolyScope,
@@ -118,25 +117,12 @@ pub struct InferContext {
 impl<'hir> Scope<'hir> {
     pub(super) fn new(session: &Session) -> Scope<'hir> {
         Scope {
-            origin_id: ModuleID::dummy(),
+            origin: ModuleID::dummy(),
             global: GlobalScope::new(session),
             local: LocalScope::new(),
             poly: PolyScope::None,
             infer: InferScope::new(),
         }
-    }
-
-    #[inline]
-    pub fn origin(&self) -> ModuleID {
-        self.origin_id
-    }
-    #[inline]
-    pub fn set_origin(&mut self, origin_id: ModuleID) {
-        self.origin_id = origin_id;
-    }
-    #[inline]
-    pub fn set_poly(&mut self, scope: PolyScope) {
-        self.poly = scope;
     }
 
     pub fn check_already_defined(
@@ -157,12 +143,12 @@ impl<'hir> Scope<'hir> {
         registry: &Registry,
         emit: &mut ErrorWarningBuffer,
     ) -> Result<(), ()> {
-        let origin = self.global.module(self.origin_id);
+        let origin = self.global.module(self.origin);
         let existing = match origin.symbols.get(&name.id).copied() {
             Some(symbol) => symbol,
             None => return Ok(()),
         };
-        let name_src = SourceRange::new(self.origin_id, name.range);
+        let name_src = SourceRange::new(self.origin, name.range);
         let existing = self.symbol_src(existing, registry);
         let name = session.intern_name.get(name.id);
         err::scope_name_already_defined(emit, name_src, existing, name);
@@ -179,7 +165,7 @@ impl<'hir> Scope<'hir> {
             Some(var_id) => var_id,
             None => return Ok(()),
         };
-        let name_src = SourceRange::new(self.origin_id, name.range);
+        let name_src = SourceRange::new(self.origin, name.range);
         let existing = self.var_src(existing);
         let name = session.intern_name.get(name.id);
         err::scope_name_already_defined(emit, name_src, existing, name);
@@ -189,8 +175,8 @@ impl<'hir> Scope<'hir> {
     fn symbol_src(&self, symbol: Symbol, registry: &Registry<'hir, '_>) -> SourceRange {
         match symbol {
             Symbol::Defined(symbol_id) => symbol_id.src(registry),
-            Symbol::Imported(_, import) => SourceRange::new(self.origin_id, import),
-            Symbol::ImportedModule(_, import) => SourceRange::new(self.origin_id, import),
+            Symbol::Imported(_, import) => SourceRange::new(self.origin, import),
+            Symbol::ImportedModule(_, import) => SourceRange::new(self.origin, import),
         }
     }
 
@@ -199,7 +185,7 @@ impl<'hir> Scope<'hir> {
             LocalVariableID::Param(id) => self.local.param(id).name.range,
             LocalVariableID::Variable(id) => self.local.variable(id).name.range,
         };
-        SourceRange::new(self.origin_id, range)
+        SourceRange::new(self.origin, range)
     }
 }
 
@@ -719,7 +705,7 @@ pub fn check_find_struct_field(
     match field.vis {
         hir::Vis::Public => {}
         hir::Vis::Package => {
-            let origin_package_id = ctx.session.module.get(ctx.scope.origin()).origin();
+            let origin_package_id = ctx.session.module.get(ctx.scope.origin).origin();
             let struct_package_id = ctx.session.module.get(data.origin_id).origin();
 
             if origin_package_id != struct_package_id {
@@ -736,7 +722,7 @@ pub fn check_find_struct_field(
             }
         }
         hir::Vis::Private => {
-            if ctx.scope.origin() != data.origin_id {
+            if ctx.scope.origin != data.origin_id {
                 let name_src = ctx.src(name.range);
                 let defined_src = SourceRange::new(data.origin_id, field.name.range);
                 let field_name = ctx.name(field.name.id);

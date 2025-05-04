@@ -33,7 +33,7 @@ fn check_main_procedure(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     let data = ctx.registry.proc_data_mut(proc_id);
     let mut flag_set = data.flag_set;
     let main_src = data.src();
-    ctx.scope.set_origin(data.origin_id);
+    ctx.scope.origin = data.origin_id;
 
     check_directive::apply_item_flag(
         ctx,

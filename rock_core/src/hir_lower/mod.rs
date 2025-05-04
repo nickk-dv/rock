@@ -1,13 +1,14 @@
 mod check_directive;
+mod check_match;
 mod check_path;
 mod constant;
 mod context;
-mod match_check;
 mod pass_1;
 mod pass_2;
 mod pass_3;
 pub mod pass_5;
 mod pass_6;
+mod scope;
 
 use crate::hir;
 use crate::session::Session;

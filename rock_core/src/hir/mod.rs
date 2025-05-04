@@ -29,7 +29,6 @@ pub struct CoreItems {
     pub slice_exclusive: ProcID,
     pub slice_inclusive: ProcID,
     pub any: Option<StructID>,
-    pub raw_slice: Option<StructID>,
     pub source_location: Option<StructID>,
 }
 

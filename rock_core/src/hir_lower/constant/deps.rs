@@ -676,8 +676,7 @@ fn add_expr_const_dependencies<'ast>(
     origin_id: ModuleID,
     expr: &ast::Expr<'ast>,
 ) -> Result<(), TreeNodeID> {
-    //@check_path uses set origin to report errors
-    ctx.scope.set_origin(origin_id);
+    ctx.scope.origin = origin_id;
 
     match expr.kind {
         ast::ExprKind::Lit { .. } => Ok(()),
@@ -1018,11 +1017,8 @@ fn resolve_and_update_const_eval<'hir>(
 
     match eval {
         hir::ConstEval::Unresolved(expr) => {
-            //@reset any possible blocks / locals
-            // currently blocks or stmts are not supported in constants
-            // so this is in theory not required
-            ctx.scope.set_origin(origin_id);
-            ctx.scope.local.reset();
+            ctx.scope.origin = origin_id;
+            ctx.scope.local.reset(); //@might not be required, doing it for scope safety
 
             let (value_res, value_ty) = resolve_const_expr(ctx, expect, expr);
             let (eval, _) = ctx.registry.const_eval_mut(eval_id);
@@ -1057,7 +1053,7 @@ pub fn resolve_const_expr<'hir, 'ast>(
             _ => {
                 error_cannot_use_in_constants(
                     &mut ctx.emit,
-                    ctx.scope.origin(),
+                    ctx.scope.origin,
                     expr.0.range,
                     "non constant",
                 ); //@temp message for this case

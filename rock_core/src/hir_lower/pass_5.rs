@@ -1,11 +1,11 @@
 use super::check_directive;
+use super::check_match;
 use super::check_path::{self, ValueID};
 use super::constant;
 use super::constant::fold;
 use super::constant::layout;
-use super::context::scope::{self, BlockStatus, Diverges, InferContext};
 use super::context::HirCtx;
-use super::match_check;
+use super::scope::{self, BlockStatus, Diverges, InferContext};
 use crate::ast;
 use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
@@ -28,8 +28,8 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
 
-        ctx.scope.set_origin(data.origin_id);
-        ctx.scope.set_poly(scope::PolyScope::Proc(proc_id));
+        ctx.scope.origin = data.origin_id;
+        ctx.scope.poly = scope::PolyScope::Proc(proc_id);
         ctx.scope.local.reset();
         ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
 
@@ -601,8 +601,8 @@ fn typecheck_match<'hir, 'ast>(
     let error_count = ctx.emit.error_count();
 
     let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
-    let kind = match_check::match_kind(ctx, match_.on_expr.range, on_res.ty);
-    let (pat_expect, ref_mut) = match_check::match_pat_expect(ctx, match_.on_expr.range, kind);
+    let kind = check_match::match_kind(ctx, match_.on_expr.range, on_res.ty);
+    let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, match_.on_expr.range, kind);
 
     let offset = ctx.cache.match_arms.start();
     for arm in match_.arms {
@@ -645,7 +645,7 @@ fn typecheck_match<'hir, 'ast>(
 
     let mut match_kw = TextRange::empty_at(match_range.start());
     match_kw.extend_by(5.into());
-    match_check::match_cov(ctx, kind, arms, match_.arms, match_kw);
+    check_match::match_cov(ctx, kind, arms, match_.arms, match_kw);
 
     let match_ = hir::Match { on_expr: on_res.expr, arms };
     let match_ = ctx.arena.alloc(match_);
@@ -2054,7 +2054,7 @@ fn typecheck_struct_init<'hir, 'ast>(
                 _ => {
                     constant::error_cannot_use_in_constants(
                         &mut ctx.emit,
-                        ctx.scope.origin(),
+                        ctx.scope.origin,
                         struct_init.input[field.field_id.index()].expr.range,
                         "non constant",
                     );
@@ -2147,7 +2147,7 @@ fn typecheck_array_init<'hir, 'ast>(
                     _ => {
                         constant::error_cannot_use_in_constants(
                             &mut ctx.emit,
-                            ctx.scope.origin(),
+                            ctx.scope.origin,
                             input[idx].range,
                             "non constant",
                         );
@@ -3711,8 +3711,8 @@ fn typecheck_for<'hir, 'ast>(
         }
         ast::ForHeader::Pat(header) => {
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
-            let kind = match_check::match_kind(ctx, header.expr.range, on_res.ty);
-            let (pat_expect, ref_mut) = match_check::match_pat_expect(ctx, header.expr.range, kind);
+            let kind = check_match::match_kind(ctx, header.expr.range, on_res.ty);
+            let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, header.expr.range, kind);
 
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
@@ -4090,7 +4090,7 @@ fn check_call_direct<'hir, 'ast>(
             }
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
-                    let values = hir::source_location(ctx.session, ctx.scope.origin(), start);
+                    let values = hir::source_location(ctx.session, ctx.scope.origin, start);
                     let values = ctx.arena.alloc_slice(&values);
                     let struct_ = hir::ConstStruct { struct_id, values };
                     let struct_ = ctx.arena.alloc(struct_);
@@ -4201,7 +4201,7 @@ fn check_call_indirect<'hir, 'ast>(
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_location {
                     let values =
-                        hir::source_location(ctx.session, ctx.scope.origin(), target_range.start());
+                        hir::source_location(ctx.session, ctx.scope.origin, target_range.start());
                     let values = ctx.arena.alloc_slice(&values);
                     let struct_ = hir::ConstStruct { struct_id, values };
                     let struct_ = ctx.arena.alloc(struct_);

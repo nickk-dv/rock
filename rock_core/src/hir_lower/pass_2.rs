@@ -1,22 +1,21 @@
 use super::check_path;
-use super::context::scope::{Symbol, SymbolOrModule};
 use super::context::HirCtx;
+use super::scope::{Symbol, SymbolOrModule};
 use crate::ast;
 use crate::errors as err;
 use crate::session::{ModuleID, ModuleOrDirectory};
 
 pub fn resolve_imports(ctx: &mut HirCtx) {
     for import_id in ctx.registry.import_ids() {
-        let import = ctx.registry.import_item(import_id);
         let data = ctx.registry.import_data(import_id);
-        ctx.scope.set_origin(data.origin_id);
-
+        let import = ctx.registry.import_item(import_id);
+        ctx.scope.origin = data.origin_id;
         resolve_import(ctx, import);
     }
 }
 
 fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
-    let source_package_id = ctx.session.module.get(ctx.scope.origin()).origin();
+    let source_package_id = ctx.session.module.get(ctx.scope.origin).origin();
     let mut source_package = ctx.session.graph.package(source_package_id);
 
     if let Some(package_name) = import.package {
@@ -76,7 +75,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
         }
     };
 
-    if target_id == ctx.scope.origin() {
+    if target_id == ctx.scope.origin {
         let src = ctx.src(module_name.range);
         let mod_name = ctx.name(module_name.id);
         err::import_module_into_itself(&mut ctx.emit, src, mod_name);
@@ -98,7 +97,7 @@ fn import_module(
     let alias = check_symbol_rename(ctx, module_name, rename, false)?;
     ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let symbol = Symbol::ImportedModule(target_id, alias.range);
     ctx.scope.global.add_symbol(origin_id, alias.id, symbol);
     Ok(())
@@ -109,7 +108,7 @@ fn import_symbol(
     target_id: ModuleID,
     symbol: &ast::ImportSymbol,
 ) -> Result<(), ()> {
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let kind = ctx.scope.global.find_symbol(
         origin_id,
         target_id,

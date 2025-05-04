@@ -1,6 +1,173 @@
+use super::check_match::PatCov;
+use super::scope::Scope;
 use crate::ast;
+use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
 use crate::hir;
+use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
+use crate::support::{Arena, TempBuffer};
+use crate::text::TextRange;
+use std::collections::HashMap;
+
+pub struct HirCtx<'hir, 's, 'sref> {
+    pub arena: Arena<'hir>,
+    pub emit: ErrorWarningBuffer,
+    pub in_const: bool,
+    pub scope: Scope<'hir>,
+    pub registry: Registry<'hir, 's>,
+    pub enum_tag_set: HashMap<i128, hir::VariantID>,
+    pub session: &'sref mut Session<'s>,
+    pub pat: PatCov,
+    pub core: hir::CoreItems,
+    pub cache: Cache<'hir>,
+    pub enum_layout: HashMap<hir::EnumKey<'hir>, hir::Layout>,
+    pub struct_layout: HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>,
+    pub variant_layout: HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>,
+}
+
+pub struct Cache<'hir> {
+    pub proc_params: Vec<hir::Param<'hir>>,
+    pub enum_variants: Vec<hir::Variant<'hir>>,
+    pub struct_fields: Vec<hir::Field<'hir>>,
+    pub poly_param_names: Vec<ast::Name>,
+    pub types: TempBuffer<hir::Type<'hir>>,
+    pub stmts: TempBuffer<hir::Stmt<'hir>>,
+    pub exprs: TempBuffer<&'hir hir::Expr<'hir>>,
+    pub branches: TempBuffer<hir::Branch<'hir>>,
+    pub match_arms: TempBuffer<hir::MatchArm<'hir>>,
+    pub patterns: TempBuffer<hir::Pat<'hir>>,
+    pub var_ids: TempBuffer<hir::VariableID>,
+    pub field_inits: TempBuffer<hir::FieldInit<'hir>>,
+    pub const_values: TempBuffer<hir::ConstValue<'hir>>,
+    pub proc_ty_params: TempBuffer<hir::ProcTypeParam<'hir>>,
+}
+
+impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
+    pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
+        let core = hir::CoreItems {
+            start: hir::ProcID::dummy(),
+            panic: hir::ProcID::dummy(),
+            string_equals: hir::ProcID::dummy(),
+            cstring_equals: hir::ProcID::dummy(),
+            slice_exclusive: hir::ProcID::dummy(),
+            slice_inclusive: hir::ProcID::dummy(),
+            any: None,
+            source_location: None,
+        };
+
+        let cache = Cache {
+            proc_params: Vec::with_capacity(32),
+            enum_variants: Vec::with_capacity(256),
+            struct_fields: Vec::with_capacity(32),
+            poly_param_names: Vec::with_capacity(32),
+            types: TempBuffer::new(32),
+            stmts: TempBuffer::new(64),
+            exprs: TempBuffer::new(64),
+            branches: TempBuffer::new(32),
+            match_arms: TempBuffer::new(32),
+            patterns: TempBuffer::new(32),
+            var_ids: TempBuffer::new(32),
+            field_inits: TempBuffer::new(32),
+            const_values: TempBuffer::new(64),
+            proc_ty_params: TempBuffer::new(32),
+        };
+
+        HirCtx {
+            arena: Arena::new(),
+            emit: ErrorWarningBuffer::default(),
+            in_const: false,
+            scope: Scope::new(session),
+            registry: Registry::new(session),
+            enum_tag_set: HashMap::with_capacity(128),
+            session,
+            pat: PatCov::new(),
+            core,
+            cache,
+            enum_layout: HashMap::with_capacity(128),
+            struct_layout: HashMap::with_capacity(128),
+            variant_layout: HashMap::with_capacity(128),
+        }
+    }
+
+    #[inline]
+    pub fn src(&self, range: TextRange) -> SourceRange {
+        SourceRange::new(self.scope.origin, range)
+    }
+    #[inline]
+    pub fn name(&self, name_id: NameID) -> &'s str {
+        self.session.intern_name.get(name_id)
+    }
+
+    pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
+        //@moving errors from single buffer into per module storage (hack)
+        let (errors, warnings) = self.emit.collect();
+        let did_error = !errors.is_empty();
+
+        for e in errors {
+            let origin = match e.diagnostic().data() {
+                DiagnosticData::Message => {
+                    self.session.errors.error(e);
+                    continue;
+                }
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.session.module.get_mut(origin).errors.error(e);
+        }
+        for w in warnings {
+            let origin = match w.diagnostic().data() {
+                DiagnosticData::Message => unreachable!(),
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.session.module.get_mut(origin).errors.warning(w);
+        }
+
+        if did_error {
+            return Err(());
+        }
+
+        let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
+        for (eval, _) in self.registry.const_evals.iter() {
+            const_eval_values.push(eval.resolved_unwrap());
+        }
+        let mut variant_eval_values = Vec::with_capacity(self.registry.const_evals.len());
+        for eval in self.registry.variant_evals.iter() {
+            variant_eval_values.push(eval.resolved_unwrap());
+        }
+
+        Ok(hir::Hir {
+            arena: self.arena,
+            procs: self.registry.hir_procs,
+            enums: self.registry.hir_enums,
+            structs: self.registry.hir_structs,
+            globals: self.registry.hir_globals,
+            const_eval_values,
+            variant_eval_values,
+            enum_layout: self.enum_layout,
+            struct_layout: self.struct_layout,
+            variant_layout: self.variant_layout,
+            core: self.core,
+        })
+    }
+}
+
+//@move?
+impl hir::ArrayStaticLen {
+    pub fn get_resolved(self, ctx: &HirCtx) -> Result<u64, ()> {
+        match self {
+            hir::ArrayStaticLen::Immediate(len) => Ok(len),
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                let (eval, _) = *ctx.registry.const_eval(eval_id);
+                let value = eval.resolved()?;
+                match value {
+                    hir::ConstValue::Int { val, .. } => Ok(val),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+}
 
 pub struct Registry<'hir, 'ast> {
     ast_procs: Vec<&'ast ast::ProcItem<'ast>>,
@@ -9,18 +176,18 @@ pub struct Registry<'hir, 'ast> {
     ast_consts: Vec<&'ast ast::ConstItem<'ast>>,
     ast_globals: Vec<&'ast ast::GlobalItem<'ast>>,
     ast_imports: Vec<&'ast ast::ImportItem<'ast>>,
-    pub(super) hir_procs: Vec<hir::ProcData<'hir>>,
-    pub(super) hir_enums: Vec<hir::EnumData<'hir>>,
-    pub(super) hir_structs: Vec<hir::StructData<'hir>>,
-    pub(super) hir_consts: Vec<hir::ConstData<'hir>>,
-    pub(super) hir_globals: Vec<hir::GlobalData<'hir>>,
-    pub(super) hir_imports: Vec<hir::ImportData>,
-    pub(super) const_evals: Vec<(hir::ConstEval<'hir, 'ast>, ModuleID)>,
-    pub(super) variant_evals: Vec<hir::VariantEval<'hir>>,
+    hir_procs: Vec<hir::ProcData<'hir>>,
+    hir_enums: Vec<hir::EnumData<'hir>>,
+    hir_structs: Vec<hir::StructData<'hir>>,
+    hir_consts: Vec<hir::ConstData<'hir>>,
+    hir_globals: Vec<hir::GlobalData<'hir>>,
+    hir_imports: Vec<hir::ImportData>,
+    const_evals: Vec<(hir::ConstEval<'hir, 'ast>, ModuleID)>,
+    variant_evals: Vec<hir::VariantEval<'hir>>,
 }
 
 impl<'hir, 'ast> Registry<'hir, 'ast> {
-    pub(super) fn new(session: &Session) -> Registry<'hir, 'ast> {
+    fn new(session: &Session) -> Registry<'hir, 'ast> {
         let mut proc_count = 0;
         let mut enum_count = 0;
         let mut struct_count = 0;
@@ -56,6 +223,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             }
         }
 
+        const_eval_count += const_count;
+        const_eval_count += global_count;
+
         Registry {
             ast_procs: Vec::with_capacity(proc_count),
             ast_enums: Vec::with_capacity(enum_count),
@@ -69,7 +239,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
             hir_consts: Vec::with_capacity(const_count),
             hir_globals: Vec::with_capacity(global_count),
             hir_imports: Vec::with_capacity(import_count),
-            const_evals: Vec::with_capacity(const_eval_count),
+            const_evals: Vec::with_capacity(const_eval_count.next_power_of_two()),
             variant_evals: Vec::with_capacity(variant_eval_count),
         }
     }
@@ -84,7 +254,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_procs.push(data);
         id
     }
-
     pub fn add_enum(
         &mut self,
         item: &'ast ast::EnumItem<'ast>,
@@ -95,7 +264,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_enums.push(data);
         id
     }
-
     pub fn add_struct(
         &mut self,
         item: &'ast ast::StructItem<'ast>,
@@ -106,7 +274,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_structs.push(data);
         id
     }
-
     pub fn add_const(
         &mut self,
         item: &'ast ast::ConstItem<'ast>,
@@ -117,7 +284,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_consts.push(data);
         id
     }
-
     pub fn add_global(
         &mut self,
         item: &'ast ast::GlobalItem<'ast>,
@@ -128,7 +294,6 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_globals.push(data);
         id
     }
-
     pub fn add_import(
         &mut self,
         item: &'ast ast::ImportItem<'ast>,
@@ -139,22 +304,18 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         self.hir_imports.push(data);
         id
     }
-
     pub fn add_const_eval(
         &mut self,
         const_expr: ast::ConstExpr<'ast>,
         origin_id: ModuleID,
     ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
-        let eval = hir::ConstEval::Unresolved(const_expr);
-        self.const_evals.push((eval, origin_id));
+        self.const_evals.push((hir::ConstEval::Unresolved(const_expr), origin_id));
         id
     }
-
     pub fn add_variant_eval(&mut self) -> hir::VariantEvalID {
         let id = hir::VariantEvalID::new(self.variant_evals.len());
-        let eval = hir::VariantEval::Unresolved(());
-        self.variant_evals.push(eval);
+        self.variant_evals.push(hir::VariantEval::Unresolved(()));
         id
     }
 

@@ -1,45 +1,30 @@
 use super::check_directive;
 use super::check_path;
 use super::constant;
-use super::context::{scope, HirCtx};
+use super::context::HirCtx;
 use super::pass_5::Expectation;
+use super::scope::PolyScope;
 use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::support::BitSet;
 
 pub fn process_items(ctx: &mut HirCtx) {
-    for id in ctx.registry.proc_ids() {
-        process_proc_poly_params(ctx, id)
-    }
-    for id in ctx.registry.enum_ids() {
-        process_enum_poly_params(ctx, id)
-    }
-    for id in ctx.registry.struct_ids() {
-        process_struct_poly_params(ctx, id)
-    }
+    ctx.registry.proc_ids().for_each(|id| process_proc_poly_params(ctx, id));
+    ctx.registry.enum_ids().for_each(|id| process_enum_poly_params(ctx, id));
+    ctx.registry.struct_ids().for_each(|id| process_struct_poly_params(ctx, id));
 
-    for id in ctx.registry.proc_ids() {
-        process_proc_data(ctx, id)
-    }
-    for id in ctx.registry.enum_ids() {
-        process_enum_data(ctx, id)
-    }
-    for id in ctx.registry.struct_ids() {
-        process_struct_data(ctx, id)
-    }
+    ctx.registry.proc_ids().for_each(|id| process_proc_data(ctx, id));
+    ctx.registry.enum_ids().for_each(|id| process_enum_data(ctx, id));
+    ctx.registry.struct_ids().for_each(|id| process_struct_data(ctx, id));
 
-    ctx.scope.set_poly(scope::PolyScope::None);
-    for id in ctx.registry.const_ids() {
-        process_const_data(ctx, id)
-    }
-    for id in ctx.registry.global_ids() {
-        process_global_data(ctx, id)
-    }
+    ctx.scope.poly = PolyScope::None;
+    ctx.registry.const_ids().for_each(|id| process_const_data(ctx, id));
+    ctx.registry.global_ids().for_each(|id| process_global_data(ctx, id));
 }
 
 fn process_proc_poly_params(ctx: &mut HirCtx, id: hir::ProcID) {
-    ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
+    ctx.scope.origin = ctx.registry.proc_data(id).origin_id;
     let item = ctx.registry.proc_item(id);
     if let Some(poly_params) = item.poly_params {
         let poly_params = process_polymorph_params(ctx, poly_params);
@@ -48,7 +33,7 @@ fn process_proc_poly_params(ctx: &mut HirCtx, id: hir::ProcID) {
 }
 
 fn process_enum_poly_params(ctx: &mut HirCtx, id: hir::EnumID) {
-    ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
+    ctx.scope.origin = ctx.registry.enum_data(id).origin_id;
     let item = ctx.registry.enum_item(id);
     if let Some(poly_params) = item.poly_params {
         let poly_params = process_polymorph_params(ctx, poly_params);
@@ -57,7 +42,7 @@ fn process_enum_poly_params(ctx: &mut HirCtx, id: hir::EnumID) {
 }
 
 fn process_struct_poly_params(ctx: &mut HirCtx, id: hir::StructID) {
-    ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
+    ctx.scope.origin = ctx.registry.struct_data(id).origin_id;
     let item = ctx.registry.struct_item(id);
     if let Some(poly_params) = item.poly_params {
         let poly_params = process_polymorph_params(ctx, poly_params);
@@ -66,8 +51,8 @@ fn process_struct_poly_params(ctx: &mut HirCtx, id: hir::StructID) {
 }
 
 fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
-    ctx.scope.set_origin(ctx.registry.proc_data(id).origin_id);
-    ctx.scope.set_poly(scope::PolyScope::Proc(id));
+    ctx.scope.origin = ctx.registry.proc_data(id).origin_id;
+    ctx.scope.poly = PolyScope::Proc(id);
     ctx.cache.proc_params.clear();
 
     let item = ctx.registry.proc_item(id);
@@ -123,8 +108,8 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
 }
 
 fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
-    ctx.scope.set_origin(ctx.registry.enum_data(id).origin_id);
-    ctx.scope.set_poly(scope::PolyScope::Enum(id));
+    ctx.scope.origin = ctx.registry.enum_data(id).origin_id;
+    ctx.scope.poly = PolyScope::Enum(id);
     ctx.cache.enum_variants.clear();
 
     let item = ctx.registry.enum_item(id);
@@ -156,7 +141,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
                 }
             }
             ast::VariantKind::Constant(value) => {
-                let eval_id = ctx.registry.add_const_eval(value, ctx.scope.origin());
+                let eval_id = ctx.registry.add_const_eval(value, ctx.scope.origin);
                 any_constant = true;
 
                 hir::Variant {
@@ -250,8 +235,8 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
 }
 
 fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
-    ctx.scope.set_origin(ctx.registry.struct_data(id).origin_id);
-    ctx.scope.set_poly(scope::PolyScope::Struct(id));
+    ctx.scope.origin = ctx.registry.struct_data(id).origin_id;
+    ctx.scope.poly = PolyScope::Struct(id);
     ctx.cache.struct_fields.clear();
 
     let item = ctx.registry.struct_item(id);
@@ -287,7 +272,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
 }
 
 fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
-    ctx.scope.set_origin(ctx.registry.const_data(id).origin_id);
+    ctx.scope.origin = ctx.registry.const_data(id).origin_id;
     let item = ctx.registry.const_item(id);
     if let Some(ty) = item.ty {
         let ty = type_resolve(ctx, ty, true);
@@ -296,7 +281,7 @@ fn process_const_data(ctx: &mut HirCtx, id: hir::ConstID) {
 }
 
 fn process_global_data(ctx: &mut HirCtx, id: hir::GlobalID) {
-    ctx.scope.set_origin(ctx.registry.global_data(id).origin_id);
+    ctx.scope.origin = ctx.registry.global_data(id).origin_id;
     let item = ctx.registry.global_item(id);
     let ty = type_resolve(ctx, item.ty, true);
     ctx.registry.global_data_mut(id).ty = ty;
@@ -433,7 +418,7 @@ pub fn type_resolve<'hir, 'ast>(
             let elem_ty = type_resolve(ctx, array.elem_ty, in_definition);
 
             let len = if in_definition {
-                let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin());
+                let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin);
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
                 let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, array.len);

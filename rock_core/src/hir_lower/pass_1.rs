@@ -1,6 +1,6 @@
 use super::check_directive;
-use super::context::scope::{self, Symbol, SymbolID};
 use super::context::HirCtx;
+use super::scope::{self, Symbol, SymbolID};
 use crate::ast;
 use crate::errors as err;
 use crate::hir;
@@ -8,8 +8,7 @@ use crate::support::{AsStr, BitSet};
 
 pub fn populate_scopes(ctx: &mut HirCtx) {
     for module_id in ctx.session.module.ids() {
-        ctx.scope.set_origin(module_id);
-
+        ctx.scope.origin = module_id;
         let module = ctx.session.module.get(module_id);
         let items = module.ast_expect().items;
         let mut scope_vis = hir::Vis::Public;
@@ -42,7 +41,6 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         scope::find_core_proc(ctx, "slice", "slice_inclusive").unwrap_or(hir::ProcID::dummy());
 
     ctx.core.any = scope::find_core_struct(ctx, "type", "Any");
-    ctx.core.raw_slice = scope::find_core_struct(ctx, "slice", "RawSlice");
     ctx.core.source_location = scope::find_core_struct(ctx, "panics", "SourceLocation");
 }
 
@@ -64,7 +62,7 @@ fn add_proc_item<'ast>(
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let data = hir::ProcData {
         origin_id,
         flag_set,
@@ -100,7 +98,7 @@ fn add_enum_item<'ast>(
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let data = hir::EnumData {
         origin_id,
         flag_set,
@@ -135,7 +133,7 @@ fn add_struct_item<'ast>(
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let data = hir::StructData {
         origin_id,
         flag_set: BitSet::empty(),
@@ -169,7 +167,7 @@ fn add_const_item<'ast>(
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
 
     let data = hir::ConstData {
@@ -204,7 +202,7 @@ fn add_global_item<'ast>(
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let init = match item.init {
         ast::GlobalInit::Init(value) => {
             let eval_id = ctx.registry.add_const_eval(value, origin_id);
@@ -234,7 +232,7 @@ fn add_import_item<'ast>(ctx: &mut HirCtx<'_, 'ast, '_>, item: &'ast ast::Import
         return;
     }
 
-    let origin_id = ctx.scope.origin();
+    let origin_id = ctx.scope.origin;
     let data = hir::ImportData { origin_id };
     let _ = ctx.registry.add_import(item, data);
 }

@@ -1,5 +1,5 @@
-use super::context::scope::{self, LocalVariableID, SymbolID, SymbolOrModule};
 use super::context::HirCtx;
+use super::scope::{self, LocalVariableID, SymbolID, SymbolOrModule};
 use crate::ast;
 use crate::errors as err;
 use crate::hir;
@@ -52,8 +52,8 @@ fn path_resolve<'ast, 'hir>(
         });
     }
     let symbol = ctx.scope.global.find_symbol(
-        ctx.scope.origin(),
-        ctx.scope.origin(),
+        ctx.scope.origin,
+        ctx.scope.origin,
         segment_0.name,
         ctx.session,
         &ctx.registry,
@@ -87,7 +87,7 @@ fn path_resolve<'ast, 'hir>(
     };
 
     let symbol = ctx.scope.global.find_symbol(
-        ctx.scope.origin(),
+        ctx.scope.origin,
         target_id,
         segment_1.name,
         ctx.session,
