@@ -596,7 +596,7 @@ pub fn item_enum_duplicate_tag_value(
     tag_value: i128,
 ) {
     let msg = format!("duplicate variant tag value\nboth `{variant_name}` and `{existing_name}` have the same `{tag_value}` value");
-    let info = Info::new("existing variant with same tag", existing);
+    let info = Info::new("existing variant with the same tag", existing);
     emit.error(Error::new(msg, variant_src, info));
 }
 
@@ -665,6 +665,16 @@ pub fn path_unexpected_poly_arg_count(
 }
 
 //==================== CHECK CONSTANT ====================
+
+pub fn const_dependency_cycle(
+    emit: &mut impl ErrorSink,
+    ctx_msg: String,
+    src: SourceRange,
+    info_vec: Vec<Info>,
+) {
+    let msg = "constant dependency cycle found:";
+    emit.error(Error::new_info_vec(msg, ctx_msg, src, info_vec));
+}
 
 pub fn const_cannot_use_expr(emit: &mut impl ErrorSink, src: SourceRange, expr_kind: &'static str) {
     let msg = format!("cannot use `{expr_kind}` expression in constants");

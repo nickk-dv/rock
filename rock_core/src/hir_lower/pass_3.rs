@@ -189,23 +189,17 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         }
     }
 
-    // when `tag_ty` is unknown and all fields are non constant:
-    // perform default enum tag sizing: 0..<variant_count
+    // infer default enum tag size
     if tag_ty.is_unresolved() && !any_constant {
-        let variant_count = ctx.cache.enum_variants.len() as u64;
-        let int_ty = if variant_count <= u8::MAX as u64 {
-            hir::IntType::U8
-        } else if variant_count <= u16::MAX as u64 {
-            hir::IntType::U16
-        } else if variant_count <= u32::MAX as u64 {
-            hir::IntType::U32
-        } else {
-            hir::IntType::U64
+        let int_ty = match ctx.cache.enum_variants.len() {
+            0..=0xFF => hir::IntType::U8,
+            0..=0xFFFF => hir::IntType::U16,
+            0..=0xFFFF_FFFF => hir::IntType::U32,
+            _ => hir::IntType::U64,
         };
         tag_ty = hir::Eval::Resolved(int_ty);
     }
 
-    // when `tag_ty` is unknown and any field is constant:
     // force enum tag type to be specified
     if tag_ty.is_unresolved() && any_constant {
         let enum_src = ctx.src(data.name.range);
@@ -213,17 +207,15 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         tag_ty = hir::Eval::ResolvedError;
     }
 
-    // when `tag_ty` is unknown: set all Evals to `ResolvedError`
+    // variant tags cannot be resolved without tag_ty
     if !tag_ty.is_resolved_ok() {
         for variant in ctx.cache.enum_variants.iter() {
             match variant.kind {
                 hir::VariantKind::Default(eval_id) => {
-                    let eval = ctx.registry.variant_eval_mut(eval_id);
-                    *eval = hir::Eval::ResolvedError;
+                    *ctx.registry.variant_eval_mut(eval_id) = hir::Eval::ResolvedError;
                 }
                 hir::VariantKind::Constant(eval_id) => {
-                    let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
-                    *eval = hir::Eval::ResolvedError;
+                    ctx.registry.const_eval_mut(eval_id).0 = hir::Eval::ResolvedError;
                 }
             }
         }

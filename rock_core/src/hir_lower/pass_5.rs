@@ -751,7 +751,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             } else {
                 hir::Pat::Error
             };
-            PatResult::new(pat, data.ty.expect("typed const var pattern"))
+            PatResult::new(pat, data.ty.expect("typed const var"))
         }
         ValueID::Proc(_, _)
         | ValueID::Global(_, _)

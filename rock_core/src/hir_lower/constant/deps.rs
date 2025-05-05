@@ -1,7 +1,7 @@
 use super::fold;
 use super::layout;
 use crate::ast;
-use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange, StringOrStr};
+use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange};
 use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::check_path::{self, ValueID};
@@ -120,142 +120,117 @@ fn mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
             ConstDependency::Root => {}
             ConstDependency::VariantTag(id, variant_id) => {
                 let data = ctx.registry.enum_data(id);
-                let variant = data.variant(variant_id);
-
-                match variant.kind {
+                match data.variant(variant_id).kind {
                     hir::VariantKind::Default(eval_id) => {
-                        let eval = ctx.registry.variant_eval_mut(eval_id);
-                        *eval = hir::VariantEval::ResolvedError;
+                        *ctx.registry.variant_eval_mut(eval_id) = hir::Eval::ResolvedError;
                     }
                     hir::VariantKind::Constant(eval_id) => {
-                        let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
-                        *eval = hir::ConstEval::ResolvedError;
+                        ctx.registry.const_eval_mut(eval_id).0 = hir::Eval::ResolvedError;
                     }
                 }
             }
             ConstDependency::EnumLayout(id) => {
-                let data = ctx.registry.enum_data_mut(id);
-                data.layout = hir::Eval::ResolvedError;
+                ctx.registry.enum_data_mut(id).layout = hir::Eval::ResolvedError;
             }
             ConstDependency::StructLayout(id) => {
-                let data = ctx.registry.struct_data_mut(id);
-                data.layout = hir::Eval::ResolvedError;
+                ctx.registry.struct_data_mut(id).layout = hir::Eval::ResolvedError;
             }
             ConstDependency::Const(id) => {
-                let data = ctx.registry.const_data(id);
-                let eval_id = data.value;
-                let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
-                *eval = hir::ConstEval::ResolvedError;
+                let eval_id = ctx.registry.const_data(id).value;
+                ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
             }
             ConstDependency::Global(id) => {
                 let data = ctx.registry.global_data(id);
-                let eval_id = match data.init {
-                    hir::GlobalInit::Init(eval_id) => eval_id,
-                    hir::GlobalInit::Zeroed => unreachable!(),
-                };
-                let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
-                *eval = hir::ConstEval::ResolvedError;
+                if let hir::GlobalInit::Init(eval_id) = data.init {
+                    ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
+                }
             }
             ConstDependency::ArrayLen(eval_id) => {
-                let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
-                *eval = hir::ConstEval::ResolvedError;
+                ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
             }
         }
     }
 }
 
-fn const_dependency_cycle(
+fn dependency_cycle_error(
     ctx: &mut HirCtx,
     tree: &Tree,
     node_id: TreeNodeID,
     cycle_id: TreeNodeID,
 ) {
-    let src = match tree.node(cycle_id).value {
+    let mut ctx_msg = String::with_capacity(32);
+    let src = dependency_decs(ctx, tree.node(cycle_id).value, &mut ctx_msg);
+
+    let cycle_deps = tree.values_up_to_node(node_id, cycle_id);
+    let mut info_vec = Vec::with_capacity(cycle_deps.len());
+    let mut info_src = src;
+
+    for (idx, dep) in cycle_deps.iter().copied().rev().skip(1).enumerate() {
+        let first = idx == 0;
+        let last = idx + 2 == cycle_deps.len();
+
+        if first {
+            ctx_msg.push_str(" depends on ");
+            info_src = dependency_decs(ctx, dep, &mut ctx_msg);
+            if last {
+                ctx_msg.push_str(", completing the cycle...");
+            }
+        } else {
+            let mut msg = String::with_capacity(32);
+            msg.push_str("which depends on ");
+            let dep_src = dependency_decs(ctx, dep, &mut msg);
+            if last {
+                msg.push_str(", completing the cycle...");
+            }
+            info_vec.push(Info::new_val(msg, info_src));
+            info_src = dep_src;
+        }
+    }
+
+    err::const_dependency_cycle(&mut ctx.emit, ctx_msg, src, info_vec);
+}
+
+fn dependency_decs(ctx: &HirCtx, dep: ConstDependency, desc: &mut String) -> SourceRange {
+    use std::fmt::Write;
+    match dep {
         ConstDependency::Root => unreachable!(),
         ConstDependency::VariantTag(id, variant_id) => {
             let data = ctx.registry.enum_data(id);
             let variant = data.variant(variant_id);
+            let _ = write!(
+                desc,
+                "variant tag of `{}.{}`",
+                ctx.name(data.name.id),
+                ctx.name(variant.name.id)
+            );
             SourceRange::new(data.origin_id, variant.name.range)
         }
-        ConstDependency::EnumLayout(id) => ctx.registry.enum_data(id).src(),
-        ConstDependency::StructLayout(id) => ctx.registry.struct_data(id).src(),
-        ConstDependency::Const(id) => ctx.registry.const_data(id).src(),
-        ConstDependency::Global(id) => ctx.registry.global_data(id).src(),
+        ConstDependency::EnumLayout(id) => {
+            let data = ctx.registry.enum_data(id);
+            let _ = write!(desc, "layout of `{}` enum", ctx.name(data.name.id));
+            data.src()
+        }
+        ConstDependency::StructLayout(id) => {
+            let data = ctx.registry.struct_data(id);
+            let _ = write!(desc, "layout of `{}` struct", ctx.name(data.name.id));
+            data.src()
+        }
+        ConstDependency::Const(id) => {
+            let data = ctx.registry.const_data(id);
+            let _ = write!(desc, "value of `{}` constant", ctx.name(data.name.id));
+            data.src()
+        }
+        ConstDependency::Global(id) => {
+            let data = ctx.registry.global_data(id);
+            let _ = write!(desc, "value of `{}` global", ctx.name(data.name.id));
+            data.src()
+        }
         ConstDependency::ArrayLen(eval_id) => {
             let (eval, origin_id, _) = *ctx.registry.const_eval(eval_id);
+            let _ = write!(desc, "array length value");
             SourceRange::new(origin_id, eval.unresolved_unwrap().0.range)
         }
-    };
-
-    let cycle_deps = tree.values_up_to_node(node_id, cycle_id);
-    let mut ctx_msg: StringOrStr = "".into();
-    let mut info_vec = Vec::with_capacity(cycle_deps.len());
-    let mut info_src = src;
-
-    for (idx, const_dep) in cycle_deps.iter().copied().rev().skip(1).enumerate() {
-        let first = idx == 0;
-        let last = idx + 2 == cycle_deps.len();
-
-        let prefix = if first { "" } else { "which " };
-        let postfix = if last { ", completing the cycle..." } else { "" };
-
-        let (msg, src) = match const_dep {
-            ConstDependency::Root => unreachable!(),
-            ConstDependency::VariantTag(id, variant_id) => {
-                let data = ctx.registry.enum_data(id);
-                let variant = data.variant(variant_id);
-                let msg = format!(
-                    "{prefix}depends on `{}.{}` enum variant{postfix}",
-                    ctx.name(data.name.id),
-                    ctx.name(variant.name.id)
-                );
-                let src = SourceRange::new(data.origin_id, variant.name.range);
-                (msg, src)
-            }
-            ConstDependency::EnumLayout(id) => {
-                let data = ctx.registry.enum_data(id);
-                let msg =
-                    format!("{prefix}depends on size of `{}`{postfix}", ctx.name(data.name.id));
-                (msg, data.src())
-            }
-            ConstDependency::StructLayout(id) => {
-                let data = ctx.registry.struct_data(id);
-                let msg =
-                    format!("{prefix}depends on size of `{}`{postfix}", ctx.name(data.name.id));
-                (msg, data.src())
-            }
-            ConstDependency::Const(id) => {
-                let data = ctx.registry.const_data(id);
-                let msg =
-                    format!("{prefix}depends on `{}` const value{postfix}", ctx.name(data.name.id));
-                (msg, data.src())
-            }
-            ConstDependency::Global(id) => {
-                let data = ctx.registry.global_data(id);
-                let msg = format!(
-                    "{prefix}depends on `{}` global value{postfix}",
-                    ctx.name(data.name.id)
-                );
-                (msg, data.src())
-            }
-            ConstDependency::ArrayLen(eval_id) => {
-                let (eval, origin_id, _) = *ctx.registry.const_eval(eval_id);
-                let src = SourceRange::new(origin_id, eval.unresolved_unwrap().0.range);
-                let msg = format!("{prefix}depends on array length{postfix}");
-                (msg, src)
-            }
-        };
-
-        if first {
-            ctx_msg = msg.into();
-        } else {
-            info_vec.push(Info::new_val(msg, info_src));
-        }
-
-        info_src = src;
     }
-
-    ctx.emit.error(Error::new_info_vec("constant dependency cycle found:", ctx_msg, src, info_vec));
 }
 
 macro_rules! unresolved_or_return {
@@ -276,7 +251,7 @@ fn add_dep(
 ) -> Result<TreeNodeID, TreeNodeID> {
     let node_id = tree.add_child(parent_id, dep);
     if let Some(cycle_id) = tree.find_cycle(node_id) {
-        const_dependency_cycle(ctx, tree, node_id, cycle_id);
+        dependency_cycle_error(ctx, tree, node_id, cycle_id);
         Err(parent_id)
     } else {
         Ok(node_id)
@@ -569,7 +544,7 @@ fn add_expr_deps<'ast>(
                 Err(parent_id)
             }
             ast::Builtin::SizeOf(ty) => {
-                let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
+                let ty = pass_3::type_resolve(ctx, *ty, true);
                 if pass_5::type_has_poly_param_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
@@ -580,7 +555,7 @@ fn add_expr_deps<'ast>(
                 }
             }
             ast::Builtin::AlignOf(ty) => {
-                let ty = pass_3::type_resolve(ctx, *ty, true); //@in definition?
+                let ty = pass_3::type_resolve(ctx, *ty, true);
                 if pass_5::type_has_poly_param_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
@@ -751,53 +726,41 @@ fn error_cannot_refer_to_in_constants(
 }
 
 fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
-    // reverse iteration allows to resolve dependencies in correct order
+    //reverse iteration allows to resolve dependencies in the correct order
     for node in tree.nodes.iter().rev() {
         match node.value {
             ConstDependency::Root => {}
             ConstDependency::VariantTag(enum_id, variant_id) => {
                 let data = ctx.registry.enum_data(enum_id);
                 let variant = data.variant(variant_id);
-
-                let tag_ty = data.tag_ty.resolved_unwrap(); // if tag_ty not resolved, variant set to error in pass3
+                let tag_ty = data.tag_ty.resolved_unwrap(); //pass_3 sets variants with missing tag_ty to error
                 let expect = Expectation::HasType(hir::Type::Int(tag_ty), None);
 
                 match variant.kind {
                     hir::VariantKind::Default(eval_id) => {
-                        if variant_id.raw() == 0 {
+                        if variant_id.index() == 0 {
                             let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: tag_ty };
-
-                            let eval = ctx.registry.variant_eval_mut(eval_id);
-                            *eval = hir::Eval::Resolved(zero);
-                        } else {
-                            let prev = data.variant(variant_id.dec());
-
-                            let prev_value = match prev.kind {
-                                hir::VariantKind::Default(eval_id) => {
-                                    let eval = ctx.registry.variant_eval(eval_id);
-                                    eval.resolved()
-                                }
-                                hir::VariantKind::Constant(eval_id) => {
-                                    let (eval, _, _) = ctx.registry.const_eval(eval_id);
-                                    eval.resolved()
-                                }
-                            };
-
-                            //@have some int_inc function in fold:: instead of `pub` const value api for `into_int` / int_range_check()
-                            let value_res = match prev_value {
-                                Ok(prev) => {
-                                    let prev_tag = prev.into_int();
-                                    let prev_inc = prev_tag + 1;
-                                    let variant_src =
-                                        SourceRange::new(data.origin_id, variant.name.range);
-                                    fold::int_range_check(ctx, variant_src, prev_inc, tag_ty)
-                                }
-                                Err(()) => Err(()),
-                            };
-
-                            let eval = ctx.registry.variant_eval_mut(eval_id);
-                            *eval = hir::Eval::from_res(value_res);
+                            *ctx.registry.variant_eval_mut(eval_id) = hir::Eval::Resolved(zero);
+                            continue;
                         }
+
+                        let prev = data.variant(variant_id.dec());
+                        let prev_tag = match prev.kind {
+                            hir::VariantKind::Default(eval_id) => {
+                                ctx.registry.variant_eval(eval_id).resolved()
+                            }
+                            hir::VariantKind::Constant(eval_id) => {
+                                ctx.registry.const_eval(eval_id).0.resolved()
+                            }
+                        };
+                        let value_inc = match prev_tag {
+                            Ok(prev) => {
+                                let src = SourceRange::new(data.origin_id, variant.name.range);
+                                fold::int_range_check(ctx, src, prev.into_int() + 1, tag_ty)
+                            }
+                            Err(()) => Err(()),
+                        };
+                        *ctx.registry.variant_eval_mut(eval_id) = hir::Eval::from_res(value_inc);
                     }
                     hir::VariantKind::Constant(eval_id) => {
                         resolve_and_update_const_eval(ctx, eval_id, expect);
@@ -806,7 +769,7 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             }
             ConstDependency::EnumLayout(id) => {
                 if ctx.registry.enum_data(id).poly_params.is_some() {
-                    //@hack, placeholder layout for polymorphic type
+                    //@hack, placeholder for polymorphic type, signals no cycles
                     let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
                     ctx.registry.enum_data_mut(id).layout = layout;
                 } else {
@@ -817,7 +780,7 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             }
             ConstDependency::StructLayout(id) => {
                 if ctx.registry.struct_data(id).poly_params.is_some() {
-                    //@hack, placeholder layout for polymorphic type
+                    //@hack, placeholder for polymorphic type, signals no cycles
                     let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
                     ctx.registry.struct_data_mut(id).layout = layout;
                 } else {
@@ -832,26 +795,23 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
 
                 let expect = if let Some(ty) = item.ty {
                     let expect_src = SourceRange::new(data.origin_id, ty.range);
-                    Expectation::HasType(data.ty.unwrap(), Some(expect_src)) //unwrap, item and data are both typed
+                    Expectation::HasType(data.ty.unwrap(), Some(expect_src)) //unwrap: const has explicit type
                 } else {
                     Expectation::None
                 };
                 if let Some(ty) = resolve_and_update_const_eval(ctx, data.value, expect) {
-                    let data = ctx.registry.const_data_mut(id);
-                    data.ty = Some(ty);
+                    ctx.registry.const_data_mut(id).ty = Some(ty); //expr type takes priority over defined type
                 }
             }
             ConstDependency::Global(id) => {
                 let data = ctx.registry.global_data(id);
                 let item = ctx.registry.global_item(id);
 
-                let expect_src = SourceRange::new(data.origin_id, item.ty.range);
-                let expect = Expectation::HasType(data.ty, Some(expect_src));
-                let eval_id = match data.init {
-                    hir::GlobalInit::Init(eval_id) => eval_id,
-                    hir::GlobalInit::Zeroed => unreachable!(),
-                };
-                resolve_and_update_const_eval(ctx, eval_id, expect);
+                if let hir::GlobalInit::Init(eval_id) = data.init {
+                    let expect_src = SourceRange::new(data.origin_id, item.ty.range);
+                    let expect = Expectation::HasType(data.ty, Some(expect_src));
+                    resolve_and_update_const_eval(ctx, eval_id, expect);
+                }
             }
             ConstDependency::ArrayLen(eval_id) => {
                 resolve_and_update_const_eval(ctx, eval_id, Expectation::USIZE);
@@ -867,9 +827,8 @@ fn resolve_and_update_const_eval<'hir>(
 ) -> Option<hir::Type<'hir>> {
     let (eval, origin_id, scope) = *ctx.registry.const_eval(eval_id);
     let expr = match eval {
-        hir::ConstEval::Unresolved(expr) => expr,
-        hir::ConstEval::Resolved(_) => return None,
-        hir::ConstEval::ResolvedError => return None,
+        hir::Eval::Unresolved(expr) => expr,
+        hir::Eval::Resolved(_) | hir::Eval::ResolvedError => return None,
     };
 
     let prev_poly = ctx.scope.poly;
