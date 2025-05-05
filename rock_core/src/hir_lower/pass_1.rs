@@ -1,6 +1,6 @@
 use super::check_directive;
 use super::context::HirCtx;
-use super::scope::{self, Symbol, SymbolID};
+use super::scope::{self, PolyScope, Symbol, SymbolID};
 use crate::ast;
 use crate::errors as err;
 use crate::hir;
@@ -168,7 +168,7 @@ fn add_const_item<'ast>(
     }
 
     let origin_id = ctx.scope.origin;
-    let eval_id = ctx.registry.add_const_eval(item.value, origin_id);
+    let eval_id = ctx.registry.add_const_eval(item.value, origin_id, PolyScope::None);
 
     let data = hir::ConstData {
         origin_id,
@@ -205,7 +205,7 @@ fn add_global_item<'ast>(
     let origin_id = ctx.scope.origin;
     let init = match item.init {
         ast::GlobalInit::Init(value) => {
-            let eval_id = ctx.registry.add_const_eval(value, origin_id);
+            let eval_id = ctx.registry.add_const_eval(value, origin_id, PolyScope::None);
             hir::GlobalInit::Init(eval_id)
         }
         ast::GlobalInit::Zeroed => hir::GlobalInit::Zeroed,

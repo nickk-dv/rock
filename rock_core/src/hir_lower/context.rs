@@ -1,5 +1,5 @@
 use super::check_match::PatCov;
-use super::scope::Scope;
+use super::scope::{PolyScope, Scope};
 use crate::ast;
 use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
 use crate::hir;
@@ -128,7 +128,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         }
 
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
-        for (eval, _) in self.registry.const_evals.iter() {
+        for (eval, _, _) in self.registry.const_evals.iter() {
             const_eval_values.push(eval.resolved_unwrap());
         }
         let mut variant_eval_values = Vec::with_capacity(self.registry.const_evals.len());
@@ -158,7 +158,7 @@ impl hir::ArrayStaticLen {
         match self {
             hir::ArrayStaticLen::Immediate(len) => Ok(len),
             hir::ArrayStaticLen::ConstEval(eval_id) => {
-                let (eval, _) = *ctx.registry.const_eval(eval_id);
+                let (eval, _, _) = *ctx.registry.const_eval(eval_id);
                 let value = eval.resolved()?;
                 match value {
                     hir::ConstValue::Int { val, .. } => Ok(val),
@@ -182,7 +182,7 @@ pub struct Registry<'hir, 'ast> {
     hir_consts: Vec<hir::ConstData<'hir>>,
     hir_globals: Vec<hir::GlobalData<'hir>>,
     hir_imports: Vec<hir::ImportData>,
-    const_evals: Vec<(hir::ConstEval<'hir, 'ast>, ModuleID)>,
+    const_evals: Vec<(hir::ConstEval<'hir, 'ast>, ModuleID, PolyScope)>,
     variant_evals: Vec<hir::VariantEval<'hir>>,
 }
 
@@ -308,9 +308,10 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
         &mut self,
         const_expr: ast::ConstExpr<'ast>,
         origin_id: ModuleID,
+        scope: PolyScope,
     ) -> hir::ConstEvalID {
         let id = hir::ConstEvalID::new(self.const_evals.len());
-        self.const_evals.push((hir::ConstEval::Unresolved(const_expr), origin_id));
+        self.const_evals.push((hir::ConstEval::Unresolved(const_expr), origin_id, scope));
         id
     }
     pub fn add_variant_eval(&mut self) -> hir::VariantEvalID {
@@ -378,7 +379,10 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn import_data(&self, id: hir::ImportID) -> &hir::ImportData {
         &self.hir_imports[id.index()]
     }
-    pub fn const_eval(&self, id: hir::ConstEvalID) -> &(hir::ConstEval<'hir, 'ast>, ModuleID) {
+    pub fn const_eval(
+        &self,
+        id: hir::ConstEvalID,
+    ) -> &(hir::ConstEval<'hir, 'ast>, ModuleID, PolyScope) {
         &self.const_evals[id.index()]
     }
     pub fn variant_eval(&self, id: hir::VariantEvalID) -> &hir::VariantEval<'hir> {
@@ -403,7 +407,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     pub fn const_eval_mut(
         &mut self,
         id: hir::ConstEvalID,
-    ) -> &mut (hir::ConstEval<'hir, 'ast>, ModuleID) {
+    ) -> &mut (hir::ConstEval<'hir, 'ast>, ModuleID, PolyScope) {
         &mut self.const_evals[id.index()]
     }
     pub fn variant_eval_mut(&mut self, id: hir::VariantEvalID) -> &mut hir::VariantEval<'hir> {

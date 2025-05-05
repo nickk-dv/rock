@@ -141,7 +141,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
                 }
             }
             ast::VariantKind::Constant(value) => {
-                let eval_id = ctx.registry.add_const_eval(value, ctx.scope.origin);
+                let eval_id = ctx.registry.add_const_eval(value, ctx.scope.origin, ctx.scope.poly);
                 any_constant = true;
 
                 hir::Variant {
@@ -222,7 +222,7 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
                     *eval = hir::Eval::ResolvedError;
                 }
                 hir::VariantKind::Constant(eval_id) => {
-                    let (eval, _) = ctx.registry.const_eval_mut(eval_id);
+                    let (eval, _, _) = ctx.registry.const_eval_mut(eval_id);
                     *eval = hir::Eval::ResolvedError;
                 }
             }
@@ -418,7 +418,8 @@ pub fn type_resolve<'hir, 'ast>(
             let elem_ty = type_resolve(ctx, array.elem_ty, in_definition);
 
             let len = if in_definition {
-                let eval_id = ctx.registry.add_const_eval(array.len, ctx.scope.origin);
+                let eval_id =
+                    ctx.registry.add_const_eval(array.len, ctx.scope.origin, ctx.scope.poly);
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
                 let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, array.len);

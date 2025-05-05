@@ -876,7 +876,6 @@ where
     pub fn is_resolved_ok(&self) -> bool {
         matches!(self, Eval::Resolved(_))
     }
-
     pub fn resolved(&self) -> Result<R, ()> {
         match self {
             Eval::Unresolved(_) => unreachable!("eval not resolved"),
@@ -887,9 +886,16 @@ where
 
     pub fn resolved_unwrap(&self) -> R {
         match self {
-            Eval::Unresolved(_) => unreachable!("eval unresolved"),
+            Eval::Unresolved(_) => unreachable!("expected resolved"),
             Eval::Resolved(val) => *val,
-            Eval::ResolvedError => unreachable!("eval error"),
+            Eval::ResolvedError => unreachable!("expected resolved"),
+        }
+    }
+    pub fn unresolved_unwrap(&self) -> U {
+        match self {
+            Eval::Unresolved(val) => *val,
+            Eval::Resolved(_) => unreachable!("expected unresolved"),
+            Eval::ResolvedError => unreachable!("expected unresolved"),
         }
     }
 }

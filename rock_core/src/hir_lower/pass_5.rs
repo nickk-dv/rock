@@ -5,7 +5,7 @@ use super::constant;
 use super::constant::fold;
 use super::constant::layout;
 use super::context::HirCtx;
-use super::scope::{self, BlockStatus, Diverges, InferContext};
+use super::scope::{self, BlockStatus, Diverges, InferContext, PolyScope};
 use crate::ast;
 use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
@@ -29,7 +29,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         let expect = Expectation::HasType(data.return_ty, Some(expect_src));
 
         ctx.scope.origin = data.origin_id;
-        ctx.scope.poly = scope::PolyScope::Proc(proc_id);
+        ctx.scope.poly = PolyScope::Proc(proc_id);
         ctx.scope.local.reset();
         ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
 
@@ -738,7 +738,7 @@ fn typecheck_pat_item<'hir, 'ast>(
             check_variant_bind_list(ctx, bind_list, None, None, in_or_pat);
 
             let data = ctx.registry.const_data(const_id);
-            let (eval, _) = ctx.registry.const_eval(data.value);
+            let (eval, _, _) = ctx.registry.const_eval(data.value);
 
             let pat = if let Ok(value) = eval.resolved() {
                 if let hir::ConstValue::Variant { .. } = value {
@@ -948,7 +948,7 @@ fn check_field_from_array<'hir>(
                     hir::ConstValue::from_u64(len, IntType::Usize)
                 }
                 hir::ArrayStaticLen::ConstEval(eval_id) => {
-                    let (eval, _) = ctx.registry.const_eval(eval_id);
+                    let (eval, _, _) = ctx.registry.const_eval(eval_id);
                     eval.resolved().ok()?
                 }
             };
@@ -1602,7 +1602,7 @@ fn typecheck_item<'hir, 'ast>(
         ValueID::Const(id, fields) => {
             let data = ctx.registry.const_data(id);
             let const_ty = data.ty.expect("typed const var");
-            let (eval, _) = ctx.registry.const_eval(data.value);
+            let (eval, _, _) = ctx.registry.const_eval(data.value);
 
             let res = if let Ok(value) = eval.resolved() {
                 TypeResult::new(const_ty, hir::Expr::Const { value })
