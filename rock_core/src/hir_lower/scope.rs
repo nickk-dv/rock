@@ -308,6 +308,14 @@ impl GlobalScope {
         }
     }
 
+    pub fn find_defined_enum(&self, target_id: ModuleID, name_id: NameID) -> Option<hir::EnumID> {
+        let target = self.module(target_id);
+        match target.symbols.get(&name_id).copied() {
+            Some(Symbol::Defined(SymbolID::Enum(id))) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn find_defined_struct(
         &self,
         target_id: ModuleID,
@@ -614,13 +622,25 @@ pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir:
     if name_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
     }
-    let name_id = name_id?;
-
-    let proc_id = ctx.scope.global.find_defined_proc(module_id, name_id);
+    let proc_id = ctx.scope.global.find_defined_proc(module_id, name_id?);
     if proc_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
     }
     proc_id
+}
+
+pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::EnumID> {
+    let module_id = find_core_module(ctx, module)?;
+
+    let name_id = ctx.session.intern_name.get_id(name);
+    if name_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
+    }
+    let enum_id = ctx.scope.global.find_defined_enum(module_id, name_id?);
+    if enum_id.is_none() {
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
+    }
+    enum_id
 }
 
 pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::StructID> {
@@ -630,9 +650,7 @@ pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hi
     if name_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
     }
-    let name_id = name_id?;
-
-    let struct_id = ctx.scope.global.find_defined_struct(module_id, name_id);
+    let struct_id = ctx.scope.global.find_defined_struct(module_id, name_id?);
     if struct_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
     }

@@ -613,13 +613,52 @@ fn codegen_cast_op<'c>(
     }
 }
 
+fn size_of_temp(cg: &Codegen, ty: hir::Type) -> u64 {
+    match ty {
+        hir::Type::Error | hir::Type::Unknown => unreachable!(),
+        hir::Type::Char => 4,
+        hir::Type::Void => 0,
+        hir::Type::Never => 0,
+        hir::Type::Rawptr => todo!(),
+        hir::Type::UntypedChar => unreachable!(),
+        hir::Type::Int(int_type) => match int_type {
+            hir::IntType::S8 => 1,
+            hir::IntType::S16 => 2,
+            hir::IntType::S32 => 4,
+            hir::IntType::S64 => 8,
+            hir::IntType::Ssize => todo!(),
+            hir::IntType::U8 => 1,
+            hir::IntType::U16 => 2,
+            hir::IntType::U32 => 4,
+            hir::IntType::U64 => 8,
+            hir::IntType::Usize => todo!(),
+            hir::IntType::Untyped => unreachable!(),
+        },
+        hir::Type::Float(float_type) => todo!(),
+        hir::Type::Bool(bool_type) => todo!(),
+        hir::Type::String(string_type) => todo!(),
+        hir::Type::PolyProc(_, idx) => size_of_temp(cg, cg.proc.poly_types[idx]),
+        hir::Type::PolyEnum(enum_id, _) => todo!(),
+        hir::Type::PolyStruct(struct_id, _) => todo!(),
+        hir::Type::Enum(enum_id, items) => todo!(),
+        hir::Type::Struct(struct_id, items) => todo!(),
+        hir::Type::Reference(_, _) => 8,
+        hir::Type::MultiReference(_, _) => 8,
+        hir::Type::Procedure(proc_type) => todo!(),
+        hir::Type::ArraySlice(array_slice) => todo!(),
+        hir::Type::ArrayStatic(array_static) => todo!(),
+    }
+}
+
 fn codegen_builtin<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     builtin: hir::Builtin<'c>,
 ) -> llvm::Value {
     match builtin {
-        hir::Builtin::SizeOf(_) => unimplemented!("polymorphic @size_of"),
+        hir::Builtin::SizeOf(ty) => {
+            llvm::const_int(cg.ptr_sized_int(), size_of_temp(cg, ty), false)
+        }
         hir::Builtin::AlignOf(_) => unimplemented!("polymorphic @align_of"),
         hir::Builtin::Transmute(target, into) => {
             let val = codegen_expr_value(cg, target);
@@ -635,6 +674,20 @@ fn codegen_builtin<'c>(
                 }
                 Expect::Pointer => local_ptr.as_val(),
             }
+        }
+        hir::Builtin::RawSlice(ptr, len) => {
+            let slice_ty = cg.slice_type();
+            let slice_ptr = cg.entry_alloca(slice_ty.as_ty(), "raw_slice");
+
+            let ptr = codegen_expr_pointer(cg, ptr).as_val();
+            let ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
+            cg.build.store(ptr, ptr_ptr);
+
+            let len = llvm::const_int(cg.ptr_sized_int(), len, false);
+            let len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
+            cg.build.store(len, len_ptr);
+
+            cg.build.load(slice_ty.as_ty(), slice_ptr, "raw_slice_val")
         }
     }
 }
@@ -658,8 +711,8 @@ fn codegen_variable(cg: &mut Codegen, expect: Expect, var_id: hir::VariableID) -
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
             let var = cg.hir.proc_data(cg.proc.proc_id).variable(var_id);
-            let ptr_ty = cg.ty(var.ty);
-            cg.build.load(ptr_ty, var_ptr, "var_val")
+            let var_ty = cg.ty(var.ty);
+            cg.build.load(var_ty, var_ptr, "var_val")
         }
         Expect::Pointer => var_ptr.as_val(),
     }
@@ -787,6 +840,28 @@ pub fn codegen_call_direct<'c>(
 
         cg.cache.values.push(value);
     }
+
+    //@substitute with current proc poly_types
+    let offset_p = cg.cache.hir_types.start();
+    let mut any_poly = false;
+    for ty in poly_types {
+        if rock_core::hir_lower::pass_5::type_has_poly_param(*ty) {
+            let ty = cg.type_substitute_poly(*ty, cg.proc.poly_types);
+            cg.cache.hir_types.push(ty);
+            any_poly = true;
+        } else {
+            cg.cache.hir_types.push(*ty);
+        }
+    }
+    let poly_types = if any_poly {
+        cg.cache.hir_types.take(offset_p, &mut cg.hir.arena)
+    } else {
+        cg.cache.hir_types.pop_view(offset_p);
+        poly_types
+    };
+    debug_assert!(poly_types
+        .iter()
+        .all(|ty| !rock_core::hir_lower::pass_5::type_has_poly_param(*ty)));
 
     let (fn_val, fn_ty) = if poly_types.is_empty() {
         cg.procs[proc_id.index()]

@@ -1,4 +1,4 @@
-use super::context::{Codegen, Expect};
+use super::context::{self, Codegen, Expect};
 use super::emit_expr;
 use super::emit_stmt;
 use crate::llvm;
@@ -6,10 +6,6 @@ use rock_core::ast;
 use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;
-
-//@names in `cg.string_buf` can get cleared and replaced
-// by named generated for new types in `cg.ty()`, refactor naming to be right before using it.
-// support better full symbol names including module full paths.
 
 pub fn codegen_module(
     hir: hir::Hir,
@@ -27,7 +23,6 @@ pub fn codegen_module(
     (cg.target, cg.module)
 }
 
-//@NOTE(8.12.24) currently always null terminate, no "used as cstring" tracking in the compiler.
 fn codegen_string_lits(cg: &mut Codegen) {
     //@hack prepare all possible required lit_id's (used in index expr)
     cg.session.intern_lit.intern("index out of bounds");
@@ -38,7 +33,6 @@ fn codegen_string_lits(cg: &mut Codegen) {
     for string in cg.session.intern_lit.get_all().iter().copied() {
         let string_val = llvm::const_string(&cg.context, string, true);
         let string_ty = llvm::typeof_value(string_val);
-
         let global = cg.module.add_global("rock.string", string_val, string_ty, true, true);
         cg.string_lits.push(global);
     }
@@ -46,28 +40,21 @@ fn codegen_string_lits(cg: &mut Codegen) {
 
 fn codegen_enum_types(cg: &mut Codegen) {
     for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
-        let enum_data = cg.hir.enum_data(enum_id);
+        let data = cg.hir.enum_data(enum_id);
 
-        let enum_ty = if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
-            let layout = enum_data.layout.resolved_unwrap();
+        let enum_ty = if data.flag_set.contains(hir::EnumFlag::WithFields) {
+            cg.namebuf.clear();
+            context::write_symbol_name(cg, data.name.id, data.origin_id, &[]);
+            let enum_ty = cg.context.struct_named_create(&cg.namebuf);
+
+            let data = cg.hir.enum_data(enum_id);
+            let layout = data.layout.resolved_unwrap();
             let elem_ty = cg.int_type(hir::IntType::U8);
             let array_ty = llvm::array_type(elem_ty, layout.size);
-
-            let module_origin = cg.session.module.get(enum_data.origin_id);
-            let package_origin = cg.session.graph.package(module_origin.origin());
-            let package_name = cg.session.intern_name.get(package_origin.name());
-            let enum_name = cg.session.intern_name.get(enum_data.name.id);
-
-            cg.string_buf.clear();
-            cg.string_buf.push_str(package_name);
-            cg.string_buf.push(':');
-            cg.string_buf.push_str(enum_name);
-
-            let enum_ty = cg.context.struct_named_create(&cg.string_buf);
             cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
             enum_ty.as_ty()
         } else {
-            cg.int_type(enum_data.tag_ty.resolved_unwrap())
+            cg.int_type(data.tag_ty.resolved_unwrap())
         };
 
         cg.enums.push(enum_ty);
@@ -76,18 +63,10 @@ fn codegen_enum_types(cg: &mut Codegen) {
 
 fn codegen_struct_types(cg: &mut Codegen) {
     for struct_id in (0..cg.hir.structs.len()).map(hir::StructID::new) {
-        let struct_data = cg.hir.struct_data(struct_id);
-        let module_origin = cg.session.module.get(struct_data.origin_id);
-        let package_origin = cg.session.graph.package(module_origin.origin());
-        let package_name = cg.session.intern_name.get(package_origin.name());
-        let struct_name = cg.session.intern_name.get(struct_data.name.id);
-
-        cg.string_buf.clear();
-        cg.string_buf.push_str(package_name);
-        cg.string_buf.push(':');
-        cg.string_buf.push_str(struct_name);
-
-        let opaque = cg.context.struct_named_create(&cg.string_buf);
+        let data = cg.hir.struct_data(struct_id);
+        cg.namebuf.clear();
+        context::write_symbol_name(cg, data.name.id, data.origin_id, &[]);
+        let opaque = cg.context.struct_named_create(&cg.namebuf);
         cg.structs.push(opaque);
     }
 
@@ -134,14 +113,14 @@ fn codegen_variant_types(cg: &mut Codegen) {
                     let package_name = cg.session.intern_name.get(package_origin.name());
                     let variant_name = cg.session.intern_name.get(variant.name.id);
 
-                    cg.string_buf.clear();
-                    cg.string_buf.push_str(package_name);
-                    cg.string_buf.push(':');
-                    cg.string_buf.push_str(enum_name);
-                    cg.string_buf.push('.');
-                    cg.string_buf.push_str(variant_name);
+                    cg.namebuf.clear();
+                    cg.namebuf.push_str(package_name);
+                    cg.namebuf.push(':');
+                    cg.namebuf.push_str(enum_name);
+                    cg.namebuf.push('.');
+                    cg.namebuf.push_str(variant_name);
 
-                    let variant_ty = cg.context.struct_named_create(&cg.string_buf);
+                    let variant_ty = cg.context.struct_named_create(&cg.namebuf);
                     cg.context.struct_named_set_body(variant_ty, &field_types, false);
                     variant_types.push(Some(variant_ty));
                 }
@@ -157,18 +136,8 @@ fn codegen_globals(cg: &mut Codegen) {
     for global_id in (0..cg.hir.globals.len()).map(hir::GlobalID::new) {
         let data = cg.hir.global_data(global_id);
         let init = data.init;
-
-        let module = cg.session.module.get(data.origin_id);
-        let package = cg.session.graph.package(module.origin());
-        let package_name = cg.session.intern_name.get(package.name());
-        let struct_name = cg.session.intern_name.get(data.name.id);
-        cg.string_buf.clear();
-        cg.string_buf.push_str(package_name);
-        cg.string_buf.push(':');
-        cg.string_buf.push_str(struct_name);
-
-        let constant = data.mutt == ast::Mut::Immutable;
         let global_ty = cg.ty(data.ty);
+
         let value = match init {
             hir::GlobalInit::Init(eval_id) => {
                 emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
@@ -176,15 +145,19 @@ fn codegen_globals(cg: &mut Codegen) {
             hir::GlobalInit::Zeroed => llvm::const_zeroed(global_ty),
         };
 
-        let global = cg.module.add_global(&cg.string_buf, value, global_ty, constant, false);
+        let data = cg.hir.global_data(global_id);
+        let constant = data.mutt == ast::Mut::Immutable;
+        cg.namebuf.clear();
+        context::write_symbol_name(cg, data.name.id, data.origin_id, &[]);
+
+        let global = cg.module.add_global(&cg.namebuf, value, global_ty, constant, false);
         cg.globals.push(global);
     }
 }
 
 fn codegen_function_values(cg: &mut Codegen) {
     for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
-        let data = cg.hir.proc_data(proc_id);
-        if data.poly_params.is_none() {
+        if cg.hir.proc_data(proc_id).poly_params.is_none() {
             let fn_res = codegen_function_value(cg, proc_id, &[]);
             cg.procs.push(fn_res);
         } else {
@@ -195,8 +168,7 @@ fn codegen_function_values(cg: &mut Codegen) {
 
 fn codegen_function_bodies(cg: &mut Codegen) {
     for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
-        let data = cg.hir.proc_data(proc_id);
-        if data.poly_params.is_none() {
+        if cg.hir.proc_data(proc_id).poly_params.is_none() {
             codegen_function_body(cg, proc_id, &[]);
         }
     }
@@ -253,19 +225,9 @@ pub fn codegen_function_value<'c>(
     let name = if is_external || is_entry {
         cg.session.intern_name.get(data.name.id)
     } else {
-        let module_origin = cg.session.module.get(data.origin_id);
-        let module_name = cg.session.intern_name.get(module_origin.name());
-        let package_origin = cg.session.graph.package(module_origin.origin());
-        let package_name = cg.session.intern_name.get(package_origin.name());
-        let proc_name = cg.session.intern_name.get(data.name.id);
-
-        cg.string_buf.clear();
-        cg.string_buf.push_str(package_name);
-        cg.string_buf.push(':');
-        cg.string_buf.push_str(module_name);
-        cg.string_buf.push(':');
-        cg.string_buf.push_str(proc_name);
-        cg.string_buf.as_str()
+        cg.namebuf.clear();
+        context::write_symbol_name(cg, data.name.id, data.origin_id, poly_types);
+        cg.namebuf.as_str()
     };
 
     let param_types = cg.cache.types.view(offset.clone());
@@ -280,6 +242,7 @@ pub fn codegen_function_value<'c>(
     let fn_val = cg.module.add_function(name, fn_ty, linkage);
     fn_val.set_call_conv(call_conv);
 
+    let data = cg.hir.proc_data(proc_id);
     if by_pointer_ret {
         fn_val.set_param_attr(cg.cache.sret, 1);
     }
@@ -319,10 +282,10 @@ fn codegen_function_body<'c>(
         let param_ty = cg.ty(param.ty);
 
         let name = cg.session.intern_name.get(param.name.id);
-        cg.string_buf.clear();
-        cg.string_buf.push_str(name);
+        cg.namebuf.clear();
+        cg.namebuf.push_str(name);
 
-        let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
+        let param_ptr = cg.build.alloca(param_ty, &cg.namebuf);
         cg.proc.param_ptrs.push(param_ptr);
         let param_val = fn_val.param_val(param_idx as u32);
         cg.build.store(param_val, param_ptr);
@@ -333,10 +296,10 @@ fn codegen_function_body<'c>(
         let var_ty = cg.ty(var.ty);
 
         let name = cg.session.intern_name.get(var.name.id);
-        cg.string_buf.clear();
-        cg.string_buf.push_str(name);
+        cg.namebuf.clear();
+        cg.namebuf.push_str(name);
 
-        let var_ptr = cg.build.alloca(var_ty, &cg.string_buf);
+        let var_ptr = cg.build.alloca(var_ty, &cg.namebuf);
         cg.proc.variable_ptrs.push(var_ptr);
     }
 

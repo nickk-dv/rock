@@ -1149,50 +1149,35 @@ fn typecheck_slice<'hir, 'ast>(
         ctx.arena.alloc(hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty }),
     );
 
-    let target_ref = if collection.deref.is_some() {
-        target_res.expr
-    } else {
-        ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
-    };
-    let data = match collection.kind {
+    let slice = match collection.kind {
         CollectionKind::Multi(_) => unreachable!(),
-        CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
-            target: target_ref,
-            access: hir::SliceFieldAccess {
-                deref: Some(ast::Mut::Immutable),
-                field: hir::SliceField::Ptr,
-            },
-        }),
-        CollectionKind::Array(_) => target_ref,
-    };
-
-    let len = match collection.kind {
-        CollectionKind::Array(array) => {
-            let len_value = hir::ConstValue::Int {
-                val: array.len.get_resolved(ctx).unwrap_or(0), //@using default 0
-                neg: false,
-                int_ty: IntType::Usize,
-            };
-            ctx.arena.alloc(hir::Expr::Const { value: len_value })
+        CollectionKind::Slice(_) => {
+            if let hir::Type::Reference(mutt, ref_ty) = target_res.ty {
+                let deref = hir::Expr::Deref { rhs: target_res.expr, mutt, ref_ty };
+                ctx.arena.alloc(deref)
+            } else {
+                target_res.expr
+            }
         }
-        CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
-            target: target_ref,
-            access: hir::SliceFieldAccess {
-                deref: Some(ast::Mut::Immutable),
-                field: hir::SliceField::Len,
-            },
-        }),
-        CollectionKind::Multi(_) => unreachable!(),
+        CollectionKind::Array(array) => {
+            let ptr = if collection.deref.is_some() {
+                target_res.expr
+            } else {
+                ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
+            };
+            let len = array.len.get_resolved(ctx).unwrap_or(0);
+            let builtin = hir::Builtin::RawSlice(ptr, len);
+            let builtin = hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) };
+            ctx.arena.alloc(builtin)
+        }
     };
 
-    let src = ctx.src(target.range);
-    let elem_size = match layout::type_layout(ctx, collection.elem_ty, &[], src) {
-        Ok(layout) => layout.size,
-        Err(_) => return TypeResult::error(),
-    };
-    let value = hir::ConstValue::Int { val: elem_size, neg: false, int_ty: IntType::Usize };
-    let elem_size = ctx.arena.alloc(hir::Expr::Const { value });
+    // return the full slice in case of `[..]`
+    if range.start.is_none() && range.end.is_none() {
+        return TypeResult::new(return_ty, *slice);
+    }
 
+    // range start
     let start = if let Some(start) = range.start {
         typecheck_expr(ctx, Expectation::USIZE, start).expr
     } else {
@@ -1200,18 +1185,26 @@ fn typecheck_slice<'hir, 'ast>(
         ctx.arena.alloc(hir::Expr::Const { value })
     };
 
-    let (end, kind) = if let Some((kind, end)) = range.end {
-        (typecheck_expr(ctx, Expectation::USIZE, end).expr, kind)
+    // range bound
+    let enum_id = ctx.core.range_bound.unwrap_or(hir::EnumID::dummy());
+    let (variant_id, input) = if let Some((kind, end)) = range.end {
+        let variant_id = match kind {
+            ast::RangeKind::Exclusive => hir::VariantID::new(1),
+            ast::RangeKind::Inclusive => hir::VariantID::new(2),
+        };
+        let idx = typecheck_expr(ctx, Expectation::USIZE, end).expr;
+        (variant_id, ctx.arena.alloc_slice(&[idx]))
     } else {
-        (len, ast::RangeKind::Exclusive)
+        (hir::VariantID::new(0), ctx.arena.alloc_slice(&[]))
     };
+    let input = ctx.arena.alloc(input);
+    let bound = ctx.arena.alloc(hir::Expr::Variant { enum_id, variant_id, input });
 
-    let proc_id = match kind {
-        ast::RangeKind::Exclusive => ctx.core.slice_exclusive,
-        ast::RangeKind::Inclusive => ctx.core.slice_inclusive,
-    };
-    let input = ctx.arena.alloc_slice(&[data, len, elem_size, start, end]);
-    let op_call = hir::Expr::CallDirect { proc_id, input };
+    let proc_id = ctx.core.slice;
+    let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
+    let input = ctx.arena.alloc_slice(&[slice, start, bound]);
+    let input = ctx.arena.alloc((poly_types, input));
+    let op_call = hir::Expr::CallDirectPoly { proc_id, input };
 
     let kind = match collection.kind {
         CollectionKind::Multi(_) => unreachable!(),

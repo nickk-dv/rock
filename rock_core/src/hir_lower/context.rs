@@ -49,8 +49,8 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             panic: hir::ProcID::dummy(),
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
-            slice_exclusive: hir::ProcID::dummy(),
-            slice_inclusive: hir::ProcID::dummy(),
+            slice: hir::ProcID::dummy(),
+            range_bound: None,
             any: None,
             source_location: None,
         };

@@ -1,8 +1,9 @@
 use crate::llvm;
 use rock_core::config::TargetTriple;
-use rock_core::hir;
-use rock_core::session::Session;
-use rock_core::support::TempBuffer;
+use rock_core::intern::NameID;
+use rock_core::session::{ModuleID, Session};
+use rock_core::support::{AsStr, TempBuffer};
+use rock_core::{ast, hir};
 use std::collections::HashMap;
 
 pub struct Codegen<'c, 's, 'sref> {
@@ -19,7 +20,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub string_lits: Vec<llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
-    pub string_buf: String,
+    pub namebuf: String,
     pub cache: CodegenCache<'c>,
     pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
@@ -109,7 +110,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             string_lits: Vec::with_capacity(session.intern_lit.get_all().len()),
             hir,
             session,
-            string_buf: String::with_capacity(256),
+            namebuf: String::with_capacity(256),
             cache,
             poly_procs: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
@@ -139,7 +140,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             },
             hir::Type::PolyProc(_, idx) => self.ty(self.proc.poly_types[idx]),
             hir::Type::PolyEnum(_, idx) => self.ty(poly_types_up[idx]),
-            hir::Type::PolyStruct(_, idx) => self.ty(poly_types_up[idx]), //@crashes here
+            hir::Type::PolyStruct(_, idx) => self.ty(poly_types_up[idx]),
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic enum type")
@@ -157,8 +158,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                     let mut any_poly = false;
                     for ty in poly_types {
                         if pass_5::type_has_poly_param(*ty) {
-                            //@if these arent concrete still using them as substitution set
-                            // are `poly_types` or `poly_types_up` the ones to use???
                             let ty = self.type_substitute_poly(*ty, poly_types_up); //@try always using this
                             self.cache.hir_types.push(ty);
                             any_poly = true;
@@ -182,17 +181,15 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 }
 
                 let data = self.hir.struct_data(struct_id);
-                let name = self.session.intern_name.get(data.name.id);
-                self.string_buf.clear();
-                self.string_buf.push_str(name);
-                self.string_buf.push_str("_Poly_");
-
-                let opaque = self.context.struct_named_create(&self.string_buf);
+                self.namebuf.clear();
+                write_symbol_name(self, data.name.id, data.origin_id, key.1);
+                let opaque = self.context.struct_named_create(&self.namebuf);
                 self.poly_structs.insert(key, opaque);
 
+                let data = self.hir.struct_data(struct_id);
                 let offset = self.cache.types.start();
                 for field in data.fields {
-                    let ty = self.ty_impl(field.ty, key.1); //@passing concrete here
+                    let ty = self.ty_impl(field.ty, key.1);
                     self.cache.types.push(ty);
                 }
                 let field_types = self.cache.types.view(offset.clone());
@@ -212,7 +209,11 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         }
     }
 
-    fn type_substitute_poly(&mut self, ty: hir::Type<'c>, ctx: &[hir::Type<'c>]) -> hir::Type<'c> {
+    pub fn type_substitute_poly(
+        &mut self,
+        ty: hir::Type<'c>,
+        ctx: &[hir::Type<'c>],
+    ) -> hir::Type<'c> {
         match ty {
             hir::Type::Error
             | hir::Type::Unknown
@@ -246,11 +247,20 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 let poly_types = self.cache.hir_types.take(offset, &mut self.hir.arena);
                 hir::Type::Struct(struct_id, poly_types)
             }
-            //@still replace these? does it affect codegen?
-            hir::Type::Reference(_, _) => ty,
-            hir::Type::MultiReference(_, _) => ty,
-            hir::Type::Procedure(_) => ty,
-            hir::Type::ArraySlice(_) => ty,
+            hir::Type::Reference(mutt, ref_ty) => {
+                let ref_ty = self.type_substitute_poly(*ref_ty, ctx);
+                hir::Type::Reference(mutt, self.hir.arena.alloc(ref_ty))
+            }
+            hir::Type::MultiReference(mutt, ref_ty) => {
+                let ref_ty = self.type_substitute_poly(*ref_ty, ctx);
+                hir::Type::MultiReference(mutt, self.hir.arena.alloc(ref_ty))
+            }
+            hir::Type::Procedure(proc_ty) => ty, //@todo
+            hir::Type::ArraySlice(slice) => {
+                let elem_ty = self.type_substitute_poly(slice.elem_ty, ctx);
+                let slice = hir::ArraySlice { mutt: slice.mutt, elem_ty };
+                hir::Type::ArraySlice(self.hir.arena.alloc(slice))
+            }
             hir::Type::ArrayStatic(array) => {
                 let elem_ty = self.type_substitute_poly(array.elem_ty, ctx);
                 let array = hir::ArrayStatic { elem_ty, len: array.len };
@@ -488,6 +498,97 @@ impl<'c> CodegenCache<'c> {
             values: TempBuffer::new(128),
             cases: TempBuffer::new(128),
             hir_types: TempBuffer::new(32),
+        }
+    }
+}
+
+pub fn write_symbol_name(
+    cg: &mut Codegen,
+    name: NameID,
+    origin: ModuleID,
+    poly_types: &[hir::Type],
+) {
+    use std::fmt::Write;
+    let module = cg.session.module.get(origin);
+    let module_name = cg.session.intern_name.get(module.name());
+    let package = cg.session.graph.package(module.origin());
+    let package_name = cg.session.intern_name.get(package.name());
+    let symbol_name = cg.session.intern_name.get(name);
+
+    let _ = write!(cg.namebuf, "{package_name}:{module_name}:{symbol_name}");
+    if !poly_types.is_empty() {
+        cg.namebuf.push('(');
+        for ty in poly_types.iter().copied() {
+            write_type(cg, ty);
+            cg.namebuf.push(',');
+        }
+        cg.namebuf.pop();
+        cg.namebuf.push(')');
+    }
+}
+
+fn write_type(cg: &mut Codegen, ty: hir::Type) {
+    use std::fmt::Write;
+    match ty {
+        hir::Type::Error => unreachable!(),
+        hir::Type::Unknown => unreachable!(),
+        hir::Type::Char => cg.namebuf.push_str("char"),
+        hir::Type::Void => cg.namebuf.push_str("void"),
+        hir::Type::Never => cg.namebuf.push_str("never"),
+        hir::Type::Rawptr => cg.namebuf.push_str("rawptr"),
+        hir::Type::UntypedChar => unreachable!(),
+        hir::Type::Int(int_ty) => cg.namebuf.push_str(int_ty.as_str()),
+        hir::Type::Float(float_ty) => cg.namebuf.push_str(float_ty.as_str()),
+        hir::Type::Bool(bool_ty) => cg.namebuf.push_str(bool_ty.as_str()),
+        hir::Type::String(string_ty) => cg.namebuf.push_str(string_ty.as_str()),
+        hir::Type::PolyProc(_, idx) => write_type(cg, cg.proc.poly_types[idx]),
+        hir::Type::PolyEnum(_, _) => unreachable!(),
+        hir::Type::PolyStruct(_, _) => unreachable!(),
+        hir::Type::Enum(enum_id, poly_types) => {
+            let data = cg.hir.enum_data(enum_id);
+            write_symbol_name(cg, data.name.id, data.origin_id, poly_types);
+        }
+        hir::Type::Struct(struct_id, poly_types) => {
+            let data = cg.hir.struct_data(struct_id);
+            write_symbol_name(cg, data.name.id, data.origin_id, poly_types);
+        }
+        hir::Type::Reference(mutt, ref_ty) => {
+            cg.namebuf.push('&');
+            if mutt == ast::Mut::Mutable {
+                cg.namebuf.push_str("mut ");
+            }
+            write_type(cg, *ref_ty);
+        }
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            cg.namebuf.push('[');
+            cg.namebuf.push('&');
+            if mutt == ast::Mut::Mutable {
+                cg.namebuf.push_str("mut");
+            }
+            cg.namebuf.push(']');
+            write_type(cg, *ref_ty);
+        }
+        hir::Type::Procedure(proc_ty) => cg.namebuf.push_str("<proc_ty>"), //@todo
+        hir::Type::ArraySlice(slice) => {
+            cg.namebuf.push('[');
+            if slice.mutt == ast::Mut::Mutable {
+                cg.namebuf.push_str("mut");
+            }
+            cg.namebuf.push(']');
+            write_type(cg, slice.elem_ty);
+        }
+        hir::Type::ArrayStatic(array) => {
+            let len = match array.len {
+                hir::ArrayStaticLen::Immediate(len) => len,
+                hir::ArrayStaticLen::ConstEval(eval_id) => {
+                    match cg.hir.const_eval_values[eval_id.index()] {
+                        hir::ConstValue::Int { val, .. } => val,
+                        _ => unreachable!(),
+                    }
+                }
+            };
+            let _ = write!(&mut cg.namebuf, "[{}]", len);
+            write_type(cg, array.elem_ty);
         }
     }
 }

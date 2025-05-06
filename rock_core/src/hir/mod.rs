@@ -26,8 +26,8 @@ pub struct CoreItems {
     pub panic: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
-    pub slice_exclusive: ProcID,
-    pub slice_inclusive: ProcID,
+    pub slice: ProcID,
+    pub range_bound: Option<EnumID>,
     pub any: Option<StructID>,
     pub source_location: Option<StructID>,
 }
@@ -457,6 +457,7 @@ pub enum Builtin<'hir> {
     SizeOf(Type<'hir>),
     AlignOf(Type<'hir>),
     Transmute(&'hir Expr<'hir>, Type<'hir>),
+    RawSlice(&'hir Expr<'hir>, u64),
 }
 
 #[derive(Copy, Clone)]
