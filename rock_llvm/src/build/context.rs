@@ -121,7 +121,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         self.ty_impl(ty, &[])
     }
 
-    pub fn ty_impl(&mut self, ty: hir::Type<'c>, poly_types: &[hir::Type<'c>]) -> llvm::Type {
+    fn ty_impl(&mut self, ty: hir::Type<'c>, poly_types_up: &[hir::Type<'c>]) -> llvm::Type {
         match ty {
             hir::Type::Error | hir::Type::Unknown => unreachable!(),
             hir::Type::Char => self.cache.int_32,
@@ -138,8 +138,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 hir::StringType::Untyped => unreachable!(),
             },
             hir::Type::PolyProc(_, idx) => self.ty(self.proc.poly_types[idx]),
-            hir::Type::PolyEnum(_, _) => unimplemented!("codegen poly_enum type"),
-            hir::Type::PolyStruct(_, idx) => self.ty(poly_types[idx]),
+            hir::Type::PolyEnum(_, idx) => self.ty(poly_types_up[idx]),
+            hir::Type::PolyStruct(_, idx) => self.ty(poly_types_up[idx]), //@crashes here
             hir::Type::Enum(enum_id, poly_types) => {
                 if !poly_types.is_empty() {
                     unimplemented!("codegen polymorphic enum type")
@@ -148,71 +148,67 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             }
             hir::Type::Struct(struct_id, poly_types) => {
                 if poly_types.is_empty() {
-                    self.struct_type(struct_id).as_ty()
-                } else {
-                    use rock_core::hir_lower::pass_5;
-
-                    //@hack: always substitute
-                    //when in polymorphic procedure context substitute poly params
-                    //let key = if self.proc.poly_types.is_empty() {
-                    //    (struct_id, poly_types)
-                    //} else {
-                    let key = {
-                        let offset = self.cache.hir_types.start();
-                        let mut any_poly = false;
-                        for ty in poly_types {
-                            if pass_5::type_has_poly_param(*ty) {
-                                let ty = self.type_substitute_poly(*ty, poly_types);
-                                self.cache.hir_types.push(ty);
-                                any_poly = true;
-                            } else {
-                                self.cache.hir_types.push(*ty);
-                            }
-                        }
-                        let poly_types = if any_poly {
-                            self.cache.hir_types.take(offset, &mut self.hir.arena)
-                        } else {
-                            self.cache.hir_types.pop_view(offset);
-                            poly_types
-                        };
-                        (struct_id, poly_types)
-                    };
-
-                    // check that struct key is a concrete type
-                    debug_assert!(key.1.iter().all(|ty| !pass_5::type_has_poly_param(*ty)));
-
-                    if let Some(t) = self.poly_structs.get(&key) {
-                        t.as_ty()
-                    } else {
-                        let data = self.hir.struct_data(struct_id);
-                        let name = self.session.intern_name.get(data.name.id);
-                        self.string_buf.clear();
-                        self.string_buf.push_str(name);
-                        self.string_buf.push_str("_Poly_");
-
-                        let opaque = self.context.struct_named_create(&self.string_buf);
-                        self.poly_structs.insert(key, opaque);
-
-                        let offset = self.cache.types.start();
-                        for field in data.fields {
-                            let ty = self.ty_impl(field.ty, poly_types);
-                            self.cache.types.push(ty);
-                        }
-                        let field_types = self.cache.types.view(offset.clone());
-                        self.context.struct_named_set_body(opaque, &field_types, false);
-                        self.cache.types.pop_view(offset);
-
-                        opaque.as_ty()
-                    }
+                    return self.struct_type(struct_id).as_ty();
                 }
+                use rock_core::hir_lower::pass_5;
+
+                let key = {
+                    let offset = self.cache.hir_types.start();
+                    let mut any_poly = false;
+                    for ty in poly_types {
+                        if pass_5::type_has_poly_param(*ty) {
+                            //@if these arent concrete still using them as substitution set
+                            // are `poly_types` or `poly_types_up` the ones to use???
+                            let ty = self.type_substitute_poly(*ty, poly_types_up); //@try always using this
+                            self.cache.hir_types.push(ty);
+                            any_poly = true;
+                        } else {
+                            self.cache.hir_types.push(*ty);
+                        }
+                    }
+                    let poly_types = if any_poly {
+                        self.cache.hir_types.take(offset, &mut self.hir.arena)
+                    } else {
+                        self.cache.hir_types.pop_view(offset);
+                        poly_types
+                    };
+                    (struct_id, poly_types)
+                };
+
+                // check that struct key is a concrete type
+                debug_assert!(key.1.iter().all(|ty| !pass_5::type_has_poly_param(*ty)));
+                if let Some(t) = self.poly_structs.get(&key) {
+                    return t.as_ty();
+                }
+
+                let data = self.hir.struct_data(struct_id);
+                let name = self.session.intern_name.get(data.name.id);
+                self.string_buf.clear();
+                self.string_buf.push_str(name);
+                self.string_buf.push_str("_Poly_");
+
+                let opaque = self.context.struct_named_create(&self.string_buf);
+                self.poly_structs.insert(key, opaque);
+
+                let offset = self.cache.types.start();
+                for field in data.fields {
+                    let ty = self.ty_impl(field.ty, key.1); //@passing concrete here
+                    self.cache.types.push(ty);
+                }
+                let field_types = self.cache.types.view(offset.clone());
+                self.context.struct_named_set_body(opaque, &field_types, false);
+                self.cache.types.pop_view(offset);
+
+                opaque.as_ty()
             }
             hir::Type::Reference(_, _) => self.cache.ptr_type,
             hir::Type::MultiReference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,
             hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
-            hir::Type::ArrayStatic(array) => {
-                llvm::array_type(self.ty(array.elem_ty), self.array_len(array.len))
-            }
+            hir::Type::ArrayStatic(array) => llvm::array_type(
+                self.ty_impl(array.elem_ty, poly_types_up),
+                self.array_len(array.len),
+            ),
         }
     }
 
@@ -410,6 +406,9 @@ impl<'c> ProcCodegen<'c> {
         self.tail_values.clear();
         self.block_stack.clear();
         self.next_loop_info = None;
+        // check that proc is a concrete type
+        use rock_core::hir_lower::pass_5;
+        debug_assert!(poly_types.iter().all(|ty| !pass_5::type_has_poly_param(*ty)));
     }
 
     pub fn block_enter(&mut self) {

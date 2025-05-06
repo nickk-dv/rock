@@ -7,6 +7,10 @@ use rock_core::config::TargetTriple;
 use rock_core::hir;
 use rock_core::session::Session;
 
+//@names in `cg.string_buf` can get cleared and replaced
+// by named generated for new types in `cg.ty()`, refactor naming to be right before using it.
+// support better full symbol names including module full paths.
+
 pub fn codegen_module(
     hir: hir::Hir,
     target: TargetTriple,
@@ -312,25 +316,26 @@ fn codegen_function_body<'c>(
     cg.build.position_at_end(entry_bb);
 
     for (param_idx, param) in data.params.iter().enumerate() {
+        let param_ty = cg.ty(param.ty);
+
         let name = cg.session.intern_name.get(param.name.id);
         cg.string_buf.clear();
         cg.string_buf.push_str(name);
 
-        let param_ty = cg.ty(param.ty);
         let param_ptr = cg.build.alloca(param_ty, &cg.string_buf);
         cg.proc.param_ptrs.push(param_ptr);
-
         let param_val = fn_val.param_val(param_idx as u32);
         cg.build.store(param_val, param_ptr);
     }
 
     let data = cg.hir.proc_data(proc_id);
     for var in data.variables {
+        let var_ty = cg.ty(var.ty);
+
         let name = cg.session.intern_name.get(var.name.id);
         cg.string_buf.clear();
         cg.string_buf.push_str(name);
 
-        let var_ty = cg.ty(var.ty);
         let var_ptr = cg.build.alloca(var_ty, &cg.string_buf);
         cg.proc.variable_ptrs.push(var_ptr);
     }

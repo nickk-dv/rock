@@ -54,7 +54,7 @@ pub struct Param<'hir> {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq,  Debug, PartialEq)]
     pub enum ParamKind {
         Normal "normal",
         Variadic "variadic",
@@ -166,7 +166,7 @@ pub type StructKey<'hir> = (StructID, &'hir [Type<'hir>]);
 pub type VariantKey<'hir> = (EnumID, VariantID, &'hir [Type<'hir>]);
 
 #[must_use]
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Type<'hir> {
     Error,
     Unknown,
@@ -191,32 +191,32 @@ pub enum Type<'hir> {
     ArrayStatic(&'hir ArrayStatic<'hir>),
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct ProcType<'hir> {
     pub flag_set: BitSet<ProcFlag>,
     pub params: &'hir [ProcTypeParam<'hir>],
     pub return_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct ProcTypeParam<'hir> {
     pub ty: Type<'hir>,
     pub kind: ParamKind,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct ArraySlice<'hir> {
     pub mutt: ast::Mut,
     pub elem_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct ArrayStatic<'hir> {
     pub len: ArrayStaticLen,
     pub elem_ty: Type<'hir>,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum ArrayStaticLen {
     Immediate(u64),
     ConstEval(ConstEvalID),
@@ -269,7 +269,7 @@ pub enum Expr<'hir> {
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { kind: MatchKind, match_: &'hir Match<'hir> },
-    StructField  { target: &'hir Expr<'hir>, access: StructFieldAccess },
+    StructField  { target: &'hir Expr<'hir>, access: &'hir StructFieldAccess<'hir> },
     SliceField   { target: &'hir Expr<'hir>, access: SliceFieldAccess },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
     Slice        { target: &'hir Expr<'hir>, access: &'hir SliceAccess<'hir> },
@@ -371,10 +371,13 @@ pub enum Pat<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct StructFieldAccess {
+pub struct StructFieldAccess<'hir> {
     pub deref: Option<ast::Mut>,
     pub struct_id: StructID,
     pub field_id: FieldID,
+    //@can reduce size later, poly required for correctness
+    pub field_ty: Type<'hir>,
+    pub poly_types: &'hir [Type<'hir>],
 }
 
 #[derive(Copy, Clone)]
@@ -502,7 +505,7 @@ where
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub enum IntType {
         S8 "s8",
         S16 "s16",
@@ -519,7 +522,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub enum FloatType {
         F32 "f32",
         F64 "f64",
@@ -528,7 +531,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub enum BoolType {
         Bool "bool",
         Bool16 "bool16",
@@ -539,7 +542,7 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub enum StringType {
         String "string",
         CString "cstring",
@@ -624,7 +627,7 @@ crate::size_lock!(16, ConstValue);
 //==================== ITEM FLAGS ====================
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Hash, Eq,  Debug, PartialEq)]
     pub enum ProcFlag {
         // directives
         Inline "inline",

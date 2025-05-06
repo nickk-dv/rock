@@ -183,7 +183,7 @@ mod temp_buffer {
 mod bitset {
     use std::marker::PhantomData;
 
-    #[derive(Copy, Clone, Hash, Eq, PartialEq)]
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
     pub struct BitSet<T>
     where
         T: Copy + Clone + Into<u32>,
@@ -322,7 +322,7 @@ macro_rules! size_lock {
 #[macro_export]
 macro_rules! define_id {
     ($vis:vis $name:ident) => {
-        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+        #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
         $vis struct $name(u32);
 
         #[allow(unused)]

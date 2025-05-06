@@ -427,7 +427,7 @@ fn codegen_struct_field<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     target: &hir::Expr<'c>,
-    access: &hir::StructFieldAccess,
+    access: &hir::StructFieldAccess<'c>,
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, target);
     let target_ptr = if access.deref.is_some() {
@@ -436,17 +436,13 @@ fn codegen_struct_field<'c>(
         target_ptr
     };
 
-    let field_ptr = cg.build.gep_struct(
-        cg.struct_type(access.struct_id),
-        target_ptr,
-        access.field_id.raw(),
-        "field_ptr",
-    );
+    let struct_ty = hir::Type::Struct(access.struct_id, access.poly_types);
+    let struct_ty = llvm::TypeStruct::from_ty(cg.ty(struct_ty));
+    let field_ptr = cg.build.gep_struct(struct_ty, target_ptr, access.field_id.raw(), "field_ptr");
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
-            let field = cg.hir.struct_data(access.struct_id).field(access.field_id);
-            let field_ty = cg.ty(field.ty);
+            let field_ty = cg.ty(access.field_ty);
             cg.build.load(field_ty, field_ptr, "field_val")
         }
         Expect::Pointer => field_ptr.as_val(),
@@ -562,10 +558,7 @@ fn codegen_index<'c>(
     };
 
     match expect {
-        Expect::Value(_) | Expect::Store(_) => {
-            let ptr_ty = cg.ty(access.elem_ty);
-            cg.build.load(ptr_ty, elem_ptr, "elem_val")
-        }
+        Expect::Value(_) | Expect::Store(_) => cg.build.load(elem_ty, elem_ptr, "elem_val"),
         Expect::Pointer => elem_ptr.as_val(),
     }
 }

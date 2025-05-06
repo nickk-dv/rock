@@ -110,6 +110,7 @@ pub struct InferScope<'hir> {
 #[derive(Copy, Clone)]
 pub struct InferContext {
     offset: usize,
+    count: usize,
 }
 
 //==================== SCOPES IMPL ====================
@@ -542,12 +543,12 @@ impl<'hir> InferScope<'hir> {
     fn new() -> InferScope<'hir> {
         InferScope { types: Vec::with_capacity(64) }
     }
-    pub fn start_context(&mut self, poly_count: usize) -> InferContext {
+    pub fn start_context(&mut self, count: usize) -> InferContext {
         let offset = self.types.len();
-        for _ in 0..poly_count {
+        for _ in 0..count {
             self.types.push(hir::Type::Unknown);
         }
-        InferContext { offset }
+        InferContext { offset, count }
     }
     pub fn end_context(&mut self, ctx: InferContext) {
         while self.types.len() > ctx.offset {
@@ -560,8 +561,8 @@ impl<'hir> InferScope<'hir> {
             *poly_type = ty;
         }
     }
-    pub fn inferred(&self, ctx: InferContext, poly_idx: usize) -> hir::Type<'hir> {
-        self.types[ctx.offset + poly_idx]
+    pub fn inferred(&self, ctx: InferContext) -> &[hir::Type<'hir>] {
+        &self.types[ctx.offset..ctx.offset + ctx.count]
     }
 }
 
