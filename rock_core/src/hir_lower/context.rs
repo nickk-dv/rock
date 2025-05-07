@@ -1,4 +1,5 @@
 use super::check_match::PatCov;
+use super::constant::layout;
 use super::scope::{PolyScope, Scope};
 use crate::ast;
 use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
@@ -412,5 +413,45 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
     pub fn variant_eval_mut(&mut self, id: hir::VariantEvalID) -> &mut hir::VariantEval<'hir> {
         &mut self.variant_evals[id.index()]
+    }
+}
+
+impl<'hir> layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
+    fn error(&mut self) -> &mut impl ErrorSink {
+        &mut self.emit
+    }
+    fn ptr_size(&self) -> u64 {
+        self.session.config.target_ptr_width.ptr_size()
+    }
+    fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
+        len.get_resolved(self)
+    }
+    fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
+        self.registry.enum_data(id)
+    }
+    fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
+        self.registry.struct_data(id)
+    }
+
+    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout> {
+        &self.enum_layout
+    }
+    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+        &self.struct_layout
+    }
+    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+        &self.variant_layout
+    }
+
+    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout> {
+        &mut self.enum_layout
+    }
+    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+        &mut self.struct_layout
+    }
+    fn variant_layout_mut(
+        &mut self,
+    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+        &mut self.variant_layout
     }
 }

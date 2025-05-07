@@ -1,10 +1,29 @@
+use crate::error::ErrorSink;
 use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
-use crate::hir_lower::context::HirCtx;
+use std::collections::HashMap;
+
+pub trait LayoutContext<'hir> {
+    fn error(&mut self) -> &mut impl ErrorSink;
+    fn ptr_size(&self) -> u64;
+    fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()>;
+    fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir>;
+    fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir>;
+
+    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout>;
+    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
+    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
+
+    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout>;
+    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
+    fn variant_layout_mut(
+        &mut self,
+    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
+}
 
 pub fn type_layout<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &mut impl LayoutContext<'hir>,
     ty: hir::Type<'hir>,
     poly_types: &[hir::Type<'hir>],
     src: SourceRange,
@@ -16,7 +35,7 @@ pub fn type_layout<'hir>(
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
         hir::Type::UntypedChar => unreachable!(),
-        hir::Type::Rawptr => Ok(hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size())),
+        hir::Type::Rawptr => Ok(hir::Layout::equal(ctx.ptr_size())),
         hir::Type::Int(int_ty) => Ok(int_layout(ctx, int_ty)),
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
         hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
@@ -26,15 +45,15 @@ pub fn type_layout<'hir>(
         hir::Type::PolyStruct(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
         hir::Type::Enum(id, poly_types) => {
             if poly_types.is_empty() {
-                ctx.registry.enum_data(id).layout.resolved()
+                ctx.enum_data(id).layout.resolved()
             } else {
-                let _ = ctx.registry.enum_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                if let Some(layout) = ctx.enum_layout.get(&(id, poly_types)) {
+                let _ = ctx.enum_data(id).layout.resolved()?; //@hack prevent inifinite recursion
+                if let Some(layout) = ctx.enum_layout().get(&(id, poly_types)) {
                     Ok(*layout)
                 } else {
                     let layout_res = resolve_enum_layout(ctx, id, poly_types);
                     if let Ok(layout) = layout_res {
-                        ctx.enum_layout.insert((id, poly_types), layout);
+                        ctx.enum_layout_mut().insert((id, poly_types), layout);
                     }
                     layout_res
                 }
@@ -42,37 +61,36 @@ pub fn type_layout<'hir>(
         }
         hir::Type::Struct(id, poly_types) => {
             if poly_types.is_empty() {
-                ctx.registry.struct_data(id).layout.resolved()
+                ctx.struct_data(id).layout.resolved()
             } else {
-                let _ = ctx.registry.struct_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                if let Some(layout) = ctx.struct_layout.get(&(id, poly_types)) {
+                let _ = ctx.struct_data(id).layout.resolved()?; //@hack prevent inifinite recursion
+                if let Some(layout) = ctx.struct_layout().get(&(id, poly_types)) {
                     Ok(layout.total)
                 } else {
                     let layout_res = resolve_struct_layout(ctx, id, poly_types);
                     if let Ok(layout) = layout_res {
-                        ctx.struct_layout.insert((id, poly_types), layout);
+                        ctx.struct_layout_mut().insert((id, poly_types), layout);
                     }
                     layout_res.map(|l| l.total)
                 }
             }
         }
         hir::Type::Reference(_, _) | hir::Type::MultiReference(_, _) | hir::Type::Procedure(_) => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
-            Ok(hir::Layout::equal(ptr_size))
+            Ok(hir::Layout::equal(ctx.ptr_size()))
         }
         hir::Type::ArraySlice(_) => {
-            let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
+            let ptr_size = ctx.ptr_size();
             Ok(hir::Layout::new(2 * ptr_size, ptr_size))
         }
         hir::Type::ArrayStatic(array) => {
-            let len = array.len.get_resolved(ctx)?;
+            let len = ctx.array_len(array.len)?;
             let elem_layout = type_layout(ctx, array.elem_ty, &[], src)?;
             let elem_size = elem_layout.size;
 
             if let Some(total) = elem_size.checked_mul(len) {
                 Ok(hir::Layout::new(total, elem_layout.align))
             } else {
-                err::const_array_size_overflow(&mut ctx.emit, src, elem_size, len);
+                err::const_array_size_overflow(ctx.error(), src, elem_size, len);
                 Err(())
             }
         }
@@ -80,15 +98,13 @@ pub fn type_layout<'hir>(
 }
 
 #[inline]
-pub fn int_layout(ctx: &HirCtx, int_ty: hir::IntType) -> hir::Layout {
+pub fn int_layout<'hir>(ctx: &impl LayoutContext<'hir>, int_ty: hir::IntType) -> hir::Layout {
     match int_ty {
         hir::IntType::S8 | hir::IntType::U8 => hir::Layout::equal(1),
         hir::IntType::S16 | hir::IntType::U16 => hir::Layout::equal(2),
         hir::IntType::S32 | hir::IntType::U32 => hir::Layout::equal(4),
         hir::IntType::S64 | hir::IntType::U64 => hir::Layout::equal(8),
-        hir::IntType::Ssize | hir::IntType::Usize => {
-            hir::Layout::equal(ctx.session.config.target_ptr_width.ptr_size())
-        }
+        hir::IntType::Ssize | hir::IntType::Usize => hir::Layout::equal(ctx.ptr_size()),
         hir::IntType::Untyped => unreachable!(),
     }
 }
@@ -114,8 +130,11 @@ pub fn bool_layout(bool_ty: hir::BoolType) -> hir::Layout {
 }
 
 #[inline]
-pub fn string_layout(ctx: &HirCtx, string_ty: hir::StringType) -> hir::Layout {
-    let ptr_size = ctx.session.config.target_ptr_width.ptr_size();
+pub fn string_layout<'hir>(
+    ctx: &impl LayoutContext<'hir>,
+    string_ty: hir::StringType,
+) -> hir::Layout {
+    let ptr_size = ctx.ptr_size();
     match string_ty {
         hir::StringType::String => hir::Layout::new(2 * ptr_size, ptr_size),
         hir::StringType::CString => hir::Layout::equal(ptr_size),
@@ -124,11 +143,11 @@ pub fn string_layout(ctx: &HirCtx, string_ty: hir::StringType) -> hir::Layout {
 }
 
 pub fn resolve_struct_layout<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &mut impl LayoutContext<'hir>,
     struct_id: hir::StructID,
     poly_types: &[hir::Type<'hir>],
 ) -> Result<hir::StructLayout<'hir>, ()> {
-    let data = ctx.registry.struct_data(struct_id);
+    let data = ctx.struct_data(struct_id);
     let src = SourceRange::new(data.origin_id, data.name.range);
 
     let types = data.fields.iter().map(|f| f.ty);
@@ -136,12 +155,12 @@ pub fn resolve_struct_layout<'hir>(
 }
 
 fn resolve_variant_layout<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &mut impl LayoutContext<'hir>,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
     poly_types: &[hir::Type<'hir>],
 ) -> Result<hir::StructLayout<'hir>, ()> {
-    let data = ctx.registry.enum_data(enum_id);
+    let data = ctx.enum_data(enum_id);
     let variant = data.variant(variant_id);
     let src = SourceRange::new(data.origin_id, variant.name.range);
 
@@ -151,7 +170,7 @@ fn resolve_variant_layout<'hir>(
 }
 
 fn resolve_aggregate_layout<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &mut impl LayoutContext<'hir>,
     src: SourceRange,
     item_kind: &'static str,
     types: impl Iterator<Item = hir::Type<'hir>>,
@@ -168,7 +187,7 @@ fn resolve_aggregate_layout<'hir>(
         if let Some(total) = size.checked_add(layout.size) {
             size = total;
         } else {
-            err::const_item_size_overflow(&mut ctx.emit, src, item_kind, size, layout.size);
+            err::const_item_size_overflow(ctx.error(), src, item_kind, size, layout.size);
             return Err(());
         }
     }
@@ -180,11 +199,11 @@ fn resolve_aggregate_layout<'hir>(
 }
 
 pub fn resolve_enum_layout<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
+    ctx: &mut impl LayoutContext<'hir>,
     enum_id: hir::EnumID,
     poly_types: &'hir [hir::Type<'hir>],
 ) -> Result<hir::Layout, ()> {
-    let data = ctx.registry.enum_data(enum_id);
+    let data = ctx.enum_data(enum_id);
     if !data.flag_set.contains(hir::EnumFlag::WithFields) {
         let tag_ty = data.tag_ty.resolved()?;
         return Ok(int_layout(ctx, tag_ty));
@@ -199,7 +218,7 @@ pub fn resolve_enum_layout<'hir>(
         align = align.max(layout.total.align);
 
         let key = (enum_id, variant_id, poly_types);
-        ctx.variant_layout.insert(key, layout);
+        ctx.variant_layout_mut().insert(key, layout);
     }
 
     size = aligned_size(size, align);

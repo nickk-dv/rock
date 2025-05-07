@@ -1,7 +1,7 @@
 mod check_directive;
 mod check_match;
 mod check_path;
-mod constant;
+pub mod constant;
 mod context;
 mod pass_1;
 mod pass_2;

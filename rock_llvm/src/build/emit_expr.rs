@@ -2,8 +2,12 @@ use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
 use crate::llvm;
+use rock_core::error::SourceRange;
 use rock_core::hir::{self, CmpPred};
+use rock_core::hir_lower::constant::layout;
 use rock_core::intern::LitID;
+use rock_core::session::ModuleID;
+use rock_core::text::TextRange;
 
 pub fn codegen_expr_discard<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
     codegen_expr(cg, expr, Expect::Value(None));
@@ -613,43 +617,6 @@ fn codegen_cast_op<'c>(
     }
 }
 
-fn size_of_temp(cg: &Codegen, ty: hir::Type) -> u64 {
-    match ty {
-        hir::Type::Error | hir::Type::Unknown => unreachable!(),
-        hir::Type::Char => 4,
-        hir::Type::Void => 0,
-        hir::Type::Never => 0,
-        hir::Type::Rawptr => todo!(),
-        hir::Type::UntypedChar => unreachable!(),
-        hir::Type::Int(int_type) => match int_type {
-            hir::IntType::S8 => 1,
-            hir::IntType::S16 => 2,
-            hir::IntType::S32 => 4,
-            hir::IntType::S64 => 8,
-            hir::IntType::Ssize => todo!(),
-            hir::IntType::U8 => 1,
-            hir::IntType::U16 => 2,
-            hir::IntType::U32 => 4,
-            hir::IntType::U64 => 8,
-            hir::IntType::Usize => todo!(),
-            hir::IntType::Untyped => unreachable!(),
-        },
-        hir::Type::Float(float_type) => todo!(),
-        hir::Type::Bool(bool_type) => todo!(),
-        hir::Type::String(string_type) => todo!(),
-        hir::Type::PolyProc(_, idx) => size_of_temp(cg, cg.proc.poly_types[idx]),
-        hir::Type::PolyEnum(enum_id, _) => todo!(),
-        hir::Type::PolyStruct(struct_id, _) => todo!(),
-        hir::Type::Enum(enum_id, items) => todo!(),
-        hir::Type::Struct(struct_id, items) => todo!(),
-        hir::Type::Reference(_, _) => 8,
-        hir::Type::MultiReference(_, _) => 8,
-        hir::Type::Procedure(proc_type) => todo!(),
-        hir::Type::ArraySlice(array_slice) => todo!(),
-        hir::Type::ArrayStatic(array_static) => todo!(),
-    }
-}
-
 fn codegen_builtin<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
@@ -657,9 +624,15 @@ fn codegen_builtin<'c>(
 ) -> llvm::Value {
     match builtin {
         hir::Builtin::SizeOf(ty) => {
-            llvm::const_int(cg.ptr_sized_int(), size_of_temp(cg, ty), false)
+            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+            let layout = layout::type_layout(cg, ty, cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+            llvm::const_int(cg.ptr_sized_int(), layout.size, false)
         }
-        hir::Builtin::AlignOf(_) => unimplemented!("polymorphic @align_of"),
+        hir::Builtin::AlignOf(ty) => {
+            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+            let layout = layout::type_layout(cg, ty, cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+            llvm::const_int(cg.ptr_sized_int(), layout.align, false)
+        }
         hir::Builtin::Transmute(target, into) => {
             let val = codegen_expr_value(cg, target);
             let into_ty = cg.ty(into);

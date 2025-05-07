@@ -1,5 +1,7 @@
 use crate::llvm;
 use rock_core::config::TargetTriple;
+use rock_core::error::ErrorWarningBuffer;
+use rock_core::hir_lower::constant::layout;
 use rock_core::intern::NameID;
 use rock_core::session::{ModuleID, Session};
 use rock_core::support::{AsStr, TempBuffer};
@@ -25,6 +27,8 @@ pub struct Codegen<'c, 's, 'sref> {
     pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
+    //@errors ignored, layout overfow can happen
+    pub emit: ErrorWarningBuffer,
 }
 
 pub struct ProcCodegen<'c> {
@@ -115,6 +119,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             poly_procs: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
             poly_proc_queue: Vec::with_capacity(128),
+            emit: ErrorWarningBuffer::default(),
         }
     }
 
@@ -499,6 +504,46 @@ impl<'c> CodegenCache<'c> {
             cases: TempBuffer::new(128),
             hir_types: TempBuffer::new(32),
         }
+    }
+}
+
+impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
+    fn error(&mut self) -> &mut impl rock_core::error::ErrorSink {
+        &mut self.emit
+    }
+    fn ptr_size(&self) -> u64 {
+        self.session.config.target_ptr_width.ptr_size()
+    }
+    fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
+        Ok(self.array_len(len))
+    }
+    fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
+        self.hir.enum_data(id)
+    }
+    fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir> {
+        self.hir.struct_data(id)
+    }
+
+    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout> {
+        &self.hir.enum_layout
+    }
+    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+        &self.hir.struct_layout
+    }
+    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+        &self.hir.variant_layout
+    }
+
+    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout> {
+        &mut self.hir.enum_layout
+    }
+    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+        &mut self.hir.struct_layout
+    }
+    fn variant_layout_mut(
+        &mut self,
+    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+        &mut self.hir.variant_layout
     }
 }
 
