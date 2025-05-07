@@ -2072,7 +2072,7 @@ fn typecheck_struct_init<'hir, 'ast>(
         ctx.cache.field_inits.pop_view(offset_init);
         let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
 
-        let struct_ = hir::ConstStruct { struct_id, values };
+        let struct_ = hir::ConstStruct { struct_id, values, poly_types };
         let struct_ = hir::ConstValue::Struct { struct_: ctx.arena.alloc(struct_) };
         hir::Expr::Const { value: struct_ }
     } else {
@@ -4105,7 +4105,7 @@ fn check_call_direct<'hir, 'ast>(
                 let expr = if let Some(struct_id) = ctx.core.source_location {
                     let values = hir::source_location(ctx.session, ctx.scope.origin, start);
                     let values = ctx.arena.alloc_slice(&values);
-                    let struct_ = hir::ConstStruct { struct_id, values };
+                    let struct_ = hir::ConstStruct { struct_id, values, poly_types: &[] };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_ };
                     ctx.arena.alloc(hir::Expr::Const { value })
@@ -4207,7 +4207,7 @@ fn check_call_indirect<'hir, 'ast>(
                     let values =
                         hir::source_location(ctx.session, ctx.scope.origin, target_range.start());
                     let values = ctx.arena.alloc_slice(&values);
-                    let struct_ = hir::ConstStruct { struct_id, values };
+                    let struct_ = hir::ConstStruct { struct_id, values, poly_types: &[] };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_ };
                     ctx.arena.alloc(hir::Expr::Const { value })

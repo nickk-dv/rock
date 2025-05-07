@@ -16,7 +16,6 @@ pub fn codegen_module(
     codegen_string_lits(&mut cg);
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
-    codegen_variant_types(&mut cg);
     codegen_function_values(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_bodies(&mut cg);
@@ -48,10 +47,12 @@ fn codegen_enum_types(cg: &mut Codegen) {
             let enum_ty = cg.context.struct_named_create(&cg.namebuf);
 
             let data = cg.hir.enum_data(enum_id);
-            let layout = data.layout.resolved_unwrap();
-            let elem_ty = cg.int_type(hir::IntType::U8);
-            let array_ty = llvm::array_type(elem_ty, layout.size);
-            cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
+            if data.poly_params.is_none() {
+                let layout = data.layout.resolved_unwrap();
+                let elem_ty = cg.int_type(hir::IntType::U8);
+                let array_ty = llvm::array_type(elem_ty, layout.size);
+                cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
+            }
             enum_ty.as_ty()
         } else {
             cg.int_type(data.tag_ty.resolved_unwrap())
@@ -84,51 +85,6 @@ fn codegen_struct_types(cg: &mut Codegen) {
         }
         let opaque = cg.structs[struct_id.index()];
         cg.context.struct_named_set_body(opaque, &field_types, false)
-    }
-}
-
-//@non optimized memory storage for variant type info
-fn codegen_variant_types(cg: &mut Codegen) {
-    for enum_id in (0..cg.hir.enums.len()).map(hir::EnumID::new) {
-        let data = cg.hir.enum_data(enum_id);
-        let origin_id = data.origin_id;
-        let tag_ty = cg.int_type(data.tag_ty.resolved_unwrap());
-
-        if data.flag_set.contains(hir::EnumFlag::WithFields) {
-            let mut variant_types = Vec::with_capacity(data.variants.len());
-            let enum_name = cg.session.intern_name.get(data.name.id);
-
-            for variant in data.variants {
-                if variant.fields.is_empty() {
-                    variant_types.push(None);
-                } else {
-                    let mut field_types = Vec::with_capacity(variant.fields.len());
-                    field_types.push(tag_ty);
-                    for field in variant.fields {
-                        field_types.push(cg.ty(field.ty));
-                    }
-
-                    let module_origin = cg.session.module.get(origin_id);
-                    let package_origin = cg.session.graph.package(module_origin.origin());
-                    let package_name = cg.session.intern_name.get(package_origin.name());
-                    let variant_name = cg.session.intern_name.get(variant.name.id);
-
-                    cg.namebuf.clear();
-                    cg.namebuf.push_str(package_name);
-                    cg.namebuf.push(':');
-                    cg.namebuf.push_str(enum_name);
-                    cg.namebuf.push('.');
-                    cg.namebuf.push_str(variant_name);
-
-                    let variant_ty = cg.context.struct_named_create(&cg.namebuf);
-                    cg.context.struct_named_set_body(variant_ty, &field_types, false);
-                    variant_types.push(Some(variant_ty));
-                }
-            }
-            cg.variants.push(variant_types);
-        } else {
-            cg.variants.push(Vec::new());
-        }
     }
 }
 

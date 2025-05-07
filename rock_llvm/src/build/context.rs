@@ -1,10 +1,11 @@
 use crate::llvm;
 use rock_core::config::TargetTriple;
-use rock_core::error::ErrorWarningBuffer;
+use rock_core::error::{ErrorWarningBuffer, SourceRange};
 use rock_core::hir_lower::constant::layout;
 use rock_core::intern::NameID;
 use rock_core::session::{ModuleID, Session};
-use rock_core::support::{AsStr, TempBuffer};
+use rock_core::support::{Arena, AsStr, TempBuffer};
+use rock_core::text::TextRange;
 use rock_core::{ast, hir};
 use std::collections::HashMap;
 
@@ -16,7 +17,6 @@ pub struct Codegen<'c, 's, 'sref> {
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
     pub enums: Vec<llvm::Type>,
-    pub variants: Vec<Vec<Option<llvm::TypeStruct>>>,
     pub structs: Vec<llvm::TypeStruct>,
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
@@ -25,6 +25,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub namebuf: String,
     pub cache: CodegenCache<'c>,
     pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
+    pub poly_enums: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
     //@errors ignored, layout overfow can happen
@@ -79,6 +80,7 @@ pub struct CodegenCache<'c> {
     ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
     void_val_type: llvm::TypeStruct,
+    pub zero_i8: llvm::Value,
     pub sret: llvm::Attribute,
     pub noreturn: llvm::Attribute,
     pub inlinehint: llvm::Attribute,
@@ -108,7 +110,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             build,
             procs: Vec::with_capacity(hir.procs.len()),
             enums: Vec::with_capacity(hir.enums.len()),
-            variants: Vec::with_capacity(hir.enums.len()),
             structs: Vec::with_capacity(hir.structs.len()),
             globals: Vec::with_capacity(hir.globals.len()),
             string_lits: Vec::with_capacity(session.intern_lit.get_all().len()),
@@ -117,8 +118,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             namebuf: String::with_capacity(256),
             cache,
             poly_procs: HashMap::with_capacity(256),
+            poly_enums: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
-            poly_proc_queue: Vec::with_capacity(128),
+            poly_proc_queue: Vec::with_capacity(64),
             emit: ErrorWarningBuffer::default(),
         }
     }
@@ -147,10 +149,50 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::PolyEnum(_, idx) => self.ty(poly_types_up[idx]),
             hir::Type::PolyStruct(_, idx) => self.ty(poly_types_up[idx]),
             hir::Type::Enum(enum_id, poly_types) => {
-                if !poly_types.is_empty() {
-                    unimplemented!("codegen polymorphic enum type")
+                if poly_types.is_empty() {
+                    return self.enum_type(enum_id);
                 }
-                self.enum_type(enum_id)
+                use rock_core::hir_lower::pass_5;
+
+                let key = {
+                    let offset = self.cache.hir_types.start();
+                    let mut any_poly = false;
+                    for ty in poly_types {
+                        if pass_5::type_has_poly_param(*ty) {
+                            let ty = self.type_substitute_poly(*ty, poly_types_up); //@try always using this
+                            self.cache.hir_types.push(ty);
+                            any_poly = true;
+                        } else {
+                            self.cache.hir_types.push(*ty);
+                        }
+                    }
+                    let poly_types = if any_poly {
+                        self.cache.hir_types.take(offset, &mut self.hir.arena)
+                    } else {
+                        self.cache.hir_types.pop_view(offset);
+                        poly_types
+                    };
+                    (enum_id, poly_types)
+                };
+
+                // check that struct key is a concrete type
+                debug_assert!(key.1.iter().all(|ty| !pass_5::type_has_poly_param(*ty)));
+                if let Some(t) = self.poly_enums.get(&key) {
+                    return t.as_ty();
+                }
+
+                let data = self.hir.enum_data(enum_id);
+                self.namebuf.clear();
+                write_symbol_name(self, data.name.id, data.origin_id, key.1);
+                let opaque = self.context.struct_named_create(&self.namebuf);
+                self.poly_enums.insert(key, opaque);
+
+                let enum_ty = hir::Type::Enum(key.0, key.1);
+                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+                let layout = layout::type_layout(self, enum_ty, self.proc.poly_types, src).unwrap();
+                let array_ty = llvm::array_type(self.cache.int_8, layout.size);
+                self.context.struct_named_set_body(opaque, &[array_ty], false);
+                opaque.as_ty()
             }
             hir::Type::Struct(struct_id, poly_types) => {
                 if poly_types.is_empty() {
@@ -496,6 +538,7 @@ impl<'c> CodegenCache<'c> {
             ptr_sized_int,
             slice_type,
             void_val_type,
+            zero_i8: llvm::const_int(context.int_8(), 0, false),
             sret: context.attr_create("sret"),
             noreturn: context.attr_create("noreturn"),
             inlinehint: context.attr_create("inlinehint"),
@@ -508,6 +551,9 @@ impl<'c> CodegenCache<'c> {
 }
 
 impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
+    fn arena(&mut self) -> &mut Arena<'hir> {
+        &mut self.hir.arena
+    }
     fn error(&mut self) -> &mut impl rock_core::error::ErrorSink {
         &mut self.emit
     }

@@ -152,6 +152,50 @@ fn codegen_const_expr<'c>(
     value
 }
 
+fn const_writer(cg: &mut Codegen, value: hir::ConstValue) -> (llvm::Value, llvm::Type) {
+    let offset = cg.cache.values.start();
+    write_const(cg, value);
+    let bytes = cg.cache.values.view(offset.clone());
+    let abomination = llvm::const_struct_inline(&cg.context, bytes, true);
+    cg.cache.values.pop_view(offset);
+    (abomination, llvm::typeof_value(abomination))
+}
+
+fn write_const(cg: &mut Codegen, value: hir::ConstValue) {
+    match value {
+        hir::ConstValue::Void => {}
+        hir::ConstValue::Null => {
+            let ptr_size = cg.session.config.target_ptr_width.ptr_size();
+            (0..ptr_size).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+        }
+        hir::ConstValue::Bool { val, bool_ty } => todo!(),
+        hir::ConstValue::Int { val, neg, int_ty } => todo!(),
+        hir::ConstValue::Float { val, float_ty } => todo!(),
+        hir::ConstValue::Char { val, .. } => {
+            let byte_ty = cg.int_type(hir::IntType::U8);
+            for byte in (val as u32).to_le_bytes() {
+                let byte_val = llvm::const_int(byte_ty, byte as u64, false);
+                cg.cache.values.push(byte_val);
+            }
+        }
+        hir::ConstValue::String { val, string_ty } => todo!(),
+        hir::ConstValue::Procedure { proc_id } => {
+            let proc_ptr = cg.procs[proc_id.index()].0.as_val();
+            cg.cache.values.push(proc_ptr);
+        }
+        hir::ConstValue::Variant { enum_id, variant_id } => todo!(),
+        hir::ConstValue::VariantPoly { enum_id, variant } => unimplemented!("const poly variant"),
+        hir::ConstValue::Struct { struct_ } => todo!(),
+        hir::ConstValue::Array { array } => {
+            array.values.iter().copied().for_each(|value| write_const(cg, value));
+        }
+        hir::ConstValue::ArrayRepeat { array } => {
+            (0..array.len).for_each(|_| write_const(cg, array.value));
+        }
+        hir::ConstValue::ArrayEmpty { .. } => {}
+    }
+}
+
 pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
     match value {
         hir::ConstValue::Void => llvm::const_struct_named(cg.void_val_type(), &[]),
@@ -168,6 +212,7 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Variant { enum_id, variant_id } => {
             codegen_const_variant(cg, enum_id, variant_id)
         }
+        hir::ConstValue::VariantPoly { enum_id, variant } => unimplemented!("const poly variant"),
         hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
@@ -214,9 +259,11 @@ fn codegen_const_struct<'c>(
         let value = codegen_const(cg, *value);
         cg.cache.values.push(value);
     }
-    let values = cg.cache.values.view(offset.clone());
 
-    let struct_ty = cg.struct_type(struct_.struct_id);
+    let ty = hir::Type::Struct(struct_.struct_id, struct_.poly_types);
+    let struct_ty = llvm::TypeStruct::from_ty(cg.ty(ty));
+
+    let values = cg.cache.values.view(offset.clone());
     let struct_ = llvm::const_struct_named(struct_ty, values);
     cg.cache.values.pop_view(offset);
     struct_
@@ -355,17 +402,22 @@ fn codegen_match<'c>(
                 cg.cache.cases.push((variant_tag, arm_bb));
 
                 if !bind_ids.is_empty() {
-                    let variant_ty = &cg.variants[enum_id.index()];
-                    let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
+                    let enum_ty = cg.enum_type(enum_id); //@needs to support poly
+                    let layout = *cg
+                        .hir
+                        .variant_layout
+                        .get(&(enum_id, variant_id, &[]))
+                        .expect("known variant layout"); //@generate on demand
 
                     for (field_idx, var_id) in bind_ids.iter().copied().enumerate() {
                         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
                         let bind_var = proc_data.variable(var_id);
 
-                        let field_ptr = cg.build.gep_struct(
-                            variant_ty,
+                        let offset = cg.const_usize(layout.field_offset[field_idx + 1]);
+                        let field_ptr = cg.build.gep_inbounds(
+                            enum_ty,
                             enum_ptr.unwrap(),
-                            field_idx as u32 + 1,
+                            &[offset],
                             "variant_field_ptr",
                         );
                         let var_ptr = cg.proc.variable_ptrs[var_id.index()];
@@ -531,7 +583,7 @@ fn codegen_index<'c>(
         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
         let fields = hir::source_location(cg.session, proc_data.origin_id, access.offset);
         let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
-        let struct_ = hir::ConstStruct { struct_id, values };
+        let struct_ = hir::ConstStruct { struct_id, values, poly_types: &[] };
         let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
         let value = hir::ConstValue::Struct { struct_: &struct_ };
         let loc = hir::Expr::Const { value };
@@ -723,20 +775,23 @@ fn codegen_variant<'c>(
     let tag = codegen_const(cg, tag);
 
     if with_fields {
+        //@poly enum possiblity, use different api
         let enum_ty = cg.enum_type(enum_id);
         let enum_ptr = match expect {
             Expect::Value(_) | Expect::Pointer => cg.entry_alloca(enum_ty, "enum_init"),
             Expect::Store(into_ptr) => into_ptr,
         };
+        //@need poly_types in hir to generate them on demand
+        // probably indirectly via enum_layout (it will fill the variant_layouts)
+        let layout =
+            *cg.hir.variant_layout.get(&(enum_id, variant_id, &[])).expect("known variant layout");
 
         cg.build.store(tag, enum_ptr);
         if !variant.fields.is_empty() {
-            let variant_ty = &cg.variants[enum_id.index()];
-            let variant_ty = variant_ty[variant_id.index()].expect("variant ty");
-
             for (idx, expr) in input.iter().enumerate() {
+                let offset = cg.const_usize(layout.field_offset[idx + 1]);
                 let field_ptr =
-                    cg.build.gep_struct(variant_ty, enum_ptr, idx as u32 + 1, "variant_field_ptr");
+                    cg.build.gep_inbounds(enum_ty, enum_ptr, &[offset], "variant_field_ptr");
                 codegen_expr_store(cg, expr, field_ptr);
             }
         }

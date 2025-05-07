@@ -417,6 +417,9 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
 }
 
 impl<'hir> layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
+    fn arena(&mut self) -> &mut Arena<'hir> {
+        &mut self.arena
+    }
     fn error(&mut self) -> &mut impl ErrorSink {
         &mut self.emit
     }

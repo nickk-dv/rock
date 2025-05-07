@@ -30,14 +30,14 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
     }
     for enum_id in ctx.registry.enum_ids() {
         let parent_id = tree.root_and_reset();
-        match add_enum_size_deps(ctx, &mut tree, parent_id, enum_id) {
+        match add_enum_size_deps(ctx, &mut tree, parent_id, enum_id, &[]) {
             Ok(()) => resolve_dependency_tree(ctx, &tree),
             Err(from_id) => mark_error_up_to_root(ctx, &tree, from_id),
         }
     }
     for struct_id in ctx.registry.struct_ids() {
         let parent_id = tree.root_and_reset();
-        match add_struct_size_deps(ctx, &mut tree, parent_id, struct_id) {
+        match add_struct_size_deps(ctx, &mut tree, parent_id, struct_id, &[]) {
             Ok(()) => resolve_dependency_tree(ctx, &tree),
             Err(from_id) => mark_error_up_to_root(ctx, &tree, from_id),
         }
@@ -291,11 +291,12 @@ fn add_variant_tag_deps(
     }
 }
 
-fn add_enum_size_deps(
-    ctx: &mut HirCtx,
+fn add_enum_size_deps<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
     parent_id: TreeNodeID,
     enum_id: hir::EnumID,
+    poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
     let data = ctx.registry.enum_data(enum_id);
     unresolved_or_return!(data.layout, parent_id);
@@ -303,24 +304,25 @@ fn add_enum_size_deps(
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::EnumLayout(enum_id))?;
     for variant in ctx.registry.enum_data(enum_id).variants {
         for field in variant.fields {
-            add_type_size_deps(ctx, tree, parent_id, field.ty)?;
+            add_type_size_deps(ctx, tree, parent_id, field.ty, poly_set)?;
         }
     }
     Ok(())
 }
 
-fn add_struct_size_deps(
-    ctx: &mut HirCtx,
+fn add_struct_size_deps<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
     parent_id: TreeNodeID,
     struct_id: hir::StructID,
+    poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
     let data = ctx.registry.struct_data(struct_id);
     unresolved_or_return!(data.layout, parent_id);
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::StructLayout(struct_id))?;
     for field in ctx.registry.struct_data(struct_id).fields {
-        add_type_size_deps(ctx, tree, parent_id, field.ty)?;
+        add_type_size_deps(ctx, tree, parent_id, field.ty, poly_set)?;
     }
     Ok(())
 }
@@ -343,7 +345,6 @@ fn add_const_var_deps(
     add_expr_deps(ctx, tree, parent_id, origin_id, expr.0)
 }
 
-//@should type be ignored if init is Zeroed?
 fn add_global_var_deps(
     ctx: &mut HirCtx,
     tree: &mut Tree,
@@ -399,28 +400,29 @@ fn add_type_size_deps<'hir>(
     tree: &mut Tree,
     parent_id: TreeNodeID,
     ty: hir::Type<'hir>,
+    poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
     match ty {
         hir::Type::Error => return Err(parent_id),
         hir::Type::Unknown | hir::Type::Char | hir::Type::Void => {}
         hir::Type::Never | hir::Type::Rawptr | hir::Type::UntypedChar => {}
         hir::Type::Int(_) | hir::Type::Float(_) | hir::Type::Bool(_) | hir::Type::String(_) => {}
-        hir::Type::PolyProc(_, _) => {}   //@unrechable?
-        hir::Type::PolyEnum(_, _) => {}   //@pass poly_types and add deps?
-        hir::Type::PolyStruct(_, _) => {} //@pass poly_types and add deps?
-        hir::Type::Enum(id, poly_types) => {
-            add_enum_size_deps(ctx, tree, parent_id, id)?;
-            //@overconstraint: assuming they always affect the size
-            for ty in poly_types {
-                add_type_size_deps(ctx, tree, parent_id, *ty)?;
+        hir::Type::PolyProc(_, _) => unreachable!(),
+        hir::Type::PolyEnum(_, poly_idx) => {
+            if !poly_set.is_empty() {
+                add_type_size_deps(ctx, tree, parent_id, poly_set[poly_idx], &[])?
             }
         }
-        hir::Type::Struct(id, poly_types) => {
-            add_struct_size_deps(ctx, tree, parent_id, id)?;
-            //@overconstraint: assuming they always affect the size
-            for ty in poly_types {
-                add_type_size_deps(ctx, tree, parent_id, *ty)?;
+        hir::Type::PolyStruct(_, poly_idx) => {
+            if !poly_set.is_empty() {
+                add_type_size_deps(ctx, tree, parent_id, poly_set[poly_idx], &[])?
             }
+        }
+        hir::Type::Enum(id, poly_types) => {
+            add_enum_size_deps(ctx, tree, parent_id, id, poly_types)?;
+        }
+        hir::Type::Struct(id, poly_types) => {
+            add_struct_size_deps(ctx, tree, parent_id, id, poly_types)?;
         }
         hir::Type::Reference(_, _) => {}
         hir::Type::MultiReference(_, _) => {}
@@ -430,12 +432,14 @@ fn add_type_size_deps<'hir>(
             if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
                 add_array_len_deps(ctx, tree, parent_id, eval_id)?;
             }
-            add_type_size_deps(ctx, tree, parent_id, array.elem_ty)?;
+            add_type_size_deps(ctx, tree, parent_id, array.elem_ty, &[])?;
         }
     }
     Ok(())
 }
 
+//@polymorphic deps are likely handled incorrectly..
+// construct a repro that will showcase that unhandled dependency
 fn add_type_usage_deps<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
@@ -447,30 +451,25 @@ fn add_type_usage_deps<'hir>(
         hir::Type::Unknown | hir::Type::Char | hir::Type::Void => {}
         hir::Type::Never | hir::Type::Rawptr | hir::Type::UntypedChar => {}
         hir::Type::Int(_) | hir::Type::Float(_) | hir::Type::Bool(_) | hir::Type::String(_) => {}
-        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {
-            eprintln!("unhandled poly param in (add_type_usage_const_dependencies)");
-            return Err(parent_id);
-        }
+        hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {}
         hir::Type::Enum(id, poly_types) => {
-            if !poly_types.is_empty() {
-                eprintln!("unhandled poly_types in enum (add_type_usage_const_dependencies)");
-                return Err(parent_id);
-            }
             let data = ctx.registry.enum_data(id);
             for variant in data.variants {
                 for field in variant.fields {
                     add_type_usage_deps(ctx, tree, parent_id, field.ty)?;
                 }
             }
+            for ty in poly_types.iter().copied() {
+                add_type_usage_deps(ctx, tree, parent_id, ty)?
+            }
         }
         hir::Type::Struct(id, poly_types) => {
-            if !poly_types.is_empty() {
-                eprintln!("unhandled poly_types in struct (add_type_usage_const_dependencies)");
-                return Err(parent_id);
-            }
             let data = ctx.registry.struct_data(id);
             for field in data.fields {
                 add_type_usage_deps(ctx, tree, parent_id, field.ty)?
+            }
+            for ty in poly_types.iter().copied() {
+                add_type_usage_deps(ctx, tree, parent_id, ty)?
             }
         }
         hir::Type::Reference(_, ref_ty) => add_type_usage_deps(ctx, tree, parent_id, *ref_ty)?,
@@ -551,7 +550,7 @@ fn add_expr_deps<'ast>(
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "size_of");
                     Err(parent_id)
                 } else {
-                    add_type_size_deps(ctx, tree, parent_id, ty)
+                    add_type_size_deps(ctx, tree, parent_id, ty, &[])
                 }
             }
             ast::Builtin::AlignOf(ty) => {
@@ -562,7 +561,7 @@ fn add_expr_deps<'ast>(
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "align_of");
                     Err(parent_id)
                 } else {
-                    add_type_size_deps(ctx, tree, parent_id, ty)
+                    add_type_size_deps(ctx, tree, parent_id, ty, &[])
                 }
             }
             ast::Builtin::Transmute(_, _) => {
@@ -579,8 +578,6 @@ fn add_expr_deps<'ast>(
             match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => Err(parent_id),
                 ValueID::Proc(proc_id, poly_types) => {
-                    //@borrowing hacks, just get data once here
-                    // change the result Err type with delayed mutation of HirData only at top lvl?
                     for param in ctx.registry.proc_data(proc_id).params {
                         add_type_usage_deps(ctx, tree, parent_id, param.ty)?;
                     }
@@ -592,13 +589,24 @@ fn add_expr_deps<'ast>(
                             add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
                         }
                     }
+                    if let Some(poly_types) = poly_types {
+                        for ty in poly_types.iter().copied() {
+                            add_type_usage_deps(ctx, tree, parent_id, ty)?;
+                        }
+                    }
                     Ok(())
                 }
                 ValueID::Enum(enum_id, variant_id, poly_types) => {
                     add_variant_usage_deps(ctx, tree, parent_id, enum_id, variant_id)?;
+
                     if let Some(arg_list) = args_list {
                         for arg in arg_list.exprs {
                             add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
+                        }
+                    }
+                    if let Some(poly_types) = poly_types {
+                        for ty in poly_types.iter().copied() {
+                            add_type_usage_deps(ctx, tree, parent_id, ty)?;
                         }
                     }
                     Ok(())
@@ -650,13 +658,10 @@ fn add_expr_deps<'ast>(
             Ok(())
         }
         ast::ExprKind::StructInit { struct_init } => {
-            //@make sure dependency order is correct for typecheck to work
-            // both with & without known struct type in the struct_init
             if let Some(path) = struct_init.path {
                 if let Some((struct_id, poly_types)) =
                     check_path::path_resolve_struct(ctx, path, true)
                 {
-                    //@temp hack using empty poly_types if missing, is it correct?
                     let struct_ty = hir::Type::Struct(struct_id, poly_types.unwrap_or(&[]));
                     add_type_usage_deps(ctx, tree, parent_id, struct_ty)?;
                 } else {

@@ -2,9 +2,11 @@ use crate::error::ErrorSink;
 use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
+use crate::support::Arena;
 use std::collections::HashMap;
 
 pub trait LayoutContext<'hir> {
+    fn arena(&mut self) -> &mut Arena<'hir>;
     fn error(&mut self) -> &mut impl ErrorSink;
     fn ptr_size(&self) -> u64;
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()>;
@@ -169,20 +171,27 @@ fn resolve_variant_layout<'hir>(
     resolve_aggregate_layout(ctx, src, "variant", types, poly_types)
 }
 
+//@use temp buffers, annoying due to possible `?` early return
 fn resolve_aggregate_layout<'hir>(
     ctx: &mut impl LayoutContext<'hir>,
     src: SourceRange,
     item_kind: &'static str,
-    types: impl Iterator<Item = hir::Type<'hir>>,
+    types: impl Iterator<Item = hir::Type<'hir>> + Clone,
     poly_types: &[hir::Type<'hir>],
 ) -> Result<hir::StructLayout<'hir>, ()> {
+    let field_count = types.clone().count();
+    let mut field_pad = Vec::with_capacity(field_count);
+    let mut field_offset = Vec::with_capacity(field_count);
+
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for ty in types {
+        field_offset.push(size);
         let layout = type_layout(ctx, ty, poly_types, src)?;
         size = aligned_size(size, layout.align);
         align = align.max(layout.align);
+        field_pad.push((size - field_offset.last().unwrap()) as u8);
 
         if let Some(total) = size.checked_add(layout.size) {
             size = total;
@@ -194,7 +203,10 @@ fn resolve_aggregate_layout<'hir>(
 
     size = aligned_size(size, align);
     let total = hir::Layout::new(size, align);
-    let layout = hir::StructLayout { total, field_pad: &[], field_offset: &[] }; //@compute real values
+
+    let field_pad = ctx.arena().alloc_slice(&field_pad);
+    let field_offset = ctx.arena().alloc_slice(&field_offset);
+    let layout = hir::StructLayout { total, field_pad, field_offset };
     Ok(layout)
 }
 
