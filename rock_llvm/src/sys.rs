@@ -356,6 +356,7 @@ pub mod core {
             field_count: c_uint,
             packed: LLVMBool,
         ) -> LLVMTypeRef;
+        pub fn LLVMStructGetTypeAtIndex(struct_ty: LLVMTypeRef, idx: c_uint) -> LLVMTypeRef;
     }
 
     // value

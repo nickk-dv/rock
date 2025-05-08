@@ -627,6 +627,12 @@ impl TypeStruct {
     pub fn as_ty(self) -> Type {
         Type(self.0)
     }
+    #[inline]
+    pub fn field_ty(self, idx: u32) -> Type {
+        let ty = unsafe { core::LLVMStructGetTypeAtIndex(self.0, idx) };
+        assert!(!ty.is_null());
+        Type(ty)
+    }
 }
 
 pub fn const_zeroed(ty: Type) -> Value {

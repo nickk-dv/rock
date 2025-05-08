@@ -976,6 +976,18 @@ impl IntType {
     }
 }
 
+impl BoolType {
+    pub fn int_equivalent(self) -> IntType {
+        match self {
+            BoolType::Bool => IntType::U8,
+            BoolType::Bool16 => IntType::U16,
+            BoolType::Bool32 => IntType::U32,
+            BoolType::Bool64 => IntType::U64,
+            BoolType::Untyped => todo!(),
+        }
+    }
+}
+
 impl BinOp {
     pub fn as_str(self) -> &'static str {
         match self {

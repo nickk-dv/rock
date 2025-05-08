@@ -91,21 +91,24 @@ fn codegen_struct_types(cg: &mut Codegen) {
 fn codegen_globals(cg: &mut Codegen) {
     for global_id in (0..cg.hir.globals.len()).map(hir::GlobalID::new) {
         let data = cg.hir.global_data(global_id);
-        let init = data.init;
-        let global_ty = cg.ty(data.ty);
-
-        let value = match init {
+        let value = match data.init {
             hir::GlobalInit::Init(eval_id) => {
-                emit_expr::codegen_const(cg, cg.hir.const_eval_values[eval_id.index()])
+                let value = cg.hir.const_eval_values[eval_id.index()];
+                if emit_expr::const_has_variant_with_ptrs(value, false) {
+                    emit_expr::const_writer(cg, value)
+                } else {
+                    emit_expr::codegen_const(cg, value)
+                }
             }
-            hir::GlobalInit::Zeroed => llvm::const_zeroed(global_ty),
+            hir::GlobalInit::Zeroed => llvm::const_zeroed(cg.ty(data.ty)),
         };
 
         let data = cg.hir.global_data(global_id);
+        let global_ty = llvm::typeof_value(value);
         let constant = data.mutt == ast::Mut::Immutable;
+
         cg.namebuf.clear();
         context::write_symbol_name(cg, data.name.id, data.origin_id, &[]);
-
         let global = cg.module.add_global(&cg.namebuf, value, global_ty, constant, false);
         cg.globals.push(global);
     }

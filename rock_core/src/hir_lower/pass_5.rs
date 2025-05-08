@@ -4276,6 +4276,7 @@ fn check_variant_input_opt<'hir, 'ast>(
     let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
     let poly_count = data.poly_params.map_or(0, |p| p.len());
     let infer_ctx = ctx.scope.infer.start_context(poly_count);
+    let error_count = ctx.emit.error_count();
 
     if poly_count != 0 && poly_types.is_none() {
         poly_types = infer_enum_poly_types(enum_id, expect);
@@ -4357,12 +4358,28 @@ fn check_variant_input_opt<'hir, 'ast>(
     };
     ctx.scope.infer.end_context(infer_ctx);
 
-    let expr = if with_fields {
-        if ctx.in_const {
-            let src = ctx.src(range);
-            err::const_cannot_use_enum_with_fields(&mut ctx.emit, src);
-            return TypeResult::error();
+    let expr = if with_fields && ctx.in_const {
+        let const_offset = ctx.cache.const_values.start();
+        for (idx, field) in (*input).iter().copied().enumerate() {
+            match field {
+                hir::Expr::Error => return TypeResult::error(),
+                hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                _ => {
+                    constant::error_cannot_use_in_constants(
+                        &mut ctx.emit,
+                        ctx.scope.origin,
+                        arg_list.unwrap().exprs[idx].range,
+                        "non constant",
+                    );
+                    return TypeResult::error();
+                }
+            }
         }
+        let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
+        let variant = hir::ConstVariant { variant_id, values, poly_types };
+        let value = hir::ConstValue::VariantPoly { enum_id, variant: ctx.arena.alloc(variant) };
+        hir::Expr::Const { value }
+    } else if with_fields {
         hir::Expr::Variant { enum_id, variant_id, input }
     } else {
         let value = hir::ConstValue::Variant { enum_id, variant_id };

@@ -186,22 +186,27 @@ fn resolve_aggregate_layout<'hir>(
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
-    for ty in types {
-        field_offset.push(size);
+    for (field_idx, ty) in types.enumerate() {
         let layout = type_layout(ctx, ty, poly_types, src)?;
-        size = aligned_size(size, layout.align);
-        align = align.max(layout.align);
-        field_pad.push((size - field_offset.last().unwrap()) as u8);
+        let aligned = aligned_size(size, layout.align);
+        field_offset.push(aligned);
 
-        if let Some(total) = size.checked_add(layout.size) {
+        align = align.max(layout.align);
+        if field_idx != 0 {
+            field_pad.push((aligned - size) as u8);
+        }
+
+        if let Some(total) = aligned.checked_add(layout.size) {
             size = total;
         } else {
-            err::const_item_size_overflow(ctx.error(), src, item_kind, size, layout.size);
+            err::const_item_size_overflow(ctx.error(), src, item_kind, aligned, layout.size);
             return Err(());
         }
     }
 
-    size = aligned_size(size, align);
+    let aligned = aligned_size(size, align);
+    field_pad.push((aligned - size) as u8);
+    size = aligned;
     let total = hir::Layout::new(size, align);
 
     let field_pad = ctx.arena().alloc_slice(&field_pad);
