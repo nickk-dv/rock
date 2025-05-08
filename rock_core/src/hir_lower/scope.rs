@@ -551,12 +551,13 @@ impl<'hir> InferScope<'hir> {
     fn new() -> InferScope<'hir> {
         InferScope { types: Vec::with_capacity(64) }
     }
-    pub fn start_context(&mut self, count: usize) -> InferContext {
+    pub fn start_context(&mut self, params: Option<&[ast::Name]>) -> (InferContext, bool) {
         let offset = self.types.len();
+        let count = params.map_or(0, |p| p.len());
         for _ in 0..count {
             self.types.push(hir::Type::Unknown);
         }
-        InferContext { offset, count }
+        (InferContext { offset, count }, count > 0)
     }
     pub fn end_context(&mut self, ctx: InferContext) {
         while self.types.len() > ctx.offset {
@@ -571,6 +572,9 @@ impl<'hir> InferScope<'hir> {
     }
     pub fn inferred(&self, ctx: InferContext) -> &[hir::Type<'hir>] {
         &self.types[ctx.offset..ctx.offset + ctx.count]
+    }
+    pub fn inferred_mut(&mut self, ctx: InferContext) -> &mut [hir::Type<'hir>] {
+        &mut self.types[ctx.offset..ctx.offset + ctx.count]
     }
 }
 

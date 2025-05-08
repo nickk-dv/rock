@@ -6,6 +6,7 @@ use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::check_path::{self, ValueID};
 use crate::hir_lower::context::HirCtx;
+use crate::hir_lower::types;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::session::ModuleID;
 use crate::text::TextRange;
@@ -544,7 +545,7 @@ fn add_expr_deps<'ast>(
             }
             ast::Builtin::SizeOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true);
-                if pass_5::type_has_poly_param_layout_dep(ty) {
+                if types::has_poly_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "size_of");
@@ -555,7 +556,7 @@ fn add_expr_deps<'ast>(
             }
             ast::Builtin::AlignOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true);
-                if pass_5::type_has_poly_param_layout_dep(ty) {
+                if types::has_poly_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "align_of");

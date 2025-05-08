@@ -1,10 +1,12 @@
 use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
+use crate::build::context;
 use crate::llvm;
 use rock_core::error::SourceRange;
 use rock_core::hir::{self, CmpPred};
 use rock_core::hir_lower::constant::layout;
+use rock_core::hir_lower::types;
 use rock_core::intern::LitID;
 use rock_core::session::ModuleID;
 use rock_core::text::TextRange;
@@ -168,7 +170,7 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
         hir::ConstValue::VariantPoly { variant, .. } => {
             variant.values.iter().copied().any(|v| const_has_variant_with_ptrs(v, true))
         }
-        hir::ConstValue::Struct { struct_ } => {
+        hir::ConstValue::Struct { struct_, .. } => {
             struct_.values.iter().copied().any(|v| const_has_variant_with_ptrs(v, in_variant))
         }
         hir::ConstValue::Array { array } => {
@@ -181,7 +183,7 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
     }
 }
 
-pub fn const_writer(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
+pub fn const_writer<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
     let offset = cg.cache.values.start();
     write_const(cg, value);
     let bytes = cg.cache.values.view(offset.clone());
@@ -190,7 +192,7 @@ pub fn const_writer(cg: &mut Codegen, value: hir::ConstValue) -> llvm::Value {
     abomination
 }
 
-fn write_const(cg: &mut Codegen, value: hir::ConstValue) {
+fn write_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) {
     match value {
         hir::ConstValue::Void => {}
         hir::ConstValue::Null => {
@@ -229,43 +231,19 @@ fn write_const(cg: &mut Codegen, value: hir::ConstValue) {
             cg.cache.values.push(proc_ptr.as_val());
         }
         hir::ConstValue::Variant { enum_id, variant_id } => {
-            let data = cg.hir.enum_data(enum_id);
-            let tag = match data.variant(variant_id).kind {
-                hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
-                hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
-            };
-            write_const(cg, tag)
+            write_enum_tag(cg, enum_id, variant_id);
         }
         hir::ConstValue::VariantPoly { enum_id, variant } => {
-            let data = cg.hir.enum_data(enum_id);
-            let tag = match data.variant(variant.variant_id).kind {
-                hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
-                hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
-            };
-            write_const(cg, tag);
-
-            let layout = *cg
-                .hir
-                .variant_layout
-                .get(&(enum_id, variant.variant_id, &[]))
-                .expect("known variant layout"); //@generate on demand
+            write_enum_tag(cg, enum_id, variant.variant_id);
+            let layout = cg.variant_layout((enum_id, variant.variant_id, variant.poly_types));
             (0..layout.field_pad[0]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
-
-            eprintln!("field_pad:    {:?}", layout.field_pad);
-            eprintln!("field_offset: {:?}", layout.field_offset);
-
             for (idx, field) in variant.values.iter().copied().enumerate() {
                 write_const(cg, field);
                 (0..layout.field_pad[idx + 1]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
             }
         }
-        hir::ConstValue::Struct { struct_ } => {
-            let layout = *cg
-                .hir
-                .struct_layout
-                .get(&(struct_.struct_id, struct_.poly_types))
-                .expect("known variant layout"); //@generate on demand
-
+        hir::ConstValue::Struct { struct_id, struct_ } => {
+            let layout = cg.struct_layout((struct_id, struct_.poly_types));
             for (idx, field) in struct_.values.iter().copied().enumerate() {
                 write_const(cg, field);
                 (0..layout.field_pad[idx]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
@@ -279,6 +257,15 @@ fn write_const(cg: &mut Codegen, value: hir::ConstValue) {
         }
         hir::ConstValue::ArrayEmpty { .. } => {}
     }
+}
+
+fn write_enum_tag(cg: &mut Codegen, enum_id: hir::EnumID, variant_id: hir::VariantID) {
+    let data = cg.hir.enum_data(enum_id);
+    let tag = match data.variant(variant_id).kind {
+        hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
+        hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
+    };
+    write_const(cg, tag);
 }
 
 fn write_const_int(cg: &mut Codegen, val: u64, neg: bool, int_ty: hir::IntType) {
@@ -332,8 +319,12 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Variant { enum_id, variant_id } => {
             codegen_const_variant(cg, enum_id, variant_id)
         }
-        hir::ConstValue::VariantPoly { enum_id, variant } => unimplemented!("const poly variant"),
-        hir::ConstValue::Struct { struct_ } => codegen_const_struct(cg, struct_),
+        hir::ConstValue::VariantPoly { enum_id, variant } => {
+            unimplemented!()
+        }
+        hir::ConstValue::Struct { struct_id, struct_ } => {
+            codegen_const_struct(cg, struct_id, struct_)
+        }
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
         hir::ConstValue::ArrayEmpty { elem_ty } => llvm::const_array(cg.ty(*elem_ty), &[]),
@@ -372,6 +363,7 @@ fn codegen_const_variant(
 
 fn codegen_const_struct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
+    struct_id: hir::StructID,
     struct_: &hir::ConstStruct<'c>,
 ) -> llvm::Value {
     let offset = cg.cache.values.start();
@@ -380,7 +372,7 @@ fn codegen_const_struct<'c>(
         cg.cache.values.push(value);
     }
 
-    let ty = hir::Type::Struct(struct_.struct_id, struct_.poly_types);
+    let ty = hir::Type::Struct(struct_id, struct_.poly_types);
     let struct_ty = llvm::TypeStruct::from_ty(cg.ty(ty));
 
     let values = cg.cache.values.view(offset.clone());
@@ -705,9 +697,9 @@ fn codegen_index<'c>(
         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
         let fields = hir::source_location(cg.session, proc_data.origin_id, access.offset);
         let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
-        let struct_ = hir::ConstStruct { struct_id, values, poly_types: &[] };
+        let struct_ = hir::ConstStruct { values, poly_types: &[] };
         let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
-        let value = hir::ConstValue::Struct { struct_: &struct_ };
+        let value = hir::ConstValue::Struct { struct_id, struct_: &struct_ };
         let loc = hir::Expr::Const { value };
 
         let message = cg.session.intern_lit.intern("index out of bounds");
@@ -996,27 +988,8 @@ pub fn codegen_call_direct<'c>(
         cg.cache.values.push(value);
     }
 
-    //@substitute with current proc poly_types
-    let offset_p = cg.cache.hir_types.start();
-    let mut any_poly = false;
-    for ty in poly_types {
-        if rock_core::hir_lower::pass_5::type_has_poly_param(*ty) {
-            let ty = cg.type_substitute_poly(*ty, cg.proc.poly_types);
-            cg.cache.hir_types.push(ty);
-            any_poly = true;
-        } else {
-            cg.cache.hir_types.push(*ty);
-        }
-    }
-    let poly_types = if any_poly {
-        cg.cache.hir_types.take(offset_p, &mut cg.hir.arena)
-    } else {
-        cg.cache.hir_types.pop_view(offset_p);
-        poly_types
-    };
-    debug_assert!(poly_types
-        .iter()
-        .all(|ty| !rock_core::hir_lower::pass_5::type_has_poly_param(*ty)));
+    let poly_types = context::substitute_types(cg, poly_types, cg.proc.poly_types);
+    types::expect_concrete(poly_types);
 
     let (fn_val, fn_ty) = if poly_types.is_empty() {
         cg.procs[proc_id.index()]

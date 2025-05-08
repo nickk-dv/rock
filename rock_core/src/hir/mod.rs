@@ -305,7 +305,7 @@ pub enum ConstValue<'hir> {
     Procedure   { proc_id: ProcID },
     Variant     { enum_id: EnumID, variant_id: VariantID },
     VariantPoly { enum_id: EnumID, variant: &'hir ConstVariant<'hir> },
-    Struct      { struct_: &'hir ConstStruct<'hir> },
+    Struct      { struct_id: StructID, struct_: &'hir ConstStruct<'hir> },
     Array       { array: &'hir ConstArray<'hir> },
     ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
     ArrayEmpty  { elem_ty: &'hir Type<'hir> },
@@ -320,7 +320,6 @@ pub struct ConstVariant<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ConstStruct<'hir> {
-    pub struct_id: StructID,
     pub values: &'hir [ConstValue<'hir>],
     pub poly_types: &'hir [Type<'hir>],
 }

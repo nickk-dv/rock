@@ -9,6 +9,7 @@ mod pass_3;
 pub mod pass_5;
 mod pass_6;
 mod scope;
+pub mod types;
 
 use crate::hir;
 use crate::session::Session;
