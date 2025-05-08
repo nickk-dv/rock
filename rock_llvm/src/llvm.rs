@@ -611,6 +611,13 @@ impl ValueInstr {
     }
 }
 
+impl Type {
+    #[inline]
+    pub fn as_st(self) -> TypeStruct {
+        TypeStruct(self.0)
+    }
+}
+
 impl TypeFn {
     #[inline]
     pub fn null() -> TypeFn {
@@ -619,10 +626,6 @@ impl TypeFn {
 }
 
 impl TypeStruct {
-    #[inline]
-    pub fn from_ty(ty: Type) -> TypeStruct {
-        TypeStruct(ty.0)
-    }
     #[inline]
     pub fn as_ty(self) -> Type {
         Type(self.0)

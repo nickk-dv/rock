@@ -18,7 +18,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
-    pub enums: Vec<llvm::Type>,
+    pub enums: Vec<llvm::TypeStruct>,
     pub structs: Vec<llvm::TypeStruct>,
     pub globals: Vec<llvm::ValueGlobal>,
     pub string_lits: Vec<llvm::ValueGlobal>,
@@ -149,7 +149,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         self.ty_impl(ty, &[])
     }
 
-    fn ty_impl(&mut self, ty: hir::Type<'c>, poly_types_up: &[hir::Type<'c>]) -> llvm::Type {
+    fn ty_impl(&mut self, ty: hir::Type<'c>, poly_set: &[hir::Type<'c>]) -> llvm::Type {
         match ty {
             hir::Type::Error | hir::Type::Unknown => unreachable!(),
             hir::Type::Char => self.cache.int_32,
@@ -157,23 +157,19 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::Never => self.cache.void_val_type.as_ty(),
             hir::Type::Rawptr => self.cache.ptr_type,
             hir::Type::UntypedChar => unreachable!(),
-            hir::Type::Int(int_ty) => self.int_type(int_ty),
-            hir::Type::Float(float_ty) => self.float_type(float_ty),
-            hir::Type::Bool(bool_ty) => self.bool_type(bool_ty),
-            hir::Type::String(string_ty) => match string_ty {
-                hir::StringType::String => self.cache.slice_type.as_ty(),
-                hir::StringType::CString => self.cache.ptr_type,
-                hir::StringType::Untyped => unreachable!(),
-            },
+            hir::Type::Int(ty) => self.int_type(ty),
+            hir::Type::Float(ty) => self.float_type(ty),
+            hir::Type::Bool(ty) => self.bool_type(ty),
+            hir::Type::String(ty) => self.string_type(ty),
             hir::Type::PolyProc(_, idx) => self.ty(self.proc.poly_types[idx]),
-            hir::Type::PolyEnum(_, idx) => self.ty(poly_types_up[idx]),
-            hir::Type::PolyStruct(_, idx) => self.ty(poly_types_up[idx]),
+            hir::Type::PolyEnum(_, idx) => self.ty(poly_set[idx]),
+            hir::Type::PolyStruct(_, idx) => self.ty(poly_set[idx]),
             hir::Type::Enum(enum_id, poly_types) => {
                 if poly_types.is_empty() {
-                    return self.enum_type(enum_id);
+                    return self.enums[enum_id.index()].as_ty();
                 }
 
-                let key = (enum_id, substitute_types(self, poly_types, poly_types_up));
+                let key = (enum_id, substitute_types(self, poly_types, poly_set));
                 types::expect_concrete(key.1);
                 if let Some(t) = self.poly_enums.get(&key) {
                     return t.as_ty();
@@ -194,10 +190,10 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             }
             hir::Type::Struct(struct_id, poly_types) => {
                 if poly_types.is_empty() {
-                    return self.struct_type(struct_id).as_ty();
+                    return self.structs[struct_id.index()].as_ty();
                 }
 
-                let key = (struct_id, substitute_types(self, poly_types, poly_types_up));
+                let key = (struct_id, substitute_types(self, poly_types, poly_set));
                 types::expect_concrete(key.1);
                 if let Some(t) = self.poly_structs.get(&key) {
                     return t.as_ty();
@@ -224,15 +220,29 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::MultiReference(_, _) => self.cache.ptr_type,
             hir::Type::Procedure(_) => self.cache.ptr_type,
             hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
-            hir::Type::ArrayStatic(array) => llvm::array_type(
-                self.ty_impl(array.elem_ty, poly_types_up),
-                self.array_len(array.len),
-            ),
+            hir::Type::ArrayStatic(array) => {
+                llvm::array_type(self.ty_impl(array.elem_ty, poly_set), self.array_len(array.len))
+            }
         }
     }
 
     pub fn char_type(&self) -> llvm::Type {
         self.cache.int_32
+    }
+    pub fn void_type(&self) -> llvm::Type {
+        self.cache.void_type
+    }
+    pub fn void_val_type(&self) -> llvm::TypeStruct {
+        self.cache.void_val_type
+    }
+    pub fn ptr_type(&self) -> llvm::Type {
+        self.cache.ptr_type
+    }
+    pub fn ptr_sized_int(&self) -> llvm::Type {
+        self.cache.ptr_sized_int
+    }
+    pub fn slice_type(&self) -> llvm::TypeStruct {
+        self.cache.slice_type
     }
 
     pub fn int_type(&self, int_ty: hir::IntType) -> llvm::Type {
@@ -245,7 +255,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::IntType::Untyped => unreachable!(),
         }
     }
-
     pub fn float_type(&self, float_ty: hir::FloatType) -> llvm::Type {
         match float_ty {
             hir::FloatType::F32 => self.cache.float_32,
@@ -253,7 +262,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::FloatType::Untyped => unreachable!(),
         }
     }
-
     pub fn bool_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
         match bool_ty {
             hir::BoolType::Bool => self.cache.int_1,
@@ -263,31 +271,15 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::BoolType::Untyped => unreachable!(),
         }
     }
-
-    pub fn void_type(&self) -> llvm::Type {
-        self.cache.void_type
+    pub fn string_type(&self, string_ty: hir::StringType) -> llvm::Type {
+        match string_ty {
+            hir::StringType::String => self.cache.slice_type.as_ty(),
+            hir::StringType::CString => self.cache.ptr_type,
+            hir::StringType::Untyped => unreachable!(),
+        }
     }
 
-    pub fn void_val_type(&self) -> llvm::TypeStruct {
-        self.cache.void_val_type
-    }
-
-    pub fn enum_type(&self, enum_id: hir::EnumID) -> llvm::Type {
-        self.enums[enum_id.index()]
-    }
-
-    pub fn struct_type(&self, struct_id: hir::StructID) -> llvm::TypeStruct {
-        self.structs[struct_id.index()]
-    }
-
-    pub fn ptr_type(&self) -> llvm::Type {
-        self.cache.ptr_type
-    }
-
-    pub fn ptr_sized_int(&self) -> llvm::Type {
-        self.cache.ptr_sized_int
-    }
-
+    //@allocates
     pub fn proc_type(&mut self, proc_ty: &hir::ProcType<'c>) -> llvm::TypeFn {
         let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.params.len());
         for param in proc_ty.params {
@@ -296,10 +288,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         let return_ty = self.ty(proc_ty.return_ty);
         let is_variadic = proc_ty.flag_set.contains(hir::ProcFlag::CVariadic);
         llvm::function_type(return_ty, &param_types, is_variadic)
-    }
-
-    pub fn slice_type(&self) -> llvm::TypeStruct {
-        self.cache.slice_type
     }
 
     pub fn array_len(&self, len: hir::ArrayStaticLen) -> u64 {

@@ -53,9 +53,9 @@ fn codegen_enum_types(cg: &mut Codegen) {
                 let array_ty = llvm::array_type(elem_ty, layout.size);
                 cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
             }
-            enum_ty.as_ty()
+            enum_ty
         } else {
-            cg.int_type(data.tag_ty.resolved_unwrap())
+            cg.int_type(data.tag_ty.resolved_unwrap()).as_st()
         };
 
         cg.enums.push(enum_ty);
