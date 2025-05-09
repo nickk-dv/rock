@@ -282,19 +282,32 @@ fn write_const<'c>(
             write_enum_tag(cg, writer, enum_id, variant_id);
         }
         hir::ConstValue::VariantPoly { enum_id, variant } => {
-            write_enum_tag(cg, writer, enum_id, variant.variant_id);
+            let enum_layout = cg.enum_layout((enum_id, variant.poly_types));
             let layout = cg.variant_layout((enum_id, variant.variant_id, variant.poly_types));
-            write_padding(cg, writer, layout.field_pad[0]);
+
+            write_enum_tag(cg, writer, enum_id, variant.variant_id);
+            let pad = if variant.values.is_empty() {
+                enum_layout.size - layout.total.size + layout.field_pad[0] as u64
+            } else {
+                layout.field_pad[0] as u64
+            };
+            write_padding(cg, writer, pad);
+
             for (idx, field) in variant.values.iter().copied().enumerate() {
                 write_const(cg, writer, field);
-                write_padding(cg, writer, layout.field_pad[idx + 1]);
+                let pad = if idx + 1 == variant.values.len() {
+                    enum_layout.size - layout.total.size + layout.field_pad[idx + 1] as u64
+                } else {
+                    layout.field_pad[idx + 1] as u64
+                };
+                write_padding(cg, writer, pad);
             }
         }
         hir::ConstValue::Struct { struct_id, struct_ } => {
             let layout = cg.struct_layout((struct_id, struct_.poly_types));
             for (idx, field) in struct_.values.iter().copied().enumerate() {
                 write_const(cg, writer, field);
-                write_padding(cg, writer, layout.field_pad[idx]);
+                write_padding(cg, writer, layout.field_pad[idx] as u64);
             }
         }
         hir::ConstValue::Array { array } => {
@@ -307,12 +320,12 @@ fn write_const<'c>(
     }
 }
 
-fn write_padding(cg: &mut Codegen, writer: &mut ConstWriter, pad: u8) {
+fn write_padding(cg: &mut Codegen, writer: &mut ConstWriter, pad: u64) {
     if pad == 0 {
         return;
     }
     if writer.use_undef {
-        let pad = llvm::undef(llvm::array_type(cg.int_type(hir::IntType::U8), pad as u64));
+        let pad = llvm::undef(llvm::array_type(cg.int_type(hir::IntType::U8), pad));
         writer.write_ptr_or_undef(cg, pad);
     } else {
         (0..pad).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
