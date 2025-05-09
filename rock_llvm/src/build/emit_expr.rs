@@ -184,13 +184,41 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
     }
 }
 
-pub fn const_writer<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
-    let offset = cg.cache.values.start();
-    write_const(cg, value);
-    let bytes = cg.cache.values.view(offset.clone());
+#[derive(Copy, Clone)]
+struct ConstWriter {
+    use_undef: bool,
+    start: TempOffset<llvm::Value>,
+    current: TempOffset<llvm::Value>,
+}
 
-    let packed_struct = llvm::const_struct_inline(&cg.context, bytes, true);
-    cg.cache.values.pop_view(offset);
+impl ConstWriter {
+    fn new(cg: &mut Codegen, use_undef: bool) -> ConstWriter {
+        let start = cg.cache.values.start();
+        ConstWriter { use_undef, start, current: start }
+    }
+    fn write_ptr_or_undef(&mut self, cg: &mut Codegen, ptr_or_undef: llvm::Value) {
+        self.collect_bytes(cg);
+        cg.cache.values.push(ptr_or_undef);
+        self.current = cg.cache.values.start();
+    }
+    fn collect_bytes(&mut self, cg: &mut Codegen) {
+        let values = cg.cache.values.view(self.current);
+        if !values.is_empty() {
+            let array = llvm::const_array(cg.int_type(hir::IntType::U8), values);
+            cg.cache.values.pop_view(self.current);
+            cg.cache.values.push(array);
+        }
+    }
+}
+
+pub fn const_writer<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
+    let mut writer = ConstWriter::new(cg, true);
+    write_const(cg, &mut writer, value);
+    writer.collect_bytes(cg);
+
+    let values = cg.cache.values.view(writer.start);
+    let packed_struct = llvm::const_struct_inline(&cg.context, values, true);
+    cg.cache.values.pop_view(writer.start);
     packed_struct
 }
 
@@ -198,16 +226,20 @@ pub fn const_write_array<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     value: hir::ConstValue<'c>,
 ) -> llvm::Value {
-    let offset = cg.cache.values.start();
-    write_const(cg, value);
-    let bytes = cg.cache.values.view(offset.clone());
+    let mut writer = ConstWriter::new(cg, false);
+    write_const(cg, &mut writer, value);
 
+    let bytes = cg.cache.values.view(writer.start);
     let array = llvm::const_array(cg.int_type(hir::IntType::U8), bytes);
-    cg.cache.values.pop_view(offset);
+    cg.cache.values.pop_view(writer.start);
     array
 }
 
-fn write_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) {
+fn write_const<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    writer: &mut ConstWriter,
+    value: hir::ConstValue<'c>,
+) {
     match value {
         hir::ConstValue::Void => {}
         hir::ConstValue::Null => {
@@ -235,7 +267,8 @@ fn write_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) {
         }
         hir::ConstValue::String { val, string_ty } => {
             let string_ptr = cg.string_lits[val.index()].as_ptr();
-            cg.cache.values.push(string_ptr.as_val());
+            writer.write_ptr_or_undef(cg, string_ptr.as_val());
+
             if string_ty == hir::StringType::String {
                 let len = cg.session.intern_lit.get(val).len();
                 write_const_int(cg, len as u64, false, hir::IntType::Usize);
@@ -243,44 +276,61 @@ fn write_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) {
         }
         hir::ConstValue::Procedure { proc_id } => {
             let proc_ptr = cg.procs[proc_id.index()].0;
-            cg.cache.values.push(proc_ptr.as_val());
+            writer.write_ptr_or_undef(cg, proc_ptr.as_val());
         }
         hir::ConstValue::Variant { enum_id, variant_id } => {
-            write_enum_tag(cg, enum_id, variant_id);
+            write_enum_tag(cg, writer, enum_id, variant_id);
         }
         hir::ConstValue::VariantPoly { enum_id, variant } => {
-            write_enum_tag(cg, enum_id, variant.variant_id);
+            write_enum_tag(cg, writer, enum_id, variant.variant_id);
             let layout = cg.variant_layout((enum_id, variant.variant_id, variant.poly_types));
-            (0..layout.field_pad[0]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+            write_padding(cg, writer, layout.field_pad[0]);
             for (idx, field) in variant.values.iter().copied().enumerate() {
-                write_const(cg, field);
-                (0..layout.field_pad[idx + 1]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+                write_const(cg, writer, field);
+                write_padding(cg, writer, layout.field_pad[idx + 1]);
             }
         }
         hir::ConstValue::Struct { struct_id, struct_ } => {
             let layout = cg.struct_layout((struct_id, struct_.poly_types));
             for (idx, field) in struct_.values.iter().copied().enumerate() {
-                write_const(cg, field);
-                (0..layout.field_pad[idx]).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+                write_const(cg, writer, field);
+                write_padding(cg, writer, layout.field_pad[idx]);
             }
         }
         hir::ConstValue::Array { array } => {
-            array.values.iter().copied().for_each(|value| write_const(cg, value));
+            array.values.iter().copied().for_each(|value| write_const(cg, writer, value));
         }
         hir::ConstValue::ArrayRepeat { array } => {
-            (0..array.len).for_each(|_| write_const(cg, array.value));
+            (0..array.len).for_each(|_| write_const(cg, writer, array.value));
         }
         hir::ConstValue::ArrayEmpty { .. } => {}
     }
 }
 
-fn write_enum_tag(cg: &mut Codegen, enum_id: hir::EnumID, variant_id: hir::VariantID) {
+fn write_padding(cg: &mut Codegen, writer: &mut ConstWriter, pad: u8) {
+    if pad == 0 {
+        return;
+    }
+    if writer.use_undef {
+        let pad = llvm::undef(llvm::array_type(cg.int_type(hir::IntType::U8), pad as u64));
+        writer.write_ptr_or_undef(cg, pad);
+    } else {
+        (0..pad).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+    }
+}
+
+fn write_enum_tag(
+    cg: &mut Codegen,
+    writer: &mut ConstWriter,
+    enum_id: hir::EnumID,
+    variant_id: hir::VariantID,
+) {
     let data = cg.hir.enum_data(enum_id);
     let tag = match data.variant(variant_id).kind {
         hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
     };
-    write_const(cg, tag);
+    write_const(cg, writer, tag);
 }
 
 fn write_const_int(cg: &mut Codegen, val: u64, neg: bool, int_ty: hir::IntType) {

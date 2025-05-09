@@ -124,7 +124,7 @@ mod temp_buffer {
         buffer: Vec<T>,
     }
 
-    #[derive(Clone)]
+    #[derive(Copy, Clone)]
     pub struct TempOffset<T> {
         idx: usize,
         phantom: PhantomData<T>,

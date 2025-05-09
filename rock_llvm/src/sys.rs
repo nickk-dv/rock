@@ -364,6 +364,7 @@ pub mod core {
         pub fn LLVMTypeOf(Val: LLVMValueRef) -> LLVMTypeRef;
 
         pub fn LLVMConstNull(ty: LLVMTypeRef) -> LLVMValueRef;
+        pub fn LLVMGetUndef(ty: LLVMTypeRef) -> LLVMValueRef;
         pub fn LLVMConstInt(int_ty: LLVMTypeRef, val: u64, sign_extend: LLVMBool) -> LLVMValueRef;
         pub fn LLVMConstReal(real_ty: LLVMTypeRef, val: c_double) -> LLVMValueRef;
 

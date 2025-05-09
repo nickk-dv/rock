@@ -641,6 +641,9 @@ impl TypeStruct {
 pub fn const_zeroed(ty: Type) -> Value {
     Value(unsafe { core::LLVMConstNull(ty.0) })
 }
+pub fn undef(ty: Type) -> Value {
+    Value(unsafe { core::LLVMGetUndef(ty.0) })
+}
 pub fn const_int(int_ty: Type, val: u64, sign_extend: bool) -> Value {
     Value(unsafe { core::LLVMConstInt(int_ty.0, val, sign_extend as i32) })
 }

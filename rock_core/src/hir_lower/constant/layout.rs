@@ -171,6 +171,7 @@ fn resolve_variant_layout<'hir>(
     resolve_aggregate_layout(ctx, src, "variant", types, poly_types)
 }
 
+//@padding after last field is incorrect and depends on overall enum size
 //@use temp buffers, annoying due to possible `?` early return
 fn resolve_aggregate_layout<'hir>(
     ctx: &mut impl LayoutContext<'hir>,

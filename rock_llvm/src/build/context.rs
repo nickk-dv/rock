@@ -128,13 +128,11 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         }
     }
 
-    pub fn variant_layout(&mut self, key: hir::VariantKey<'c>) -> hir::StructLayout<'c> {
-        types::expect_concrete(key.2);
-        if let Some(layout) = self.hir.variant_layout.get(&key) {
-            return *layout;
-        }
-        layout::resolve_enum_layout(self, key.0, key.2).unwrap(); //@can fail
-        *self.hir.variant_layout.get(&key).expect("resolved layout")
+    pub fn enum_layout(&mut self, key: hir::EnumKey<'c>) -> hir::Layout {
+        types::expect_concrete(key.1);
+        let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+        let enum_ty = hir::Type::Enum(key.0, key.1);
+        layout::type_layout(self, enum_ty, &[], src).unwrap() //@can fail
     }
 
     pub fn struct_layout(&mut self, key: hir::StructKey<'c>) -> hir::StructLayout<'c> {
@@ -143,6 +141,15 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             return *layout;
         }
         layout::resolve_struct_layout(self, key.0, key.1).unwrap() //@can fail
+    }
+
+    pub fn variant_layout(&mut self, key: hir::VariantKey<'c>) -> hir::StructLayout<'c> {
+        types::expect_concrete(key.2);
+        if let Some(layout) = self.hir.variant_layout.get(&key) {
+            return *layout;
+        }
+        layout::resolve_enum_layout(self, key.0, key.2).unwrap(); //@can fail
+        *self.hir.variant_layout.get(&key).expect("resolved layout")
     }
 
     pub fn ty(&mut self, ty: hir::Type<'c>) -> llvm::Type {
