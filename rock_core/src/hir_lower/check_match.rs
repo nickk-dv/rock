@@ -9,20 +9,26 @@ use crate::text::TextRange;
 use std::collections::HashSet;
 use std::fmt::Write;
 
-pub fn match_kind(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) -> Option<hir::MatchKind> {
+pub fn match_kind<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    ty: hir::Type<'hir>,
+    range: TextRange,
+) -> Option<hir::MatchKind<'hir>> {
     let kind = match ty {
         hir::Type::Error => return None,
         hir::Type::Int(int_ty) => Some(hir::MatchKind::Int { int_ty }),
         hir::Type::Bool(bool_ty) => Some(hir::MatchKind::Bool { bool_ty }),
         hir::Type::Char => Some(hir::MatchKind::Char),
         hir::Type::String(hir::StringType::String) => Some(hir::MatchKind::String),
-        //@gen types not handled
-        hir::Type::Enum(enum_id, _) => Some(hir::MatchKind::Enum { enum_id, ref_mut: None }),
+        hir::Type::Enum(enum_id, poly_types) => {
+            let poly_types = (!poly_types.is_empty()).then(|| ctx.arena.alloc(poly_types));
+            Some(hir::MatchKind::Enum { enum_id, ref_mut: None, poly_types })
+        }
         hir::Type::Reference(mutt, ref_ty) => match *ref_ty {
             hir::Type::Error => return None,
-            //@gen types not handled
-            hir::Type::Enum(enum_id, _) => {
-                Some(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt) })
+            hir::Type::Enum(enum_id, poly_types) => {
+                let poly_types = (!poly_types.is_empty()).then(|| ctx.arena.alloc(poly_types));
+                Some(hir::MatchKind::Enum { enum_id, ref_mut: Some(mutt), poly_types })
             }
             _ => None,
         },
@@ -36,18 +42,19 @@ pub fn match_kind(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) -> Option<h
     kind
 }
 
-//@ignored enum poly_types
 pub fn match_pat_expect<'hir>(
     ctx: &HirCtx,
     range: TextRange,
-    kind: Option<hir::MatchKind>,
+    kind: Option<hir::MatchKind<'hir>>,
 ) -> (Expectation<'hir>, Option<ast::Mut>) {
     let (expect_ty, ref_mut) = match kind {
         Some(hir::MatchKind::Int { int_ty }) => (hir::Type::Int(int_ty), None),
         Some(hir::MatchKind::Bool { bool_ty }) => (hir::Type::Bool(bool_ty), None),
         Some(hir::MatchKind::Char) => (hir::Type::Char, None),
         Some(hir::MatchKind::String) => (hir::Type::String(hir::StringType::String), None),
-        Some(hir::MatchKind::Enum { enum_id, ref_mut }) => (hir::Type::Enum(enum_id, &[]), ref_mut),
+        Some(hir::MatchKind::Enum { enum_id, ref_mut, poly_types }) => {
+            (hir::Type::Enum(enum_id, poly_types.map_or(&[], |p| *p)), ref_mut)
+        }
         None => (hir::Type::Error, None),
     };
     (Expectation::HasType(expect_ty, Some(ctx.src(range))), ref_mut)

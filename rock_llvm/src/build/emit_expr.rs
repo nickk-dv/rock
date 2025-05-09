@@ -94,8 +94,8 @@ fn codegen_expr<'c>(
             emit_stmt::codegen_block(cg, expect, block);
             None
         }
-        hir::Expr::Match { kind, match_ } => {
-            codegen_match(cg, expect, kind, match_);
+        hir::Expr::Match { match_ } => {
+            codegen_match(cg, expect, match_);
             None
         }
         hir::Expr::StructField { target, access } => {
@@ -112,10 +112,10 @@ fn codegen_expr<'c>(
         hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
         hir::Expr::Variant { enum_id, variant_id, input } => {
-            codegen_variant(cg, expect, enum_id, variant_id, input)
+            codegen_variant(cg, expect, enum_id, variant_id, input.0, input.1)
         }
         hir::Expr::CallDirect { proc_id, input } => {
-            codegen_call_direct(cg, expect, proc_id, &[], input)
+            codegen_call_direct(cg, expect, proc_id, input, &[])
         }
         hir::Expr::CallDirectPoly { proc_id, input } => {
             codegen_call_direct(cg, expect, proc_id, input.0, input.1)
@@ -124,7 +124,7 @@ fn codegen_expr<'c>(
             codegen_call_indirect(cg, expect, target, indirect)
         }
         hir::Expr::StructInit { struct_id, input } => {
-            codegen_struct_init(cg, expect, struct_id, &[], input)
+            codegen_struct_init(cg, expect, struct_id, input, &[])
         }
         hir::Expr::StructInitPoly { struct_id, input } => {
             codegen_struct_init(cg, expect, struct_id, input.0, input.1)
@@ -521,12 +521,7 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
 }
 
 //@getting enum variant tag is repetative
-fn codegen_match<'c>(
-    cg: &mut Codegen<'c, '_, '_>,
-    expect: Expect,
-    kind: hir::MatchKind,
-    match_: &hir::Match<'c>,
-) {
+fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir::Match<'c>) {
     #[inline]
     fn extract_slice_len_if_needed(
         cg: &mut Codegen,
@@ -540,7 +535,8 @@ fn codegen_match<'c>(
         }
     }
 
-    let (on_value, enum_ptr, bind_by_pointer) = match kind {
+    let mut enum_poly: &'c [hir::Type<'c>] = &[];
+    let (on_value, enum_ptr, bind_by_pointer) = match match_.kind {
         hir::MatchKind::Int { .. }
         | hir::MatchKind::Bool { .. }
         | hir::MatchKind::Char
@@ -548,7 +544,7 @@ fn codegen_match<'c>(
             let on_value = codegen_expr_value(cg, match_.on_expr);
             (on_value, None, false)
         }
-        hir::MatchKind::Enum { enum_id, ref_mut } => {
+        hir::MatchKind::Enum { enum_id, ref_mut, poly_types } => {
             //@dont always expect a pointer if enum is fieldless (ir quality)
             let enum_ptr = codegen_expr_pointer(cg, match_.on_expr);
             let enum_ptr = if ref_mut.is_some() {
@@ -556,6 +552,9 @@ fn codegen_match<'c>(
             } else {
                 enum_ptr
             };
+            if let Some(poly_types) = poly_types {
+                enum_poly = *poly_types;
+            }
 
             let enum_data = cg.hir.enum_data(enum_id);
             let tag_ty = cg.int_type(enum_data.tag_ty.resolved_unwrap());
@@ -578,7 +577,7 @@ fn codegen_match<'c>(
             hir::Pat::Wild => wild_bb = Some(arm_bb),
             hir::Pat::Lit(value) => {
                 let pat_value = codegen_const(cg, value);
-                let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                let v = extract_slice_len_if_needed(cg, match_.kind, pat_value);
                 cg.cache.cases.push((v, arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
@@ -592,8 +591,8 @@ fn codegen_match<'c>(
                 cg.cache.cases.push((variant_tag, arm_bb));
 
                 if !bind_ids.is_empty() {
-                    let enum_ty = cg.ty(hir::Type::Enum(enum_id, &[])).as_st(); //@support poly
-                    let layout = cg.variant_layout((enum_id, variant_id, &[])); //@support poly
+                    let enum_ty = cg.ty(hir::Type::Enum(enum_id, enum_poly)).as_st();
+                    let layout = cg.variant_layout((enum_id, variant_id, enum_poly));
 
                     for (field_idx, var_id) in bind_ids.iter().copied().enumerate() {
                         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
@@ -627,7 +626,7 @@ fn codegen_match<'c>(
                         hir::Pat::Wild => wild_bb = Some(arm_bb),
                         hir::Pat::Lit(value) => {
                             let pat_value = codegen_const(cg, value);
-                            let v = extract_slice_len_if_needed(cg, kind, pat_value);
+                            let v = extract_slice_len_if_needed(cg, match_.kind, pat_value);
                             cg.cache.cases.push((v, arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
@@ -654,7 +653,7 @@ fn codegen_match<'c>(
     }
 
     cg.build.position_at_end(insert_bb);
-    let on_value = extract_slice_len_if_needed(cg, kind, on_value);
+    let on_value = extract_slice_len_if_needed(cg, match_.kind, on_value);
     let else_bb = wild_bb.unwrap_or(exit_bb);
 
     let cases = cg.cache.cases.view(offset.clone());
@@ -780,7 +779,7 @@ fn codegen_index<'c>(
         let message = hir::Expr::Const { value };
 
         let input = &[&message, &loc];
-        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, &[], input);
+        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, input, &[]);
         cg.build.position_at_end(exit_bb);
     }
 
@@ -948,7 +947,8 @@ fn codegen_variant<'c>(
     expect: Expect,
     enum_id: hir::EnumID,
     variant_id: hir::VariantID,
-    input: &&[&hir::Expr<'c>],
+    input: &[&hir::Expr<'c>],
+    poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let data = cg.hir.enum_data(enum_id);
     let variant = data.variant(variant_id);
@@ -962,8 +962,8 @@ fn codegen_variant<'c>(
     let tag = codegen_const(cg, tag);
 
     if with_fields {
-        let enum_ty = cg.ty(hir::Type::Enum(enum_id, &[])).as_st(); //@support poly
-        let layout = cg.variant_layout((enum_id, variant_id, &[])); //@support poly
+        let enum_ty = cg.ty(hir::Type::Enum(enum_id, poly_types)).as_st();
+        let layout = cg.variant_layout((enum_id, variant_id, poly_types));
 
         let enum_ptr = match expect {
             Expect::Value(_) | Expect::Pointer => cg.entry_alloca(enum_ty.as_ty(), "enum_init"),
@@ -1008,8 +1008,8 @@ pub fn codegen_call_direct<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     proc_id: hir::ProcID,
-    poly_types: &'c [hir::Type<'c>],
     input: &[&hir::Expr<'c>],
+    poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let data = cg.hir.proc_data(proc_id);
     let is_external = data.flag_set.contains(hir::ProcFlag::External);
@@ -1194,8 +1194,8 @@ fn codegen_struct_init<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     struct_id: hir::StructID,
-    poly_types: &'c [hir::Type<'c>],
     input: &[hir::FieldInit<'c>],
+    poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let struct_ty = cg.ty(hir::Type::Struct(struct_id, poly_types)).as_st();
     let struct_ptr = match expect {

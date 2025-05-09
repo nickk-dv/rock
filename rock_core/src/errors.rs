@@ -861,7 +861,7 @@ pub fn tycheck_pat_runtime_value(emit: &mut impl ErrorSink, src: SourceRange) {
 }
 
 pub fn tycheck_pat_in_or_bindings(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "cannot use named bindings in `or` patterns, use `_`";
+    let msg = "cannot use named bindings in `or` patterns, use `_` instead";
     emit.error(Error::new(msg, src, None));
 }
 

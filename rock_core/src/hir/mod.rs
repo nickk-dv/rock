@@ -268,7 +268,7 @@ pub enum Expr<'hir> {
     Const        { value: ConstValue<'hir> },
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
-    Match        { kind: MatchKind, match_: &'hir Match<'hir> },
+    Match        { match_: &'hir Match<'hir> },
     StructField  { target: &'hir Expr<'hir>, access: &'hir StructFieldAccess<'hir> },
     SliceField   { target: &'hir Expr<'hir>, access: SliceFieldAccess },
     Index        { target: &'hir Expr<'hir>, access: &'hir IndexAccess<'hir> },
@@ -278,12 +278,12 @@ pub enum Expr<'hir> {
     ParamVar     { param_id: ParamID },
     Variable     { var_id: VariableID },
     GlobalVar    { global_id: GlobalID },
-    Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir &'hir [&'hir Expr<'hir>] },
+    Variant      { enum_id: EnumID, variant_id: VariantID, input: &'hir (&'hir [&'hir Expr<'hir>], &'hir [Type<'hir>]) },
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
-    CallDirectPoly { proc_id: ProcID, input: &'hir (&'hir [Type<'hir>], &'hir [&'hir Expr<'hir>]) },
+    CallDirectPoly { proc_id: ProcID, input: &'hir (&'hir [&'hir Expr<'hir>], &'hir [Type<'hir>]) },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
-    StructInitPoly { struct_id: StructID, input: &'hir (&'hir [Type<'hir>], &'hir [FieldInit<'hir>]) },
+    StructInitPoly { struct_id: StructID, input: &'hir (&'hir [FieldInit<'hir>], &'hir [Type<'hir>]) },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },
@@ -347,20 +347,21 @@ pub struct Branch<'hir> {
     pub block: Block<'hir>,
 }
 
+#[derive(Copy, Clone)]
+pub struct Match<'hir> {
+    pub kind: MatchKind<'hir>,
+    pub on_expr: &'hir Expr<'hir>,
+    pub arms: &'hir [MatchArm<'hir>],
+}
+
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
-pub enum MatchKind {
+pub enum MatchKind<'hir> {
     Int { int_ty: IntType },
     Bool { bool_ty: BoolType },
     Char,
     String,
-    Enum { enum_id: EnumID, ref_mut: Option<ast::Mut> },
-}
-
-#[derive(Copy, Clone)]
-pub struct Match<'hir> {
-    pub on_expr: &'hir Expr<'hir>,
-    pub arms: &'hir [MatchArm<'hir>],
+    Enum { enum_id: EnumID, ref_mut: Option<ast::Mut>, poly_types: Option<&'hir &'hir [Type<'hir>]> },
 }
 
 #[derive(Copy, Clone)]
