@@ -22,11 +22,11 @@ pub struct Hir<'hir> {
 }
 
 pub struct CoreItems {
-    pub start: ProcID,
     pub panic: ProcID,
+    pub start: ProcID,
+    pub slice_range: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
-    pub slice: ProcID,
     pub range_bound: Option<EnumID>,
     pub any: Option<StructID>,
     pub source_location: Option<StructID>,

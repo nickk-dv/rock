@@ -1,6 +1,6 @@
 //#prelude
-import core:panics as _.{assert}
 import core:fmt;
+import core:runtime as _.{assert}
 
 //#entry "expr_if_condition"
 //#expect(no_new_line)

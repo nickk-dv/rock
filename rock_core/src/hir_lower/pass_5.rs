@@ -4,7 +4,6 @@ use super::check_path::{self, ValueID};
 use super::constant;
 use super::constant::fold;
 use super::constant::layout;
-use super::context::Cache;
 use super::context::HirCtx;
 use super::scope::{self, BlockStatus, Diverges, InferContext, PolyScope};
 use super::types;
@@ -13,7 +12,6 @@ use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
 use crate::session;
-use crate::support::Arena;
 use crate::support::AsStr;
 use crate::text::{TextOffset, TextRange};
 
@@ -1207,8 +1205,9 @@ fn typecheck_slice<'hir, 'ast>(
             }
         }
         CollectionKind::Array(array) => {
-            let ptr = if collection.deref.is_some() {
-                target_res.expr
+            let ptr = if let hir::Type::Reference(mutt, ref_ty) = target_res.ty {
+                let deref = hir::Expr::Deref { rhs: target_res.expr, mutt, ref_ty };
+                ctx.arena.alloc(deref)
             } else {
                 ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
             };
@@ -1247,7 +1246,7 @@ fn typecheck_slice<'hir, 'ast>(
     let bound = hir::Expr::Variant { enum_id, variant_id, input: ctx.arena.alloc((input, &[])) };
     let bound = ctx.arena.alloc(bound);
 
-    let proc_id = ctx.core.slice;
+    let proc_id = ctx.core.slice_range;
     let input = ctx.arena.alloc_slice(&[slice, start, bound]);
     let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
     let input = ctx.arena.alloc((input, poly_types));

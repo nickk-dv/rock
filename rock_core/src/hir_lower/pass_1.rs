@@ -29,18 +29,19 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         }
     }
 
-    ctx.core.start = scope::find_core_proc(ctx, "fmt", "start").unwrap_or(hir::ProcID::dummy());
-    ctx.core.panic = scope::find_core_proc(ctx, "panics", "panic").unwrap_or(hir::ProcID::dummy());
+    ctx.core.panic = scope::find_core_proc(ctx, "runtime", "panic").unwrap_or(hir::ProcID::dummy());
+    ctx.core.start = scope::find_core_proc(ctx, "runtime", "start").unwrap_or(hir::ProcID::dummy());
+    ctx.core.slice_range =
+        scope::find_core_proc(ctx, "ops", "slice_range").unwrap_or(hir::ProcID::dummy());
     ctx.core.string_equals =
-        scope::find_core_proc(ctx, "slice", "string_equals").unwrap_or(hir::ProcID::dummy());
+        scope::find_core_proc(ctx, "ops", "string_equals").unwrap_or(hir::ProcID::dummy());
     ctx.core.cstring_equals =
-        scope::find_core_proc(ctx, "slice", "cstring_equals").unwrap_or(hir::ProcID::dummy());
-    ctx.core.slice = scope::find_core_proc(ctx, "slice", "slice").unwrap_or(hir::ProcID::dummy());
+        scope::find_core_proc(ctx, "ops", "cstring_equals").unwrap_or(hir::ProcID::dummy());
 
-    ctx.core.range_bound = scope::find_core_enum(ctx, "slice", "RangeBound");
+    ctx.core.range_bound = scope::find_core_enum(ctx, "ops", "RangeBound");
 
     ctx.core.any = scope::find_core_struct(ctx, "type", "Any");
-    ctx.core.source_location = scope::find_core_struct(ctx, "panics", "SourceLocation");
+    ctx.core.source_location = scope::find_core_struct(ctx, "runtime", "SourceLocation");
 }
 
 fn add_proc_item<'ast>(

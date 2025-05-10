@@ -1,5 +1,5 @@
 //#prelude
-import core:panics as _.{assert}
+import core:runtime as _.{assert}
 
 //#entry "neg_int"
 //#expect

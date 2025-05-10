@@ -46,11 +46,11 @@ pub struct Cache<'hir> {
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
         let core = hir::CoreItems {
-            start: hir::ProcID::dummy(),
             panic: hir::ProcID::dummy(),
+            start: hir::ProcID::dummy(),
+            slice_range: hir::ProcID::dummy(),
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
-            slice: hir::ProcID::dummy(),
             range_bound: None,
             any: None,
             source_location: None,
