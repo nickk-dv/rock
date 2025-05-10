@@ -455,6 +455,9 @@ fn add_type_usage_deps<'hir>(
         hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {}
         hir::Type::Enum(id, poly_types) => {
             let data = ctx.registry.enum_data(id);
+            if !data.layout.is_resolved_ok() {
+                return Err(parent_id);
+            }
             for variant in data.variants {
                 for field in variant.fields {
                     add_type_usage_deps(ctx, tree, parent_id, field.ty)?;
@@ -466,6 +469,9 @@ fn add_type_usage_deps<'hir>(
         }
         hir::Type::Struct(id, poly_types) => {
             let data = ctx.registry.struct_data(id);
+            if !data.layout.is_resolved_ok() {
+                return Err(parent_id);
+            }
             for field in data.fields {
                 add_type_usage_deps(ctx, tree, parent_id, field.ty)?
             }

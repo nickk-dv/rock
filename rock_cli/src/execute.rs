@@ -42,7 +42,8 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
     os::dir_create(&root_dir, true)?;
     os::dir_create(&src_dir, true)?;
     if let PackageKind::Bin = data.kind {
-        os::file_create(&src_dir.join("main.rock"), "")?;
+        const MAIN: &str = "proc main() s32 {\n    return 0;\n}\n";
+        os::file_create(&src_dir.join("main.rock"), MAIN)?;
     }
 
     let package = PackageManifest {
