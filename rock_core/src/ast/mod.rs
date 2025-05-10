@@ -479,7 +479,7 @@ pub struct PolymorphParams<'ast> {
 
 //==================== ENUMS ====================
 
-#[derive(Copy, Clone, Hash, Eq,  Debug, PartialEq)]
+#[derive(Copy, Clone, Hash, Eq, Debug, PartialEq)]
 pub enum Mut {
     Mutable,
     Immutable,

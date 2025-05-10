@@ -553,7 +553,7 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
                 enum_ptr
             };
             if let Some(poly_types) = poly_types {
-                enum_poly = *poly_types;
+                enum_poly = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
             }
 
             let enum_data = cg.hir.enum_data(enum_id);
@@ -962,6 +962,7 @@ fn codegen_variant<'c>(
     let tag = codegen_const(cg, tag);
 
     if with_fields {
+        let poly_types = context::substitute_types(cg, poly_types, cg.proc.poly_types);
         let enum_ty = cg.ty(hir::Type::Enum(enum_id, poly_types)).as_st();
         let layout = cg.variant_layout((enum_id, variant_id, poly_types));
 
