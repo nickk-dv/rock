@@ -99,6 +99,20 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         self.session.intern_name.get(name_id)
     }
 
+    pub fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
+        match len {
+            hir::ArrayStaticLen::Immediate(len) => Ok(len),
+            hir::ArrayStaticLen::ConstEval(eval_id) => {
+                let (eval, _, _) = self.registry.const_eval(eval_id);
+                let value = eval.resolved()?;
+                match value {
+                    hir::ConstValue::Int { val, .. } => Ok(val),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
     pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
         //@moving errors from single buffer into per module storage (hack)
         let (errors, warnings) = self.emit.collect();
@@ -150,23 +164,6 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             variant_layout: self.variant_layout,
             core: self.core,
         })
-    }
-}
-
-//@move?
-impl hir::ArrayStaticLen {
-    pub fn get_resolved(self, ctx: &HirCtx) -> Result<u64, ()> {
-        match self {
-            hir::ArrayStaticLen::Immediate(len) => Ok(len),
-            hir::ArrayStaticLen::ConstEval(eval_id) => {
-                let (eval, _, _) = *ctx.registry.const_eval(eval_id);
-                let value = eval.resolved()?;
-                match value {
-                    hir::ConstValue::Int { val, .. } => Ok(val),
-                    _ => unreachable!(),
-                }
-            }
-        }
     }
 }
 
@@ -427,7 +424,7 @@ impl<'hir> layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
         self.session.config.target_ptr_width.ptr_size()
     }
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
-        len.get_resolved(self)
+        self.array_len(len)
     }
     fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir> {
         self.registry.enum_data(id)

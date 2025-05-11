@@ -244,6 +244,16 @@ macro_rules! unresolved_or_return {
     };
 }
 
+macro_rules! resolved_error_return {
+    ($eval:expr, $err:expr) => {
+        match $eval {
+            hir::Eval::Unresolved(_) => {}
+            hir::Eval::Resolved(_) => {}
+            hir::Eval::ResolvedError => return Err($err),
+        }
+    };
+}
+
 fn add_dep(
     ctx: &mut HirCtx,
     tree: &mut Tree,
@@ -300,7 +310,11 @@ fn add_enum_size_deps<'hir>(
     poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
     let data = ctx.registry.enum_data(enum_id);
-    unresolved_or_return!(data.layout, parent_id);
+    if data.poly_params.is_none() {
+        unresolved_or_return!(data.layout, parent_id);
+    } else {
+        resolved_error_return!(data.layout, parent_id);
+    }
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::EnumLayout(enum_id))?;
     for variant in ctx.registry.enum_data(enum_id).variants {
@@ -319,7 +333,11 @@ fn add_struct_size_deps<'hir>(
     poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
     let data = ctx.registry.struct_data(struct_id);
-    unresolved_or_return!(data.layout, parent_id);
+    if data.poly_params.is_none() {
+        unresolved_or_return!(data.layout, parent_id);
+    } else {
+        resolved_error_return!(data.layout, parent_id);
+    }
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::StructLayout(struct_id))?;
     for field in ctx.registry.struct_data(struct_id).fields {

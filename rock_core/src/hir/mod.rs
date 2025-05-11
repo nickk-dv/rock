@@ -1030,16 +1030,19 @@ pub fn source_location<'hir>(
 ) -> [ConstValue<'hir>; 3] {
     let module = session.module.get(origin_id);
     let file = session.vfs.file(module.file_id());
-
     let package_id = module.origin();
     let package = session.graph.package(package_id);
-    let path = file.path.strip_prefix(package.root_dir()).unwrap();
-    let path_id = session.intern_lit.intern(path.to_str().unwrap_or("")); //@add package directory for depependencies
+
+    let path = if package_id == session.root_id {
+        file.path.strip_prefix(package.root_dir()).unwrap()
+    } else {
+        &file.path
+    };
+    let path_id = session.intern_lit.intern(path.to_str().unwrap_or(""));
 
     let location = text::find_text_location(&file.source, offset, &file.line_ranges);
     let line = ConstValue::Int { val: location.line() as u64, neg: false, int_ty: IntType::U32 };
     let column = ConstValue::Int { val: location.col() as u64, neg: false, int_ty: IntType::U32 };
     let filename = ConstValue::String { val: path_id, string_ty: StringType::String };
-
     [line, column, filename]
 }

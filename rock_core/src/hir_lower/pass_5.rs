@@ -124,16 +124,16 @@ pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
                 && type_matches(ctx, slice.elem_ty, slice2.elem_ty)
         }
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(array2)) => {
-            if let Ok(len) = array.len.get_resolved(ctx) {
-                if let Ok(len2) = array2.len.get_resolved(ctx) {
+            if let Ok(len) = ctx.array_len(array.len) {
+                if let Ok(len2) = ctx.array_len(array2.len) {
                     return (len == len2) && type_matches(ctx, array.elem_ty, array2.elem_ty);
                 }
             }
             true
         }
-        // prevent arrays with error sizes from erroring
-        (hir::Type::ArrayStatic(array), _) => array.len.get_resolved(ctx).is_err(),
-        (_, hir::Type::ArrayStatic(array2)) => array2.len.get_resolved(ctx).is_err(),
+        //prevent arrays with error sizes from erroring
+        (hir::Type::ArrayStatic(array), _) => ctx.array_len(array.len).is_err(),
+        (_, hir::Type::ArrayStatic(array2)) => ctx.array_len(array2.len).is_err(),
         _ => false,
     }
 }
@@ -264,9 +264,8 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             format.into()
         }
         hir::Type::ArrayStatic(array) => {
-            let len = array.len.get_resolved(ctx);
             let elem_format = type_format(ctx, array.elem_ty);
-            let format = match len {
+            let format = match ctx.array_len(array.len) {
                 Ok(len) => format!("[{}]{}", len, elem_format.as_str()),
                 Err(()) => format!("[<unknown>]{}", elem_format.as_str()),
             };
@@ -1211,7 +1210,7 @@ fn typecheck_slice<'hir, 'ast>(
             } else {
                 ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
             };
-            let len = array.len.get_resolved(ctx).unwrap_or(0);
+            let len = ctx.array_len(array.len).unwrap_or(0);
             let builtin = hir::Builtin::RawSlice(ptr, len);
             let builtin = hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) };
             ctx.arena.alloc(builtin)
@@ -3248,7 +3247,7 @@ fn typecheck_for<'hir, 'ast>(
             let expr_iter_len = match collection.kind {
                 CollectionKind::Array(array) => {
                     let len_value = hir::ConstValue::Int {
-                        val: array.len.get_resolved(ctx).unwrap_or(0), //@using default 0
+                        val: ctx.array_len(array.len).unwrap_or(0),
                         neg: false,
                         int_ty: IntType::Usize,
                     };
