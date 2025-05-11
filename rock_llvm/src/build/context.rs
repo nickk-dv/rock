@@ -2,7 +2,6 @@ use crate::llvm;
 use rock_core::config::TargetTriple;
 use rock_core::error::{ErrorWarningBuffer, SourceRange};
 use rock_core::hir_lower::constant::layout;
-use rock_core::hir_lower::pass_5;
 use rock_core::hir_lower::types;
 use rock_core::intern::NameID;
 use rock_core::session::{ModuleID, Session};
@@ -533,6 +532,24 @@ pub fn substitute_types<'c>(
         cg.cache.hir_types.pop_view(offset);
         types
     }
+}
+
+pub fn substitute_type<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    ty: hir::Type<'c>,
+    poly_set: &[hir::Type<'c>],
+) -> hir::Type<'c> {
+    if !types::has_poly_param(ty) {
+        return ty;
+    }
+    types::substitute(
+        &mut cg.hir.arena,
+        &mut cg.cache.hir_types,
+        &mut cg.cache.hir_proc_ty_params,
+        ty,
+        poly_set,
+        Some(cg.proc.poly_types),
+    )
 }
 
 pub fn write_symbol_name(

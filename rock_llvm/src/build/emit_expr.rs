@@ -123,6 +123,7 @@ fn codegen_expr<'c>(
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
         }
+        hir::Expr::Variadics { args } => Some(codegen_variadics(cg, args)),
         hir::Expr::StructInit { struct_id, input } => {
             codegen_struct_init(cg, expect, struct_id, input, &[])
         }
@@ -222,10 +223,7 @@ pub fn const_writer<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>
     packed_struct
 }
 
-pub fn const_write_array<'c>(
-    cg: &mut Codegen<'c, '_, '_>,
-    value: hir::ConstValue<'c>,
-) -> llvm::Value {
+fn const_write_array<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
     let mut writer = ConstWriter::new(cg, false);
     write_const(cg, &mut writer, value);
 
@@ -1189,6 +1187,43 @@ fn codegen_call_indirect<'c>(
         }
         _ => Some(ret_val),
     }
+}
+
+fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>]) -> llvm::Value {
+    let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
+    let any_array_ty = llvm::array_type(any_ty.as_ty(), args.len() as u64);
+    let any_array_ptr = cg.entry_alloca(any_array_ty, "any_array");
+    let any_array_len = cg.const_usize(args.len() as u64);
+
+    for (idx, arg) in args.iter().enumerate() {
+        let arg_ty = context::substitute_type(cg, arg.ty, &[]);
+        let arg_ty = cg.ty(arg_ty);
+        let arg_ptr = cg.entry_alloca(arg_ty, "var_arg");
+        //@can be done in entry
+        let array_gep = cg.build.gep_inbounds(
+            any_array_ty,
+            any_array_ptr,
+            &[cg.const_usize(0), cg.const_usize(idx as u64)],
+            "any_array.idx",
+        );
+        let data_ptr = cg.build.gep_struct(any_ty, array_gep, 0, "any.data");
+        let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
+        cg.build.store(arg_ptr.as_val(), data_ptr);
+        //@store &TypeInfo
+
+        //@will copy values, not always optimal, Expect::Pointer not supported for all exprs
+        codegen_expr_store(cg, arg.expr, arg_ptr);
+    }
+
+    //@repetative copy paste for slice creation
+    let slice_ty = cg.slice_type();
+    let slice_ptr = cg.entry_alloca(slice_ty.as_ty(), "raw_slice");
+    //@can be done in entry
+    let ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
+    cg.build.store(any_array_ptr.as_val(), ptr_ptr);
+    let len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
+    cg.build.store(any_array_len, len_ptr);
+    cg.build.load(slice_ty.as_ty(), slice_ptr, "raw_slice_val")
 }
 
 fn codegen_struct_init<'c>(

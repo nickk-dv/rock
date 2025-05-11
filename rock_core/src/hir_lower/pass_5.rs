@@ -3726,6 +3726,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
             let ty = indirect.proc_ty.return_ty;
             unused_return_type(ty, "indirect call return value")
         }
+        hir::Expr::Variadics { .. } => None,
         hir::Expr::StructInit { .. } | hir::Expr::StructInitPoly { .. } => Some("struct value"),
         hir::Expr::ArrayInit { .. } => Some("array value"),
         hir::Expr::ArrayRepeat { .. } => Some("array value"),
@@ -3935,7 +3936,15 @@ fn check_call_direct<'hir, 'ast>(
                 }
             }
             hir::ParamKind::Variadic => {
-                //@pass `[]Any`
+                let offset = ctx.cache.variadics.start();
+                while let Some(expr) = args.next() {
+                    let expr_res = typecheck_expr(ctx, Expectation::None, expr);
+                    let arg = hir::Variadic { ty: expr_res.ty, expr: expr_res.expr };
+                    ctx.cache.variadics.push(arg);
+                }
+                let args = ctx.cache.variadics.take(offset, &mut ctx.arena);
+                let variadics = ctx.arena.alloc(hir::Expr::Variadics { args });
+                ctx.cache.exprs.push(variadics);
                 break;
             }
             hir::ParamKind::CallerLocation => {
@@ -4031,7 +4040,15 @@ fn check_call_indirect<'hir, 'ast>(
                 }
             }
             hir::ParamKind::Variadic => {
-                //@pass `[]Any`
+                let offset = ctx.cache.variadics.start();
+                while let Some(expr) = args.next() {
+                    let expr_res = typecheck_expr(ctx, Expectation::None, expr);
+                    let arg = hir::Variadic { ty: expr_res.ty, expr: expr_res.expr };
+                    ctx.cache.variadics.push(arg);
+                }
+                let args = ctx.cache.variadics.take(offset, &mut ctx.arena);
+                let variadics = ctx.arena.alloc(hir::Expr::Variadics { args });
+                ctx.cache.exprs.push(variadics);
                 break;
             }
             hir::ParamKind::CallerLocation => {
@@ -4373,6 +4390,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,
             hir::Expr::CallDirectPoly { .. } => AddrBase::Temporary,
             hir::Expr::CallIndirect { .. } => AddrBase::Temporary,
+            hir::Expr::Variadics { .. } => AddrBase::Unknown,
             hir::Expr::StructInit { .. } => AddrBase::TemporaryImmut,
             hir::Expr::StructInitPoly { .. } => AddrBase::TemporaryImmut,
             hir::Expr::ArrayInit { .. } => AddrBase::TemporaryImmut,
