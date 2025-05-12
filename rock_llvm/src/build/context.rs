@@ -29,6 +29,8 @@ pub struct Codegen<'c, 's, 'sref> {
     pub poly_enums: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
+    pub type_info_ptr: llvm::ValueGlobal,
+    pub type_info_arr: llvm::ValueGlobal,
     //@errors ignored, layout overfow can happen
     pub emit: ErrorWarningBuffer,
 }
@@ -123,6 +125,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             poly_enums: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
             poly_proc_queue: Vec::with_capacity(64),
+            type_info_ptr: llvm::ValueGlobal::null(),
+            type_info_arr: llvm::ValueGlobal::null(),
             emit: ErrorWarningBuffer::default(),
         }
     }

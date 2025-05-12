@@ -53,6 +53,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
             range_bound: None,
+            type_info: None,
             any: None,
             source_location: None,
         };

@@ -1194,6 +1194,7 @@ fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>
     let any_array_ty = llvm::array_type(any_ty.as_ty(), args.len() as u64);
     let any_array_ptr = cg.entry_alloca(any_array_ty, "any_array");
     let any_array_len = cg.const_usize(args.len() as u64);
+    let type_info_id = cg.hir.core.type_info.unwrap();
 
     for (idx, arg) in args.iter().enumerate() {
         let arg_ty = context::substitute_type(cg, arg.ty, &[]);
@@ -1207,9 +1208,25 @@ fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>
             "any_array.idx",
         );
         let data_ptr = cg.build.gep_struct(any_ty, array_gep, 0, "any.data");
-        let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
         cg.build.store(arg_ptr.as_val(), data_ptr);
-        //@store &TypeInfo
+
+        let types_ptr = cg.build.load(cg.ptr_type(), cg.type_info_ptr.as_ptr(), "types_array");
+        let type_id = match arg.ty {
+            hir::Type::Char => 0,
+            hir::Type::Void => 1,
+            hir::Type::Never => 2,
+            hir::Type::Rawptr => 3,
+            _ => todo!("unsupported variadic type"),
+        };
+        let types_info_arr = cg.ty(hir::Type::Enum(type_info_id, &[]));
+        let info_ptr = cg.build.gep_inbounds(
+            llvm::array_type(types_info_arr, 4), //@4 temp
+            types_ptr.into_ptr(),
+            &[cg.const_usize(0), cg.const_usize(type_id)],
+            "info_ptr",
+        );
+        let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
+        cg.build.store(info_ptr.as_val(), type_ptr);
 
         //@will copy values, not always optimal, Expect::Pointer not supported for all exprs
         codegen_expr_store(cg, arg.expr, arg_ptr);

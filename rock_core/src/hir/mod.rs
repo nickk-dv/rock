@@ -28,6 +28,7 @@ pub struct CoreItems {
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
     pub range_bound: Option<EnumID>,
+    pub type_info: Option<EnumID>,
     pub any: Option<StructID>,
     pub source_location: Option<StructID>,
 }

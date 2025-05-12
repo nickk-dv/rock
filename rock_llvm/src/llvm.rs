@@ -222,7 +222,7 @@ impl IRModule {
     pub fn add_global(
         &mut self,
         name: &str,
-        value: Value,
+        value: Option<Value>,
         global_ty: Type,
         constant: bool,
         unnamed_addr: bool,
@@ -235,12 +235,16 @@ impl IRModule {
             sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr
         };
         unsafe {
-            core::LLVMSetInitializer(global_val, value.0);
+            value.map(|v| core::LLVMSetInitializer(global_val, v.0));
             core::LLVMSetGlobalConstant(global_val, constant as i32);
             core::LLVMSetUnnamedAddress(global_val, unnamed_addr);
             core::LLVMSetLinkage(global_val, Linkage::LLVMInternalLinkage);
         }
         ValueGlobal(global_val)
+    }
+
+    pub fn init_global(&self, global: ValueGlobal, value: Value) {
+        unsafe { core::LLVMSetInitializer(global.0, value.0) }
     }
 
     pub fn to_string(&self) -> String {
@@ -594,6 +598,10 @@ impl ValueFn {
 }
 
 impl ValueGlobal {
+    #[inline]
+    pub fn null() -> ValueGlobal {
+        ValueGlobal(std::ptr::null_mut())
+    }
     #[inline]
     pub fn as_ptr(self) -> ValuePtr {
         ValuePtr(self.0)

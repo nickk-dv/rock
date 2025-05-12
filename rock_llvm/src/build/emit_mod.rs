@@ -19,6 +19,7 @@ pub fn codegen_module(
     codegen_function_values(&mut cg);
     codegen_globals(&mut cg);
     codegen_function_bodies(&mut cg);
+    codegen_type_info(&mut cg);
     (cg.target, cg.module)
 }
 
@@ -32,7 +33,7 @@ fn codegen_string_lits(cg: &mut Codegen) {
     for string in cg.session.intern_lit.get_all().iter().copied() {
         let string_val = llvm::const_string(&cg.context, string, true);
         let string_ty = llvm::typeof_value(string_val);
-        let global = cg.module.add_global("rock.string", string_val, string_ty, true, true);
+        let global = cg.module.add_global("rock.string", Some(string_val), string_ty, true, true);
         cg.string_lits.push(global);
     }
 }
@@ -109,9 +110,38 @@ fn codegen_globals(cg: &mut Codegen) {
 
         cg.namebuf.clear();
         context::write_symbol_name(cg, data.name.id, data.origin_id, &[]);
-        let global = cg.module.add_global(&cg.namebuf, value, global_ty, constant, false);
+        let global = cg.module.add_global(&cg.namebuf, Some(value), global_ty, constant, false);
         cg.globals.push(global);
     }
+
+    cg.type_info_ptr = cg.module.add_global("type_info.ptr", None, cg.ptr_type(), true, false);
+}
+
+fn codegen_type_info(cg: &mut Codegen) {
+    let enum_id = cg.hir.core.type_info.unwrap();
+    let variants = vec![
+        hir::ConstVariant { variant_id: hir::VariantID::new(0), values: &[], poly_types: &[] }, //char
+        hir::ConstVariant { variant_id: hir::VariantID::new(1), values: &[], poly_types: &[] }, //void
+        hir::ConstVariant { variant_id: hir::VariantID::new(2), values: &[], poly_types: &[] }, //never
+        hir::ConstVariant { variant_id: hir::VariantID::new(3), values: &[], poly_types: &[] }, //rawptr
+    ];
+    let variants = cg.hir.arena.alloc_slice(&variants);
+
+    let type_infos = vec![
+        hir::ConstValue::VariantPoly { enum_id, variant: &variants[0] },
+        hir::ConstValue::VariantPoly { enum_id, variant: &variants[1] },
+        hir::ConstValue::VariantPoly { enum_id, variant: &variants[2] },
+        hir::ConstValue::VariantPoly { enum_id, variant: &variants[3] },
+    ];
+    let type_infos = cg.hir.arena.alloc_slice(&type_infos);
+
+    let array = cg.hir.arena.alloc(hir::ConstArray { values: type_infos });
+    let array = hir::ConstValue::Array { array: &array };
+    let types = emit_expr::const_writer(cg, array);
+
+    cg.type_info_arr =
+        cg.module.add_global("type_info.arr", Some(types), llvm::typeof_value(types), true, false);
+    cg.module.init_global(cg.type_info_ptr, cg.type_info_arr.as_ptr().as_val());
 }
 
 fn codegen_function_values(cg: &mut Codegen) {
