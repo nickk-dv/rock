@@ -149,6 +149,8 @@ fn mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
             ConstDependency::ArrayLen(eval_id) => {
                 ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
             }
+            ConstDependency::EnumTypeUsage(_) => {}
+            ConstDependency::StructTypeUsage(_) => {}
         }
     }
 }
@@ -231,6 +233,16 @@ fn dependency_decs(ctx: &HirCtx, dep: ConstDependency, desc: &mut String) -> Sou
             let _ = write!(desc, "array length value");
             SourceRange::new(origin_id, eval.unresolved_unwrap().0.range)
         }
+        ConstDependency::EnumTypeUsage(id) => {
+            let data = ctx.registry.enum_data(id);
+            let _ = write!(desc, "usage of `{}` enum type", ctx.name(data.name.id));
+            data.src()
+        }
+        ConstDependency::StructTypeUsage(id) => {
+            let data = ctx.registry.struct_data(id);
+            let _ = write!(desc, "usage of `{}` struct type", ctx.name(data.name.id));
+            data.src()
+        }
     }
 }
 
@@ -266,6 +278,19 @@ fn add_dep(
         Err(parent_id)
     } else {
         Ok(node_id)
+    }
+}
+
+fn add_dep_allow_cycle(
+    tree: &mut Tree,
+    parent_id: TreeNodeID,
+    dep: ConstDependency,
+) -> Option<TreeNodeID> {
+    let node_id = tree.add_child(parent_id, dep);
+    if tree.find_cycle(node_id).is_some() {
+        None
+    } else {
+        Some(node_id)
     }
 }
 
@@ -476,6 +501,12 @@ fn add_type_usage_deps<'hir>(
             if !data.layout.is_resolved_ok() {
                 return Err(parent_id);
             }
+            let dep = ConstDependency::EnumTypeUsage(id);
+            let parent_id = match add_dep_allow_cycle(tree, parent_id, dep) {
+                Some(node_id) => node_id,
+                None => return Ok(()),
+            };
+
             for variant in data.variants {
                 for field in variant.fields {
                     add_type_usage_deps(ctx, tree, parent_id, field.ty)?;
@@ -490,6 +521,12 @@ fn add_type_usage_deps<'hir>(
             if !data.layout.is_resolved_ok() {
                 return Err(parent_id);
             }
+            let dep = ConstDependency::StructTypeUsage(id);
+            let parent_id = match add_dep_allow_cycle(tree, parent_id, dep) {
+                Some(node_id) => node_id,
+                None => return Ok(()),
+            };
+
             for field in data.fields {
                 add_type_usage_deps(ctx, tree, parent_id, field.ty)?
             }
@@ -846,6 +883,8 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             ConstDependency::ArrayLen(eval_id) => {
                 resolve_and_update_const_eval(ctx, eval_id, Expectation::USIZE);
             }
+            ConstDependency::EnumTypeUsage(_) => {}
+            ConstDependency::StructTypeUsage(_) => {}
         }
     }
 }
@@ -914,6 +953,11 @@ enum ConstDependency {
     Const(hir::ConstID),
     Global(hir::GlobalID),
     ArrayLen(hir::ConstEvalID),
+    //@usage deps are not "resolved" now
+    // just markers to avoid infinite resursion
+    // store some Eval to avoid repeated walking of nested types
+    EnumTypeUsage(hir::EnumID),
+    StructTypeUsage(hir::StructID),
 }
 
 crate::define_id!(TreeNodeID);

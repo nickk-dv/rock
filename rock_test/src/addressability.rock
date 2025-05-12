@@ -2,13 +2,13 @@
 
 //#entry(no_run) "cannot_ref_slice_field"
 //#expect
-//error: cannot get reference to a slice field
+//error: cannot get & to a slice field
 //  │
 //2 │     &slice.ptr;
 //  │     ^^^^^^^^^^
 //  └─ src/test.rock:2:5
 //
-//error: cannot get reference to a slice field
+//error: cannot get &mut to a slice field
 //  │
 //3 │     &mut slice.len;
 //  │     ^^^^^^^^^^^^^^
@@ -22,103 +22,103 @@ proc test_cannot_ref_slice_field(slice: []u8) void {
 
 //#entry(no_run) "cannot_ref_temporary"
 //#expect
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //2 │     &void; // const void
 //  │     ^^^^^
 //  └─ src/test.rock:2:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //3 │     &null; // const null
 //  │     ^^^^^
 //  └─ src/test.rock:3:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //4 │     &true; // const bool
 //  │     ^^^^^
 //  └─ src/test.rock:4:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //5 │     &10; // const int
 //  │     ^^^
 //  └─ src/test.rock:5:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //6 │     &10.0; // const float
 //  │     ^^^^^
 //  └─ src/test.rock:6:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //7 │     &'c'; // const char
 //  │     ^^^^
 //  └─ src/test.rock:7:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //8 │     &"string"; // const string
 //  │     ^^^^^^^^^
 //  └─ src/test.rock:8:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //  │
 //9 │     &test_cannot_ref_temporary; // const proc
 //  │     ^^^^^^^^^^^^^^^^^^^^^^^^^^
 //  └─ src/test.rock:9:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //12 │     &if true {
 //   │     ^^^^^^^^^^
 //   └─ src/test.rock:12:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //18 │     &{
 //   │     ^^
 //   └─ src/test.rock:18:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //22 │     &match 0 {
 //   │     ^^^^^^^^^^
 //   └─ src/test.rock:22:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //26 │     &(20 as u64); // expr cast
 //   │     ^^^^^^^^^^^^
 //   └─ src/test.rock:26:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //27 │     &test_cannot_ref_temporary(0); // expr call direct
 //   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 //   └─ src/test.rock:27:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //29 │     &proc_ptr(0); // expr call indirect
 //   │     ^^^^^^^^^^^^
 //   └─ src/test.rock:29:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //30 │     & &v; // expr address
 //   │     ^^^^
 //   └─ src/test.rock:30:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //31 │     &-10; // expr unary
 //   │     ^^^^
 //   └─ src/test.rock:31:5
 //
-//error: cannot get reference to a temporary value
+//error: cannot get & to a temporary value
 //   │
 //32 │     &(2 + 4); // expr binary
 //   │     ^^^^^^^^
@@ -161,7 +161,7 @@ proc test_cannot_ref_temporary(v: s32) void {
 
 //#entry(no_run) "cannot_ref_const"
 //#expect
-//error: cannot get reference to a constant, you can use `global` instead
+//error: cannot get & to a constant, you can use `global` instead
 //  │
 //3 │     &CONSTANT;
 //  │     ^^^^^^^^^
