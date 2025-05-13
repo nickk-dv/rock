@@ -53,9 +53,13 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             string_equals: hir::ProcID::dummy(),
             cstring_equals: hir::ProcID::dummy(),
             range_bound: None,
-            type_info: None,
+            type_info: hir::EnumID::dummy(),
+            int_ty: hir::EnumID::dummy(),
+            float_ty: hir::EnumID::dummy(),
+            bool_ty: hir::EnumID::dummy(),
+            string_ty: hir::EnumID::dummy(),
             any: None,
-            source_location: None,
+            source_loc: None,
         };
 
         let cache = Cache {

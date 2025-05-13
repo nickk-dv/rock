@@ -114,28 +114,143 @@ fn codegen_globals(cg: &mut Codegen) {
         cg.globals.push(global);
     }
 
+    codegen_type_id(cg, hir::Type::Char);
+    codegen_type_id(cg, hir::Type::Void);
+    codegen_type_id(cg, hir::Type::Never);
+    codegen_type_id(cg, hir::Type::Rawptr);
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::S8));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::S16));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::S32));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::S64));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::Ssize));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::U8));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::U16));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::U32));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::U64));
+    codegen_type_id(cg, hir::Type::Int(hir::IntType::Usize));
+    codegen_type_id(cg, hir::Type::Float(hir::FloatType::F32));
+    codegen_type_id(cg, hir::Type::Float(hir::FloatType::F64));
+    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool));
+    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool16));
+    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool32));
+    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool64));
+    codegen_type_id(cg, hir::Type::String(hir::StringType::String));
+    codegen_type_id(cg, hir::Type::String(hir::StringType::CString));
+
     cg.type_info_ptr = cg.module.add_global("type_info.ptr", None, cg.ptr_type(), true, false);
 }
 
+pub fn codegen_type_id<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> u64 {
+    *cg.type_ids.entry(ty).or_insert_with(|| {
+        let type_id = cg.type_id_types.len() as u64;
+        cg.type_id_types.push(ty);
+        type_id
+    })
+}
+
+//@regular lang doesnt support constant references,
+// will likely need custom writing logic to represent type info array
 fn codegen_type_info(cg: &mut Codegen) {
-    let enum_id = cg.hir.core.type_info.unwrap();
-    let variants = vec![
-        hir::ConstVariant { variant_id: hir::VariantID::new(0), values: &[], poly_types: &[] }, //char
-        hir::ConstVariant { variant_id: hir::VariantID::new(1), values: &[], poly_types: &[] }, //void
-        hir::ConstVariant { variant_id: hir::VariantID::new(2), values: &[], poly_types: &[] }, //never
-        hir::ConstVariant { variant_id: hir::VariantID::new(3), values: &[], poly_types: &[] }, //rawptr
-    ];
-    let variants = cg.hir.arena.alloc_slice(&variants);
+    let enum_id = cg.hir.core.type_info;
+    let mut values = Vec::with_capacity(cg.type_id_types.len());
 
-    let type_infos = vec![
-        hir::ConstValue::VariantPoly { enum_id, variant: &variants[0] },
-        hir::ConstValue::VariantPoly { enum_id, variant: &variants[1] },
-        hir::ConstValue::VariantPoly { enum_id, variant: &variants[2] },
-        hir::ConstValue::VariantPoly { enum_id, variant: &variants[3] },
-    ];
-    let type_infos = cg.hir.arena.alloc_slice(&type_infos);
+    for ty in cg.type_id_types.iter().copied() {
+        let value = match ty {
+            hir::Type::Char => {
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(0),
+                    values: &[],
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Void => {
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(1),
+                    values: &[],
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Never => {
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(2),
+                    values: &[],
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Rawptr => {
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(3),
+                    values: &[],
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Int(ty) => {
+                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
+                    enum_id: cg.hir.core.int_ty,
+                    variant_id: hir::VariantID::new(ty as usize),
+                }]);
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(4),
+                    values,
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Float(ty) => {
+                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
+                    enum_id: cg.hir.core.float_ty,
+                    variant_id: hir::VariantID::new(ty as usize),
+                }]);
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(5),
+                    values,
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::Bool(ty) => {
+                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
+                    enum_id: cg.hir.core.bool_ty,
+                    variant_id: hir::VariantID::new(ty as usize),
+                }]);
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(6),
+                    values,
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            hir::Type::String(ty) => {
+                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
+                    enum_id: cg.hir.core.string_ty,
+                    variant_id: hir::VariantID::new(ty as usize),
+                }]);
+                let variant = hir::ConstVariant {
+                    variant_id: hir::VariantID::new(7),
+                    values,
+                    poly_types: &[],
+                };
+                let variant = cg.hir.arena.alloc(variant);
+                hir::ConstValue::VariantPoly { enum_id, variant }
+            }
+            _ => unimplemented!("unsupported type info: {:?}", ty),
+        };
+        values.push(value);
+    }
 
-    let array = cg.hir.arena.alloc(hir::ConstArray { values: type_infos });
+    let values = cg.hir.arena.alloc_slice(&values);
+    let array = cg.hir.arena.alloc(hir::ConstArray { values });
     let array = hir::ConstValue::Array { array: &array };
     let types = emit_expr::const_writer(cg, array);
 

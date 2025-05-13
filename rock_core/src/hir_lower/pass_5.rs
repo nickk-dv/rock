@@ -1290,14 +1290,12 @@ fn typecheck_cast<'hir, 'ast>(
 
     let kind = match (from, into) {
         (hir::Type::Char, hir::Type::Int(IntType::U32)) => CastKind::Char_NoOp,
-
         (hir::Type::Rawptr, hir::Type::Reference(_, _))
         | (hir::Type::Rawptr, hir::Type::MultiReference(_, _))
         | (hir::Type::Rawptr, hir::Type::Procedure(_))
         | (hir::Type::Reference(_, _), hir::Type::Rawptr)
         | (hir::Type::MultiReference(_, _), hir::Type::Rawptr)
         | (hir::Type::Procedure(_), hir::Type::Rawptr) => CastKind::Rawptr_NoOp,
-
         (hir::Type::Int(from_ty), hir::Type::Int(into_ty)) => {
             if from_ty != IntType::Untyped && from_ty == into_ty {
                 CastKind::Error
@@ -1312,7 +1310,6 @@ fn typecheck_cast<'hir, 'ast>(
                 CastKind::IntU_to_Float
             }
         }
-
         (hir::Type::Float(from_ty), hir::Type::Float(into_ty)) => {
             if from_ty == FloatType::Untyped {
                 CastKind::Float_Trunc
@@ -1333,7 +1330,6 @@ fn typecheck_cast<'hir, 'ast>(
                 CastKind::Float_to_IntU
             }
         }
-
         (hir::Type::Bool(from_ty), hir::Type::Bool(into_ty)) => {
             if from_ty == BoolType::Untyped {
                 CastKind::Bool_Trunc
@@ -1367,7 +1363,13 @@ fn typecheck_cast<'hir, 'ast>(
                 }
             }
         }
-
+        (hir::Type::String(from_ty), hir::Type::String(_)) => {
+            if from_ty == StringType::Untyped {
+                CastKind::StringUntyped_NoOp
+            } else {
+                CastKind::Error
+            }
+        }
         (hir::Type::Enum(enum_id, _), hir::Type::Int(into_ty)) => {
             let enum_data = ctx.registry.enum_data(enum_id);
             let from_ty = if let Ok(tag_ty) = enum_data.tag_ty.resolved() {
@@ -1395,7 +1397,6 @@ fn typecheck_cast<'hir, 'ast>(
                 }
             }
         }
-
         (hir::Type::Reference(_, _), hir::Type::MultiReference(_, _))
         | (hir::Type::MultiReference(_, _), hir::Type::Reference(_, _)) => {
             if type_matches(ctx, into, from) {
@@ -1486,6 +1487,10 @@ fn constfold_cast<'hir>(
         CastKind::Bool_NoOp_to_Int | CastKind::Bool_Trunc_to_Int | CastKind::Bool_Extend_to_Int => {
             Ok(hir::ConstValue::from_u64(target.into_bool() as u64, into.unwrap_int()))
         }
+        CastKind::StringUntyped_NoOp => Ok(hir::ConstValue::String {
+            val: target.into_string(),
+            string_ty: into.unwrap_string(),
+        }),
         CastKind::Enum_NoOp_to_Int
         | CastKind::Enum_Trunc_to_Int
         | CastKind::EnumS_Extend_to_Int
@@ -3948,7 +3953,7 @@ fn check_call_direct<'hir, 'ast>(
                 break;
             }
             hir::ParamKind::CallerLocation => {
-                let expr = if let Some(struct_id) = ctx.core.source_location {
+                let expr = if let Some(struct_id) = ctx.core.source_loc {
                     let values = hir::source_location(ctx.session, ctx.scope.origin, start);
                     let values = ctx.arena.alloc_slice(&values);
                     let struct_ = hir::ConstStruct { values, poly_types: &[] };
@@ -4052,7 +4057,7 @@ fn check_call_indirect<'hir, 'ast>(
                 break;
             }
             hir::ParamKind::CallerLocation => {
-                let expr = if let Some(struct_id) = ctx.core.source_location {
+                let expr = if let Some(struct_id) = ctx.core.source_loc {
                     let values =
                         hir::source_location(ctx.session, ctx.scope.origin, target_range.start());
                     let values = ctx.arena.alloc_slice(&values);

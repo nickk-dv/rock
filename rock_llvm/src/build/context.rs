@@ -31,6 +31,8 @@ pub struct Codegen<'c, 's, 'sref> {
     pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
     pub type_info_ptr: llvm::ValueGlobal,
     pub type_info_arr: llvm::ValueGlobal,
+    pub type_ids: HashMap<hir::Type<'c>, u64>,
+    pub type_id_types: Vec<hir::Type<'c>>,
     //@errors ignored, layout overfow can happen
     pub emit: ErrorWarningBuffer,
 }
@@ -127,6 +129,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             poly_proc_queue: Vec::with_capacity(64),
             type_info_ptr: llvm::ValueGlobal::null(),
             type_info_arr: llvm::ValueGlobal::null(),
+            type_ids: HashMap::with_capacity(128),
+            type_id_types: Vec::with_capacity(128),
             emit: ErrorWarningBuffer::default(),
         }
     }

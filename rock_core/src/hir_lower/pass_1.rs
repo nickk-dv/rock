@@ -39,10 +39,18 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         scope::find_core_proc(ctx, "ops", "cstring_equals").unwrap_or(hir::ProcID::dummy());
 
     ctx.core.range_bound = scope::find_core_enum(ctx, "ops", "RangeBound");
-    ctx.core.type_info = scope::find_core_enum(ctx, "type", "TypeInfo");
+    ctx.core.type_info =
+        scope::find_core_enum(ctx, "type", "TypeInfo").unwrap_or(hir::EnumID::dummy());
+    ctx.core.int_ty = scope::find_core_enum(ctx, "type", "IntType").unwrap_or(hir::EnumID::dummy());
+    ctx.core.float_ty =
+        scope::find_core_enum(ctx, "type", "FloatType").unwrap_or(hir::EnumID::dummy());
+    ctx.core.bool_ty =
+        scope::find_core_enum(ctx, "type", "BoolType").unwrap_or(hir::EnumID::dummy());
+    ctx.core.string_ty =
+        scope::find_core_enum(ctx, "type", "StringType").unwrap_or(hir::EnumID::dummy());
 
     ctx.core.any = scope::find_core_struct(ctx, "type", "Any");
-    ctx.core.source_location = scope::find_core_struct(ctx, "runtime", "SourceLocation");
+    ctx.core.source_loc = scope::find_core_struct(ctx, "runtime", "SourceLocation");
 }
 
 fn add_proc_item<'ast>(

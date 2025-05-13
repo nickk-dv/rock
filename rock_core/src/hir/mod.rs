@@ -28,9 +28,13 @@ pub struct CoreItems {
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
     pub range_bound: Option<EnumID>,
-    pub type_info: Option<EnumID>,
+    pub type_info: EnumID,
+    pub int_ty: EnumID,
+    pub float_ty: EnumID,
+    pub bool_ty: EnumID,
+    pub string_ty: EnumID,
     pub any: Option<StructID>,
-    pub source_location: Option<StructID>,
+    pub source_loc: Option<StructID>,
 }
 
 pub struct ProcData<'hir> {
@@ -457,6 +461,8 @@ pub enum CastKind {
     Bool_Trunc_to_Int,
     Bool_Extend_to_Int,
 
+    StringUntyped_NoOp,
+
     Enum_NoOp_to_Int,
     Enum_Trunc_to_Int,
     EnumS_Extend_to_Int,
@@ -859,21 +865,28 @@ impl Type<'_> {
     #[inline(always)]
     pub fn unwrap_int(&self) -> IntType {
         match self {
-            Type::Int(int_ty) => *int_ty,
+            Type::Int(ty) => *ty,
             _ => unreachable!(),
         }
     }
     #[inline(always)]
     pub fn unwrap_float(&self) -> FloatType {
         match self {
-            Type::Float(float_ty) => *float_ty,
+            Type::Float(ty) => *ty,
             _ => unreachable!(),
         }
     }
     #[inline(always)]
     pub fn unwrap_bool(&self) -> BoolType {
         match self {
-            Type::Bool(bool_ty) => *bool_ty,
+            Type::Bool(ty) => *ty,
+            _ => unreachable!(),
+        }
+    }
+    #[inline(always)]
+    pub fn unwrap_string(&self) -> StringType {
+        match self {
+            Type::String(ty) => *ty,
             _ => unreachable!(),
         }
     }

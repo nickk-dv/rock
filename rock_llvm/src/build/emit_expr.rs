@@ -763,7 +763,7 @@ fn codegen_index<'c>(
         cg.build.cond_br(cond, check_bb, exit_bb);
         cg.build.position_at_end(check_bb);
 
-        let struct_id = cg.hir.core.source_location.expect("");
+        let struct_id = cg.hir.core.source_loc.unwrap();
         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
         let fields = hir::source_location(cg.session, proc_data.origin_id, access.offset);
         let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
@@ -824,7 +824,7 @@ fn codegen_cast_op<'c>(
     use llvm::OpCode;
 
     match kind {
-        CastKind::Error => unreachable!(),
+        CastKind::Error | CastKind::StringUntyped_NoOp => unreachable!(),
         CastKind::Char_NoOp => val,
         CastKind::Rawptr_NoOp => val,
 
@@ -1194,12 +1194,11 @@ fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>
     let any_array_ty = llvm::array_type(any_ty.as_ty(), args.len() as u64);
     let any_array_ptr = cg.entry_alloca(any_array_ty, "any_array");
     let any_array_len = cg.const_usize(args.len() as u64);
-    let type_info_id = cg.hir.core.type_info.unwrap();
 
     for (idx, arg) in args.iter().enumerate() {
         let arg_ty = context::substitute_type(cg, arg.ty, &[]);
-        let arg_ty = cg.ty(arg_ty);
-        let arg_ptr = cg.entry_alloca(arg_ty, "var_arg");
+        let arg_ty_ir = cg.ty(arg_ty);
+        let arg_ptr = cg.entry_alloca(arg_ty_ir, "var_arg");
         //@can be done in entry
         let array_gep = cg.build.gep_inbounds(
             any_array_ty,
@@ -1211,14 +1210,8 @@ fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>
         cg.build.store(arg_ptr.as_val(), data_ptr);
 
         let types_ptr = cg.build.load(cg.ptr_type(), cg.type_info_ptr.as_ptr(), "types_array");
-        let type_id = match arg.ty {
-            hir::Type::Char => 0,
-            hir::Type::Void => 1,
-            hir::Type::Never => 2,
-            hir::Type::Rawptr => 3,
-            _ => todo!("unsupported variadic type"),
-        };
-        let types_info_arr = cg.ty(hir::Type::Enum(type_info_id, &[]));
+        let type_id = emit_mod::codegen_type_id(cg, arg_ty);
+        let types_info_arr = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
         let info_ptr = cg.build.gep_inbounds(
             llvm::array_type(types_info_arr, 4), //@4 temp
             types_ptr.into_ptr(),

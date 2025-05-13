@@ -145,8 +145,7 @@ pub fn check_param_directive<'hir>(
             None
         }
         DirectiveKind::CallerLocation => {
-            let ty =
-                ctx.core.source_location.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
+            let ty = ctx.core.source_loc.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
             Some((ty, hir::ParamKind::CallerLocation))
         }
         _ => {
