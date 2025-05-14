@@ -543,21 +543,28 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
             (on_value, None, false)
         }
         hir::MatchKind::Enum { enum_id, ref_mut, poly_types } => {
-            //@dont always expect a pointer if enum is fieldless (ir quality)
-            let enum_ptr = codegen_expr_pointer(cg, match_.on_expr);
-            let enum_ptr = if ref_mut.is_some() {
-                cg.build.load(cg.ptr_type(), enum_ptr, "deref").into_ptr()
-            } else {
-                enum_ptr
-            };
+            let data = cg.hir.enum_data(enum_id);
+            let tag_ty = cg.int_type(data.tag_ty.resolved_unwrap());
+            let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
+
             if let Some(poly_types) = poly_types {
                 enum_poly = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
             }
 
-            let enum_data = cg.hir.enum_data(enum_id);
-            let tag_ty = cg.int_type(enum_data.tag_ty.resolved_unwrap());
-            let on_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
-            (on_value, Some(enum_ptr), ref_mut.is_some())
+            if with_fields {
+                let mut enum_ptr = codegen_expr_pointer(cg, match_.on_expr);
+                if ref_mut.is_some() {
+                    enum_ptr = cg.build.load(cg.ptr_type(), enum_ptr, "deref").into_ptr();
+                }
+                let on_value = cg.build.load(tag_ty, enum_ptr, "enum_tag");
+                (on_value, Some(enum_ptr), ref_mut.is_some())
+            } else {
+                let mut tag_value = codegen_expr_value(cg, match_.on_expr);
+                if ref_mut.is_some() {
+                    tag_value = cg.build.load(tag_ty, tag_value.into_ptr(), "deref");
+                }
+                (tag_value, None, false)
+            }
         }
     };
 

@@ -593,17 +593,63 @@ fn typecheck_if<'hir, 'ast>(
 
     let offset = ctx.cache.branches.start();
     for branch in if_.branches {
-        let cond_res = match branch.kind {
+        let cond = match branch.kind {
             ast::BranchKind::Cond(cond) => {
                 let cond_res = typecheck_expr(ctx, Expectation::None, cond);
                 check_expect_boolean(ctx, cond.range, cond_res.ty);
-                cond_res
+                cond_res.expr
             }
-            ast::BranchKind::Pat(pat, expr) => return TypeResult::error(), //@todo
+            ast::BranchKind::Pat(pat_ast, expr) => {
+                let on_res = typecheck_expr(ctx, Expectation::None, expr);
+                let kind = check_match::match_kind(ctx, on_res.ty, expr.range);
+                let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, expr.range, kind);
+
+                ctx.scope.local.start_block(BlockStatus::None);
+                let pat = typecheck_pat(ctx, pat_expect, pat_ast, ref_mut, false);
+
+                if let Some(kind) = kind {
+                    let arms = [hir::MatchArm { pat, block: hir::Block { stmts: &[] } }];
+                    let arms_ast = [ast::MatchArm { pat: *pat_ast, expr }];
+                    let check = check_match::CheckContext::new(None, &arms, &arms_ast);
+                    check_match::match_cov(ctx, kind, &check);
+
+                    let any_wild = match pat {
+                        hir::Pat::Wild => true,
+                        hir::Pat::Or(pats) => pats.iter().any(|p| matches!(p, hir::Pat::Wild)),
+                        _ => false,
+                    };
+                    let value_true = hir::ConstValue::Bool { val: true, bool_ty: BoolType::Bool };
+                    let expr_true = hir::Expr::Const { value: value_true };
+                    let stmt_true = hir::Stmt::ExprTail(ctx.arena.alloc(expr_true));
+                    let block_true = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_true]) };
+                    let arm_true = hir::MatchArm { pat, block: block_true };
+
+                    let arms = if any_wild {
+                        ctx.arena.alloc_slice(&[arm_true])
+                    } else {
+                        let value_false =
+                            hir::ConstValue::Bool { val: false, bool_ty: BoolType::Bool };
+                        let expr_false = hir::Expr::Const { value: value_false };
+                        let stmt_false = hir::Stmt::ExprTail(ctx.arena.alloc(expr_false));
+                        let block_false =
+                            hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_false]) };
+                        let arm_false = hir::MatchArm { pat: hir::Pat::Wild, block: block_false };
+                        ctx.arena.alloc_slice(&[arm_true, arm_false])
+                    };
+                    let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
+                    let match_ = ctx.arena.alloc(match_);
+                    ctx.arena.alloc(hir::Expr::Match { match_ })
+                } else {
+                    &hir::Expr::Error
+                }
+            }
         };
 
         let block_res = typecheck_block(ctx, expect, branch.block, BlockStatus::None);
         type_unify_control_flow(&mut if_type, block_res.ty);
+        if let ast::BranchKind::Pat(_, _) = branch.kind {
+            ctx.scope.local.exit_block();
+        }
 
         if let Expectation::None = expect {
             if !block_res.ty.is_error() && !block_res.ty.is_never() {
@@ -611,7 +657,7 @@ fn typecheck_if<'hir, 'ast>(
                 expect = Expectation::HasType(block_res.ty, expect_src);
             }
         }
-        let branch = hir::Branch { cond: cond_res.expr, block: block_res.block };
+        let branch = hir::Branch { cond, block: block_res.block };
         ctx.cache.branches.push(branch);
     }
     let branches = ctx.cache.branches.take(offset, &mut ctx.arena);
@@ -3592,17 +3638,19 @@ fn typecheck_for<'hir, 'ast>(
             let check = check_match::CheckContext::new(None, &arms, &arms_ast);
             check_match::match_cov(ctx, kind, &check);
 
-            //@this should also consider or patterns,
-            // ideally check match coverage, allowing `_`
-            // to be added without emitting exaust errors.
-            let arms = if let hir::Pat::Wild = pat {
+            let any_wild = match pat {
+                hir::Pat::Wild => true,
+                hir::Pat::Or(pats) => pats.iter().any(|p| matches!(p, hir::Pat::Wild)),
+                _ => false,
+            };
+            let arms = if any_wild {
                 let arm = hir::MatchArm { pat, block: block_res.block };
                 ctx.arena.alloc_slice(&[arm])
             } else {
                 let arm = hir::MatchArm { pat, block: block_res.block };
                 let block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
-                let arm_break = hir::MatchArm { pat: hir::Pat::Wild, block };
-                ctx.arena.alloc_slice(&[arm, arm_break])
+                let break_arm = hir::MatchArm { pat: hir::Pat::Wild, block };
+                ctx.arena.alloc_slice(&[arm, break_arm])
             };
 
             let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
