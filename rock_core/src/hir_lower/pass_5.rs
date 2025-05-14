@@ -691,7 +691,8 @@ fn typecheck_match<'hir, 'ast>(
 
     let mut match_kw = TextRange::empty_at(match_range.start());
     match_kw.extend_by(5.into());
-    check_match::match_cov(ctx, kind, arms, match_.arms, match_kw);
+    let check = check_match::CheckContext::new(Some(match_kw), arms, match_.arms);
+    check_match::match_cov(ctx, kind, &check);
 
     let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
     let match_ = ctx.arena.alloc(match_);
@@ -3586,6 +3587,10 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.exit_block();
 
             let kind = kind?;
+            let arms = [hir::MatchArm { pat, block: block_res.block }];
+            let arms_ast = [ast::MatchArm { pat: header.pat, expr: header.expr }];
+            let check = check_match::CheckContext::new(None, &arms, &arms_ast);
+            check_match::match_cov(ctx, kind, &check);
 
             //@this should also consider or patterns,
             // ideally check match coverage, allowing `_`
@@ -3599,6 +3604,7 @@ fn typecheck_for<'hir, 'ast>(
                 let arm_break = hir::MatchArm { pat: hir::Pat::Wild, block };
                 ctx.arena.alloc_slice(&[arm, arm_break])
             };
+
             let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
             let match_ = ctx.arena.alloc(match_);
             let match_ = ctx.arena.alloc(hir::Expr::Match { match_ });
