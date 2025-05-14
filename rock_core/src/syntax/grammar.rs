@@ -787,27 +787,32 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
 
 fn expr_if(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
-
-    let mb = p.start();
-    p.bump(T![if]);
-    expr(p);
-    block_expect(p);
-    mb.complete(p, SyntaxKind::IF_BRANCH);
-
+    branch(p);
     while p.eat(T![else]) {
         if p.at(T![if]) {
-            let mb = p.start();
-            p.bump(T![if]);
-            expr(p);
-            block_expect(p);
-            mb.complete(p, SyntaxKind::IF_BRANCH);
+            branch(p);
         } else {
             block_expect(p);
             break;
         }
     }
-
     m.complete(p, SyntaxKind::EXPR_IF)
+}
+
+fn branch(p: &mut Parser) {
+    let m = p.start();
+    p.bump(T![if]);
+    if p.eat(T![let]) {
+        pat(p);
+        p.expect(T![=]);
+        expr(p);
+        block_expect(p);
+        m.complete(p, SyntaxKind::BRANCH_PAT);
+    } else {
+        expr(p);
+        block_expect(p);
+        m.complete(p, SyntaxKind::BRANCH_COND);
+    }
 }
 
 fn expr_match(p: &mut Parser) -> MarkerClosed {

@@ -450,7 +450,8 @@ ast_node_impl!(StmtWithDirective, SyntaxKind::STMT_WITH_DIRECTIVE);
 
 ast_node_impl!(ExprParen, SyntaxKind::EXPR_PAREN);
 ast_node_impl!(ExprIf, SyntaxKind::EXPR_IF);
-ast_node_impl!(IfBranch, SyntaxKind::IF_BRANCH);
+ast_node_impl!(BranchCond, SyntaxKind::BRANCH_COND);
+ast_node_impl!(BranchPat, SyntaxKind::BRANCH_PAT);
 ast_node_impl!(ExprMatch, SyntaxKind::EXPR_MATCH);
 ast_node_impl!(MatchArmList, SyntaxKind::MATCH_ARM_LIST);
 ast_node_impl!(MatchArm, SyntaxKind::MATCH_ARM);
@@ -743,6 +744,28 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Address(expr) => expr.0.range,
             Expr::Unary(expr) => expr.0.range,
             Expr::Binary(expr) => expr.0.range,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum Branch<'syn> {
+    Cond(BranchCond<'syn>),
+    Pat(BranchPat<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Branch<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Branch<'syn>> {
+        match node.kind {
+            SyntaxKind::BRANCH_COND => Some(Branch::Cond(BranchCond(node))),
+            SyntaxKind::BRANCH_PAT => Some(Branch::Pat(BranchPat(node))),
+            _ => None,
+        }
+    }
+    fn range(self) -> TextRange {
+        match self {
+            Branch::Cond(branch) => branch.0.range,
+            Branch::Pat(branch) => branch.0.range,
         }
     }
 }
@@ -1089,12 +1112,18 @@ impl<'syn> ExprParen<'syn> {
 }
 
 impl<'syn> ExprIf<'syn> {
-    node_iter!(branches, IfBranch);
+    node_iter!(branches, Branch);
     node_find!(else_block, Block);
 }
 
-impl<'syn> IfBranch<'syn> {
+impl<'syn> BranchCond<'syn> {
     node_find!(cond, Expr);
+    node_find!(block, Block);
+}
+
+impl<'syn> BranchPat<'syn> {
+    node_find!(pat, Pat);
+    node_find!(expr, Expr);
     node_find!(block, Block);
 }
 

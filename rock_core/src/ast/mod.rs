@@ -350,8 +350,14 @@ pub struct If<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct Branch<'ast> {
-    pub cond: &'ast Expr<'ast>,
+    pub kind: BranchKind<'ast>,
     pub block: Block<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub enum BranchKind<'ast> {
+    Cond(&'ast Expr<'ast>),
+    Pat(&'ast Pat<'ast>, &'ast Expr<'ast>),
 }
 
 #[derive(Copy, Clone)]

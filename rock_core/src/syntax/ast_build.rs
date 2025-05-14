@@ -639,10 +639,21 @@ fn expr_kind<'ast>(
         cst::Expr::If(if_) => {
             let offset = ctx.s.branches.start();
             for branch in if_.branches(ctx.tree) {
-                let branch = ast::Branch {
-                    cond: expr(ctx, branch.cond(ctx.tree).unwrap()),
-                    block: block(ctx, branch.block(ctx.tree).unwrap()),
+                let (kind, block) = match branch {
+                    cst::Branch::Cond(branch) => {
+                        let cond = expr(ctx, branch.cond(ctx.tree).unwrap());
+                        let block = block(ctx, branch.block(ctx.tree).unwrap());
+                        (ast::BranchKind::Cond(cond), block)
+                    }
+                    cst::Branch::Pat(branch) => {
+                        let pat = pat(ctx, branch.pat(ctx.tree).unwrap());
+                        let pat = ctx.arena.alloc(pat);
+                        let expr = expr(ctx, branch.expr(ctx.tree).unwrap());
+                        let block = block(ctx, branch.block(ctx.tree).unwrap());
+                        (ast::BranchKind::Pat(pat, expr), block)
+                    }
                 };
+                let branch = ast::Branch { kind, block };
                 ctx.s.branches.push(branch);
             }
             let branches = ctx.s.branches.take(offset, &mut ctx.arena);

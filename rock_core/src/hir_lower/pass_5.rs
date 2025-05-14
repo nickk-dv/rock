@@ -593,8 +593,15 @@ fn typecheck_if<'hir, 'ast>(
 
     let offset = ctx.cache.branches.start();
     for branch in if_.branches {
-        let cond_res = typecheck_expr(ctx, Expectation::None, branch.cond);
-        check_expect_boolean(ctx, branch.cond.range, cond_res.ty);
+        let cond_res = match branch.kind {
+            ast::BranchKind::Cond(cond) => {
+                let cond_res = typecheck_expr(ctx, Expectation::None, cond);
+                check_expect_boolean(ctx, cond.range, cond_res.ty);
+                cond_res
+            }
+            ast::BranchKind::Pat(pat, expr) => return TypeResult::error(), //@todo
+        };
+
         let block_res = typecheck_block(ctx, expect, branch.block, BlockStatus::None);
         type_unify_control_flow(&mut if_type, block_res.ty);
 

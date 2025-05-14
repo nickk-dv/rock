@@ -746,30 +746,43 @@ fn expr_paren<'syn>(fmt: &mut Formatter<'syn, '_>, paren: cst::ExprParen<'syn>) 
 
 fn expr_if<'syn>(fmt: &mut Formatter<'syn, '_>, if_: cst::ExprIf<'syn>) {
     let mut branches = if_.branches(fmt.tree);
-
     let entry = branches.next().unwrap();
-    fmt.write_str("if");
-    fmt.space();
-    expr(fmt, entry.cond(fmt.tree).unwrap());
-    fmt.space();
-    block(fmt, entry.block(fmt.tree).unwrap(), true);
+    branch(fmt, entry);
 
-    for branch in branches {
+    for branch_cst in branches {
         fmt.space();
         fmt.write_str("else");
         fmt.space();
-        fmt.write_str("if");
-        fmt.space();
-        expr(fmt, branch.cond(fmt.tree).unwrap());
-        fmt.space();
-        block(fmt, branch.block(fmt.tree).unwrap(), true);
+        branch(fmt, branch_cst);
     }
-
     if let Some(else_block) = if_.else_block(fmt.tree) {
         fmt.space();
         fmt.write_str("else");
         fmt.space();
         block(fmt, else_block, true);
+    }
+}
+
+fn branch<'syn>(fmt: &mut Formatter<'syn, '_>, branch: cst::Branch<'syn>) {
+    match branch {
+        cst::Branch::Cond(branch) => {
+            fmt.write_str("if");
+            fmt.space();
+            expr(fmt, branch.cond(fmt.tree).unwrap());
+            fmt.space();
+            block(fmt, branch.block(fmt.tree).unwrap(), true);
+        }
+        cst::Branch::Pat(branch) => {
+            fmt.write_str("if let");
+            fmt.space();
+            pat(fmt, branch.pat(fmt.tree).unwrap());
+            fmt.space();
+            fmt.write('=');
+            fmt.space();
+            expr(fmt, branch.expr(fmt.tree).unwrap());
+            fmt.space();
+            block(fmt, branch.block(fmt.tree).unwrap(), true);
+        }
     }
 }
 
