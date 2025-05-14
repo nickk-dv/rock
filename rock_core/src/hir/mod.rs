@@ -22,8 +22,8 @@ pub struct Hir<'hir> {
 }
 
 pub struct CoreItems {
-    pub panic: ProcID,
     pub start: ProcID,
+    pub index_out_of_bounds: ProcID,
     pub slice_range: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,

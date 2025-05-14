@@ -29,8 +29,9 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         }
     }
 
-    ctx.core.panic = scope::find_core_proc(ctx, "runtime", "panic").unwrap_or(hir::ProcID::dummy());
     ctx.core.start = scope::find_core_proc(ctx, "runtime", "start").unwrap_or(hir::ProcID::dummy());
+    ctx.core.index_out_of_bounds = scope::find_core_proc(ctx, "runtime", "index_out_of_bounds")
+        .unwrap_or(hir::ProcID::dummy());
     ctx.core.slice_range =
         scope::find_core_proc(ctx, "ops", "slice_range").unwrap_or(hir::ProcID::dummy());
     ctx.core.string_equals =

@@ -759,7 +759,7 @@ fn codegen_index<'c>(
     };
 
     if let Some(bound) = bound {
-        let check_bb = cg.append_bb("bounds_check_error");
+        let check_bb = cg.append_bb("bounds_check_err");
         let exit_bb = cg.append_bb("bounds_check_ok");
         let cond = codegen_binary_op(
             cg,
@@ -777,14 +777,11 @@ fn codegen_index<'c>(
         let struct_ = hir::ConstStruct { values, poly_types: &[] };
         let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
         let value = hir::ConstValue::Struct { struct_id, struct_: &struct_ };
-        let loc = hir::Expr::Const { value };
+        let loc = codegen_expr_value(cg, &hir::Expr::Const { value });
 
-        let message = cg.session.intern_lit.intern("index out of bounds");
-        let value = hir::ConstValue::String { val: message, string_ty: hir::StringType::String };
-        let message = hir::Expr::Const { value };
-
-        let input = &[&message, &loc];
-        let _ = codegen_call_direct(cg, Expect::Value(None), cg.hir.core.panic, input, &[]);
+        let (fn_val, fn_ty) = cg.procs[cg.hir.core.index_out_of_bounds.index()];
+        let _ = cg.build.call(fn_ty, fn_val, &[index_val, bound, loc], "call_val");
+        cg.build.unreachable();
         cg.build.position_at_end(exit_bb);
     }
 
