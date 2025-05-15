@@ -60,23 +60,21 @@ pub fn match_pat_expect<'hir>(
     (Expectation::HasType(expect_ty, Some(ctx.src(range))), ref_mut)
 }
 
-pub struct CheckContext<'a> {
-    match_kw: Option<TextRange>,
-    arms: &'a [hir::MatchArm<'a>],
-    arms_ast: &'a [ast::MatchArm<'a>],
-}
-
-impl<'a> CheckContext<'a> {
-    pub fn new(
-        match_kw: Option<TextRange>,
-        arms: &'a [hir::MatchArm<'a>],
-        arms_ast: &'a [ast::MatchArm<'a>],
-    ) -> CheckContext<'a> {
-        CheckContext { match_kw, arms, arms_ast }
+pub fn match_cov(ctx: &mut HirCtx, kind: hir::MatchKind, check: &CheckContext, error_count: usize) {
+    if ctx.emit.did_error(error_count) {
+        return;
     }
-}
-
-pub fn match_cov(ctx: &mut HirCtx, kind: hir::MatchKind, check: &CheckContext) {
+    for arm in check.arms {
+        match arm.pat {
+            hir::Pat::Error => return,
+            hir::Pat::Or(pats) => {
+                if pats.iter().any(|p| matches!(p, hir::Pat::Error)) {
+                    return;
+                }
+            }
+            _ => {}
+        }
+    }
     match kind {
         hir::MatchKind::Int { int_ty } => {
             ctx.pat.cov_int.reset();
@@ -285,7 +283,21 @@ fn check_pat_cov_result(ctx: &mut HirCtx, pat_range: TextRange, result: Result<(
     }
 }
 
-///==================== PATTERN COV STATE ====================
+pub struct CheckContext<'a> {
+    match_kw: Option<TextRange>,
+    arms: &'a [hir::MatchArm<'a>],
+    arms_ast: &'a [ast::MatchArm<'a>],
+}
+
+impl<'a> CheckContext<'a> {
+    pub fn new(
+        match_kw: Option<TextRange>,
+        arms: &'a [hir::MatchArm<'a>],
+        arms_ast: &'a [ast::MatchArm<'a>],
+    ) -> CheckContext<'a> {
+        CheckContext { match_kw, arms, arms_ast }
+    }
+}
 
 pub struct PatCov {
     cov_int: PatCovInt<i128>,
@@ -321,8 +333,6 @@ enum PatCovError {
     CoverFull,
     CoverPartial,
 }
-
-///==================== PATTERN COV IMPL ====================
 
 impl PatCov {
     pub fn new() -> PatCov {

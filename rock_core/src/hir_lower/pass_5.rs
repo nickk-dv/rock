@@ -600,6 +600,7 @@ fn typecheck_if<'hir, 'ast>(
                 cond_res.expr
             }
             ast::BranchKind::Pat(pat_ast, expr) => {
+                let error_count = ctx.emit.error_count();
                 let on_res = typecheck_expr(ctx, Expectation::None, expr);
                 let kind = check_match::match_kind(ctx, on_res.ty, expr.range);
                 let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, expr.range, kind);
@@ -611,7 +612,7 @@ fn typecheck_if<'hir, 'ast>(
                     let arms = [hir::MatchArm { pat, block: hir::Block { stmts: &[] } }];
                     let arms_ast = [ast::MatchArm { pat: *pat_ast, expr }];
                     let check = check_match::CheckContext::new(None, &arms, &arms_ast);
-                    check_match::match_cov(ctx, kind, &check);
+                    check_match::match_cov(ctx, kind, &check, error_count);
 
                     let any_wild = match pat {
                         hir::Pat::Wild => true,
@@ -691,7 +692,6 @@ fn typecheck_match<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let mut match_type = hir::Type::Never;
     let error_count = ctx.emit.error_count();
-
     let on_res = typecheck_expr(ctx, Expectation::None, match_.on_expr);
     let kind = check_match::match_kind(ctx, on_res.ty, match_.on_expr.range);
     let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, match_.on_expr.range, kind);
@@ -723,26 +723,19 @@ fn typecheck_match<'hir, 'ast>(
     let arms = ctx.cache.match_arms.take(offset, &mut ctx.arena);
 
     if ctx.emit.did_error(error_count) {
-        return TypeResult::error();
-    }
-    let kind = match kind {
-        Some(kind) => kind,
-        None => return TypeResult::error(),
-    };
-    for arm in arms {
-        if let hir::Pat::Error = arm.pat {
-            return TypeResult::error();
-        }
-    }
+        TypeResult::error()
+    } else if let Some(kind) = kind {
+        let mut match_kw = TextRange::empty_at(match_range.start());
+        match_kw.extend_by(5.into());
+        let check = check_match::CheckContext::new(Some(match_kw), arms, match_.arms);
+        check_match::match_cov(ctx, kind, &check, error_count);
 
-    let mut match_kw = TextRange::empty_at(match_range.start());
-    match_kw.extend_by(5.into());
-    let check = check_match::CheckContext::new(Some(match_kw), arms, match_.arms);
-    check_match::match_cov(ctx, kind, &check);
-
-    let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
-    let match_ = ctx.arena.alloc(match_);
-    TypeResult::new_ignore(match_type, hir::Expr::Match { match_ })
+        let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
+        let match_ = ctx.arena.alloc(match_);
+        TypeResult::new_ignore(match_type, hir::Expr::Match { match_ })
+    } else {
+        TypeResult::error()
+    }
 }
 
 fn typecheck_pat<'hir, 'ast>(
@@ -3623,6 +3616,7 @@ fn typecheck_for<'hir, 'ast>(
             Some(overall_block)
         }
         ast::ForHeader::Pat(header) => {
+            let error_count = ctx.emit.error_count();
             let on_res = typecheck_expr(ctx, Expectation::None, header.expr);
             let kind = check_match::match_kind(ctx, on_res.ty, header.expr.range);
             let (pat_expect, ref_mut) = check_match::match_pat_expect(ctx, header.expr.range, kind);
@@ -3636,7 +3630,7 @@ fn typecheck_for<'hir, 'ast>(
             let arms = [hir::MatchArm { pat, block: block_res.block }];
             let arms_ast = [ast::MatchArm { pat: header.pat, expr: header.expr }];
             let check = check_match::CheckContext::new(None, &arms, &arms_ast);
-            check_match::match_cov(ctx, kind, &check);
+            check_match::match_cov(ctx, kind, &check, error_count);
 
             let any_wild = match pat {
                 hir::Pat::Wild => true,
