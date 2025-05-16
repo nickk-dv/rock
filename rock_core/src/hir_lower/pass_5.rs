@@ -495,7 +495,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
     untyped_promote: bool,
 ) -> ExprResult<'hir> {
     let mut expr_res = match expr.kind {
-        ast::ExprKind::Lit { lit } => typecheck_lit(lit),
+        ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             typecheck_block(ctx, expect, *block, BlockStatus::None).into_type_result()
@@ -547,10 +547,22 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
     expr_res.into_expr_result(ctx)
 }
 
-fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
+fn typecheck_lit<'hir>(expect: Expectation<'hir>, lit: ast::Lit) -> TypeResult<'hir> {
     let (ty, value) = match lit {
         ast::Lit::Void => (hir::Type::Void, hir::ConstValue::Void),
-        ast::Lit::Null => (hir::Type::Rawptr, hir::ConstValue::Null),
+        ast::Lit::Null => {
+            let ptr_ty = if let Some(expect_ty) = expect.inner_type() {
+                match expect_ty {
+                    hir::Type::Reference(_, _)
+                    | hir::Type::MultiReference(_, _)
+                    | hir::Type::Procedure(_) => expect_ty,
+                    _ => hir::Type::Rawptr,
+                }
+            } else {
+                hir::Type::Rawptr
+            };
+            (ptr_ty, hir::ConstValue::Null)
+        }
         ast::Lit::Bool(val) => (
             hir::Type::Bool(BoolType::Untyped),
             hir::ConstValue::Bool { val, bool_ty: BoolType::Untyped },
