@@ -181,8 +181,8 @@ fn variant(ctx: &mut AstBuild, variant: cst::Variant) {
         ast::VariantKind::Constant(value)
     } else if let Some(field_list) = variant.field_list(ctx.tree) {
         let offset = ctx.s.types.start();
-        for ty_cst in field_list.fields(ctx.tree) {
-            let ty = ty(ctx, ty_cst);
+        for field in field_list.fields(ctx.tree) {
+            let ty = ty(ctx, field.ty(ctx.tree).unwrap());
             ctx.s.types.push(ty);
         }
         let types = ctx.s.types.take(offset, &mut ctx.arena);

@@ -146,18 +146,28 @@ fn variant_field_list(p: &mut Parser) {
     let m = p.start();
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
-        if p.at_set(FIRST_TYPE) {
-            ty(p);
+        if p.at_set(FIRST_VARIANT_FIELD) {
+            variant_field(p);
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
         } else {
-            p.error_recover("expected field type", RECOVER_VARIANT_FIELD_LIST);
+            p.error_recover("expected variant field", RECOVER_VARIANT_FIELD_LIST);
             break;
         }
     }
     p.expect(T![')']);
     m.complete(p, SyntaxKind::VARIANT_FIELD_LIST);
+}
+
+fn variant_field(p: &mut Parser) {
+    let m = p.start();
+    if p.at(T![ident]) && p.at_next(T![:]) {
+        name_bump(p);
+        p.bump(T![:]);
+    }
+    ty(p);
+    m.complete(p, SyntaxKind::VARIANT_FIELD);
 }
 
 fn struct_item(p: &mut Parser, m: Marker) {
@@ -1220,6 +1230,7 @@ fn polymorph_params(p: &mut Parser) {
 const FIRST_ITEM: TokenSet = TokenSet::new(&[T![#], T![proc], T![enum], T![struct], T![ident], T![let], T![import]]);
 const FIRST_PARAM: TokenSet = TokenSet::new(&[T![mut], T![ident]]);
 const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
+const FIRST_VARIANT_FIELD: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![ident]]));
 const FIRST_FIELD: TokenSet = TokenSet::new(&[T![#], T![ident]]);
 const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
 #[rustfmt::skip]

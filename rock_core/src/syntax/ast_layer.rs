@@ -400,6 +400,7 @@ ast_node_impl!(EnumItem, SyntaxKind::ENUM_ITEM);
 ast_node_impl!(VariantList, SyntaxKind::VARIANT_LIST);
 ast_node_impl!(Variant, SyntaxKind::VARIANT);
 ast_node_impl!(VariantFieldList, SyntaxKind::VARIANT_FIELD_LIST);
+ast_node_impl!(VariantField, SyntaxKind::VARIANT_FIELD);
 ast_node_impl!(StructItem, SyntaxKind::STRUCT_ITEM);
 ast_node_impl!(FieldList, SyntaxKind::FIELD_LIST);
 ast_node_impl!(Field, SyntaxKind::FIELD);
@@ -879,7 +880,11 @@ impl<'syn> Variant<'syn> {
     node_find!(field_list, VariantFieldList);
 }
 impl<'syn> VariantFieldList<'syn> {
-    node_iter!(fields, Type);
+    node_iter!(fields, VariantField);
+}
+impl<'syn> VariantField<'syn> {
+    node_find!(name, Name);
+    node_find!(ty, Type);
 }
 
 impl<'syn> StructItem<'syn> {

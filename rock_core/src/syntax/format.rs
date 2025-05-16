@@ -171,7 +171,16 @@ fn variant_field_list<'syn>(
     fmt: &mut Formatter<'syn, '_>,
     field_list: cst::VariantFieldList<'syn>,
 ) {
-    single_line_comma_list(fmt, field_list.fields(fmt.tree), ty, '(', ')');
+    single_line_comma_list(fmt, field_list.fields(fmt.tree), variant_field, '(', ')');
+}
+
+fn variant_field<'syn>(fmt: &mut Formatter<'syn, '_>, field: cst::VariantField<'syn>) {
+    if let Some(name_cst) = field.name(fmt.tree) {
+        name(fmt, name_cst);
+        fmt.write(':');
+        fmt.space();
+    }
+    ty(fmt, field.ty(fmt.tree).unwrap());
 }
 
 fn struct_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::StructItem<'syn>) {

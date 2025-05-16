@@ -803,6 +803,7 @@ fn semantic_visit_node(
                     SyntaxKind::PARAM => Some(SemanticToken::Parameter),
                     SyntaxKind::ENUM_ITEM => Some(SemanticToken::Type),
                     SyntaxKind::VARIANT => Some(SemanticToken::EnumMember),
+                    SyntaxKind::VARIANT_FIELD => Some(SemanticToken::Property),
                     SyntaxKind::STRUCT_ITEM => Some(SemanticToken::Type),
                     SyntaxKind::FIELD => Some(SemanticToken::Property),
                     SyntaxKind::CONST_ITEM => Some(SemanticToken::Variable),
