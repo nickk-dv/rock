@@ -928,7 +928,7 @@ pub fn resolve_const_expr<'hir, 'ast>(
     if !ctx.emit.did_error(error_count) {
         match expr_res.expr {
             hir::Expr::Error => (Err(()), expr_res.ty),
-            hir::Expr::Const { value } => (Ok(*value), expr_res.ty),
+            hir::Expr::Const(value, _) => (Ok(*value), expr_res.ty),
             _ => {
                 error_cannot_use_in_constants(
                     &mut ctx.emit,

@@ -85,7 +85,7 @@ fn codegen_expr<'c>(
 ) -> Option<llvm::Value> {
     match *expr {
         hir::Expr::Error => unreachable!(),
-        hir::Expr::Const { value } => Some(codegen_const_expr(cg, expect, value)),
+        hir::Expr::Const(value, _) => Some(codegen_const_expr(cg, expect, value)),
         hir::Expr::If { if_ } => {
             codegen_if(cg, expect, if_);
             None
@@ -777,7 +777,7 @@ fn codegen_index<'c>(
         let struct_ = hir::ConstStruct { values, poly_types: &[] };
         let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
         let value = hir::ConstValue::Struct { struct_id, struct_: &struct_ };
-        let loc = codegen_expr_value(cg, &hir::Expr::Const { value });
+        let loc = codegen_expr_value(cg, &hir::Expr::Const(value, hir::ConstID::dummy()));
 
         let (fn_val, fn_ty) = cg.procs[cg.hir.core.index_out_of_bounds.index()];
         let _ = cg.build.call(fn_ty, fn_val, &[index_val, bound, loc], "call_val");

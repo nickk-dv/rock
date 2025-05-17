@@ -270,7 +270,7 @@ pub struct Assign<'hir> {
 #[derive(Copy, Clone)]
 pub enum Expr<'hir> {
     Error,
-    Const        { value: ConstValue<'hir> },
+    Const        (ConstValue<'hir>, ConstID),
     If           { if_: &'hir If<'hir> },
     Block        { block: Block<'hir> },
     Match        { match_: &'hir Match<'hir> },

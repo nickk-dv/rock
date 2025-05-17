@@ -535,7 +535,7 @@ pub fn typecheck_expr_impl<'hir, 'ast>(
         let promoted =
             promote_untyped(ctx, expr.range, expr_res.expr, &mut expr_res.ty, with, true);
         match promoted {
-            Some(Ok(value)) => expr_res.expr = hir::Expr::Const { value },
+            Some(Ok((v, id))) => expr_res.expr = hir::Expr::Const(v, id),
             Some(Err(())) => {} //@handle differently?
             None => {}
         }
@@ -551,6 +551,7 @@ fn typecheck_lit<'hir>(expect: Expectation<'hir>, lit: ast::Lit) -> TypeResult<'
     let (ty, value) = match lit {
         ast::Lit::Void => (hir::Type::Void, hir::ConstValue::Void),
         ast::Lit::Null => {
+            //coerce `null` to all other pointer types
             let ptr_ty = if let Some(expect_ty) = expect.inner_type() {
                 match expect_ty {
                     hir::Type::Reference(_, _)
@@ -583,7 +584,7 @@ fn typecheck_lit<'hir>(expect: Expectation<'hir>, lit: ast::Lit) -> TypeResult<'
             hir::ConstValue::String { val, string_ty: StringType::Untyped },
         ),
     };
-    TypeResult::new(ty, hir::Expr::Const { value })
+    TypeResult::new(ty, hir::Expr::Const(value, hir::ConstID::dummy()))
 }
 
 /// unify type across braches:  
@@ -632,7 +633,7 @@ fn typecheck_if<'hir, 'ast>(
                         _ => false,
                     };
                     let value_true = hir::ConstValue::Bool { val: true, bool_ty: BoolType::Bool };
-                    let expr_true = hir::Expr::Const { value: value_true };
+                    let expr_true = hir::Expr::Const(value_true, hir::ConstID::dummy());
                     let stmt_true = hir::Stmt::ExprTail(ctx.arena.alloc(expr_true));
                     let block_true = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_true]) };
                     let arm_true = hir::MatchArm { pat, block: block_true };
@@ -642,7 +643,7 @@ fn typecheck_if<'hir, 'ast>(
                     } else {
                         let value_false =
                             hir::ConstValue::Bool { val: false, bool_ty: BoolType::Bool };
-                        let expr_false = hir::Expr::Const { value: value_false };
+                        let expr_false = hir::Expr::Const(value_false, hir::ConstID::dummy());
                         let stmt_false = hir::Stmt::ExprTail(ctx.arena.alloc(expr_false));
                         let block_false =
                             hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_false]) };
@@ -772,12 +773,12 @@ fn typecheck_pat<'hir, 'ast>(
     //@temp hacky fix, using expression based promotion, refactor const value promotion
     let with = expect.inner_type();
     let expr = match pat_res.pat {
-        hir::Pat::Lit(value) => hir::Expr::Const { value },
+        hir::Pat::Lit(value) => hir::Expr::Const(value, hir::ConstID::dummy()),
         _ => hir::Expr::Error,
     };
     let promoted = promote_untyped(ctx, pat.range, expr, &mut pat_res.pat_ty, with, true);
     match promoted {
-        Some(Ok(value)) => pat_res.pat = hir::Pat::Lit(value),
+        Some(Ok((value, _))) => pat_res.pat = hir::Pat::Lit(value),
         Some(Err(())) => {} //@handle differently?
         None => {}
     }
@@ -794,7 +795,7 @@ fn typecheck_pat_lit<'hir, 'ast>(
     let expr_res = typecheck_expr(ctx, expect, expr);
     match expr_res.expr {
         hir::Expr::Error => PatResult::error(),
-        hir::Expr::Const { value } => PatResult::new(hir::Pat::Lit(*value), expr_res.ty),
+        hir::Expr::Const(value, _) => PatResult::new(hir::Pat::Lit(*value), expr_res.ty),
         _ => unreachable!(), // literal patterns can only be const or error expressions
     }
 }
@@ -1084,12 +1085,15 @@ fn emit_field_expr<'hir>(
     match field_res.kind {
         FieldKind::Error => TypeResult::error(),
         FieldKind::Struct(struct_id, field_id, poly_types) => {
-            if let hir::Expr::Const { value } = target {
+            if let hir::Expr::Const(value, _) = target {
                 let field = match value {
                     hir::ConstValue::Struct { struct_, .. } => struct_.values[field_id.index()],
                     _ => unreachable!(),
                 };
-                return TypeResult::new(field_res.field_ty, hir::Expr::Const { value: field });
+                return TypeResult::new(
+                    field_res.field_ty,
+                    hir::Expr::Const(field, hir::ConstID::dummy()),
+                );
             }
             let access = hir::StructFieldAccess {
                 deref: field_res.deref,
@@ -1102,7 +1106,7 @@ fn emit_field_expr<'hir>(
             TypeResult::new(field_res.field_ty, hir::Expr::StructField { target, access })
         }
         FieldKind::ArraySlice { field } => {
-            if let hir::Expr::Const { value } = target {
+            if let hir::Expr::Const(value, _) = target {
                 let field = match value {
                     hir::ConstValue::String { val, .. } => {
                         let len = ctx.session.intern_lit.get(*val).len();
@@ -1110,13 +1114,16 @@ fn emit_field_expr<'hir>(
                     }
                     _ => unreachable!(),
                 };
-                return TypeResult::new(field_res.field_ty, hir::Expr::Const { value: field });
+                return TypeResult::new(
+                    field_res.field_ty,
+                    hir::Expr::Const(field, hir::ConstID::dummy()),
+                );
             }
             let access = hir::SliceFieldAccess { deref: field_res.deref, field };
             TypeResult::new(field_res.field_ty, hir::Expr::SliceField { target, access })
         }
         FieldKind::ArrayStatic { len } => {
-            TypeResult::new(field_res.field_ty, hir::Expr::Const { value: len })
+            TypeResult::new(field_res.field_ty, hir::Expr::Const(len, hir::ConstID::dummy()))
         }
     }
 }
@@ -1191,8 +1198,8 @@ fn typecheck_index<'hir, 'ast>(
         offset: target.range.end(),
     };
 
-    if let hir::Expr::Const { value: target } = target_res.expr {
-        if let hir::Expr::Const { value: index } = index_res.expr {
+    if let hir::Expr::Const(target, _) = target_res.expr {
+        if let hir::Expr::Const(index, _) = index_res.expr {
             let index = index.into_int_u64();
             let array_len = match target {
                 hir::ConstValue::Array { array } => array.values.len() as u64,
@@ -1210,7 +1217,10 @@ fn typecheck_index<'hir, 'ast>(
                 hir::ConstValue::ArrayRepeat { array } => array.value,
                 _ => unreachable!(),
             };
-            return TypeResult::new(collection.elem_ty, hir::Expr::Const { value });
+            return TypeResult::new(
+                collection.elem_ty,
+                hir::Expr::Const(value, hir::ConstID::dummy()),
+            );
         }
     }
 
@@ -1285,8 +1295,8 @@ fn typecheck_slice<'hir, 'ast>(
     let start = if let Some(start) = range.start {
         typecheck_expr(ctx, Expectation::USIZE, start).expr
     } else {
-        let value = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
-        ctx.arena.alloc(hir::Expr::Const { value })
+        let zero_usize = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
+        ctx.arena.alloc(hir::Expr::Const(zero_usize, hir::ConstID::dummy()))
     };
 
     // range bound
@@ -1474,12 +1484,12 @@ fn typecheck_cast<'hir, 'ast>(
         err::tycheck_cast_invalid(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
         TypeResult::error()
     } else {
-        if let hir::Expr::Const { value: target } = *target_res.expr {
-            if let Ok(value) = constfold_cast(ctx, range, target, into, kind) {
-                return TypeResult::new(into, hir::Expr::Const { value });
+        if let hir::Expr::Const(target, _) = *target_res.expr {
+            return if let Ok(value) = constfold_cast(ctx, range, target, into, kind) {
+                TypeResult::new(into, hir::Expr::Const(value, hir::ConstID::dummy()))
             } else {
-                return TypeResult::error();
-            }
+                TypeResult::error()
+            };
         }
         let cast = hir::Expr::Cast { target: target_res.expr, into: ctx.arena.alloc(into), kind };
         TypeResult::new(into, cast)
@@ -1587,7 +1597,7 @@ fn typecheck_builtin<'hir, 'ast>(
                 constant::type_layout(ctx, ty, &[], src)
                     .map(|layout| {
                         fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
-                            .map(|value| hir::Expr::Const { value })
+                            .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                             .unwrap_or(hir::Expr::Error)
                     })
                     .unwrap_or(hir::Expr::Error)
@@ -1603,7 +1613,7 @@ fn typecheck_builtin<'hir, 'ast>(
                 constant::type_layout(ctx, ty, &[], src)
                     .map(|layout| {
                         fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
-                            .map(|value| hir::Expr::Const { value })
+                            .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                             .unwrap_or(hir::Expr::Error)
                     })
                     .unwrap_or(hir::Expr::Error)
@@ -1711,7 +1721,8 @@ fn typecheck_item<'hir, 'ast>(
 
                 let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
                 let proc_value = hir::ConstValue::Procedure { proc_id };
-                return TypeResult::new(proc_ty, hir::Expr::Const { value: proc_value });
+                let proc_expr = hir::Expr::Const(proc_value, hir::ConstID::dummy());
+                return TypeResult::new(proc_ty, proc_expr);
             }
         }
         ValueID::Enum(enum_id, variant_id, poly_types) => {
@@ -1725,7 +1736,7 @@ fn typecheck_item<'hir, 'ast>(
             let (eval, _, _) = ctx.registry.const_eval(data.value);
 
             let res = if let Ok(value) = eval.resolved() {
-                TypeResult::new(const_ty, hir::Expr::Const { value })
+                TypeResult::new(const_ty, hir::Expr::Const(value, id))
             } else {
                 TypeResult::new(const_ty, hir::Expr::Error)
             };
@@ -1968,7 +1979,7 @@ fn typecheck_struct_init<'hir, 'ast>(
         for field in fields {
             match field.expr {
                 hir::Expr::Error => return TypeResult::error(),
-                hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                 _ => {
                     constant::error_cannot_use_in_constants(
                         &mut ctx.emit,
@@ -1985,7 +1996,7 @@ fn typecheck_struct_init<'hir, 'ast>(
 
         let struct_ = hir::ConstStruct { values, poly_types };
         let struct_ = hir::ConstValue::Struct { struct_id, struct_: ctx.arena.alloc(struct_) };
-        hir::Expr::Const { value: struct_ }
+        hir::Expr::Const(struct_, hir::ConstID::dummy())
     } else {
         let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
         if poly_types.is_empty() {
@@ -2054,14 +2065,14 @@ fn typecheck_array_init<'hir, 'ast>(
         if input.is_empty() {
             ctx.cache.exprs.pop_view(offset);
             let array = hir::ConstValue::ArrayEmpty { elem_ty: ctx.arena.alloc(elem_ty) };
-            hir::Expr::Const { value: array }
+            hir::Expr::Const(array, hir::ConstID::dummy())
         } else {
             let const_offset = ctx.cache.const_values.start();
             let values = ctx.cache.exprs.view(offset.clone());
             for (idx, value) in values.iter().enumerate() {
                 match value {
                     hir::Expr::Error => return TypeResult::error(),
-                    hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                    hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                     _ => {
                         constant::error_cannot_use_in_constants(
                             &mut ctx.emit,
@@ -2078,7 +2089,7 @@ fn typecheck_array_init<'hir, 'ast>(
 
             let array = hir::ConstArray { values: const_values };
             let array = hir::ConstValue::Array { array: ctx.arena.alloc(array) };
-            hir::Expr::Const { value: array }
+            hir::Expr::Const(array, hir::ConstID::dummy())
         }
     } else {
         let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
@@ -2106,10 +2117,10 @@ fn typecheck_array_repeat<'hir, 'ast>(
         Err(_) => return TypeResult::error(),
     };
 
-    let expr = if let hir::Expr::Const { value } = *value_res.expr {
+    let expr = if let hir::Expr::Const(value, _) = *value_res.expr {
         let array = hir::ConstArrayRepeat { len, value };
         let value = hir::ConstValue::ArrayRepeat { array: ctx.arena.alloc(array) };
-        hir::Expr::Const { value }
+        hir::Expr::Const(value, hir::ConstID::dummy())
     } else {
         let array = hir::ArrayRepeat { elem_ty: value_res.ty, value: value_res.expr, len };
         hir::Expr::ArrayRepeat { array: ctx.arena.alloc(array) }
@@ -2208,12 +2219,12 @@ fn typecheck_unary<'hir, 'ast>(
     };
 
     if let Ok(hir_op) = hir_op {
-        if let hir::Expr::Const { value: rhs } = *rhs_res.expr {
-            if let Ok(value) = constfold_unary(ctx, range, hir_op, rhs) {
-                return TypeResult::new(rhs_res.ty, hir::Expr::Const { value });
+        if let hir::Expr::Const(rhs, _) = *rhs_res.expr {
+            return if let Ok(value) = constfold_unary(ctx, range, hir_op, rhs) {
+                TypeResult::new(rhs_res.ty, hir::Expr::Const(value, hir::ConstID::dummy()))
             } else {
-                return TypeResult::error();
-            }
+                TypeResult::error()
+            };
         }
         let unary = hir::Expr::Unary { op: hir_op, rhs: rhs_res.expr };
         TypeResult::new(rhs_res.ty, unary)
@@ -2268,9 +2279,9 @@ fn promote_untyped<'hir>(
     expr_ty: &mut hir::Type<'hir>,
     with: Option<hir::Type<'hir>>,
     default: bool,
-) -> Option<Result<hir::ConstValue<'hir>, ()>> {
-    let value = match expr {
-        hir::Expr::Const { value } => value,
+) -> Option<Result<(hir::ConstValue<'hir>, hir::ConstID), ()>> {
+    let (value, const_id) = match expr {
+        hir::Expr::Const(value, const_id) => (value, const_id),
         _ => return None,
     };
     let src = ctx.src(range);
@@ -2367,7 +2378,8 @@ fn promote_untyped<'hir>(
         }
         _ => return None,
     };
-    Some(promoted)
+
+    Some(promoted.map(|v| (v, const_id)))
 }
 
 fn typecheck_binary<'hir, 'ast>(
@@ -2396,12 +2408,12 @@ fn typecheck_binary<'hir, 'ast>(
         promote_untyped(ctx, rhs.range, *rhs_res.expr, &mut rhs_res.ty, Some(lhs_res.ty), false);
 
     match lhs_promote {
-        Some(Ok(value)) => lhs_res.expr = ctx.arena.alloc(hir::Expr::Const { value }),
+        Some(Ok((v, id))) => lhs_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id)),
         Some(Err(())) => return TypeResult::error(),
         None => {}
     }
     match rhs_promote {
-        Some(Ok(value)) => rhs_res.expr = ctx.arena.alloc(hir::Expr::Const { value }),
+        Some(Ok((v, id))) => rhs_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id)),
         Some(Err(())) => return TypeResult::error(),
         None => {}
     }
@@ -2420,7 +2432,7 @@ fn typecheck_binary<'hir, 'ast>(
         _ => lhs_res.ty,
     };
 
-    if let hir::Expr::Const { value: rhsv } = *rhs_res.expr {
+    if let hir::Expr::Const(rhsv, _) = *rhs_res.expr {
         let shift_ty = match hir_op {
             hir::BinOp::BitShl(int_ty, _) => Some(int_ty),
             hir::BinOp::BitShr(int_ty, _) => Some(int_ty),
@@ -2442,12 +2454,12 @@ fn typecheck_binary<'hir, 'ast>(
             }
         }
 
-        if let hir::Expr::Const { value: lhs } = *lhs_res.expr {
-            if let Ok(value) = constfold_binary(ctx, range, hir_op, lhs, rhsv) {
-                return TypeResult::new(res_ty, hir::Expr::Const { value });
+        if let hir::Expr::Const(lhsv, _) = *lhs_res.expr {
+            return if let Ok(value) = constfold_binary(ctx, range, hir_op, lhsv, rhsv) {
+                TypeResult::new(res_ty, hir::Expr::Const(value, hir::ConstID::dummy()))
             } else {
-                return TypeResult::error();
-            }
+                TypeResult::error()
+            };
         }
     }
 
@@ -2993,13 +3005,10 @@ fn typecheck_block<'hir, 'ast>(
                     let curr_block = ctx.scope.local.current_block();
                     if let Some((var_id, op)) = curr_block.for_idx_change {
                         let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
-                        let expr_one = ctx.arena.alloc(hir::Expr::Const {
-                            value: hir::ConstValue::Int {
-                                val: 1,
-                                neg: false,
-                                int_ty: IntType::Usize,
-                            },
-                        });
+                        let expr_one = ctx.arena.alloc(hir::Expr::Const(
+                            hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                            hir::ConstID::dummy(),
+                        ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                             op: hir::AssignOp::Bin(op),
                             lhs: expr_var,
@@ -3010,9 +3019,10 @@ fn typecheck_block<'hir, 'ast>(
                     }
                     if let Some((var_id, int_ty)) = curr_block.for_value_change {
                         let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
-                        let expr_one = ctx.arena.alloc(hir::Expr::Const {
-                            value: hir::ConstValue::Int { val: 1, neg: false, int_ty },
-                        });
+                        let expr_one = ctx.arena.alloc(hir::Expr::Const(
+                            hir::ConstValue::Int { val: 1, neg: false, int_ty },
+                            hir::ConstID::dummy(),
+                        ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                             op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
                             lhs: expr_var,
@@ -3315,7 +3325,7 @@ fn typecheck_for<'hir, 'ast>(
                         neg: false,
                         int_ty: IntType::Usize,
                     };
-                    ctx.arena.alloc(hir::Expr::Const { value: len_value })
+                    ctx.arena.alloc(hir::Expr::Const(len_value, hir::ConstID::dummy()))
                 }
                 //always doing deref since `iter` stores &slice
                 CollectionKind::Slice(_) => ctx.arena.alloc(hir::Expr::SliceField {
@@ -3327,12 +3337,14 @@ fn typecheck_for<'hir, 'ast>(
                 }),
                 CollectionKind::Multi(_) => unreachable!(),
             };
-            let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const {
-                value: hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
-            });
-            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const {
-                value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
-            });
+            let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
+                hir::ConstID::dummy(),
+            ));
+            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                hir::ConstID::dummy(),
+            ));
 
             // index local:
             // forward: let idx = 0;
@@ -3480,11 +3492,11 @@ fn typecheck_for<'hir, 'ast>(
                 true,
             );
 
-            if let Some(Ok(value)) = start_promote {
-                start_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+            if let Some(Ok((v, id))) = start_promote {
+                start_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
             }
-            if let Some(Ok(value)) = end_promote {
-                end_res.expr = ctx.arena.alloc(hir::Expr::Const { value });
+            if let Some(Ok((v, id))) = end_promote {
+                end_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
             }
 
             let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) =
@@ -3556,7 +3568,7 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
 
             let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
-            let zero = ctx.arena.alloc(hir::Expr::Const { value: zero });
+            let zero = ctx.arena.alloc(hir::Expr::Const(zero, hir::ConstID::dummy()));
             let index_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(zero) };
             let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
 
@@ -3585,18 +3597,20 @@ fn typecheck_for<'hir, 'ast>(
             let expr_if = hir::Expr::If { if_: ctx.arena.alloc(expr_if) };
             let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
 
-            let expr_one_iter = ctx.arena.alloc(hir::Expr::Const {
-                value: hir::ConstValue::Int { val: 1, neg: false, int_ty },
-            });
+            let expr_one_iter = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 1, neg: false, int_ty },
+                hir::ConstID::dummy(),
+            ));
             let stmt_value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
                 lhs: expr_start_var,
                 rhs: expr_one_iter,
                 lhs_ty: hir::Type::Int(int_ty),
             }));
-            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const {
-                value: hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
-            });
+            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                hir::ConstID::dummy(),
+            ));
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
                 lhs: expr_index_var,
@@ -4026,7 +4040,7 @@ fn check_call_direct<'hir, 'ast>(
                     let struct_ = hir::ConstStruct { values, poly_types: &[] };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_id, struct_ };
-                    ctx.arena.alloc(hir::Expr::Const { value })
+                    ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()))
                 } else {
                     &hir::Expr::Error
                 };
@@ -4131,7 +4145,7 @@ fn check_call_indirect<'hir, 'ast>(
                     let struct_ = hir::ConstStruct { values, poly_types: &[] };
                     let struct_ = ctx.arena.alloc(struct_);
                     let value = hir::ConstValue::Struct { struct_id, struct_ };
-                    ctx.arena.alloc(hir::Expr::Const { value })
+                    ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()))
                 } else {
                     &hir::Expr::Error
                 };
@@ -4268,7 +4282,7 @@ fn check_variant_input_opt<'hir, 'ast>(
 
     if !is_poly && !with_fields {
         let value = hir::ConstValue::Variant { enum_id, variant_id };
-        let expr = hir::Expr::Const { value };
+        let expr = hir::Expr::Const(value, hir::ConstID::dummy());
         return TypeResult::new(hir::Type::Enum(enum_id, &[]), expr);
     }
 
@@ -4278,7 +4292,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         for (idx, field) in input.iter().copied().enumerate() {
             match field {
                 hir::Expr::Error => return TypeResult::error(),
-                hir::Expr::Const { value } => ctx.cache.const_values.push(*value),
+                hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                 _ => {
                     valid = false;
                     constant::error_cannot_use_in_constants(
@@ -4294,7 +4308,7 @@ fn check_variant_input_opt<'hir, 'ast>(
             let values = ctx.cache.const_values.take(offset, &mut ctx.arena);
             let variant = hir::ConstVariant { variant_id, values, poly_types };
             let value = hir::ConstValue::VariantPoly { enum_id, variant: ctx.arena.alloc(variant) };
-            hir::Expr::Const { value }
+            hir::Expr::Const(value, hir::ConstID::dummy())
         } else {
             hir::Expr::Error
         }
@@ -4444,14 +4458,21 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
         let base = match *expr {
             // addr_base: simple
             hir::Expr::Error => AddrBase::Unknown,
-            hir::Expr::Const { value } => match value {
-                hir::ConstValue::Variant { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::Struct { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::Array { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
-                hir::ConstValue::ArrayEmpty { .. } => AddrBase::TemporaryImmut,
-                _ => AddrBase::Temporary,
-            },
+            hir::Expr::Const(value, const_id) => {
+                if const_id != hir::ConstID::dummy() {
+                    let data = ctx.registry.const_data(const_id);
+                    AddrBase::Constant(data.src())
+                } else {
+                    match value {
+                        hir::ConstValue::Variant { .. }
+                        | hir::ConstValue::Struct { .. }
+                        | hir::ConstValue::Array { .. }
+                        | hir::ConstValue::ArrayRepeat { .. }
+                        | hir::ConstValue::ArrayEmpty { .. } => AddrBase::TemporaryImmut,
+                        _ => AddrBase::Temporary,
+                    }
+                }
+            }
             hir::Expr::If { .. } => AddrBase::Temporary,
             hir::Expr::Block { .. } => AddrBase::Temporary,
             hir::Expr::Match { .. } => AddrBase::Temporary,
@@ -4481,14 +4502,9 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 let src = ctx.src(var.name.range);
                 AddrBase::Variable(var.mutt, src)
             }
-            //@have const flag in Const kind directly!
-            //hir::ExprKind::ConstVar { const_id } => {
-            //    let const_data = ctx.registry.const_data(const_id);
-            //    AddrBase::Constant(const_data.src())
-            //}
             hir::Expr::GlobalVar { global_id } => {
-                let global_data = ctx.registry.global_data(global_id);
-                AddrBase::Variable(global_data.mutt, global_data.src())
+                let data = ctx.registry.global_data(global_id);
+                AddrBase::Variable(data.mutt, data.src())
             }
             // access chains before addr_base
             hir::Expr::StructField { target, access } => {

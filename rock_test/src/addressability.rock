@@ -161,7 +161,7 @@ proc test_cannot_ref_temporary(v: s32) void {
 
 //#entry(no_run) "cannot_ref_const"
 //#expect
-//error: cannot get & to a constant, you can use `global` instead
+//error: cannot get & to a constant, you can use global variable instead
 //  │
 //3 │     &CONSTANT;
 //  │     ^^^^^^^^^
