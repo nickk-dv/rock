@@ -1198,7 +1198,7 @@ fn typecheck_index<'hir, 'ast>(
         offset: target.range.end(),
     };
 
-    if let hir::Expr::Const(target, _) = target_res.expr {
+    if let hir::Expr::Const(target, target_id) = target_res.expr {
         if let hir::Expr::Const(index, _) = index_res.expr {
             let index = index.into_int_u64();
             let array_len = match target {
@@ -1221,6 +1221,11 @@ fn typecheck_index<'hir, 'ast>(
                 collection.elem_ty,
                 hir::Expr::Const(value, hir::ConstID::dummy()),
             );
+        } else if *target_id != hir::ConstID::dummy() {
+            let src = ctx.src(range);
+            let data = ctx.registry.const_data(*target_id);
+            err::tycheck_index_const(&mut ctx.emit, src, data.src());
+            return TypeResult::error();
         }
     }
 

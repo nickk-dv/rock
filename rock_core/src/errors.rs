@@ -1225,6 +1225,13 @@ pub fn tycheck_addr_const(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_index_const(emit: &mut impl ErrorSink, src: SourceRange, const_src: SourceRange) {
+    let msg =
+        "cannot index a constant with non-constant value, you can use global variable instead";
+    let info = Info::new("constant defined here", const_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_addr_variable(
     emit: &mut impl ErrorSink,
     src: SourceRange,
