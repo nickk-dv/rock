@@ -690,25 +690,8 @@ pub fn const_cannot_refer_to(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn const_int_div_by_zero(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    op: &'static str,
-    lhs: i128,
-    rhs: i128,
-) {
-    let msg = format!("integer division by zero\nwhen computing: `{lhs} {op} {rhs}`");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn const_float_div_by_zero(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    op: &'static str,
-    lhs: f64,
-    rhs: f64,
-) {
-    let msg = format!("float division by zero\nwhen computing: `{lhs} {op} {rhs}`");
+pub fn const_int_div_by_zero(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("integer division by zero");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -758,7 +741,7 @@ pub fn const_int_out_of_range(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn const_int_shift_out_of_range(
+pub fn const_shift_out_of_range(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     op: &'static str,
@@ -793,16 +776,6 @@ pub fn const_index_out_of_bounds(
     array_len: u64,
 ) {
     let msg = format!("index out of bounds\nvalue `{index}` is outside `0..<{array_len}` range");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn const_float_is_nan(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "float constant is NaN";
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn const_float_is_infinite(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = "float constant is Infinite";
     emit.error(Error::new(msg, src, None));
 }
 

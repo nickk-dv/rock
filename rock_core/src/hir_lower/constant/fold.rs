@@ -39,13 +39,7 @@ pub fn float_range_check<'hir>(
         hir::FloatType::F64 | hir::FloatType::Untyped => (f64::MIN, f64::MAX),
     };
 
-    if val.is_nan() {
-        err::const_float_is_nan(&mut ctx.emit, src);
-        Err(())
-    } else if val.is_infinite() {
-        err::const_float_is_infinite(&mut ctx.emit, src);
-        Err(())
-    } else if val < min || val > max {
+    if val.is_finite() && (val < min || val > max) {
         let float_ty = float_ty.as_str();
         err::const_float_out_of_range(&mut ctx.emit, src, float_ty, val, min, max);
         Err(())

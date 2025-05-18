@@ -2396,6 +2396,8 @@ fn typecheck_binary<'hir, 'ast>(
     lhs: &ast::Expr<'ast>,
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
+    //@expectation model doesnt work for binary expr
+    // allow `null` literals to coerce, allow enum inference for lhs and rhs, etc..
     let mut lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
     let rhs_expect = match lhs_res.ty {
         hir::Type::Enum(..) => Expectation::HasType(lhs_res.ty, Some(ctx.src(lhs.range))),
@@ -2438,32 +2440,14 @@ fn typecheck_binary<'hir, 'ast>(
     };
 
     if let hir::Expr::Const(rhsv, _) = *rhs_res.expr {
-        let shift_ty = match hir_op {
-            hir::BinOp::BitShl(int_ty, _) => Some(int_ty),
-            hir::BinOp::BitShr(int_ty, _) => Some(int_ty),
-            _ => None,
+        if check_binary_const_rhs(ctx, rhs.range, hir_op, rhsv).is_err() {
+            return TypeResult::new(res_ty, hir::Expr::Error);
         };
-
-        if let Some(int_ty) = shift_ty {
-            let val = rhsv.into_int();
-            let layout = if int_ty == IntType::Untyped {
-                hir::Layout::equal(8)
-            } else {
-                layout::int_layout(ctx, int_ty)
-            };
-            let max = (layout.size * 8 - 1) as i128;
-            if val < 0 || val > max {
-                let src = ctx.src(rhs.range);
-                err::const_int_shift_out_of_range(&mut ctx.emit, src, op.as_str(), val, 0, max);
-                return TypeResult::error();
-            }
-        }
-
         if let hir::Expr::Const(lhsv, _) = *lhs_res.expr {
             return if let Ok(value) = constfold_binary(ctx, range, hir_op, lhsv, rhsv) {
                 TypeResult::new(res_ty, hir::Expr::Const(value, hir::ConstID::dummy()))
             } else {
-                TypeResult::error()
+                TypeResult::new(res_ty, hir::Expr::Error)
             };
         }
     }
@@ -2472,8 +2456,6 @@ fn typecheck_binary<'hir, 'ast>(
     TypeResult::new(res_ty, binary)
 }
 
-//@extra checks when part of the operation is invalid: <lhs> / 0
-//@allow `==`, `!=` with implicit conversions between ref and rawptr's?
 fn check_binary_op<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation,
@@ -2651,6 +2633,44 @@ fn check_binary_op<'hir>(
     hir_op
 }
 
+fn check_binary_const_rhs(
+    ctx: &mut HirCtx,
+    range: TextRange,
+    op: hir::BinOp,
+    rhs: hir::ConstValue,
+) -> Result<(), ()> {
+    if let hir::BinOp::Div_Int(_) | hir::BinOp::Rem_Int(_) = op {
+        if rhs.into_int() == 0 {
+            let src = ctx.src(range);
+            err::const_int_div_by_zero(&mut ctx.emit, src);
+            return Err(());
+        }
+    }
+
+    let shift_ty = match op {
+        hir::BinOp::BitShl(int_ty, _) => Some(int_ty),
+        hir::BinOp::BitShr(int_ty, _) => Some(int_ty),
+        _ => None,
+    };
+
+    if let Some(int_ty) = shift_ty {
+        let val = rhs.into_int();
+        let layout = if int_ty == IntType::Untyped {
+            hir::Layout::equal(8)
+        } else {
+            layout::int_layout(ctx, int_ty)
+        };
+        let max = (layout.size * 8 - 1) as i128;
+        if val < 0 || val > max {
+            let src = ctx.src(range);
+            err::const_shift_out_of_range(&mut ctx.emit, src, op.as_str(), val, 0, max);
+            return Err(());
+        }
+    }
+
+    Ok(())
+}
+
 fn constfold_binary<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     range: TextRange,
@@ -2702,10 +2722,7 @@ fn constfold_binary<'hir>(
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
-            if rhs == 0 {
-                err::const_int_div_by_zero(&mut ctx.emit, src, op.as_str(), lhs, rhs);
-                Err(())
-            } else if let Some(val) = lhs.checked_div(rhs) {
+            if let Some(val) = lhs.checked_div(rhs) {
                 fold::int_range_check(ctx, src, val, int_ty)
             } else {
                 err::const_int_overflow(&mut ctx.emit, src, op.as_str(), lhs, rhs);
@@ -2714,26 +2731,15 @@ fn constfold_binary<'hir>(
         }
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
-            let lhs = lhs.into_float();
-            let rhs = rhs.into_float();
-
-            if rhs == 0.0 {
-                err::const_float_div_by_zero(&mut ctx.emit, src, op.as_str(), lhs, rhs);
-                Err(())
-            } else {
-                let val = lhs / rhs;
-                fold::float_range_check(ctx, src, val, float_ty)
-            }
+            let val = lhs.into_float() / rhs.into_float();
+            fold::float_range_check(ctx, src, val, float_ty)
         }
         hir::BinOp::Rem_Int(_) => {
             let int_ty = lhs.into_int_ty();
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
-            if rhs == 0 {
-                err::const_int_div_by_zero(&mut ctx.emit, src, op.as_str(), lhs, rhs);
-                Err(())
-            } else if let Some(val) = lhs.checked_rem(rhs) {
+            if let Some(val) = lhs.checked_rem(rhs) {
                 fold::int_range_check(ctx, src, val, int_ty)
             } else {
                 err::const_int_overflow(&mut ctx.emit, src, op.as_str(), lhs, rhs);
