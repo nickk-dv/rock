@@ -1546,11 +1546,12 @@ fn constfold_cast<'hir>(
         | CastKind::IntU_Extend => {
             fold::int_range_check(ctx, src, target.into_int(), into.unwrap_int())
         }
-        CastKind::IntS_to_Float | CastKind::IntU_to_Float => {
-            fold::float_range_check(ctx, src, target.into_int() as f64, into.unwrap_float())
-        }
+        CastKind::IntS_to_Float | CastKind::IntU_to_Float => Ok(hir::ConstValue::Float {
+            val: target.into_int() as f64,
+            float_ty: into.unwrap_float(),
+        }),
         CastKind::Float_Trunc | CastKind::Float_Extend => {
-            fold::float_range_check(ctx, src, target.into_float(), into.unwrap_float())
+            Ok(hir::ConstValue::Float { val: target.into_float(), float_ty: into.unwrap_float() })
         }
         CastKind::Float_to_IntS | CastKind::Float_to_IntU => {
             fold::int_range_check(ctx, src, target.into_float() as i128, into.unwrap_int())
@@ -2257,7 +2258,7 @@ fn constfold_unary<'hir>(
         hir::UnOp::Neg_Float => {
             let float_ty = rhs.into_float_ty();
             let val = -rhs.into_float();
-            fold::float_range_check(ctx, src, val, float_ty)
+            Ok(hir::ConstValue::Float { val, float_ty })
         }
         hir::UnOp::BitNot => {
             let int_ty = rhs.into_int_ty();
@@ -2265,7 +2266,7 @@ fn constfold_unary<'hir>(
                 Ok(hir::ConstValue::from_i64(!rhs.into_int_i64(), int_ty))
             } else {
                 let value_bits = layout::int_layout(ctx, int_ty).size * 8;
-                let mask: u64 = (1 << value_bits) - 1;
+                let mask = if value_bits == 64 { u64::MAX } else { (1 << value_bits) - 1 };
                 Ok(hir::ConstValue::from_u64(mask & !rhs.into_int_u64(), int_ty))
             }
         }
@@ -2304,7 +2305,7 @@ fn promote_untyped<'hir>(
                 Some(hir::Type::Float(with)) => {
                     *expr_ty = hir::Type::Float(with);
                     let val = if neg { -(val as f64) } else { val as f64 };
-                    fold::float_range_check(ctx, src, val, with)
+                    Ok(hir::ConstValue::Float { val, float_ty: with })
                 }
                 _ if default => {
                     *expr_ty = hir::Type::Int(IntType::S32);
@@ -2320,11 +2321,11 @@ fn promote_untyped<'hir>(
             match with {
                 Some(hir::Type::Float(with)) if with != FloatType::Untyped => {
                     *expr_ty = hir::Type::Float(with);
-                    fold::float_range_check(ctx, src, val, with)
+                    Ok(hir::ConstValue::Float { val, float_ty: with })
                 }
                 _ if default => {
                     *expr_ty = hir::Type::Float(FloatType::F64);
-                    fold::float_range_check(ctx, src, val, FloatType::F64)
+                    Ok(hir::ConstValue::Float { val, float_ty: FloatType::F64 })
                 }
                 _ => return None,
             }
@@ -2688,7 +2689,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Add_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() + rhs.into_float();
-            fold::float_range_check(ctx, src, val, float_ty)
+            Ok(hir::ConstValue::Float { val, float_ty })
         }
         hir::BinOp::Sub_Int => {
             let int_ty = lhs.into_int_ty();
@@ -2698,7 +2699,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Sub_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() - rhs.into_float();
-            fold::float_range_check(ctx, src, val, float_ty)
+            Ok(hir::ConstValue::Float { val, float_ty })
         }
         hir::BinOp::Mul_Int => {
             let int_ty = lhs.into_int_ty();
@@ -2715,7 +2716,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Mul_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() * rhs.into_float();
-            fold::float_range_check(ctx, src, val, float_ty)
+            Ok(hir::ConstValue::Float { val, float_ty })
         }
         hir::BinOp::Div_Int(_) => {
             let int_ty = lhs.into_int_ty();
@@ -2732,7 +2733,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Div_Float => {
             let float_ty = lhs.into_float_ty();
             let val = lhs.into_float() / rhs.into_float();
-            fold::float_range_check(ctx, src, val, float_ty)
+            Ok(hir::ConstValue::Float { val, float_ty })
         }
         hir::BinOp::Rem_Int(_) => {
             let int_ty = lhs.into_int_ty();

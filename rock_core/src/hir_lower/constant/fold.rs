@@ -28,26 +28,6 @@ pub fn int_range_check<'hir>(
     }
 }
 
-pub fn float_range_check<'hir>(
-    ctx: &mut HirCtx,
-    src: SourceRange,
-    val: f64,
-    float_ty: hir::FloatType,
-) -> Result<hir::ConstValue<'hir>, ()> {
-    let (min, max) = match float_ty {
-        hir::FloatType::F32 => (f32::MIN as f64, f32::MAX as f64),
-        hir::FloatType::F64 | hir::FloatType::Untyped => (f64::MIN, f64::MAX),
-    };
-
-    if val.is_finite() && (val < min || val > max) {
-        let float_ty = float_ty.as_str();
-        err::const_float_out_of_range(&mut ctx.emit, src, float_ty, val, min, max);
-        Err(())
-    } else {
-        Ok(hir::ConstValue::Float { val, float_ty })
-    }
-}
-
 impl<'hir> hir::ConstValue<'hir> {
     pub fn from_u64(val: u64, int_ty: hir::IntType) -> hir::ConstValue<'hir> {
         hir::ConstValue::Int { val, neg: false, int_ty }
