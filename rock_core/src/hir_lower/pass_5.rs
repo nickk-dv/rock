@@ -1131,6 +1131,7 @@ fn emit_field_expr<'hir>(
 struct CollectionType<'hir> {
     deref: Option<ast::Mut>,
     elem_ty: hir::Type<'hir>,
+    string_ty: Option<StringType>,
     kind: CollectionKind<'hir>,
 }
 
@@ -1148,17 +1149,40 @@ fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
     }
     match ty {
         hir::Type::Error => Ok(None),
-        hir::Type::MultiReference(mutt, ref_ty) => {
-            Ok(Some(CollectionType { deref, elem_ty: *ref_ty, kind: CollectionKind::Multi(mutt) }))
-        }
+        hir::Type::String(string_ty) => match string_ty {
+            StringType::String => Ok(Some(CollectionType {
+                deref,
+                elem_ty: hir::Type::Int(IntType::U8),
+                string_ty: Some(string_ty),
+                kind: CollectionKind::Slice(&hir::ArraySlice {
+                    mutt: ast::Mut::Immutable,
+                    elem_ty: hir::Type::Int(IntType::U8),
+                }),
+            })),
+            StringType::CString => Ok(Some(CollectionType {
+                deref,
+                elem_ty: hir::Type::Int(IntType::U8),
+                string_ty: Some(string_ty),
+                kind: CollectionKind::Multi(ast::Mut::Immutable),
+            })),
+            StringType::Untyped => unreachable!(),
+        },
+        hir::Type::MultiReference(mutt, ref_ty) => Ok(Some(CollectionType {
+            deref,
+            elem_ty: *ref_ty,
+            string_ty: None,
+            kind: CollectionKind::Multi(mutt),
+        })),
         hir::Type::ArraySlice(slice) => Ok(Some(CollectionType {
             deref,
             elem_ty: slice.elem_ty,
+            string_ty: None,
             kind: CollectionKind::Slice(slice),
         })),
         hir::Type::ArrayStatic(array) => Ok(Some(CollectionType {
             deref,
             elem_ty: array.elem_ty,
+            string_ty: None,
             kind: CollectionKind::Array(array),
         })),
         _ => Err(()),
@@ -1263,9 +1287,12 @@ fn typecheck_slice<'hir, 'ast>(
     };
 
     //@always allowing mutable access for now, fix!
-    let return_ty = hir::Type::ArraySlice(
-        ctx.arena.alloc(hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty }),
-    );
+    let return_ty = if let Some(string_ty) = collection.string_ty {
+        hir::Type::String(string_ty)
+    } else {
+        let slice = hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty };
+        hir::Type::ArraySlice(ctx.arena.alloc(slice))
+    };
 
     let slice = match collection.kind {
         CollectionKind::Multi(_) => unreachable!(),

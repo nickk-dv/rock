@@ -755,20 +755,6 @@ pub fn const_shift_out_of_range(
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn const_float_out_of_range(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    float_ty: &'static str,
-    val: f64,
-    min: f64,
-    max: f64,
-) {
-    let msg = format!(
-        "float constant out of range for `{float_ty}`\nvalue `{val}` is outside `{min}..={max}` range",
-    );
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn const_index_out_of_bounds(
     emit: &mut impl ErrorSink,
     src: SourceRange,
