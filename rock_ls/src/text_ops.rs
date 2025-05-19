@@ -6,7 +6,7 @@ pub fn str_char_len_utf16(string: &str) -> u32 {
     string.chars().map(|c| c.len_utf16() as u32).sum()
 }
 
-pub fn file_range_to_text_range(file: &FileData, range: lsp::Range) -> TextRange {
+pub fn file_text_range(file: &FileData, range: lsp::Range) -> TextRange {
     let start_line = file_line_range(file, range.start.line);
     let end_line = file_line_range(file, range.end.line);
     let start = file_line_char_utf16_offset(file, start_line, range.start.character);
@@ -23,10 +23,10 @@ fn file_line_range(file: &FileData, line: u32) -> TextRange {
         let last = file.line_ranges.last().copied().unwrap();
         TextRange::new(last.end(), last.end())
     } else {
-        unreachable!(
-            "internal: `file_line_range` failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
+        crate::server_error!(
+            "file_line_range() failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
             file.path.to_string_lossy(),
-            file.line_ranges.len(),
+            file.line_ranges.len()
         );
     }
 }
@@ -41,13 +41,13 @@ fn file_line_char_utf16_offset(
     let mut offset = line_range.start();
     let mut char_utf16: u32 = 0;
 
-    while char_utf16 < character {
+    while char_utf16 != character {
         if let Some(c) = chars.next() {
             offset += (c.len_utf8() as u32).into();
             char_utf16 += c.len_utf16() as u32;
         } else {
-            unreachable!(
-                "internal: `file_line_char_utf16_to_offset` failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
+            crate::server_error!(
+                "file_line_char_utf16_offset() failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
                 file.path.to_string_lossy(),
                 line_range,
                 character,

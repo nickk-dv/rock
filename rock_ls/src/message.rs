@@ -19,16 +19,16 @@ pub enum Message {
 }
 
 pub enum Request {
-    Format(lsp::DocumentFormattingParams),
-    SemanticTokens(lsp::SemanticTokensParams),
-    GotoDefinition(lsp::GotoDefinitionParams),
-    ShowSyntaxTree(ShowSyntaxTreeParams),
+    Format(PathBuf),
+    SemanticTokens(PathBuf),
+    GotoDefinition(PathBuf, lsp::Position),
+    ShowSyntaxTree(PathBuf),
 }
 
 pub enum Notification {
+    FileSaved,
     FileOpened(PathBuf, String),
     FileClosed(PathBuf),
-    FileSaved(PathBuf),
     FileChanged(PathBuf, Vec<lsp::TextDocumentContentChangeEvent>),
 }
 
@@ -101,19 +101,20 @@ fn parse_request(req: lsr::Request) -> Option<Message> {
     let req = match req.method.as_str() {
         r::Formatting::METHOD => {
             let params = cast_request::<r::Formatting>(req);
-            Request::Format(params)
+            Request::Format(super::uri_to_path(&params.text_document.uri))
         }
         r::SemanticTokensFullRequest::METHOD => {
             let params = cast_request::<r::SemanticTokensFullRequest>(req);
-            Request::SemanticTokens(params)
+            Request::SemanticTokens(super::uri_to_path(&params.text_document.uri))
         }
         r::GotoDefinition::METHOD => {
             let params = cast_request::<r::GotoDefinition>(req);
-            Request::GotoDefinition(params)
+            let doc = &params.text_document_position_params;
+            Request::GotoDefinition(super::uri_to_path(&doc.text_document.uri), doc.position)
         }
         CustomShowSyntaxTree::METHOD => {
             let params = cast_request::<CustomShowSyntaxTree>(req);
-            Request::ShowSyntaxTree(params)
+            Request::ShowSyntaxTree(super::uri_to_path(&params.text_document.uri))
         }
         _ => return None,
     };
@@ -124,27 +125,21 @@ fn parse_notification(not: lsr::Notification) -> Option<Message> {
     use lsp::notification::{self as n, Notification as NotificationTrait};
 
     let not = match not.method.as_str() {
+        n::DidSaveTextDocument::METHOD => Notification::FileSaved,
         n::DidOpenTextDocument::METHOD => {
             let params = cast_notification::<n::DidOpenTextDocument>(not);
-            Notification::FileOpened(
-                super::uri_to_path(&params.text_document.uri),
-                params.text_document.text,
-            )
+            let path = super::uri_to_path(&params.text_document.uri);
+            Notification::FileOpened(path, params.text_document.text)
         }
         n::DidCloseTextDocument::METHOD => {
             let params = cast_notification::<n::DidCloseTextDocument>(not);
-            Notification::FileClosed(super::uri_to_path(&params.text_document.uri))
-        }
-        n::DidSaveTextDocument::METHOD => {
-            let params = cast_notification::<n::DidSaveTextDocument>(not);
-            Notification::FileSaved(super::uri_to_path(&params.text_document.uri))
+            let path = super::uri_to_path(&params.text_document.uri);
+            Notification::FileClosed(path)
         }
         n::DidChangeTextDocument::METHOD => {
             let params = cast_notification::<n::DidChangeTextDocument>(not);
-            Notification::FileChanged(
-                super::uri_to_path(&params.text_document.uri),
-                params.content_changes,
-            )
+            let path = super::uri_to_path(&params.text_document.uri);
+            Notification::FileChanged(path, params.content_changes)
         }
         _ => return None,
     };

@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-
 mod message;
 mod text_ops;
 
@@ -14,14 +13,30 @@ use rock_core::syntax::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use rock_core::syntax::token::{SemanticToken, Token, Trivia};
 use std::collections::HashMap;
 
+#[macro_export]
+macro_rules! server_error {
+    ($($arg:tt)*) => {{
+        eprintln!("[server error] {}", format!($($arg)*));
+        std::process::exit(1);
+    }};
+}
+
+#[macro_export]
+macro_rules! debug_eprintln {
+    ($($arg:tt)*) => {{
+        #[cfg(debug_assertions)]
+        eprintln!("{}", format!($($arg)*));
+    }};
+}
+
 fn main() {
     let (conn, threads) = Connection::stdio();
     let _ = initialize_handshake(&conn);
     if let Ok(mut server) = initialize_server(&conn) {
-        handle_compile_project(&mut server);
+        compile_project(&mut server);
         server_loop(&mut server);
     }
-    threads.join().expect("io join");
+    let _ = threads.join();
 }
 
 fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
@@ -58,7 +73,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
     };
 
-    let capabilities = lsp::ServerCapabilities {
+    let caps = lsp::ServerCapabilities {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
         definition_provider: Some(lsp::OneOf::Left(true)),
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
@@ -68,9 +83,10 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         ..Default::default()
     };
 
-    let init_params =
-        conn.initialize(into_json(capabilities)).expect("internal: initialize failed");
-    from_json(init_params)
+    match conn.initialize(into_json(caps)) {
+        Ok(params) => from_json(params),
+        Err(error) => server_error!("connection init failed\n{error}"),
+    }
 }
 
 #[track_caller]
@@ -79,7 +95,7 @@ fn into_json<T: serde::Serialize>(value: T) -> serde_json::Value {
         Ok(value) => value,
         Err(error) => {
             let loc = core::panic::Location::caller();
-            panic!("internal: json serialize failed at: {loc}\n{error}");
+            server_error!("into_json() failed at: {loc}\n{error}");
         }
     }
 }
@@ -90,8 +106,31 @@ fn from_json<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
         Ok(value) => value,
         Err(error) => {
             let loc = core::panic::Location::caller();
-            panic!("internal: json deserialize failed at: {loc}\n{error}");
+            server_error!("from_json() failed at: {loc}\n{error}");
         }
+    }
+}
+
+#[track_caller]
+fn send_response(conn: &Connection, id: RequestId, result: impl serde::Serialize) {
+    let result = Some(serde_json::to_value(result).unwrap());
+    let response = lsp_server::Response { id, result, error: None };
+    if let Err(error) = conn.sender.send(response.into()) {
+        let loc = core::panic::Location::caller();
+        server_error!("send_response() failed at: {loc}\n{error}");
+    }
+}
+
+#[track_caller]
+fn send_notification<N: lsp::notification::Notification>(
+    conn: &Connection,
+    params: impl serde::Serialize,
+) {
+    let params = serde_json::to_value(params).unwrap();
+    let notification = lsp_server::Notification { method: N::METHOD.to_string(), params };
+    if let Err(error) = conn.sender.send(notification.into()) {
+        let loc = core::panic::Location::caller();
+        server_error!("send_notification() failed at: {loc}\n{error}");
     }
 }
 
@@ -143,14 +182,21 @@ fn server_loop(server: &mut ServerContext) {
 }
 
 fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
-    eprintln!("\n====================");
-    eprintln!("[info] handling {} messages:", messages.len());
-    eprintln!("====================\n");
-
+    debug_eprintln!("");
     for message in messages {
         match message {
-            Message::Request(id, req) => handle_request(server, id.clone(), req),
-            Message::Notification(not) => handle_notification(server, not),
+            Message::Request(id, req) => match req {
+                Request::Format(path) => handle_format(server, id, path),
+                Request::SemanticTokens(path) => handle_semantic_tokens(server, id, path),
+                Request::GotoDefinition(path, pos) => handle_goto_definition(server, id, path, pos),
+                Request::ShowSyntaxTree(path) => handle_show_syntax_tree(server, id, path),
+            },
+            Message::Notification(not) => match not {
+                Notification::FileSaved => compile_project(server),
+                Notification::FileOpened(path, text) => handle_file_opened(server, path, text),
+                Notification::FileClosed(path) => handle_file_closed(server, path),
+                Notification::FileChanged(path, c) => handle_file_changed(server, path, c),
+            },
         }
     }
 }
@@ -284,22 +330,9 @@ let module_name = if let Some(rename) = item.rename(&tree) {
     }
 */
 
-fn handle_request(server: &mut ServerContext, id: RequestId, req: Request) {
-    match &req {
-        Request::Format(params) => handle_request_format(server, id, params),
-        Request::SemanticTokens(params) => handle_request_semantic_tokens(server, id, params),
-        Request::GotoDefinition(params) => handle_request_goto_definition(server, id, params),
-        Request::ShowSyntaxTree(params) => handle_request_show_syntax_tree(server, id, params),
-    }
-}
-
-fn handle_request_format(
-    server: &mut ServerContext,
-    id: RequestId,
-    params: &lsp::DocumentFormattingParams,
-) {
+fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
+    debug_eprintln!("[format] path: {}", path.to_string_lossy());
     let session = &mut server.session;
-    let path = uri_to_path(&params.text_document.uri);
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
         None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
@@ -327,13 +360,9 @@ fn handle_request_format(
     send_response(server.conn, id, vec![text_edit]);
 }
 
-fn handle_request_semantic_tokens(
-    server: &mut ServerContext,
-    id: RequestId,
-    params: &lsp::SemanticTokensParams,
-) {
+fn handle_semantic_tokens(server: &mut ServerContext, id: RequestId, path: PathBuf) {
+    debug_eprintln!("[semantic_tokens] path: {}", path.to_string_lossy());
     let session = &mut server.session;
-    let path = uri_to_path(&params.text_document.uri);
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
         None => return,
@@ -346,21 +375,19 @@ fn handle_request_semantic_tokens(
     send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
 }
 
-fn handle_request_goto_definition(
+fn handle_goto_definition(
     server: &mut ServerContext,
     id: RequestId,
-    params: &lsp::GotoDefinitionParams,
+    path: PathBuf,
+    pos: lsp::Position,
 ) {
-    //send_response(server.conn, id, serde_json::Value::Null)
+    debug_eprintln!("[goto_definition] path: {}, {:?}", path.to_string_lossy(), pos);
+    send_response(server.conn, id, serde_json::Value::Null)
 }
 
-fn handle_request_show_syntax_tree(
-    server: &mut ServerContext,
-    id: RequestId,
-    params: &message::ShowSyntaxTreeParams,
-) {
+fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: PathBuf) {
+    debug_eprintln!("[show_syntax_tree] path: {}", path.to_string_lossy());
     let session = &mut server.session;
-    let path = uri_to_path(&params.text_document.uri);
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
         None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
@@ -435,67 +462,59 @@ fn resolve_import_module(
     }
 }
 
-fn handle_notification(server: &mut ServerContext, not: Notification) {
-    match not {
-        Notification::FileOpened(path, text) => {
-            //@handle file open, send when:
-            // 1) new file created
-            // 2) existing file renamed
-            // 3) file opened in the editor
-        }
-        Notification::FileClosed(path) => {
-            //@handle file closed, sent when:
-            // 1) existing file deleted
-            // 2) existing file renamed
-            // 3) file closed in the editor
-        }
-        Notification::FileSaved(_) => {
-            handle_compile_project(server);
-        }
-        Notification::FileChanged(path, changes) => {
-            eprintln!(
-                "[HANDLE] Notification::SourceFileChanged: {:?} changes: {}",
-                &path,
-                changes.len()
-            );
-            let session = &mut server.session;
-            let module = match module_id_from_path(session, &path) {
-                Some(module_id) => session.module.get(module_id),
-                None => {
-                    eprintln!(" - module not found");
-                    return;
-                }
-            };
+fn compile_project(server: &mut ServerContext) {
+    use std::time::Instant;
 
-            let file = session.vfs.file_mut(module.file_id());
-            file.version += 1;
-            eprintln!(
-                "[info] file changed, path: `{}`, version: `{}`",
-                file.path.to_string_lossy(),
-                file.version
-            );
-            for change in changes {
-                if let Some(range) = change.range {
-                    let range = text_ops::file_range_to_text_range(file, range);
-                    file.source.replace_range(range.as_usize(), &change.text);
-                    text::find_line_ranges(&mut file.line_ranges, &file.source);
-                } else {
-                    file.source = change.text;
-                    text::find_line_ranges(&mut file.line_ranges, &file.source);
-                }
+    let session = &mut server.session;
+    session.errors.errors.clear();
+    for module_id in session.module.ids() {
+        session.module.get_mut(module_id).errors.clear();
+    }
+
+    let mut timer = Instant::now();
+    fn check_impl(session: &mut Session) -> Result<(), ()> {
+        syntax::parse_all_lsp(session)?;
+        hir_lower::check(session)?;
+        Ok(())
+    }
+    let _ = check_impl(session);
+    let check_ms = timer.elapsed().as_secs_f64() * 1000.0;
+    timer = Instant::now();
+
+    let mut publish_diagnostics = Vec::with_capacity(session.module.count());
+
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
+        let file = session.vfs.file(module.file_id());
+
+        let capacity = module.parse_errors.errors.len()
+            + module.errors.errors.len()
+            + module.errors.warnings.len();
+        let mut diagnostics = Vec::with_capacity(capacity);
+
+        for error in &module.parse_errors.errors {
+            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
+                diagnostics.push(d);
             }
         }
+        for error in &module.errors.errors {
+            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
+                diagnostics.push(d);
+            }
+        }
+        for warning in &module.errors.warnings {
+            if let Some(d) = create_diagnostic(session, warning.diagnostic(), Severity::Warning) {
+                diagnostics.push(d);
+            }
+        }
+
+        let publish =
+            lsp::PublishDiagnosticsParams::new(url_from_path(&file.path), diagnostics, None);
+        publish_diagnostics.push(publish);
     }
-}
 
-fn handle_compile_project(server: &mut ServerContext) {
-    eprintln!("[Handle] CompileProject");
-
-    use std::time::Instant;
-    let start_time = Instant::now();
-    let publish_diagnostics = run_diagnostics(server);
-    let elapsed_time = start_time.elapsed();
-    eprintln!("run diagnostics: {} ms", elapsed_time.as_secs_f64() * 1000.0);
+    let di_ms = timer.elapsed().as_secs_f64() * 1000.0;
+    debug_eprintln!("[compile project] check impl: {check_ms} ms, make diagnostics: {di_ms} ms");
 
     for publish in publish_diagnostics.iter() {
         send_notification::<lsp::notification::PublishDiagnostics>(server.conn, publish);
@@ -507,23 +526,50 @@ fn handle_compile_project(server: &mut ServerContext) {
     }
 }
 
-fn send_response(conn: &Connection, id: RequestId, result: impl serde::Serialize) {
-    let result = Some(serde_json::to_value(result).unwrap());
-    let response = lsp_server::Response { id, result, error: None };
-    send(conn, response);
+fn handle_file_opened(server: &mut ServerContext, path: PathBuf, text: String) {
+    debug_eprintln!("[file opened] path: {}, text bytes: {}", path.to_string_lossy(), text.len());
+    //@todo, sent when:
+    // 1) new file created
+    // 2) existing file renamed
+    // 3) file opened in the editor
 }
 
-fn send_notification<N: lsp::notification::Notification>(
-    conn: &Connection,
-    params: impl serde::Serialize,
+fn handle_file_closed(server: &mut ServerContext, path: PathBuf) {
+    debug_eprintln!("[file closed] path: {}", path.to_string_lossy());
+    //@todo, sent when:
+    // 1) existing file deleted
+    // 2) existing file renamed
+    // 3) file closed in the editor
+}
+
+fn handle_file_changed(
+    server: &mut ServerContext,
+    path: PathBuf,
+    changes: Vec<lsp::TextDocumentContentChangeEvent>,
 ) {
-    let params = serde_json::to_value(params).unwrap();
-    let notification = lsp_server::Notification { method: N::METHOD.to_string(), params };
-    send(conn, notification);
-}
+    debug_eprintln!("[file changed] path: {}, changes: {}", path.to_string_lossy(), changes.len());
+    let session = &mut server.session;
+    let module = match module_id_from_path(session, &path) {
+        Some(module_id) => session.module.get(module_id),
+        None => {
+            eprintln!(" - module not found");
+            return;
+        }
+    };
 
-fn send<Content: Into<lsp_server::Message>>(conn: &Connection, msg: Content) {
-    conn.sender.send(msg.into()).unwrap();
+    let file = session.vfs.file_mut(module.file_id());
+    file.version += 1;
+
+    for change in changes {
+        if let Some(range) = change.range {
+            let range = text_ops::file_text_range(file, range);
+            file.source.replace_range(range.as_usize(), &change.text);
+            text::find_line_ranges(&mut file.line_ranges, &file.source);
+        } else {
+            file.source = change.text;
+            text::find_line_ranges(&mut file.line_ranges, &file.source);
+        }
+    }
 }
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
@@ -534,13 +580,16 @@ use rock_core::text::{self, TextRange};
 use std::path::PathBuf;
 
 fn uri_to_path(uri: &lsp::Url) -> PathBuf {
-    uri.to_file_path().expect("uri to pathbuf")
+    match uri.to_file_path() {
+        Ok(path) => path,
+        Err(()) => server_error!("failed to convert url `{}` to path", uri.to_string()),
+    }
 }
 
 fn url_from_path(path: &PathBuf) -> lsp::Url {
     match lsp::Url::from_file_path(path) {
         Ok(url) => url,
-        Err(()) => panic!("failed to convert `{}` to url", path.to_string_lossy()),
+        Err(()) => server_error!("failed to convert path `{}` to url", path.to_string_lossy()),
     }
 }
 
@@ -634,55 +683,6 @@ fn create_diagnostic(
     );
 
     Some(diagnostic)
-}
-
-fn run_diagnostics(server: &mut ServerContext) -> Vec<lsp::PublishDiagnosticsParams> {
-    let session = &mut server.session;
-    session.errors.errors.clear();
-    for module_id in session.module.ids() {
-        session.module.get_mut(module_id).errors.clear();
-    }
-
-    let _ = check_impl(session);
-    let mut publish_diagnostics = Vec::with_capacity(session.module.count());
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
-
-        let capacity = module.parse_errors.errors.len()
-            + module.errors.errors.len()
-            + module.errors.warnings.len();
-        let mut diagnostics = Vec::with_capacity(capacity);
-
-        for error in &module.parse_errors.errors {
-            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
-                diagnostics.push(d);
-            }
-        }
-        for error in &module.errors.errors {
-            if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
-                diagnostics.push(d);
-            }
-        }
-        for warning in &module.errors.warnings {
-            if let Some(d) = create_diagnostic(session, warning.diagnostic(), Severity::Warning) {
-                diagnostics.push(d);
-            }
-        }
-
-        let publish =
-            lsp::PublishDiagnosticsParams::new(url_from_path(&file.path), diagnostics, None);
-        publish_diagnostics.push(publish);
-    }
-
-    publish_diagnostics
-}
-
-fn check_impl(session: &mut Session) -> Result<(), ()> {
-    syntax::parse_all_lsp(session)?;
-    hir_lower::check(session)?;
-    Ok(())
 }
 
 struct SemanticTokenBuilder<'s_ref, 's> {
