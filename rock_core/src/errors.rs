@@ -666,6 +666,11 @@ pub fn path_unexpected_poly_arg_count(
 
 //==================== CHECK CONSTANT ====================
 
+pub fn const_cannot_use_expr(emit: &mut impl ErrorSink, src: SourceRange, expr_kind: &'static str) {
+    let msg = format!("cannot use `{expr_kind}` expression in constants");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn const_dependency_cycle(
     emit: &mut impl ErrorSink,
     ctx_msg: String,
@@ -674,20 +679,6 @@ pub fn const_dependency_cycle(
 ) {
     let msg = "constant dependency cycle found:";
     emit.error(Error::new_info_vec(msg, ctx_msg, src, info_vec));
-}
-
-pub fn const_cannot_use_expr(emit: &mut impl ErrorSink, src: SourceRange, expr_kind: &'static str) {
-    let msg = format!("cannot use `{expr_kind}` expression in constants");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn const_cannot_refer_to(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    item_kinds: &'static str,
-) {
-    let msg = format!("cannot refer to `{item_kinds}` in constants");
-    emit.error(Error::new(msg, src, None));
 }
 
 pub fn const_int_div_by_zero(emit: &mut impl ErrorSink, src: SourceRange) {

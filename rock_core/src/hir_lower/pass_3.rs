@@ -1,7 +1,7 @@
 use super::check_directive;
 use super::check_path;
-use super::constant;
 use super::context::HirCtx;
+use super::pass_4;
 use super::pass_5::Expectation;
 use super::scope::PolyScope;
 use crate::ast;
@@ -414,7 +414,7 @@ pub fn type_resolve<'hir, 'ast>(
                     ctx.registry.add_const_eval(array.len, ctx.scope.origin, ctx.scope.poly);
                 hir::ArrayStaticLen::ConstEval(eval_id)
             } else {
-                let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, array.len);
+                let (len_res, _) = pass_4::resolve_const_expr(ctx, Expectation::USIZE, array.len);
                 match len_res {
                     Ok(value) => hir::ArrayStaticLen::Immediate(value.into_int_u64()),
                     Err(_) => return hir::Type::Error,

@@ -1,10 +1,9 @@
 use super::check_directive;
 use super::check_match;
 use super::check_path::{self, ValueID};
-use super::constant;
-use super::constant::fold;
-use super::constant::layout;
 use super::context::HirCtx;
+use super::layout;
+use super::pass_4;
 use super::scope::{self, BlockStatus, Diverges, InferContext, PolyScope};
 use super::types;
 use crate::ast;
@@ -1570,9 +1569,7 @@ fn constfold_cast<'hir>(
         CastKind::Int_NoOp
         | CastKind::Int_Trunc
         | CastKind::IntS_Extend
-        | CastKind::IntU_Extend => {
-            fold::int_range_check(ctx, src, target.into_int(), into.unwrap_int())
-        }
+        | CastKind::IntU_Extend => int_range_check(ctx, src, target.into_int(), into.unwrap_int()),
         CastKind::IntS_to_Float | CastKind::IntU_to_Float => Ok(hir::ConstValue::Float {
             val: target.into_int() as f64,
             float_ty: into.unwrap_float(),
@@ -1581,7 +1578,7 @@ fn constfold_cast<'hir>(
             Ok(hir::ConstValue::Float { val: target.into_float(), float_ty: into.unwrap_float() })
         }
         CastKind::Float_to_IntS | CastKind::Float_to_IntU => {
-            fold::int_range_check(ctx, src, target.into_float() as i128, into.unwrap_int())
+            int_range_check(ctx, src, target.into_float() as i128, into.unwrap_int())
         }
         CastKind::Bool_Trunc | CastKind::Bool_Extend => {
             Ok(hir::ConstValue::Bool { val: target.into_bool(), bool_ty: into.unwrap_bool() })
@@ -1604,7 +1601,7 @@ fn constfold_cast<'hir>(
                 hir::VariantKind::Default(id) => ctx.registry.variant_eval(id).resolved()?,
                 hir::VariantKind::Constant(id) => ctx.registry.const_eval(id).0.resolved()?,
             };
-            fold::int_range_check(ctx, src, tag_value.into_int(), into.unwrap_int())
+            int_range_check(ctx, src, tag_value.into_int(), into.unwrap_int())
         }
     }
 }
@@ -1627,9 +1624,9 @@ fn typecheck_builtin<'hir, 'ast>(
                 let builtin = hir::Builtin::SizeOf(ty);
                 hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
             } else {
-                constant::type_layout(ctx, ty, &[], src)
+                layout::type_layout(ctx, ty, &[], src)
                     .map(|layout| {
-                        fold::int_range_check(ctx, src, layout.size as i128, IntType::Usize)
+                        int_range_check(ctx, src, layout.size as i128, IntType::Usize)
                             .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                             .unwrap_or(hir::Expr::Error)
                     })
@@ -1643,9 +1640,9 @@ fn typecheck_builtin<'hir, 'ast>(
                 let builtin = hir::Builtin::AlignOf(ty);
                 hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
             } else {
-                constant::type_layout(ctx, ty, &[], src)
+                layout::type_layout(ctx, ty, &[], src)
                     .map(|layout| {
-                        fold::int_range_check(ctx, src, layout.align as i128, IntType::Usize)
+                        int_range_check(ctx, src, layout.align as i128, IntType::Usize)
                             .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                             .unwrap_or(hir::Expr::Error)
                     })
@@ -1670,8 +1667,8 @@ fn typecheck_builtin<'hir, 'ast>(
                 return TypeResult::error();
             }
 
-            let from_res = constant::type_layout(ctx, expr_res.ty, &[], from_src);
-            let into_res = constant::type_layout(ctx, into_ty, &[], into_src);
+            let from_res = layout::type_layout(ctx, expr_res.ty, &[], from_src);
+            let into_res = layout::type_layout(ctx, into_ty, &[], into_src);
 
             if let (Ok(from_layout), Ok(into_layout)) = (from_res, into_res) {
                 let subject = if from_layout.size != into_layout.size {
@@ -2014,12 +2011,8 @@ fn typecheck_struct_init<'hir, 'ast>(
                 hir::Expr::Error => return TypeResult::error(),
                 hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                 _ => {
-                    constant::error_cannot_use_in_constants(
-                        &mut ctx.emit,
-                        ctx.scope.origin,
-                        struct_init.input[field.field_id.index()].expr.range,
-                        "non constant",
-                    );
+                    let src = ctx.src(struct_init.input[field.field_id.index()].expr.range);
+                    err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
                     return TypeResult::error();
                 }
             }
@@ -2107,12 +2100,8 @@ fn typecheck_array_init<'hir, 'ast>(
                     hir::Expr::Error => return TypeResult::error(),
                     hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                     _ => {
-                        constant::error_cannot_use_in_constants(
-                            &mut ctx.emit,
-                            ctx.scope.origin,
-                            input[idx].range,
-                            "non constant",
-                        );
+                        let src = ctx.src(input[idx].range);
+                        err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
                         return TypeResult::error();
                     }
                 }
@@ -2143,7 +2132,7 @@ fn typecheck_array_repeat<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let expect = expect.infer_array_elem();
     let value_res = typecheck_expr(ctx, expect, value);
-    let (len_res, _) = constant::resolve_const_expr(ctx, Expectation::USIZE, len);
+    let (len_res, _) = pass_4::resolve_const_expr(ctx, Expectation::USIZE, len);
 
     let len = match len_res {
         Ok(value) => value.into_int_u64(),
@@ -2280,7 +2269,7 @@ fn constfold_unary<'hir>(
         hir::UnOp::Neg_Int => {
             let int_ty = rhs.into_int_ty();
             let val = -rhs.into_int();
-            fold::int_range_check(ctx, src, val, int_ty)
+            int_range_check(ctx, src, val, int_ty)
         }
         hir::UnOp::Neg_Float => {
             let float_ty = rhs.into_float_ty();
@@ -2327,7 +2316,7 @@ fn promote_untyped<'hir>(
             match with {
                 Some(hir::Type::Int(with)) if with != IntType::Untyped => {
                     *expr_ty = hir::Type::Int(with);
-                    fold::int_range_check(ctx, src, value.into_int(), with)
+                    int_range_check(ctx, src, value.into_int(), with)
                 }
                 Some(hir::Type::Float(with)) => {
                     *expr_ty = hir::Type::Float(with);
@@ -2336,7 +2325,7 @@ fn promote_untyped<'hir>(
                 }
                 _ if default => {
                     *expr_ty = hir::Type::Int(IntType::S32);
-                    fold::int_range_check(ctx, src, value.into_int(), IntType::S32)
+                    int_range_check(ctx, src, value.into_int(), IntType::S32)
                 }
                 _ => return None,
             }
@@ -2384,7 +2373,7 @@ fn promote_untyped<'hir>(
                 }
                 Some(hir::Type::Int(with)) if with != IntType::Untyped => {
                     *expr_ty = hir::Type::Int(with);
-                    fold::int_range_check(ctx, src, val as i128, with)
+                    int_range_check(ctx, src, val as i128, with)
                 }
                 _ if default => {
                     *expr_ty = hir::Type::Char;
@@ -2711,7 +2700,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Add_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() + rhs.into_int();
-            fold::int_range_check(ctx, src, val, int_ty)
+            int_range_check(ctx, src, val, int_ty)
         }
         hir::BinOp::Add_Float => {
             let float_ty = lhs.into_float_ty();
@@ -2721,7 +2710,7 @@ fn constfold_binary<'hir>(
         hir::BinOp::Sub_Int => {
             let int_ty = lhs.into_int_ty();
             let val = lhs.into_int() - rhs.into_int();
-            fold::int_range_check(ctx, src, val, int_ty)
+            int_range_check(ctx, src, val, int_ty)
         }
         hir::BinOp::Sub_Float => {
             let float_ty = lhs.into_float_ty();
@@ -2734,7 +2723,7 @@ fn constfold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if let Some(val) = lhs.checked_mul(rhs) {
-                fold::int_range_check(ctx, src, val, int_ty)
+                int_range_check(ctx, src, val, int_ty)
             } else {
                 err::const_int_overflow(&mut ctx.emit, src, op.as_str(), lhs, rhs);
                 Err(())
@@ -2751,7 +2740,7 @@ fn constfold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if let Some(val) = lhs.checked_div(rhs) {
-                fold::int_range_check(ctx, src, val, int_ty)
+                int_range_check(ctx, src, val, int_ty)
             } else {
                 err::const_int_overflow(&mut ctx.emit, src, op.as_str(), lhs, rhs);
                 Err(())
@@ -2768,7 +2757,7 @@ fn constfold_binary<'hir>(
             let rhs = rhs.into_int();
 
             if let Some(val) = lhs.checked_rem(rhs) {
-                fold::int_range_check(ctx, src, val, int_ty)
+                int_range_check(ctx, src, val, int_ty)
             } else {
                 err::const_int_overflow(&mut ctx.emit, src, op.as_str(), lhs, rhs);
                 Err(())
@@ -2830,7 +2819,7 @@ fn constfold_binary<'hir>(
                 }
             };
             let src = ctx.src(range);
-            fold::int_range_check(ctx, src, val, int_ty)
+            int_range_check(ctx, src, val, int_ty)
         }
         hir::BinOp::BitShr(int_ty, _) => {
             let lhs = lhs.into_int();
@@ -2838,7 +2827,7 @@ fn constfold_binary<'hir>(
 
             let val = lhs >> rhs;
             let src = ctx.src(range);
-            fold::int_range_check(ctx, src, val, int_ty)
+            int_range_check(ctx, src, val, int_ty)
         }
         hir::BinOp::Eq_Int_Other(bool_ty) => {
             let val = match lhs {
@@ -3813,6 +3802,29 @@ fn typecheck_assign<'hir, 'ast>(
     ctx.arena.alloc(assign)
 }
 
+pub fn int_range_check<'hir>(
+    ctx: &mut HirCtx,
+    src: SourceRange,
+    val: i128,
+    int_ty: hir::IntType,
+) -> Result<hir::ConstValue<'hir>, ()> {
+    let ptr_width = ctx.session.config.target_ptr_width;
+    let min = int_ty.min_128(ptr_width);
+    let max = int_ty.max_128(ptr_width);
+
+    if val < min || val > max {
+        let int_ty = int_ty.as_str();
+        err::const_int_out_of_range(&mut ctx.emit, src, int_ty, val, min, max);
+        Err(())
+    } else if val >= 0 {
+        let val: u64 = val.try_into().unwrap();
+        Ok(hir::ConstValue::Int { val, neg: false, int_ty })
+    } else {
+        let val: u64 = (-val).try_into().unwrap();
+        Ok(hir::ConstValue::Int { val, neg: true, int_ty })
+    }
+}
+
 //==================== UNUSED ====================
 
 fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRange) {
@@ -4330,16 +4342,12 @@ fn check_variant_input_opt<'hir, 'ast>(
         let offset = ctx.cache.const_values.start();
         for (idx, field) in input.iter().copied().enumerate() {
             match field {
-                hir::Expr::Error => return TypeResult::error(),
+                hir::Expr::Error => valid = false,
                 hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                 _ => {
                     valid = false;
-                    constant::error_cannot_use_in_constants(
-                        &mut ctx.emit,
-                        ctx.scope.origin,
-                        arg_list.unwrap().exprs[idx].range,
-                        "non constant",
-                    );
+                    let src = ctx.src(arg_list.unwrap().exprs[idx].range);
+                    err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
                 }
             }
         }
@@ -4349,6 +4357,7 @@ fn check_variant_input_opt<'hir, 'ast>(
             let value = hir::ConstValue::VariantPoly { enum_id, variant: ctx.arena.alloc(variant) };
             hir::Expr::Const(value, hir::ConstID::dummy())
         } else {
+            ctx.cache.const_values.pop_view(offset);
             hir::Expr::Error
         }
     } else {

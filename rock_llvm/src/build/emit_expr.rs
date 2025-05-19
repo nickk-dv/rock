@@ -5,7 +5,7 @@ use crate::build::context;
 use crate::llvm;
 use rock_core::error::SourceRange;
 use rock_core::hir::{self, CmpPred};
-use rock_core::hir_lower::constant::layout;
+use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
 use rock_core::intern::LitID;
 use rock_core::session::ModuleID;

@@ -1,7 +1,7 @@
 use crate::llvm;
 use rock_core::config::TargetTriple;
 use rock_core::error::{ErrorWarningBuffer, SourceRange};
-use rock_core::hir_lower::constant::layout;
+use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
 use rock_core::intern::NameID;
 use rock_core::session::{ModuleID, Session};

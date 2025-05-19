@@ -1,7 +1,6 @@
-use super::fold;
 use super::layout;
 use crate::ast;
-use crate::error::{Error, ErrorSink, ErrorWarningBuffer, Info, SourceRange};
+use crate::error::{ErrorSink, Info, SourceRange};
 use crate::errors as err;
 use crate::hir;
 use crate::hir_lower::check_path::{self, ValueID};
@@ -9,7 +8,6 @@ use crate::hir_lower::context::HirCtx;
 use crate::hir_lower::types;
 use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::session::ModuleID;
-use crate::text::TextRange;
 
 pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
     let mut tree = Tree { nodes: Vec::with_capacity(128) };
@@ -562,20 +560,11 @@ fn add_expr_deps<'ast>(
 ) -> Result<(), TreeNodeID> {
     ctx.scope.origin = origin_id;
 
-    match expr.kind {
+    let res = match expr.kind {
         ast::ExprKind::Lit { .. } => Ok(()),
-        ast::ExprKind::If { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "if");
-            Err(parent_id)
-        }
-        ast::ExprKind::Block { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "block");
-            Err(parent_id)
-        }
-        ast::ExprKind::Match { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "match");
-            Err(parent_id)
-        }
+        ast::ExprKind::If { .. } => Err("if"),
+        ast::ExprKind::Block { .. } => Err("block"),
+        ast::ExprKind::Match { .. } => Err("match"),
         ast::ExprKind::Field { target, .. } => {
             add_expr_deps(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
@@ -585,14 +574,8 @@ fn add_expr_deps<'ast>(
             add_expr_deps(ctx, tree, parent_id, origin_id, index)?;
             Ok(())
         }
-        ast::ExprKind::Slice { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "slice");
-            Err(parent_id)
-        }
-        ast::ExprKind::Call { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "call");
-            Err(parent_id)
-        }
+        ast::ExprKind::Slice { .. } => Err("slice"),
+        ast::ExprKind::Call { .. } => Err("procedure call"),
         ast::ExprKind::Cast { target, .. } => {
             add_expr_deps(ctx, tree, parent_id, origin_id, target)?;
             Ok(())
@@ -602,43 +585,35 @@ fn add_expr_deps<'ast>(
                 let name = ctx.name(name.id);
                 let src = SourceRange::new(origin_id, expr.range);
                 err::tycheck_builtin_unknown(&mut ctx.emit, src, name);
-                Err(parent_id)
+                return Err(parent_id);
             }
             ast::Builtin::SizeOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true);
-                if types::has_poly_layout_dep(ty) {
+                return if types::has_poly_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "size_of");
                     Err(parent_id)
                 } else {
                     add_type_size_deps(ctx, tree, parent_id, ty, &[])
-                }
+                };
             }
             ast::Builtin::AlignOf(ty) => {
                 let ty = pass_3::type_resolve(ctx, *ty, true);
-                if types::has_poly_layout_dep(ty) {
+                return if types::has_poly_layout_dep(ty) {
                     let ty = pass_5::type_format(ctx, ty);
                     let src = SourceRange::new(origin_id, expr.range);
                     err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "align_of");
                     Err(parent_id)
                 } else {
                     add_type_size_deps(ctx, tree, parent_id, ty, &[])
-                }
+                };
             }
-            ast::Builtin::Transmute(_, _) => {
-                error_cannot_use_in_constants(
-                    &mut ctx.emit,
-                    origin_id,
-                    expr.range,
-                    "builtin @transmute",
-                );
-                Err(parent_id)
-            }
+            ast::Builtin::Transmute(_, _) => Err("builtin @transmute"),
         },
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path, true) {
-                ValueID::None => Err(parent_id),
+                ValueID::None => return Err(parent_id),
                 ValueID::Proc(proc_id, poly_types) => {
                     for param in ctx.registry.proc_data(proc_id).params {
                         add_type_usage_deps(ctx, tree, parent_id, param.ty)?;
@@ -682,33 +657,9 @@ fn add_expr_deps<'ast>(
                     }
                     Ok(())
                 }
-                ValueID::Global(_, _) => {
-                    error_cannot_refer_to_in_constants(
-                        &mut ctx.emit,
-                        origin_id,
-                        expr.range,
-                        "globals",
-                    );
-                    Err(parent_id)
-                }
-                ValueID::Param(_, _) => {
-                    error_cannot_refer_to_in_constants(
-                        &mut ctx.emit,
-                        origin_id,
-                        expr.range,
-                        "parameters",
-                    );
-                    Err(parent_id)
-                }
-                ValueID::Variable(_, _) => {
-                    error_cannot_refer_to_in_constants(
-                        &mut ctx.emit,
-                        origin_id,
-                        expr.range,
-                        "variables",
-                    );
-                    Err(parent_id)
-                }
+                ValueID::Global(_, _) => Err("global"),
+                ValueID::Param(_, _) => Err("parameter"),
+                ValueID::Variable(_, _) => Err("variable"),
             }
         }
         ast::ExprKind::Variant { args_list, .. } => {
@@ -746,14 +697,8 @@ fn add_expr_deps<'ast>(
             add_expr_deps(ctx, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
-        ast::ExprKind::Deref { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "deref");
-            Err(parent_id)
-        }
-        ast::ExprKind::Address { .. } => {
-            error_cannot_use_in_constants(&mut ctx.emit, origin_id, expr.range, "address");
-            Err(parent_id)
-        }
+        ast::ExprKind::Deref { .. } => Err("dereference"),
+        ast::ExprKind::Address { .. } => Err("address"),
         ast::ExprKind::Unary { rhs, .. } => {
             add_expr_deps(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
@@ -763,33 +708,15 @@ fn add_expr_deps<'ast>(
             add_expr_deps(ctx, tree, parent_id, origin_id, rhs)?;
             Ok(())
         }
+    };
+
+    if let Err(expr_kind) = res {
+        let src = SourceRange::new(origin_id, expr.range);
+        err::const_cannot_use_expr(&mut ctx.emit, src, expr_kind);
+        Err(parent_id)
+    } else {
+        Ok(())
     }
-}
-
-pub fn error_cannot_use_in_constants(
-    emit: &mut ErrorWarningBuffer,
-    origin_id: ModuleID,
-    range: TextRange,
-    name: &str,
-) {
-    emit.error(Error::new(
-        format!("cannot use `{name}` expression in constants"),
-        SourceRange::new(origin_id, range),
-        None,
-    ));
-}
-
-fn error_cannot_refer_to_in_constants(
-    emit: &mut ErrorWarningBuffer,
-    origin_id: ModuleID,
-    range: TextRange,
-    name: &str,
-) {
-    emit.error(Error::new(
-        format!("cannot refer to `{name}` in constants"),
-        SourceRange::new(origin_id, range),
-        None,
-    ));
 }
 
 fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
@@ -823,7 +750,7 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                         let value_inc = match prev_tag {
                             Ok(prev) => {
                                 let src = SourceRange::new(data.origin_id, variant.name.range);
-                                fold::int_range_check(ctx, src, prev.into_int() + 1, tag_ty)
+                                pass_5::int_range_check(ctx, src, prev.into_int() + 1, tag_ty)
                             }
                             Err(()) => Err(()),
                         };
@@ -930,12 +857,8 @@ pub fn resolve_const_expr<'hir, 'ast>(
             hir::Expr::Error => (Err(()), expr_res.ty),
             hir::Expr::Const(value, _) => (Ok(*value), expr_res.ty),
             _ => {
-                error_cannot_use_in_constants(
-                    &mut ctx.emit,
-                    ctx.scope.origin,
-                    expr.0.range,
-                    "non constant",
-                ); //@temp message for this case
+                let src = ctx.src(expr.0.range);
+                err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
                 (Err(()), expr_res.ty)
             }
         }

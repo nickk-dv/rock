@@ -1,5 +1,5 @@
 use super::check_match::PatCov;
-use super::constant::layout;
+use super::layout;
 use super::scope::{PolyScope, Scope};
 use crate::ast;
 use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};

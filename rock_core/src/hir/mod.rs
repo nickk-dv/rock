@@ -892,6 +892,97 @@ impl Type<'_> {
     }
 }
 
+impl<'hir> ConstValue<'hir> {
+    pub fn from_u64(val: u64, int_ty: IntType) -> ConstValue<'hir> {
+        ConstValue::Int { val, neg: false, int_ty }
+    }
+    pub fn from_i64(val: i64, int_ty: IntType) -> ConstValue<'hir> {
+        if val < 0 {
+            ConstValue::Int { val: -val as u64, neg: true, int_ty }
+        } else {
+            ConstValue::Int { val: val as u64, neg: false, int_ty }
+        }
+    }
+    pub fn into_bool(&self) -> bool {
+        match *self {
+            ConstValue::Bool { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn expect_bool(self) -> (bool, BoolType) {
+        match self {
+            ConstValue::Bool { val, bool_ty } => (val, bool_ty),
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int(&self) -> i128 {
+        match *self {
+            ConstValue::Int { val, neg, .. } => {
+                if neg {
+                    -(val as i128)
+                } else {
+                    val as i128
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int_u64(&self) -> u64 {
+        match *self {
+            ConstValue::Int { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int_i64(&self) -> i64 {
+        match *self {
+            ConstValue::Int { val, neg, .. } => {
+                if neg {
+                    -(val as i64)
+                } else {
+                    val as i64
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_int_ty(&self) -> IntType {
+        match *self {
+            ConstValue::Int { int_ty, .. } => int_ty,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_float(&self) -> f64 {
+        match *self {
+            ConstValue::Float { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_float_ty(&self) -> FloatType {
+        match *self {
+            ConstValue::Float { float_ty, .. } => float_ty,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_char(&self) -> char {
+        match *self {
+            ConstValue::Char { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_string(&self) -> LitID {
+        match *self {
+            ConstValue::String { val, .. } => val,
+            _ => unreachable!(),
+        }
+    }
+    pub fn into_enum(self) -> (EnumID, VariantID) {
+        match self {
+            ConstValue::Variant { enum_id, variant_id } => (enum_id, variant_id),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl<U, R> Eval<U, R>
 where
     U: Copy + Clone,
