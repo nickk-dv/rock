@@ -1,12 +1,16 @@
-use crate::error::ErrorSink;
-use crate::error::SourceRange;
+use crate::error::{ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::hir;
-use crate::support::Arena;
+use crate::hir_lower::types;
+use crate::support::{TempBuffer, TempOffset};
 use std::collections::HashMap;
 
-pub trait LayoutContext<'hir> {
-    fn arena(&mut self) -> &mut Arena<'hir>;
+pub trait LayoutContext<'hir>: super::types::SubstituteContext<'hir> {
+    fn u8s(&mut self) -> &mut TempBuffer<u8>;
+    fn u64s(&mut self) -> &mut TempBuffer<u64>;
+    fn take_u8s(&mut self, offset: TempOffset<u8>) -> &'hir [u8];
+    fn take_u64s(&mut self, offset: TempOffset<u64>) -> &'hir [u64];
+
     fn error(&mut self) -> &mut impl ErrorSink;
     fn ptr_size(&self) -> u64;
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()>;
@@ -27,7 +31,7 @@ pub trait LayoutContext<'hir> {
 pub fn type_layout<'hir>(
     ctx: &mut impl LayoutContext<'hir>,
     ty: hir::Type<'hir>,
-    poly_types: &[hir::Type<'hir>],
+    poly_set: &[hir::Type<'hir>],
     src: SourceRange,
 ) -> Result<hir::Layout, ()> {
     match ty {
@@ -42,39 +46,43 @@ pub fn type_layout<'hir>(
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
         hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
         hir::Type::String(string_ty) => Ok(string_layout(ctx, string_ty)),
-        hir::Type::PolyProc(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
-        hir::Type::PolyEnum(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
-        hir::Type::PolyStruct(_, poly_idx) => type_layout(ctx, poly_types[poly_idx], &[], src),
+        hir::Type::PolyProc(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
+        hir::Type::PolyEnum(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
+        hir::Type::PolyStruct(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
         hir::Type::Enum(id, poly_types) => {
             if poly_types.is_empty() {
-                ctx.enum_data(id).layout.resolved()
+                return ctx.enum_data(id).layout.resolved();
+            }
+            let poly_types = types::substitute_types(ctx, poly_types, poly_set, None);
+            types::expect_concrete(poly_types);
+
+            if let Some(layout) = ctx.enum_layout().get(&(id, poly_types)) {
+                Ok(*layout)
             } else {
-                let _ = ctx.enum_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                if let Some(layout) = ctx.enum_layout().get(&(id, poly_types)) {
-                    Ok(*layout)
-                } else {
-                    let layout_res = resolve_enum_layout(ctx, id, poly_types);
-                    if let Ok(layout) = layout_res {
-                        ctx.enum_layout_mut().insert((id, poly_types), layout);
-                    }
-                    layout_res
+                let _ = ctx.enum_data(id).layout.resolved()?; //early return, prevent cycles
+                let layout_res = resolve_enum_layout(ctx, id, poly_types);
+                if let Ok(layout) = layout_res {
+                    ctx.enum_layout_mut().insert((id, poly_types), layout);
                 }
+                layout_res
             }
         }
         hir::Type::Struct(id, poly_types) => {
             if poly_types.is_empty() {
-                ctx.struct_data(id).layout.resolved()
+                return ctx.struct_data(id).layout.resolved();
+            }
+            let poly_types = types::substitute_types(ctx, poly_types, poly_set, None);
+            types::expect_concrete(poly_types);
+
+            if let Some(layout) = ctx.struct_layout().get(&(id, poly_types)) {
+                Ok(layout.total)
             } else {
-                let _ = ctx.struct_data(id).layout.resolved()?; //@hack prevent inifinite recursion
-                if let Some(layout) = ctx.struct_layout().get(&(id, poly_types)) {
-                    Ok(layout.total)
-                } else {
-                    let layout_res = resolve_struct_layout(ctx, id, poly_types);
-                    if let Ok(layout) = layout_res {
-                        ctx.struct_layout_mut().insert((id, poly_types), layout);
-                    }
-                    layout_res.map(|l| l.total)
+                let _ = ctx.struct_data(id).layout.resolved()?; //early return, prevent cycles
+                let layout_res = resolve_struct_layout(ctx, id, poly_types);
+                if let Ok(layout) = layout_res {
+                    ctx.struct_layout_mut().insert((id, poly_types), layout);
                 }
+                layout_res.map(|l| l.total)
             }
         }
         hir::Type::Reference(_, _) | hir::Type::MultiReference(_, _) | hir::Type::Procedure(_) => {
@@ -171,46 +179,53 @@ fn resolve_variant_layout<'hir>(
     resolve_aggregate_layout(ctx, src, "variant", types, poly_types)
 }
 
-//@use temp buffers, annoying due to possible `?` early return
 fn resolve_aggregate_layout<'hir>(
     ctx: &mut impl LayoutContext<'hir>,
     src: SourceRange,
     item_kind: &'static str,
-    types: impl Iterator<Item = hir::Type<'hir>> + Clone,
+    types: impl Iterator<Item = hir::Type<'hir>>,
     poly_types: &[hir::Type<'hir>],
 ) -> Result<hir::StructLayout<'hir>, ()> {
-    let field_count = types.clone().count();
-    let mut field_pad = Vec::with_capacity(field_count);
-    let mut field_offset = Vec::with_capacity(field_count);
+    let offset_u8 = ctx.u8s().start();
+    let offset_u64 = ctx.u64s().start();
 
     let mut size: u64 = 0;
     let mut align: u64 = 1;
 
     for (field_idx, ty) in types.enumerate() {
-        let layout = type_layout(ctx, ty, poly_types, src)?;
-        let aligned = aligned_size(size, layout.align);
-        field_offset.push(aligned);
+        let layout = match type_layout(ctx, ty, poly_types, src) {
+            Ok(layout) => layout,
+            Err(_) => {
+                ctx.u8s().pop_view(offset_u8);
+                ctx.u64s().pop_view(offset_u64);
+                return Err(());
+            }
+        };
 
-        align = align.max(layout.align);
+        let aligned = aligned_size(size, layout.align);
+        ctx.u64s().push(aligned);
         if field_idx != 0 {
-            field_pad.push((aligned - size) as u8);
+            ctx.u8s().push((aligned - size) as u8);
         }
 
         if let Some(total) = aligned.checked_add(layout.size) {
             size = total;
+            align = align.max(layout.align);
         } else {
+            ctx.u8s().pop_view(offset_u8);
+            ctx.u64s().pop_view(offset_u64);
             err::const_item_size_overflow(ctx.error(), src, item_kind, aligned, layout.size);
             return Err(());
         }
     }
 
     let aligned = aligned_size(size, align);
-    field_pad.push((aligned - size) as u8);
+    ctx.u8s().push((aligned - size) as u8);
     size = aligned;
-    let total = hir::Layout::new(size, align);
 
-    let field_pad = ctx.arena().alloc_slice(&field_pad);
-    let field_offset = ctx.arena().alloc_slice(&field_offset);
+    let total = hir::Layout::new(size, align);
+    let field_pad = ctx.take_u8s(offset_u8);
+    let field_offset = ctx.take_u64s(offset_u64);
     let layout = hir::StructLayout { total, field_pad, field_offset };
     Ok(layout)
 }

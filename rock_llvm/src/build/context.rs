@@ -5,7 +5,7 @@ use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
 use rock_core::intern::NameID;
 use rock_core::session::{ModuleID, Session};
-use rock_core::support::{Arena, AsStr, TempBuffer};
+use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
 use rock_core::text::TextRange;
 use rock_core::{ast, hir};
 use std::collections::HashMap;
@@ -89,6 +89,8 @@ pub struct CodegenCache<'c> {
     pub sret: llvm::Attribute,
     pub noreturn: llvm::Attribute,
     pub inlinehint: llvm::Attribute,
+    pub u8s: TempBuffer<u8>,
+    pub u64s: TempBuffer<u64>,
     pub types: TempBuffer<llvm::Type>,
     pub values: TempBuffer<llvm::Value>,
     pub cases: TempBuffer<(llvm::Value, llvm::BasicBlock)>,
@@ -457,6 +459,8 @@ impl<'c> CodegenCache<'c> {
             sret: context.attr_create("sret"),
             noreturn: context.attr_create("noreturn"),
             inlinehint: context.attr_create("inlinehint"),
+            u8s: TempBuffer::new(32),
+            u64s: TempBuffer::new(32),
             types: TempBuffer::new(64),
             values: TempBuffer::new(128),
             cases: TempBuffer::new(128),
@@ -466,10 +470,41 @@ impl<'c> CodegenCache<'c> {
     }
 }
 
-impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
+impl<'hir> types::SubstituteContext<'hir> for Codegen<'hir, '_, '_> {
     fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.hir.arena
     }
+    fn types(&mut self) -> &mut TempBuffer<hir::Type<'hir>> {
+        &mut self.cache.hir_types
+    }
+    fn proc_ty_params(&mut self) -> &mut TempBuffer<hir::ProcTypeParam<'hir>> {
+        &mut self.cache.hir_proc_ty_params
+    }
+    fn take_types(&mut self, offset: TempOffset<hir::Type<'hir>>) -> &'hir [hir::Type<'hir>] {
+        self.cache.hir_types.take(offset, &mut self.hir.arena)
+    }
+    fn take_proc_ty_params(
+        &mut self,
+        offset: TempOffset<hir::ProcTypeParam<'hir>>,
+    ) -> &'hir [hir::ProcTypeParam<'hir>] {
+        self.cache.hir_proc_ty_params.take(offset, &mut self.hir.arena)
+    }
+}
+
+impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
+    fn u8s(&mut self) -> &mut TempBuffer<u8> {
+        &mut self.cache.u8s
+    }
+    fn u64s(&mut self) -> &mut TempBuffer<u64> {
+        &mut self.cache.u64s
+    }
+    fn take_u8s(&mut self, offset: TempOffset<u8>) -> &'hir [u8] {
+        self.cache.u8s.take(offset, &mut self.hir.arena)
+    }
+    fn take_u64s(&mut self, offset: TempOffset<u64>) -> &'hir [u64] {
+        self.cache.u64s.take(offset, &mut self.hir.arena)
+    }
+
     fn error(&mut self) -> &mut impl rock_core::error::ErrorSink {
         &mut self.emit
     }
@@ -514,32 +549,7 @@ pub fn substitute_types<'c>(
     types: &'c [hir::Type<'c>],
     poly_set: &[hir::Type<'c>],
 ) -> &'c [hir::Type<'c>] {
-    let offset = cg.cache.hir_types.start();
-    let mut any_poly = false;
-
-    for ty in types.iter().copied() {
-        if !types::has_poly_param(ty) {
-            cg.cache.hir_types.push(ty);
-            continue;
-        }
-        any_poly = true;
-        let concrete = types::substitute(
-            &mut cg.hir.arena,
-            &mut cg.cache.hir_types,
-            &mut cg.cache.hir_proc_ty_params,
-            ty,
-            poly_set,
-            Some(cg.proc.poly_types),
-        );
-        cg.cache.hir_types.push(concrete);
-    }
-
-    if any_poly {
-        cg.cache.hir_types.take(offset, &mut cg.hir.arena)
-    } else {
-        cg.cache.hir_types.pop_view(offset);
-        types
-    }
+    types::substitute_types(cg, types, poly_set, Some(cg.proc.poly_types))
 }
 
 pub fn substitute_type<'c>(
@@ -550,14 +560,7 @@ pub fn substitute_type<'c>(
     if !types::has_poly_param(ty) {
         return ty;
     }
-    types::substitute(
-        &mut cg.hir.arena,
-        &mut cg.cache.hir_types,
-        &mut cg.cache.hir_proc_ty_params,
-        ty,
-        poly_set,
-        Some(cg.proc.poly_types),
-    )
+    types::substitute(cg, ty, poly_set, Some(cg.proc.poly_types))
 }
 
 pub fn write_symbol_name(

@@ -1,14 +1,23 @@
 use crate::hir;
-use crate::support::{Arena, TempBuffer};
+use crate::support::{Arena, TempBuffer, TempOffset};
+
+pub trait SubstituteContext<'hir> {
+    fn arena(&mut self) -> &mut Arena<'hir>;
+    fn types(&mut self) -> &mut TempBuffer<hir::Type<'hir>>;
+    fn proc_ty_params(&mut self) -> &mut TempBuffer<hir::ProcTypeParam<'hir>>;
+    fn take_types(&mut self, offset: TempOffset<hir::Type<'hir>>) -> &'hir [hir::Type<'hir>];
+    fn take_proc_ty_params(
+        &mut self,
+        offset: TempOffset<hir::ProcTypeParam<'hir>>,
+    ) -> &'hir [hir::ProcTypeParam<'hir>];
+}
 
 pub fn expect_concrete(types: &[hir::Type]) {
     assert!(types.iter().all(|ty| !has_poly_param(*ty)));
 }
 
 pub fn substitute<'hir>(
-    a: &mut Arena<'hir>,
-    t: &mut TempBuffer<hir::Type<'hir>>,
-    p: &mut TempBuffer<hir::ProcTypeParam<'hir>>,
+    ctx: &mut impl SubstituteContext<'hir>,
     ty: hir::Type<'hir>,
     poly_set: &[hir::Type<'hir>],
     proc_set: Option<&[hir::Type<'hir>]>,
@@ -24,57 +33,72 @@ pub fn substitute<'hir>(
         hir::Type::PolyEnum(_, idx) => poly_set[idx],
         hir::Type::PolyStruct(_, idx) => poly_set[idx],
         hir::Type::Enum(enum_id, poly_types) => {
-            let offset = t.start();
-            for ty in poly_types {
-                let ty = substitute(a, t, p, *ty, poly_set, proc_set);
-                t.push(ty);
-            }
-            let poly_types = t.take(offset, a);
-            hir::Type::Enum(enum_id, poly_types)
+            hir::Type::Enum(enum_id, substitute_types(ctx, poly_types, poly_set, proc_set))
         }
         hir::Type::Struct(struct_id, poly_types) => {
-            let offset = t.start();
-            for ty in poly_types {
-                let ty = substitute(a, t, p, *ty, poly_set, proc_set);
-                t.push(ty);
-            }
-            let poly_types = t.take(offset, a);
-            hir::Type::Struct(struct_id, poly_types)
+            hir::Type::Struct(struct_id, substitute_types(ctx, poly_types, poly_set, proc_set))
         }
         hir::Type::Reference(mutt, ref_ty) => {
-            let ref_ty = substitute(a, t, p, *ref_ty, poly_set, proc_set);
-            hir::Type::Reference(mutt, a.alloc(ref_ty))
+            let ref_ty = substitute(ctx, *ref_ty, poly_set, proc_set);
+            hir::Type::Reference(mutt, ctx.arena().alloc(ref_ty))
         }
         hir::Type::MultiReference(mutt, ref_ty) => {
-            let ref_ty = substitute(a, t, p, *ref_ty, poly_set, proc_set);
-            hir::Type::MultiReference(mutt, a.alloc(ref_ty))
+            let ref_ty = substitute(ctx, *ref_ty, poly_set, proc_set);
+            hir::Type::MultiReference(mutt, ctx.arena().alloc(ref_ty))
         }
         hir::Type::Procedure(proc_ty) => {
-            let offset = p.start();
+            let offset = ctx.proc_ty_params().start();
             for param in proc_ty.params {
                 let param = hir::ProcTypeParam {
-                    ty: substitute(a, t, p, param.ty, poly_set, proc_set),
+                    ty: substitute(ctx, param.ty, poly_set, proc_set),
                     kind: param.kind,
                 };
-                p.push(param);
+                ctx.proc_ty_params().push(param);
             }
             let proc_ty = hir::ProcType {
                 flag_set: proc_ty.flag_set,
-                params: p.take(offset, a),
-                return_ty: substitute(a, t, p, proc_ty.return_ty, poly_set, proc_set),
+                params: ctx.take_proc_ty_params(offset),
+                return_ty: substitute(ctx, proc_ty.return_ty, poly_set, proc_set),
             };
-            hir::Type::Procedure(a.alloc(proc_ty))
+            hir::Type::Procedure(ctx.arena().alloc(proc_ty))
         }
         hir::Type::ArraySlice(slice) => {
-            let elem_ty = substitute(a, t, p, slice.elem_ty, poly_set, proc_set);
+            let elem_ty = substitute(ctx, slice.elem_ty, poly_set, proc_set);
             let slice = hir::ArraySlice { mutt: slice.mutt, elem_ty };
-            hir::Type::ArraySlice(a.alloc(slice))
+            hir::Type::ArraySlice(ctx.arena().alloc(slice))
         }
         hir::Type::ArrayStatic(array) => {
-            let elem_ty = substitute(a, t, p, array.elem_ty, poly_set, proc_set);
+            let elem_ty = substitute(ctx, array.elem_ty, poly_set, proc_set);
             let array = hir::ArrayStatic { elem_ty, len: array.len };
-            hir::Type::ArrayStatic(a.alloc(array))
+            hir::Type::ArrayStatic(ctx.arena().alloc(array))
         }
+    }
+}
+
+pub fn substitute_types<'hir>(
+    ctx: &mut impl SubstituteContext<'hir>,
+    types: &'hir [hir::Type<'hir>],
+    poly_set: &[hir::Type<'hir>],
+    proc_set: Option<&[hir::Type<'hir>]>,
+) -> &'hir [hir::Type<'hir>] {
+    let offset = ctx.types().start();
+    let mut any_poly = false;
+
+    for ty in types.iter().copied() {
+        if !has_poly_param(ty) {
+            ctx.types().push(ty);
+            continue;
+        }
+        any_poly = true;
+        let concrete = substitute(ctx, ty, poly_set, proc_set);
+        ctx.types().push(concrete);
+    }
+
+    if any_poly {
+        ctx.take_types(offset)
+    } else {
+        ctx.types().pop_view(offset);
+        types
     }
 }
 

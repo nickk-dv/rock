@@ -118,6 +118,7 @@ fn add_enum_item<'ast>(
         variants: &[],
         tag_ty: hir::Eval::Unresolved(()),
         layout: hir::Eval::Unresolved(()),
+        type_usage: hir::Eval::Unresolved(()),
     };
 
     let enum_id = ctx.registry.add_enum(item, data);
@@ -152,6 +153,7 @@ fn add_struct_item<'ast>(
         poly_params: None,
         fields: &[],
         layout: hir::Eval::Unresolved(()),
+        type_usage: hir::Eval::Unresolved(()),
     };
 
     let struct_id = ctx.registry.add_struct(item, data);

@@ -84,6 +84,7 @@ pub struct EnumData<'hir> {
     pub variants: &'hir [Variant<'hir>],
     pub tag_ty: Eval<(), IntType>,
     pub layout: Eval<(), Layout>,
+    pub type_usage: Eval<(), ()>,
 }
 
 #[derive(Copy, Clone)]
@@ -113,6 +114,7 @@ pub struct StructData<'hir> {
     pub poly_params: Option<&'hir [ast::Name]>,
     pub fields: &'hir [Field<'hir>],
     pub layout: Eval<(), Layout>,
+    pub type_usage: Eval<(), ()>,
 }
 
 #[derive(Copy, Clone)]

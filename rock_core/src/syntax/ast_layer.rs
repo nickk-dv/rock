@@ -1254,8 +1254,6 @@ impl<'syn> PatOr<'syn> {
     node_iter!(pats, Pat);
 }
 
-//==================== LIT ====================
-
 impl<'syn> LitVoid<'syn> {}
 
 impl<'syn> LitNull<'syn> {}

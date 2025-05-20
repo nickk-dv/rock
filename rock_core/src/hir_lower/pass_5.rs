@@ -318,14 +318,7 @@ fn type_substitute<'hir>(
     if !is_poly || !types::has_poly_param(ty) {
         return ty;
     }
-    types::substitute(
-        &mut ctx.arena,
-        &mut ctx.cache.types,
-        &mut ctx.cache.proc_ty_params,
-        ty,
-        poly_set,
-        None,
-    )
+    types::substitute(ctx, ty, poly_set, None)
 }
 
 fn type_substitute_inferred<'hir>(
@@ -337,14 +330,9 @@ fn type_substitute_inferred<'hir>(
     if !is_poly || !types::has_poly_param(ty) {
         return ty;
     }
-    types::substitute(
-        &mut ctx.arena,
-        &mut ctx.cache.types,
-        &mut ctx.cache.proc_ty_params,
-        ty,
-        ctx.scope.infer.inferred(infer),
-        None,
-    )
+    //borrow checker forced copy
+    let poly_set = ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer));
+    types::substitute(ctx, ty, poly_set, None)
 }
 
 pub fn type_expectation_check(

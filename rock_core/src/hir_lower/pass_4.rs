@@ -55,11 +55,7 @@ pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
             Err(from_id) => mark_error_up_to_root(ctx, &tree, from_id),
         }
     }
-    //@assuming that remaining constevals are array len 15.05.24
-    // that didnt cycle with anything, thus can be resolved in `immediate mode`
-    // this is only true when previos const dependencies and const evals were handled correctly
-    //@how will unresolved expressions due to something else erroring earlier behave?
-    // for example struct field with some unresolved array len
+    // remaining constevals must be array len expressions
     for eval_id in ctx.registry.const_eval_ids() {
         let (eval, _, _) = ctx.registry.const_eval(eval_id);
         if eval.is_unresolved() {
@@ -147,8 +143,12 @@ fn mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
             ConstDependency::ArrayLen(eval_id) => {
                 ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
             }
-            ConstDependency::EnumTypeUsage(_) => {}
-            ConstDependency::StructTypeUsage(_) => {}
+            ConstDependency::EnumTypeUsage(id) => {
+                ctx.registry.enum_data_mut(id).type_usage = hir::Eval::ResolvedError;
+            }
+            ConstDependency::StructTypeUsage(id) => {
+                ctx.registry.struct_data_mut(id).type_usage = hir::Eval::ResolvedError;
+            }
         }
     }
 }
@@ -283,13 +283,9 @@ fn add_dep_allow_cycle(
     tree: &mut Tree,
     parent_id: TreeNodeID,
     dep: ConstDependency,
-) -> Option<TreeNodeID> {
+) -> (TreeNodeID, bool) {
     let node_id = tree.add_child(parent_id, dep);
-    if tree.find_cycle(node_id).is_some() {
-        None
-    } else {
-        Some(node_id)
-    }
+    (node_id, tree.find_cycle(node_id).is_some())
 }
 
 fn add_variant_tag_deps(
@@ -480,8 +476,6 @@ fn add_type_size_deps<'hir>(
     Ok(())
 }
 
-//@polymorphic deps are likely handled incorrectly..
-// construct a repro that will showcase that unhandled dependency
 fn add_type_usage_deps<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
@@ -495,41 +489,37 @@ fn add_type_usage_deps<'hir>(
         hir::Type::Int(_) | hir::Type::Float(_) | hir::Type::Bool(_) | hir::Type::String(_) => {}
         hir::Type::PolyProc(_, _) | hir::Type::PolyEnum(_, _) | hir::Type::PolyStruct(_, _) => {}
         hir::Type::Enum(id, poly_types) => {
-            let data = ctx.registry.enum_data(id);
-            if !data.layout.is_resolved_ok() {
-                return Err(parent_id);
+            for ty in poly_types.iter().copied() {
+                add_type_usage_deps(ctx, tree, parent_id, ty)?
             }
-            let dep = ConstDependency::EnumTypeUsage(id);
-            let parent_id = match add_dep_allow_cycle(tree, parent_id, dep) {
-                Some(node_id) => node_id,
-                None => return Ok(()),
-            };
+            let data = ctx.registry.enum_data(id);
+            unresolved_or_return!(data.type_usage, parent_id);
 
+            let dep = ConstDependency::EnumTypeUsage(id);
+            let (parent_id, cycle) = add_dep_allow_cycle(tree, parent_id, dep);
+            if cycle {
+                return Ok(());
+            }
             for variant in data.variants {
                 for field in variant.fields {
                     add_type_usage_deps(ctx, tree, parent_id, field.ty)?;
                 }
             }
-            for ty in poly_types.iter().copied() {
-                add_type_usage_deps(ctx, tree, parent_id, ty)?
-            }
         }
         hir::Type::Struct(id, poly_types) => {
-            let data = ctx.registry.struct_data(id);
-            if !data.layout.is_resolved_ok() {
-                return Err(parent_id);
-            }
-            let dep = ConstDependency::StructTypeUsage(id);
-            let parent_id = match add_dep_allow_cycle(tree, parent_id, dep) {
-                Some(node_id) => node_id,
-                None => return Ok(()),
-            };
-
-            for field in data.fields {
-                add_type_usage_deps(ctx, tree, parent_id, field.ty)?
-            }
             for ty in poly_types.iter().copied() {
                 add_type_usage_deps(ctx, tree, parent_id, ty)?
+            }
+            let data = ctx.registry.struct_data(id);
+            unresolved_or_return!(data.type_usage, parent_id);
+
+            let dep = ConstDependency::StructTypeUsage(id);
+            let (parent_id, cycle) = add_dep_allow_cycle(tree, parent_id, dep);
+            if cycle {
+                return Ok(());
+            }
+            for field in data.fields {
+                add_type_usage_deps(ctx, tree, parent_id, field.ty)?
             }
         }
         hir::Type::Reference(_, ref_ty) => add_type_usage_deps(ctx, tree, parent_id, *ref_ty)?,
@@ -763,7 +753,7 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             }
             ConstDependency::EnumLayout(id) => {
                 if ctx.registry.enum_data(id).poly_params.is_some() {
-                    //@hack, placeholder for polymorphic type, signals no cycles
+                    //placeholder for polymorphic type, signals no cycles
                     let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
                     ctx.registry.enum_data_mut(id).layout = layout;
                 } else {
@@ -774,7 +764,7 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             }
             ConstDependency::StructLayout(id) => {
                 if ctx.registry.struct_data(id).poly_params.is_some() {
-                    //@hack, placeholder for polymorphic type, signals no cycles
+                    //placeholder for polymorphic type, signals no cycles
                     let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
                     ctx.registry.struct_data_mut(id).layout = layout;
                 } else {
@@ -810,8 +800,12 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
             ConstDependency::ArrayLen(eval_id) => {
                 resolve_and_update_const_eval(ctx, eval_id, Expectation::USIZE);
             }
-            ConstDependency::EnumTypeUsage(_) => {}
-            ConstDependency::StructTypeUsage(_) => {}
+            ConstDependency::EnumTypeUsage(id) => {
+                ctx.registry.enum_data_mut(id).type_usage = hir::Eval::Resolved(());
+            }
+            ConstDependency::StructTypeUsage(id) => {
+                ctx.registry.struct_data_mut(id).type_usage = hir::Eval::Resolved(());
+            }
         }
     }
 }
@@ -876,9 +870,6 @@ enum ConstDependency {
     Const(hir::ConstID),
     Global(hir::GlobalID),
     ArrayLen(hir::ConstEvalID),
-    //@usage deps are not "resolved" now
-    // just markers to avoid infinite resursion
-    // store some Eval to avoid repeated walking of nested types
     EnumTypeUsage(hir::EnumID),
     StructTypeUsage(hir::StructID),
 }

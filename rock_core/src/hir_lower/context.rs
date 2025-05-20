@@ -1,12 +1,11 @@
 use super::check_match::PatCov;
-use super::layout;
 use super::scope::{PolyScope, Scope};
 use crate::ast;
 use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
 use crate::hir;
 use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
-use crate::support::{Arena, TempBuffer};
+use crate::support::{Arena, TempBuffer, TempOffset};
 use crate::text::TextRange;
 use std::collections::HashMap;
 
@@ -31,6 +30,8 @@ pub struct Cache<'hir> {
     pub enum_variants: Vec<hir::Variant<'hir>>,
     pub struct_fields: Vec<hir::Field<'hir>>,
     pub poly_param_names: Vec<ast::Name>,
+    pub u8s: TempBuffer<u8>,
+    pub u64s: TempBuffer<u64>,
     pub types: TempBuffer<hir::Type<'hir>>,
     pub stmts: TempBuffer<hir::Stmt<'hir>>,
     pub exprs: TempBuffer<&'hir hir::Expr<'hir>>,
@@ -67,6 +68,8 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             enum_variants: Vec::with_capacity(256),
             struct_fields: Vec::with_capacity(32),
             poly_param_names: Vec::with_capacity(32),
+            u8s: TempBuffer::new(32),
+            u64s: TempBuffer::new(32),
             types: TempBuffer::new(32),
             stmts: TempBuffer::new(64),
             exprs: TempBuffer::new(64),
@@ -121,7 +124,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     }
 
     pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
-        //@moving errors from single buffer into per module storage (hack)
+        //moving errors into per module storage
         let (errors, warnings) = self.emit.collect();
         let did_error = !errors.is_empty();
 
@@ -148,7 +151,6 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         if did_error {
             return Err(());
         }
-
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
         for (eval, _, _) in self.registry.const_evals.iter() {
             const_eval_values.push(eval.resolved_unwrap());
@@ -420,10 +422,41 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
     }
 }
 
-impl<'hir> layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
+impl<'hir> super::types::SubstituteContext<'hir> for HirCtx<'hir, '_, '_> {
     fn arena(&mut self) -> &mut Arena<'hir> {
         &mut self.arena
     }
+    fn types(&mut self) -> &mut TempBuffer<hir::Type<'hir>> {
+        &mut self.cache.types
+    }
+    fn proc_ty_params(&mut self) -> &mut TempBuffer<hir::ProcTypeParam<'hir>> {
+        &mut self.cache.proc_ty_params
+    }
+    fn take_types(&mut self, offset: TempOffset<hir::Type<'hir>>) -> &'hir [hir::Type<'hir>] {
+        self.cache.types.take(offset, &mut self.arena)
+    }
+    fn take_proc_ty_params(
+        &mut self,
+        offset: TempOffset<hir::ProcTypeParam<'hir>>,
+    ) -> &'hir [hir::ProcTypeParam<'hir>] {
+        self.cache.proc_ty_params.take(offset, &mut self.arena)
+    }
+}
+
+impl<'hir> super::layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
+    fn u8s(&mut self) -> &mut TempBuffer<u8> {
+        &mut self.cache.u8s
+    }
+    fn u64s(&mut self) -> &mut TempBuffer<u64> {
+        &mut self.cache.u64s
+    }
+    fn take_u8s(&mut self, offset: TempOffset<u8>) -> &'hir [u8] {
+        self.cache.u8s.take(offset, &mut self.arena)
+    }
+    fn take_u64s(&mut self, offset: TempOffset<u64>) -> &'hir [u64] {
+        self.cache.u64s.take(offset, &mut self.arena)
+    }
+
     fn error(&mut self) -> &mut impl ErrorSink {
         &mut self.emit
     }

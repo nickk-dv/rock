@@ -12,9 +12,7 @@ pub mod token;
 
 use crate::error::{ErrorBuffer, ErrorSink};
 use crate::intern::{InternPool, LitID};
-use crate::session::ModuleID;
-use crate::session::Session;
-use ast_build::AstBuild;
+use crate::session::{ModuleID, Session};
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
@@ -61,16 +59,11 @@ pub fn parse_all(session: &mut Session) -> Result<(), ()> {
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
-
         let tree = module.tree_expect();
-        let mut ctx =
-            AstBuild::new(tree, &file.source, &mut session.intern_name, &mut session.ast_state);
-        let items = ast_build::source_file(&mut ctx, tree.source_file());
-        let ast = ctx.finish(items);
+        let source = session.vfs.file(module.file_id()).source.as_str();
 
-        let module = session.module.get_mut(module_id);
-        module.set_ast(ast);
+        let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
+        session.module.get_mut(module_id).set_ast(ast);
     }
     Ok(())
 }
@@ -82,7 +75,6 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
         if module.tree_version == file.version {
             continue;
         }
-
         let (tree, errors) = parse_tree(&file.source, module_id, &mut session.intern_lit);
 
         let module = session.module.get_mut(module_id);
@@ -98,12 +90,9 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
         if module.ast_version == file.version {
             continue;
         }
-
         let tree = module.tree_expect();
-        let mut ctx =
-            AstBuild::new(tree, &file.source, &mut session.intern_name, &mut session.ast_state);
-        let items = ast_build::source_file(&mut ctx, tree.source_file());
-        let ast = ctx.finish(items);
+        let source = file.source.as_str();
+        let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
 
         let module = session.module.get_mut(module_id);
         module.set_ast(ast);
