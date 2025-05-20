@@ -31,15 +31,21 @@ macro_rules! debug_eprintln {
 
 fn main() {
     let (conn, threads) = Connection::stdio();
-    let _ = initialize_handshake(&conn);
+    initialize_handshake(&conn);
     if let Ok(mut server) = initialize_server(&conn) {
         compile_project(&mut server);
+        //@resolving all symbol scopes, required for correct semantic tokens.
+        //impossible to know dependencies for lazy eval in advance.
+        //make sure to initialize symbols for FileOpened.
+        for module_id in server.session.module.ids() {
+            update_module_symbols(&mut server, module_id);
+        }
         server_loop(&mut server);
     }
     let _ = threads.join();
 }
 
-fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
+fn initialize_handshake(conn: &Connection) {
     let document_sync = lsp::TextDocumentSyncOptions {
         open_close: Some(true),
         change: Some(lsp::TextDocumentSyncKind::INCREMENTAL),
@@ -73,7 +79,7 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         full: Some(lsp::SemanticTokensFullOptions::Bool(true)),
     };
 
-    let caps = lsp::ServerCapabilities {
+    let server_caps = lsp::ServerCapabilities {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
         definition_provider: Some(lsp::OneOf::Left(true)),
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
@@ -83,9 +89,31 @@ fn initialize_handshake(conn: &Connection) -> lsp::InitializeParams {
         ..Default::default()
     };
 
-    match conn.initialize(into_json(caps)) {
-        Ok(params) => from_json(params),
-        Err(error) => server_error!("connection init failed\n{error}"),
+    let (id, _) = match conn.initialize_start() {
+        Ok((id, value)) => (id, from_json::<lsp::InitializeParams>(value)),
+        Err(error) => server_error!("conn.initialize_start() failed\n{error}"),
+    };
+
+    let init_result = lsp::InitializeResult {
+        capabilities: server_caps,
+        server_info: Some(lsp::ServerInfo { name: "rock_ls".to_string(), version: None }),
+    };
+    if let Err(error) = conn.initialize_finish(id, into_json(init_result)) {
+        server_error!("conn.initialize_finish() failed\n{error}")
+    }
+}
+
+fn uri_to_path(uri: &lsp::Url) -> PathBuf {
+    match uri.to_file_path() {
+        Ok(path) => path,
+        Err(()) => server_error!("failed to convert url `{}` to path", uri.to_string()),
+    }
+}
+
+fn url_from_path(path: &PathBuf) -> lsp::Url {
+    match lsp::Url::from_file_path(path) {
+        Ok(url) => url,
+        Err(()) => server_error!("failed to convert path `{}` to url", path.to_string_lossy()),
     }
 }
 
@@ -207,14 +235,158 @@ fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     if module.tree_version == file.version {
         return;
     }
-    module.tree_version = file.version;
 
     let (tree, errors) = syntax::parse_tree(&file.source, module_id, &mut session.intern_lit);
     module.set_tree(tree);
     module.parse_errors = errors;
+    module.tree_version = file.version;
 }
 
-fn name_id_2(
+fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
+    let module = server.session.module.get(module_id);
+    let data = &mut server.modules[module_id.index()];
+    if data.symbols_version == module.tree_version {
+        return;
+    }
+
+    let tree = module.tree_expect();
+    let file = server.session.vfs.file(module.file_id());
+    data.symbols.clear();
+    data.symbols.reserve(tree.root().content.len());
+    data.symbols_version = module.tree_version;
+
+    let root = cst::SourceFile::cast(tree.root()).unwrap();
+    for item in root.items(tree) {
+        match item {
+            cst::Item::Proc(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Proc);
+                }
+            }
+            cst::Item::Enum(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Enum);
+                }
+            }
+            cst::Item::Struct(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Struct);
+                }
+            }
+            cst::Item::Const(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Const);
+                }
+            }
+            cst::Item::Global(item) => {
+                if let Some(name) = item.name(&tree) {
+                    let id = name_id(name, tree, file, &mut server.session.intern_name);
+                    server.modules[module_id.index()].symbols.insert(id, Symbol::Global);
+                }
+            }
+            cst::Item::Import(item) => {
+                let module_name = if let Some(rename) = item.rename(&tree) {
+                    rename
+                        .alias(tree)
+                        .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
+                } else if let Some(path) = item.import_path(&tree) {
+                    path.names(tree)
+                        .last()
+                        .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
+                } else {
+                    None
+                };
+                let module_name = match module_name {
+                    Some(id) => id,
+                    None => continue,
+                };
+
+                let source_module = resolve_import_module(&server.session, module_id, item);
+                server.modules[module_id.index()]
+                    .symbols
+                    .insert(module_name, Symbol::Module(source_module));
+                let source_module = match source_module {
+                    Some(id) => id,
+                    None => continue,
+                };
+
+                if let Some(symbol_list) = item.import_symbol_list(tree) {
+                    for symbol in symbol_list.import_symbols(tree) {
+                        let mut import_name;
+
+                        let import_symbol = if let Some(name) = symbol.name(tree) {
+                            import_name = Some(name);
+                            let id = name_id(name, tree, file, &mut server.session.intern_name);
+                            server.modules[source_module.index()].symbols.get(&id).copied()
+                        } else {
+                            continue;
+                        };
+
+                        if let Some(rename) = symbol.rename(tree) {
+                            if let Some(name) = rename.alias(tree) {
+                                import_name = Some(name);
+                            }
+                        }
+
+                        if let Some(symbol) = import_symbol {
+                            if let Some(name) = import_name {
+                                let id = name_id(name, tree, file, &mut server.session.intern_name);
+                                server.modules[module_id.index()].symbols.insert(id, symbol);
+                            }
+                        }
+                    }
+                }
+            }
+            cst::Item::Directive(_) => {}
+        }
+    }
+}
+
+fn resolve_import_module(
+    session: &Session,
+    origin_id: ModuleID,
+    import: cst::ImportItem,
+) -> Option<ModuleID> {
+    let module = session.module.get(origin_id);
+    let tree = module.tree_expect();
+    let file = session.vfs.file(module.file_id());
+    let path = import.import_path(tree)?;
+
+    let mut package_id = module.origin();
+    if let Some(name) = import.package(tree) {
+        let id = name_id_opt(name, tree, file, &session.intern_name)?;
+        package_id = session.graph.find_package_dep(module.origin(), id)?;
+    }
+
+    let mut module_name = None;
+    let mut target_dir = session.graph.package(package_id).src();
+    let mut path_names = path.names(tree).peekable();
+
+    while let Some(name) = path_names.next() {
+        if path_names.peek().is_none() {
+            module_name = Some(name);
+            break;
+        }
+        let id = name_id_opt(name, tree, file, &session.intern_name)?;
+        target_dir = match target_dir.find(session, id) {
+            session::ModuleOrDirectory::Directory(dir) => dir,
+            _ => return None,
+        };
+    }
+
+    let module_name = module_name?;
+    let id = name_id_opt(module_name, tree, file, &session.intern_name)?;
+    match target_dir.find(session, id) {
+        session::ModuleOrDirectory::Module(module_id) => Some(module_id),
+        _ => None,
+    }
+}
+
+fn name_id(
     name: cst::Name,
     tree: &SyntaxTree,
     file: &session::FileData,
@@ -225,117 +397,23 @@ fn name_id_2(
     intern.intern(text)
 }
 
-fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
-    let module = server.session.module.get(module_id);
-    let data = &mut server.modules[module_id.index()];
-    if data.symbols_version == module.tree_version {
-        return;
-    }
-    data.symbols_version = module.tree_version;
-
-    let tree = module.tree_expect();
-    let file = server.session.vfs.file(module.file_id());
-    data.symbols.clear();
-    data.symbols.reserve(tree.root().content.len());
-
-    let root = cst::SourceFile::cast(tree.root()).unwrap();
-    for item in root.items(tree) {
-        match item {
-            cst::Item::Proc(item) => {
-                if let Some(name) = item.name(&tree) {
-                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
-                    server.modules[module_id.index()].symbols.insert(id, Symbol::Proc);
-                }
-            }
-            cst::Item::Enum(item) => {
-                if let Some(name) = item.name(&tree) {
-                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
-                    server.modules[module_id.index()].symbols.insert(id, Symbol::Enum);
-                }
-            }
-            cst::Item::Struct(item) => {
-                if let Some(name) = item.name(&tree) {
-                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
-                    server.modules[module_id.index()].symbols.insert(id, Symbol::Struct);
-                }
-            }
-            cst::Item::Const(item) => {
-                if let Some(name) = item.name(&tree) {
-                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
-                    server.modules[module_id.index()].symbols.insert(id, Symbol::Const);
-                }
-            }
-            cst::Item::Global(item) => {
-                if let Some(name) = item.name(&tree) {
-                    let id = name_id_2(name, tree, file, &mut server.session.intern_name);
-                    server.modules[module_id.index()].symbols.insert(id, Symbol::Global);
-                }
-            }
-            cst::Item::Import(item) => {}
-            cst::Item::Directive(_) => {}
-        }
-    }
+fn name_id_opt(
+    name: cst::Name,
+    tree: &SyntaxTree,
+    file: &session::FileData,
+    intern: &InternPool<NameID>,
+) -> Option<NameID> {
+    let range = name.ident(tree).unwrap();
+    let text = &file.source[range.as_usize()];
+    intern.get_id(text)
 }
-
-/* import resolution
-
-let module_name = if let Some(rename) = item.rename(&tree) {
-        rename.alias(&tree).map(|n| name_id(session, module_id, &tree, n))
-    } else if let Some(path) = item.import_path(&tree) {
-        path.names(&tree).last().map(|n| name_id(session, module_id, &tree, n))
-    } else {
-        None
-    };
-    let module_name = match module_name {
-        Some(id) => id,
-        None => continue,
-    };
-
-    let source_module = resolve_import_module(session, &tree, module_id, item);
-    server.modules[module_id.index()]
-        .symbols
-        .insert(module_name, Symbol::Module(source_module));
-    let source_module = match source_module {
-        Some(id) => id,
-        None => continue,
-    };
-
-    if let Some(symbol_list) = item.import_symbol_list(&tree) {
-        for symbol in symbol_list.import_symbols(&tree) {
-            let mut import_name;
-
-            let import_symbol = if let Some(name) = symbol.name(&tree) {
-                import_name = Some(name);
-                let id = name_id(session, module_id, &tree, name);
-                server.modules[source_module.index()].symbols.get(&id).copied()
-            } else {
-                continue;
-            };
-
-            if let Some(rename) = symbol.rename(&tree) {
-                if let Some(name) = rename.alias(&tree) {
-                    import_name = Some(name);
-                }
-            }
-
-            if let Some(symbol) = import_symbol {
-                if let Some(name) = import_name {
-                    let id = name_id(session, module_id, &tree, name);
-                    server.modules[module_id.index()]
-                        .symbols
-                        .insert(id, symbol);
-                }
-            }
-        }
-    }
-*/
 
 fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
     debug_eprintln!("[format] path: {}", path.to_string_lossy());
     let session = &mut server.session;
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
-        None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
+        None => return send_response(server.conn, id, serde_json::Value::Null),
     };
 
     update_syntax_tree(session, module_id);
@@ -343,7 +421,7 @@ fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
     let module = session.module.get(module_id);
     let tree = module.tree_expect();
     if !tree.complete() {
-        return send_response(server.conn, id, Vec::<lsp::TextEdit>::new());
+        return send_response(server.conn, id, serde_json::Value::Null);
     }
 
     let file = session.vfs.file(module.file_id());
@@ -365,7 +443,7 @@ fn handle_semantic_tokens(server: &mut ServerContext, id: RequestId, path: PathB
     let session = &mut server.session;
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
-        None => return,
+        None => return send_response(server.conn, id, serde_json::Value::Null),
     };
 
     update_syntax_tree(session, module_id);
@@ -390,7 +468,7 @@ fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: Path
     let session = &mut server.session;
     let module_id = match module_id_from_path(session, &path) {
         Some(module_id) => module_id,
-        None => return send_response(server.conn, id, Vec::<lsp::TextEdit>::new()),
+        None => return send_response(server.conn, id, "error: unknown file".to_string()),
     };
 
     update_syntax_tree(session, module_id);
@@ -400,66 +478,6 @@ fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: Path
     let tree = module.tree_expect();
     let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
     send_response(server.conn, id, tree_display);
-}
-
-fn resolve_import_module(
-    session: &mut Session,
-    tree: &SyntaxTree,
-    origin: ModuleID,
-    import: cst::ImportItem,
-) -> Option<ModuleID> {
-    let path = import.import_path(tree)?;
-
-    let module = session.module.get(origin);
-    let mut package_id = module.origin();
-
-    if let Some(name) = import.package(tree) {
-        let id = name_id(session, origin, tree, name);
-        let module = session.module.get(origin); //thank borrow checker
-        if let Some(dep_id) = session.graph.find_package_dep(module.origin(), id) {
-            package_id = dep_id;
-        }
-    }
-
-    let mut module_name = None;
-    let mut target_dir = session.graph.package(package_id).src();
-    let mut path_names = path.names(tree).peekable();
-
-    while let Some(name) = path_names.next() {
-        if path_names.peek().is_none() {
-            module_name = Some(name);
-            break;
-        }
-        let id = name_id_rust_bad(
-            &mut session.vfs,
-            &mut session.module,
-            &mut session.intern_name,
-            origin,
-            tree,
-            name,
-        );
-        target_dir = match target_dir.find(session, id) {
-            session::ModuleOrDirectory::Directory(dir) => dir,
-            _ => return None,
-        };
-    }
-
-    if let Some(name) = module_name {
-        let id = name_id_rust_bad(
-            &mut session.vfs,
-            &mut session.module,
-            &mut session.intern_name,
-            origin,
-            tree,
-            name,
-        );
-        match target_dir.find(session, id) {
-            session::ModuleOrDirectory::Module(module_id) => Some(module_id),
-            _ => None,
-        }
-    } else {
-        None
-    }
 }
 
 fn compile_project(server: &mut ServerContext) {
@@ -551,12 +569,8 @@ fn handle_file_changed(
     let session = &mut server.session;
     let module = match module_id_from_path(session, &path) {
         Some(module_id) => session.module.get(module_id),
-        None => {
-            eprintln!(" - module not found");
-            return;
-        }
+        None => return,
     };
-
     let file = session.vfs.file_mut(module.file_id());
     file.version += 1;
 
@@ -574,24 +588,10 @@ fn handle_file_changed(
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
 use rock_core::hir_lower;
-use rock_core::session::{self, FileData, ModuleID, Session};
+use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax;
 use rock_core::text::{self, TextRange};
 use std::path::PathBuf;
-
-fn uri_to_path(uri: &lsp::Url) -> PathBuf {
-    match uri.to_file_path() {
-        Ok(path) => path,
-        Err(()) => server_error!("failed to convert url `{}` to path", uri.to_string()),
-    }
-}
-
-fn url_from_path(path: &PathBuf) -> lsp::Url {
-    match lsp::Url::from_file_path(path) {
-        Ok(url) => url,
-        Err(()) => server_error!("failed to convert path `{}` to url", path.to_string_lossy()),
-    }
-}
 
 fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
     if let Some(file_id) = session.vfs.path_to_file_id(path) {
@@ -738,34 +738,6 @@ fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::
     b.semantic_tokens
 }
 
-fn name_id(
-    session: &mut Session,
-    module_id: ModuleID,
-    tree: &SyntaxTree,
-    name: cst::Name,
-) -> NameID {
-    let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id());
-    let name_range = name.ident(tree).unwrap();
-    let name_text = &file.source[name_range.as_usize()];
-    session.intern_name.intern(name_text)
-}
-
-fn name_id_rust_bad(
-    vfs: &mut session::vfs::Vfs,
-    module: &mut session::Modules,
-    intern_name: &mut InternPool<NameID>,
-    module_id: ModuleID,
-    tree: &SyntaxTree,
-    name: cst::Name,
-) -> NameID {
-    let module = module.get(module_id);
-    let file = vfs.file(module.file_id());
-    let name_range = name.ident(tree).unwrap();
-    let name_text = &file.source[name_range.as_usize()];
-    intern_name.intern(name_text)
-}
-
 fn semantic_visit_node(
     b: &mut SemanticTokenBuilder,
     node: &Node,
@@ -874,7 +846,6 @@ fn semantic_visit_path(b: &mut SemanticTokenBuilder, path: cst::Path, mut parent
                 if let Some(module_id) = module_id {
                     origin_id = module_id;
                 } else {
-                    eprintln!("unknown module symbol found");
                     parent = SyntaxKind::ERROR;
                 }
             }

@@ -94,7 +94,7 @@ impl<'src> Parser<'src> {
     }
 
     fn do_bump(&mut self) {
-        debug_assert!(!self.at(Token::Eof));
+        assert!(!self.at(Token::Eof));
         self.steps.set(0);
         self.cursor = self.cursor.inc();
         self.events.push(Event::Token);

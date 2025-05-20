@@ -37,8 +37,7 @@ pub fn parse_root(session: &mut Session) -> Result<(), ()> {
             Err(errors) => module.parse_errors = errors,
         }
     }
-    session.module.result()?;
-    Ok(())
+    session.module.result()
 }
 
 pub fn parse_all(session: &mut Session) -> Result<(), ()> {
