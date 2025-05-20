@@ -36,6 +36,9 @@ impl<'syn> SyntaxTree<'syn> {
     pub fn node(&self, id: NodeID) -> &Node<'syn> {
         &self.nodes[id.index()]
     }
+    pub fn nodes(&self) -> &[Node<'syn>] {
+        &self.nodes
+    }
     pub fn tokens(&self) -> &TokenList {
         &self.tokens
     }

@@ -21,6 +21,7 @@ pub enum Message {
 pub enum Request {
     Format(PathBuf),
     SemanticTokens(PathBuf),
+    InlayHints(PathBuf, lsp::Range),
     GotoDefinition(PathBuf, lsp::Position),
     ShowSyntaxTree(PathBuf),
 }
@@ -106,6 +107,10 @@ fn parse_request(req: lsr::Request) -> Option<Message> {
         r::SemanticTokensFullRequest::METHOD => {
             let params = cast_request::<r::SemanticTokensFullRequest>(req);
             Request::SemanticTokens(super::uri_to_path(&params.text_document.uri))
+        }
+        r::InlayHintRequest::METHOD => {
+            let params = cast_request::<r::InlayHintRequest>(req);
+            Request::InlayHints(super::uri_to_path(&params.text_document.uri), params.range)
         }
         r::GotoDefinition::METHOD => {
             let params = cast_request::<r::GotoDefinition>(req);
