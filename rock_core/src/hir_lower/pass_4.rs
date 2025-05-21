@@ -600,6 +600,16 @@ fn add_expr_deps<'ast>(
                 };
             }
             ast::Builtin::Transmute(_, _) => Err("builtin @transmute"),
+            ast::Builtin::AtomicLoad(_) => Err("builtin @atomic_load"),
+            ast::Builtin::AtomicStore(_) => Err("builtin @atomic_store"),
+            ast::Builtin::AtomicOp(_) => Err("builtin @atomic_op"),
+            ast::Builtin::AtomicCompareSwap(weak, _) => {
+                if *weak {
+                    Err("builtin @atomic_compare_swap_weak")
+                } else {
+                    Err("builtin @atomic_compare_swap")
+                }
+            }
         },
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path, true) {

@@ -866,27 +866,35 @@ fn expr_builtin(p: &mut Parser) -> MarkerClosed {
         match p.current_token_string() {
             "size_of" | "align_of" => SyntaxKind::BUILTIN_WITH_TYPE,
             "transmute" => SyntaxKind::BUILTIN_TRANSMUTE,
-            _ => SyntaxKind::BUILTIN_ERROR,
+            _ => SyntaxKind::BUILTIN_WITH_ARGS,
         }
     } else {
-        SyntaxKind::BUILTIN_ERROR
+        SyntaxKind::BUILTIN_WITH_ARGS
     };
     name(p);
 
-    p.expect(T!['(']);
     match kind {
-        SyntaxKind::BUILTIN_ERROR => {}
         SyntaxKind::BUILTIN_WITH_TYPE => {
+            p.expect(T!['(']);
             ty(p);
+            p.expect(T![')']);
         }
         SyntaxKind::BUILTIN_TRANSMUTE => {
+            p.expect(T!['(']);
             expr(p);
             p.expect(T![,]);
             ty(p);
+            p.expect(T![')']);
+        }
+        SyntaxKind::BUILTIN_WITH_ARGS => {
+            if p.at(T!['(']) {
+                args_list(p);
+            } else {
+                p.error("expected argument list");
+            }
         }
         _ => {}
     }
-    p.expect(T![')']);
     m.complete(p, kind)
 }
 

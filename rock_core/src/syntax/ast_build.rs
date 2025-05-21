@@ -794,10 +794,6 @@ fn expr_slice<'ast>(ctx: &mut AstBuild<'ast, '_>, slice: cst::ExprSlice) -> ast:
 
 fn expr_builtin<'ast>(ctx: &mut AstBuild<'ast, '_>, builtin: cst::Builtin) -> ast::ExprKind<'ast> {
     let builtin = match builtin {
-        cst::Builtin::Error(builtin) => {
-            let name = name(ctx, builtin.name(ctx.tree).unwrap());
-            ast::Builtin::Error(name)
-        }
         cst::Builtin::WithType(builtin) => {
             let name = name(ctx, builtin.name(ctx.tree).unwrap());
             let ty = ty(ctx, builtin.ty(ctx.tree).unwrap());
@@ -811,6 +807,22 @@ fn expr_builtin<'ast>(ctx: &mut AstBuild<'ast, '_>, builtin: cst::Builtin) -> as
             expr(ctx, builtin.expr(ctx.tree).unwrap()),
             ty(ctx, builtin.into_ty(ctx.tree).unwrap()),
         ),
+        cst::Builtin::WithArgs(builtin) => {
+            let name = name(ctx, builtin.name(ctx.tree).unwrap());
+            let args = args_list_value(ctx, builtin.args_list(ctx.tree).unwrap());
+            match ctx.intern.get(name.id) {
+                "atomic_load" => ast::Builtin::AtomicLoad(args),
+                "atomic_store" => ast::Builtin::AtomicStore(args),
+                "atomic_op" => ast::Builtin::AtomicOp(args),
+                "atomic_compare_swap" => {
+                    ast::Builtin::AtomicCompareSwap(false, ctx.arena.alloc(args))
+                }
+                "atomic_compare_swap_weak" => {
+                    ast::Builtin::AtomicCompareSwap(true, ctx.arena.alloc(args))
+                }
+                _ => ast::Builtin::Error(name),
+            }
+        }
     };
     let builtin = ctx.arena.alloc(builtin);
     ast::ExprKind::Builtin { builtin }
@@ -934,15 +946,21 @@ fn args_list<'ast>(
     ctx: &mut AstBuild<'ast, '_>,
     args_list: cst::ArgsList,
 ) -> &'ast ast::ArgumentList<'ast> {
+    let args_list = args_list_value(ctx, args_list);
+    ctx.arena.alloc(args_list)
+}
+
+fn args_list_value<'ast>(
+    ctx: &mut AstBuild<'ast, '_>,
+    args_list: cst::ArgsList,
+) -> ast::ArgumentList<'ast> {
     let offset = ctx.s.exprs.start();
     for expr_cst in args_list.exprs(ctx.tree) {
         let expr = expr(ctx, expr_cst);
         ctx.s.exprs.push(expr);
     }
     let exprs = ctx.s.exprs.take(offset, &mut ctx.arena);
-
-    let args_list = ast::ArgumentList { exprs, range: args_list.range() };
-    ctx.arena.alloc(args_list)
+    ast::ArgumentList { exprs, range: args_list.range() }
 }
 
 fn path<'ast>(ctx: &mut AstBuild<'ast, '_>, path: cst::Path) -> &'ast ast::Path<'ast> {

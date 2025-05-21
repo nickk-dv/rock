@@ -418,10 +418,6 @@ ast_node_impl!(DirectiveWithParams, SyntaxKind::DIRECTIVE_WITH_PARAMS);
 ast_node_impl!(DirectiveParamList, SyntaxKind::DIRECTIVE_PARAM_LIST);
 ast_node_impl!(DirectiveParam, SyntaxKind::DIRECTIVE_PARAM);
 
-ast_node_impl!(BuiltinError, SyntaxKind::BUILTIN_ERROR);
-ast_node_impl!(BuiltinWithType, SyntaxKind::BUILTIN_WITH_TYPE);
-ast_node_impl!(BuiltinTransmute, SyntaxKind::BUILTIN_TRANSMUTE);
-
 ast_node_impl!(TypeBasic, SyntaxKind::TYPE_BASIC);
 ast_node_impl!(TypeCustom, SyntaxKind::TYPE_CUSTOM);
 ast_node_impl!(TypeReference, SyntaxKind::TYPE_REFERENCE);
@@ -461,6 +457,9 @@ ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprSlice, SyntaxKind::EXPR_SLICE);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
+ast_node_impl!(BuiltinWithType, SyntaxKind::BUILTIN_WITH_TYPE);
+ast_node_impl!(BuiltinTransmute, SyntaxKind::BUILTIN_TRANSMUTE);
+ast_node_impl!(BuiltinWithArgs, SyntaxKind::BUILTIN_WITH_ARGS);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
 ast_node_impl!(ExprVariant, SyntaxKind::EXPR_VARIANT);
 ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
@@ -553,31 +552,6 @@ impl<'syn> AstNode<'syn> for Directive<'syn> {
         match self {
             Directive::Simple(dir) => dir.0.range,
             Directive::WithParams(dir) => dir.0.range,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub enum Builtin<'syn> {
-    Error(BuiltinError<'syn>),
-    WithType(BuiltinWithType<'syn>),
-    Transmute(BuiltinTransmute<'syn>),
-}
-
-impl<'syn> AstNode<'syn> for Builtin<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Builtin<'syn>> {
-        match node.kind {
-            SyntaxKind::BUILTIN_ERROR => Some(Builtin::Error(BuiltinError(node))),
-            SyntaxKind::BUILTIN_WITH_TYPE => Some(Builtin::WithType(BuiltinWithType(node))),
-            SyntaxKind::BUILTIN_TRANSMUTE => Some(Builtin::Transmute(BuiltinTransmute(node))),
-            _ => None,
-        }
-    }
-    fn range(self) -> TextRange {
-        match self {
-            Builtin::Error(builtin) => builtin.0.range,
-            Builtin::WithType(builtin) => builtin.0.range,
-            Builtin::Transmute(builtin) => builtin.0.range,
         }
     }
 }
@@ -772,6 +746,31 @@ impl<'syn> AstNode<'syn> for Branch<'syn> {
 }
 
 #[derive(Copy, Clone)]
+pub enum Builtin<'syn> {
+    WithType(BuiltinWithType<'syn>),
+    Transmute(BuiltinTransmute<'syn>),
+    WithArgs(BuiltinWithArgs<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for Builtin<'syn> {
+    fn cast(node: &'syn Node<'syn>) -> Option<Builtin<'syn>> {
+        match node.kind {
+            SyntaxKind::BUILTIN_WITH_TYPE => Some(Builtin::WithType(BuiltinWithType(node))),
+            SyntaxKind::BUILTIN_TRANSMUTE => Some(Builtin::Transmute(BuiltinTransmute(node))),
+            SyntaxKind::BUILTIN_WITH_ARGS => Some(Builtin::WithArgs(BuiltinWithArgs(node))),
+            _ => None,
+        }
+    }
+    fn range(self) -> TextRange {
+        match self {
+            Builtin::WithType(builtin) => builtin.0.range,
+            Builtin::Transmute(builtin) => builtin.0.range,
+            Builtin::WithArgs(builtin) => builtin.0.range,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 pub enum Pat<'syn> {
     Wild(PatWild<'syn>),
     Lit(PatLit<'syn>),
@@ -958,18 +957,6 @@ impl<'syn> DirectiveParamList<'syn> {
 impl<'syn> DirectiveParam<'syn> {
     node_find!(name, Name);
     node_find!(value, LitString);
-}
-
-impl<'syn> BuiltinError<'syn> {
-    node_find!(name, Name);
-}
-impl<'syn> BuiltinWithType<'syn> {
-    node_find!(name, Name);
-    node_find!(ty, Type);
-}
-impl<'syn> BuiltinTransmute<'syn> {
-    node_find!(expr, Expr);
-    node_find!(into_ty, Type);
 }
 
 //==================== TYPE ====================
@@ -1176,6 +1163,21 @@ impl<'syn> ExprCall<'syn> {
 impl<'syn> ExprCast<'syn> {
     node_find!(target, Expr);
     node_find!(into_ty, Type);
+}
+
+impl<'syn> BuiltinWithType<'syn> {
+    node_find!(name, Name);
+    node_find!(ty, Type);
+}
+
+impl<'syn> BuiltinTransmute<'syn> {
+    node_find!(expr, Expr);
+    node_find!(into_ty, Type);
+}
+
+impl<'syn> BuiltinWithArgs<'syn> {
+    node_find!(name, Name);
+    node_find!(args_list, ArgsList);
 }
 
 impl<'syn> ExprItem<'syn> {

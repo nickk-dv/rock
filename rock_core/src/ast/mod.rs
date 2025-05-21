@@ -390,6 +390,10 @@ pub enum Builtin<'ast> {
     SizeOf(Type<'ast>),
     AlignOf(Type<'ast>),
     Transmute(&'ast Expr<'ast>, Type<'ast>),
+    AtomicLoad(ArgumentList<'ast>),
+    AtomicStore(ArgumentList<'ast>),
+    AtomicOp(ArgumentList<'ast>),
+    AtomicCompareSwap(bool, &'ast ArgumentList<'ast>),
 }
 
 #[derive(Copy, Clone)]

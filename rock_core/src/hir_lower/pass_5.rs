@@ -1683,6 +1683,30 @@ fn typecheck_builtin<'hir, 'ast>(
                 TypeResult::error()
             }
         }
+        ast::Builtin::AtomicLoad(args) => {
+            let src = ctx.src(range);
+            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_load");
+            TypeResult::error()
+        }
+        ast::Builtin::AtomicStore(args) => {
+            let src = ctx.src(range);
+            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_store");
+            TypeResult::error()
+        }
+        ast::Builtin::AtomicOp(args) => {
+            let src = ctx.src(range);
+            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_op");
+            TypeResult::error()
+        }
+        ast::Builtin::AtomicCompareSwap(weak, args) => {
+            let src = ctx.src(range);
+            if weak {
+                err::internal_not_implemented(&mut ctx.emit, src, "@atomic_compare_swap_weak");
+            } else {
+                err::internal_not_implemented(&mut ctx.emit, src, "@atomic_compare_swap");
+            }
+            TypeResult::error()
+        }
     }
 }
 

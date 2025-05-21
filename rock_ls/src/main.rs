@@ -894,9 +894,6 @@ fn semantic_visit_node(
                     SyntaxKind::IMPORT_SYMBOL_RENAME => ident_style,
 
                     SyntaxKind::DIRECTIVE_PARAM => Some(SemanticToken::Variable),
-                    SyntaxKind::BUILTIN_ERROR => Some(SemanticToken::Function),
-                    SyntaxKind::BUILTIN_WITH_TYPE => Some(SemanticToken::Function),
-                    SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
 
                     SyntaxKind::TYPE_CUSTOM => Some(SemanticToken::Type),
                     SyntaxKind::PROC_TYPE_PARAM => Some(SemanticToken::Parameter),
@@ -905,6 +902,9 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_LOCAL => Some(SemanticToken::Variable),
 
                     SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
+                    SyntaxKind::BUILTIN_WITH_TYPE => Some(SemanticToken::Function),
+                    SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
+                    SyntaxKind::BUILTIN_WITH_ARGS => Some(SemanticToken::Function),
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
                     SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
 

@@ -880,11 +880,6 @@ fn expr_cast<'syn>(fmt: &mut Formatter<'syn, '_>, cast: cst::ExprCast<'syn>) {
 fn expr_builtin<'syn>(fmt: &mut Formatter<'syn, '_>, builtin: cst::Builtin<'syn>) {
     fmt.write('@');
     match builtin {
-        cst::Builtin::Error(builtin) => {
-            name(fmt, builtin.name(fmt.tree).unwrap());
-            fmt.write('(');
-            fmt.write(')');
-        }
         cst::Builtin::WithType(builtin) => {
             name(fmt, builtin.name(fmt.tree).unwrap());
             fmt.write('(');
@@ -899,6 +894,10 @@ fn expr_builtin<'syn>(fmt: &mut Formatter<'syn, '_>, builtin: cst::Builtin<'syn>
             fmt.space();
             ty(fmt, builtin.into_ty(fmt.tree).unwrap());
             fmt.write(')');
+        }
+        cst::Builtin::WithArgs(builtin) => {
+            name(fmt, builtin.name(fmt.tree).unwrap());
+            args_list(fmt, builtin.args_list(fmt.tree).unwrap());
         }
     }
 }
