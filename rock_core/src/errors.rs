@@ -1052,6 +1052,16 @@ pub fn tycheck_cannot_infer_poly_params(emit: &mut impl ErrorSink, src: SourceRa
 
 //==================== TYPECHECK CALL & INPUT ====================
 
+pub fn tycheck_intrinsic_proc_ptr(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    proc_src: SourceRange,
+) {
+    let msg = format!("cannot take a pointer to an #intrinsic procedure");
+    let info = Info::new("procedure defined here", proc_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_cannot_call_value_of_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
     let msg = format!("cannot call value of type `{ty}`");
     emit.error(Error::new(msg, src, None));

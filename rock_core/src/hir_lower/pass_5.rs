@@ -1748,27 +1748,65 @@ fn typecheck_item<'hir, 'ast>(
                     expr_range.start(),
                 );
             } else {
-                //@ban taking pointers to intrinsics
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let data = ctx.registry.proc_data(proc_id);
-                if data.poly_params.is_some() {
+                if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
                     let src = ctx.src(expr_range);
-                    err::internal_not_implemented(
-                        &mut ctx.emit,
-                        src,
-                        "polymorphic procedure pointer",
-                    );
+                    err::tycheck_intrinsic_proc_ptr(&mut ctx.emit, src, data.src());
+                    return TypeResult::error();
                 }
+
+                let (infer, is_poly) = ctx.scope.infer.start_context(data.poly_params);
+                if let Some(poly_types) = poly_types {
+                    for (poly_idx, ty) in poly_types.iter().copied().enumerate() {
+                        ctx.scope.infer.resolve(infer, poly_idx, ty);
+                    }
+                }
+                if is_poly {
+                    if let Expectation::HasType(hir::Type::Procedure(proc_ty), _) = expect {
+                        types::apply_inference(
+                            ctx.scope.infer.inferred_mut(infer),
+                            proc_ty.return_ty,
+                            data.return_ty,
+                        );
+                        for (idx, param) in data.params.iter().enumerate() {
+                            if let Some(expect_param) = proc_ty.params.get(idx) {
+                                types::apply_inference(
+                                    ctx.scope.infer.inferred_mut(infer),
+                                    expect_param.ty,
+                                    param.ty,
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_unknown()) {
+                    let src = ctx.src(expr_range);
+                    err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+                    ctx.scope.infer.end_context(infer);
+                    return TypeResult::error();
+                }
+                //@use these poly_types to queue procedure for generation in the backend?
+                let poly_types = match poly_types {
+                    Some(poly_types) => poly_types,
+                    None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
+                };
+                ctx.scope.infer.end_context(infer);
+
                 let offset = ctx.cache.proc_ty_params.start();
                 for param in data.params {
-                    let param = hir::ProcTypeParam { ty: param.ty, kind: param.kind };
+                    let param_ty = type_substitute_inferred(ctx, is_poly, infer, param.ty);
+                    let param = hir::ProcTypeParam { ty: param_ty, kind: param.kind };
                     ctx.cache.proc_ty_params.push(param);
                 }
+                let data = ctx.registry.proc_data(proc_id);
                 let mut proc_ty = hir::ProcType {
                     flag_set: data.flag_set,
                     params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
-                    return_ty: data.return_ty,
+                    return_ty: type_substitute_inferred(ctx, is_poly, infer, data.return_ty),
                 };
+
                 //@hack, clearing unrelated flags
                 proc_ty.flag_set.clear(hir::ProcFlag::Inline);
                 proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
