@@ -340,6 +340,7 @@ fn directive<'ast>(
             match ctx.intern.get(name.id) {
                 "c_call" => ast::DirectiveKind::CCall,
                 "inline" => ast::DirectiveKind::Inline,
+                "intrinsic" => ast::DirectiveKind::Intrinsic,
                 "variadic" => ast::DirectiveKind::Variadic,
                 "c_variadic" => ast::DirectiveKind::CVariadic,
                 "caller_location" => ast::DirectiveKind::CallerLocation,

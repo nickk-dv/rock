@@ -7,7 +7,7 @@ use crate::hir;
 use crate::support::{AsStr, BitSet};
 
 #[derive(Copy, Clone)]
-pub struct ConfigState(pub bool);
+pub struct ConfigState(bool);
 
 impl ConfigState {
     #[inline]
@@ -23,17 +23,7 @@ pub fn check_proc_directives(
     let mut config = ConfigState(true);
     let mut flag_set = BitSet::empty();
 
-    if item.block.is_none() {
-        flag_set.set(hir::ProcFlag::External);
-    }
-
-    let directives = if let Some(dir_list) = item.dir_list {
-        dir_list.directives
-    } else {
-        return (config, flag_set);
-    };
-
-    for directive in directives {
+    for directive in item.dir_list.map_or([].as_slice(), |l| l.directives) {
         if try_check_error_directive(ctx, directive) {
             continue;
         }
@@ -42,6 +32,7 @@ pub fn check_proc_directives(
         }
         let new_flag = match directive.kind {
             DirectiveKind::Inline => hir::ProcFlag::Inline,
+            DirectiveKind::Intrinsic => hir::ProcFlag::Intrinsic,
             _ => {
                 let src = ctx.src(directive.range);
                 let name = directive.kind.as_str();
@@ -59,6 +50,9 @@ pub fn check_proc_directives(
         );
     }
 
+    if item.block.is_none() && !flag_set.contains(hir::ProcFlag::Intrinsic) {
+        flag_set.set(hir::ProcFlag::External);
+    }
     (config, flag_set)
 }
 
@@ -76,13 +70,7 @@ pub fn check_enum_directives(
         }
     }
 
-    let directives = if let Some(dir_list) = item.dir_list {
-        dir_list.directives
-    } else {
-        return (config, flag_set);
-    };
-
-    for directive in directives {
+    for directive in item.dir_list.map_or([].as_slice(), |l| l.directives) {
         if try_check_error_directive(ctx, directive) {
             continue;
         }
@@ -93,6 +81,7 @@ pub fn check_enum_directives(
         let name = directive.kind.as_str();
         err::directive_cannot_apply(&mut ctx.emit, src, name, "enums");
     }
+
     (config, flag_set)
 }
 

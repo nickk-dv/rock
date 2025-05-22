@@ -36,6 +36,7 @@ pub type Linkage = sys::LLVMLinkage;
 pub type CallConv = sys::LLVMCallConv;
 pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
+pub type AtomicOrdering = sys::LLVMAtomicOrdering;
 
 #[derive(Copy, Clone)]
 pub struct Type(sys::LLVMTypeRef);
@@ -375,8 +376,8 @@ impl IRBuilder {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn store(&self, val: Value, ptr_val: ValuePtr) {
-        unsafe { core::LLVMBuildStore(self.builder, val.0, ptr_val.0) };
+    pub fn store(&self, val: Value, ptr_val: ValuePtr) -> Value {
+        unsafe { Value(core::LLVMBuildStore(self.builder, val.0, ptr_val.0)) }
     }
 
     pub fn gep(
@@ -433,6 +434,12 @@ impl IRBuilder {
                 self.cstr_buf.cstr(name),
             )
         })
+    }
+
+    pub fn set_ordering(&self, access_inst: Value, order: AtomicOrdering) {
+        unsafe {
+            core::LLVMSetOrdering(access_inst.0, order);
+        }
     }
 
     pub fn cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {

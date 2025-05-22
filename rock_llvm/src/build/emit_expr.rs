@@ -56,7 +56,9 @@ pub fn codegen_expr_tail<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, expr:
             }
             Expect::Value(None) => {}
             Expect::Pointer => unreachable!(),
-            Expect::Store(ptr_val) => cg.build.store(value, ptr_val),
+            Expect::Store(ptr_val) => {
+                let _ = cg.build.store(value, ptr_val);
+            }
         }
     }
 }
@@ -1016,6 +1018,39 @@ pub fn codegen_call_direct<'c>(
 ) -> Option<llvm::Value> {
     let data = cg.hir.proc_data(proc_id);
     let is_external = data.flag_set.contains(hir::ProcFlag::External);
+
+    if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
+        let name = cg.session.intern_name.get(data.name.id);
+        match name {
+            "size_of" => {
+                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+                let layout =
+                    layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+                return Some(llvm::const_int(cg.ptr_sized_int(), layout.size, false));
+            }
+            "align_of" => {
+                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+                let layout =
+                    layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+                return Some(llvm::const_int(cg.ptr_sized_int(), layout.align, false));
+            }
+            "load" => {
+                let ptr_ty = cg.ty(poly_types[0]);
+                let dst = codegen_expr_value(cg, input[0]);
+                let inst = cg.build.load(ptr_ty, dst.into_ptr(), "atomic_load");
+                cg.build.set_ordering(inst, llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic);
+                return Some(inst);
+            }
+            "store" => {
+                let dst = codegen_expr_value(cg, input[0]);
+                let value = codegen_expr_value(cg, input[1]);
+                let inst = cg.build.store(value, dst.into_ptr());
+                cg.build.set_ordering(inst, llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic);
+                return None;
+            }
+            _ => unimplemented!(),
+        }
+    }
 
     let offset = cg.cache.values.start();
     let mut ret_ptr = None;

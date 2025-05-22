@@ -23,37 +23,37 @@ pub fn typecheck_procedures(ctx: &mut HirCtx) {
 fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     let item = ctx.registry.proc_item(proc_id);
     let data = ctx.registry.proc_data(proc_id);
+    let Some(block) = item.block else {
+        return;
+    };
 
-    if let Some(block) = item.block {
-        let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
-        let expect = Expectation::HasType(data.return_ty, Some(expect_src));
+    let expect_src = SourceRange::new(data.origin_id, item.return_ty.range);
+    let expect = Expectation::HasType(data.return_ty, Some(expect_src));
+    ctx.scope.origin = data.origin_id;
+    ctx.scope.poly = PolyScope::Proc(proc_id);
+    ctx.scope.local.reset();
+    ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
 
-        ctx.scope.origin = data.origin_id;
-        ctx.scope.poly = PolyScope::Proc(proc_id);
-        ctx.scope.local.reset();
-        ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
+    let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
+    let variables = ctx.arena.alloc_slice(ctx.scope.local.end_proc_context());
 
-        let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
-        let variables = ctx.arena.alloc_slice(ctx.scope.local.end_proc_context());
+    let data = ctx.registry.proc_data_mut(proc_id);
+    data.block = Some(block_res.block);
+    data.variables = variables;
 
-        let data = ctx.registry.proc_data_mut(proc_id);
-        data.block = Some(block_res.block);
-        data.variables = variables;
-
-        for (idx, param) in data.params.iter().enumerate() {
-            if !ctx.scope.local.params_was_used[idx] {
-                let src = ctx.src(param.name.range);
-                let name = ctx.name(param.name.id);
-                err::scope_symbol_unused(&mut ctx.emit, src, name, "parameter");
-            }
+    for (idx, param) in data.params.iter().enumerate() {
+        if !ctx.scope.local.params_was_used[idx] {
+            let src = ctx.src(param.name.range);
+            let name = ctx.name(param.name.id);
+            err::scope_symbol_unused(&mut ctx.emit, src, name, "parameter");
         }
-        let discard_id = ctx.session.intern_name.intern("_");
-        for var in variables {
-            if !var.was_used && var.name.id != discard_id {
-                let src = ctx.src(var.name.range);
-                let name = ctx.name(var.name.id);
-                err::scope_symbol_unused(&mut ctx.emit, src, name, "variable");
-            }
+    }
+    let discard_id = ctx.session.intern_name.intern("_");
+    for var in variables {
+        if !var.was_used && var.name.id != discard_id {
+            let src = ctx.src(var.name.range);
+            let name = ctx.name(var.name.id);
+            err::scope_symbol_unused(&mut ctx.emit, src, name, "variable");
         }
     }
 }
@@ -1684,21 +1684,33 @@ fn typecheck_builtin<'hir, 'ast>(
             }
         }
         ast::Builtin::AtomicLoad(args) => {
+            if !check_call_arg_count(ctx, &args, None, 2, false) {
+                return TypeResult::error();
+            }
             let src = ctx.src(range);
             err::internal_not_implemented(&mut ctx.emit, src, "@atomic_load");
             TypeResult::error()
         }
         ast::Builtin::AtomicStore(args) => {
+            if !check_call_arg_count(ctx, &args, None, 3, false) {
+                return TypeResult::error();
+            }
             let src = ctx.src(range);
             err::internal_not_implemented(&mut ctx.emit, src, "@atomic_store");
             TypeResult::error()
         }
         ast::Builtin::AtomicOp(args) => {
+            if !check_call_arg_count(ctx, &args, None, 4, false) {
+                return TypeResult::error();
+            }
             let src = ctx.src(range);
             err::internal_not_implemented(&mut ctx.emit, src, "@atomic_op");
             TypeResult::error()
         }
         ast::Builtin::AtomicCompareSwap(weak, args) => {
+            if !check_call_arg_count(ctx, &args, None, 5, false) {
+                return TypeResult::error();
+            }
             let src = ctx.src(range);
             if weak {
                 err::internal_not_implemented(&mut ctx.emit, src, "@atomic_compare_swap_weak");
@@ -1736,6 +1748,7 @@ fn typecheck_item<'hir, 'ast>(
                     expr_range.start(),
                 );
             } else {
+                //@ban taking pointers to intrinsics
                 //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
                 let data = ctx.registry.proc_data(proc_id);
                 if data.poly_params.is_some() {
@@ -4241,7 +4254,7 @@ fn check_call_arg_count(
     proc_src: Option<SourceRange>,
     expected_count: usize,
     variadic: bool,
-) {
+) -> bool {
     let input_count = arg_list.exprs.len();
     let wrong_count =
         if variadic { input_count < expected_count } else { input_count != expected_count };
@@ -4257,6 +4270,7 @@ fn check_call_arg_count(
             expected_count,
         );
     }
+    !wrong_count
 }
 
 fn check_variant_input_opt<'hir, 'ast>(

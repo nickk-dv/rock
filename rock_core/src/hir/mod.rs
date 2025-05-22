@@ -657,6 +657,7 @@ crate::enum_as_str! {
     pub enum ProcFlag {
         // directives
         Inline "inline",
+        Intrinsic "intrinsic",
         // compile-time flags
         WasUsed "was used",
         External "external",
@@ -729,6 +730,7 @@ impl ItemFlag for ProcFlag {
         use ProcFlag::*;
         match self {
             Inline => false,
+            Intrinsic => false,
             WasUsed => false,
             External => matches!(other, EntryPoint),
             Variadic => matches!(other, EntryPoint | CVariadic),

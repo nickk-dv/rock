@@ -247,6 +247,42 @@ pub enum LLVMRealPredicate {
     LLVMRealTrue = 15, // always true
 }
 
+#[repr(C)]
+#[allow(unused)]
+#[derive(Copy, Clone)]
+pub enum LLVMAtomicOrdering {
+    LLVMAtomicOrderingNotAtomic = 0,
+    LLVMAtomicOrderingUnordered = 1,
+    LLVMAtomicOrderingMonotonic = 2,
+    LLVMAtomicOrderingAcquire = 4,
+    LLVMAtomicOrderingRelease = 5,
+    LLVMAtomicOrderingAcquireRelease = 6,
+    LLVMAtomicOrderingSequentiallyConsistent = 7,
+}
+
+#[repr(C)]
+#[allow(unused)]
+#[derive(Copy, Clone)]
+pub enum LLVMAtomicRMWBinOp {
+    LLVMAtomicRMWBinOpXchg,
+    LLVMAtomicRMWBinOpAdd,
+    LLVMAtomicRMWBinOpSub,
+    LLVMAtomicRMWBinOpAnd,
+    LLVMAtomicRMWBinOpNand,
+    LLVMAtomicRMWBinOpOr,
+    LLVMAtomicRMWBinOpXor,
+    LLVMAtomicRMWBinOpMax,
+    LLVMAtomicRMWBinOpMin,
+    LLVMAtomicRMWBinOpUMax,
+    LLVMAtomicRMWBinOpUMin,
+    LLVMAtomicRMWBinOpFAdd,
+    LLVMAtomicRMWBinOpFSub,
+    LLVMAtomicRMWBinOpFMax,
+    LLVMAtomicRMWBinOpFMin,
+    LLVMAtomicRMWBinOpUIncWrap,
+    LLVMAtomicRMWBinOpUDecWrap,
+}
+
 /// `LLVM_ATTR_RETURN_INDEX`, `LLVM_ATTR_FUNCTION_INDEX` or a parameter number from 1 to N.
 pub type LLVMAttributeIndex = u32;
 #[allow(unused)]
@@ -515,6 +551,7 @@ pub mod core {
             idx: c_uint,
             name: *const c_char,
         ) -> LLVMValueRef;
+        pub fn LLVMSetOrdering(access_inst: LLVMValueRef, order: LLVMAtomicOrdering);
 
         pub fn LLVMBuildCast(
             b: LLVMBuilderRef,
