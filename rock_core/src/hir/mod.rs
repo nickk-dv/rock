@@ -310,7 +310,7 @@ pub enum ConstValue<'hir> {
     Float       { val: f64, float_ty: FloatType },
     Char        { val: char, untyped: bool },
     String      { val: LitID, string_ty: StringType },
-    Procedure   { proc_id: ProcID },
+    Procedure   { proc_id: ProcID, poly_types: Option<&'hir &'hir [Type<'hir>]> },
     Variant     { enum_id: EnumID, variant_id: VariantID },
     VariantPoly { enum_id: EnumID, variant: &'hir ConstVariant<'hir> },
     Struct      { struct_id: StructID, struct_: &'hir ConstStruct<'hir> },

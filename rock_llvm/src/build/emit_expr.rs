@@ -274,9 +274,23 @@ fn write_const<'c>(
                 write_const_int(cg, len as u64, false, hir::IntType::Usize);
             }
         }
-        hir::ConstValue::Procedure { proc_id } => {
-            let proc_ptr = cg.procs[proc_id.index()].0;
-            writer.write_ptr_or_undef(cg, proc_ptr.as_val());
+        hir::ConstValue::Procedure { proc_id, poly_types } => {
+            let proc_ptr = match poly_types {
+                Some(poly_types) => {
+                    let poly_types = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
+                    types::expect_concrete(poly_types);
+                    if let Some((fn_val, _)) = cg.poly_procs.get(&(proc_id, poly_types)) {
+                        fn_val.as_val()
+                    } else {
+                        let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
+                        cg.poly_procs.insert((proc_id, poly_types), fn_res);
+                        cg.poly_proc_queue.push((proc_id, poly_types));
+                        fn_res.0.as_val()
+                    }
+                }
+                None => cg.procs[proc_id.index()].0.as_val(),
+            };
+            writer.write_ptr_or_undef(cg, proc_ptr);
         }
         hir::ConstValue::Variant { enum_id, variant_id } => {
             write_enum_tag(cg, writer, enum_id, variant_id);
@@ -393,7 +407,21 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Float { val, float_ty } => llvm::const_float(cg.float_type(float_ty), val),
         hir::ConstValue::Char { val, .. } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
-        hir::ConstValue::Procedure { proc_id } => cg.procs[proc_id.index()].0.as_val(),
+        hir::ConstValue::Procedure { proc_id, poly_types } => match poly_types {
+            Some(poly_types) => {
+                let poly_types = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
+                types::expect_concrete(poly_types);
+                if let Some((fn_val, _)) = cg.poly_procs.get(&(proc_id, poly_types)) {
+                    fn_val.as_val()
+                } else {
+                    let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
+                    cg.poly_procs.insert((proc_id, poly_types), fn_res);
+                    cg.poly_proc_queue.push((proc_id, poly_types));
+                    fn_res.0.as_val()
+                }
+            }
+            None => cg.procs[proc_id.index()].0.as_val(),
+        },
         hir::ConstValue::Variant { enum_id, variant_id } => {
             codegen_const_variant(cg, enum_id, variant_id)
         }

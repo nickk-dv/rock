@@ -1792,7 +1792,6 @@ fn typecheck_item<'hir, 'ast>(
                     Some(poly_types) => poly_types,
                     None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
                 };
-                ctx.scope.infer.end_context(infer);
 
                 let offset = ctx.cache.proc_ty_params.start();
                 for param in data.params {
@@ -1806,14 +1805,17 @@ fn typecheck_item<'hir, 'ast>(
                     params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
                     return_ty: type_substitute_inferred(ctx, is_poly, infer, data.return_ty),
                 };
+                ctx.scope.infer.end_context(infer);
 
                 //@hack, clearing unrelated flags
                 proc_ty.flag_set.clear(hir::ProcFlag::Inline);
                 proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
                 proc_ty.flag_set.clear(hir::ProcFlag::EntryPoint);
 
+                let poly_types =
+                    if poly_types.is_empty() { None } else { Some(ctx.arena.alloc(poly_types)) };
                 let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
-                let proc_value = hir::ConstValue::Procedure { proc_id };
+                let proc_value = hir::ConstValue::Procedure { proc_id, poly_types };
                 let proc_expr = hir::Expr::Const(proc_value, hir::ConstID::dummy());
                 return TypeResult::new(proc_ty, proc_expr);
             }
