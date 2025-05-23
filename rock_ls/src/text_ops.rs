@@ -1,20 +1,56 @@
 use lsp_types as lsp;
 use rock_core::session::FileData;
-use rock_core::text::{TextOffset, TextRange};
+use rock_core::text::{self, TextOffset, TextRange};
 
-pub fn str_char_len_utf16(string: &str) -> u32 {
+pub fn string_len_utf16(string: &str) -> u32 {
     string.chars().map(|c| c.len_utf16() as u32).sum()
 }
 
-pub fn file_text_range(file: &FileData, range: lsp::Range) -> TextRange {
-    let start_line = file_line_range(file, range.start.line);
-    let end_line = file_line_range(file, range.end.line);
-    let start = file_line_char_utf16_offset(file, start_line, range.start.character);
-    let end = file_line_char_utf16_offset(file, end_line, range.end.character);
+pub fn range_utf16_to_range_utf8(file: &FileData, range: lsp::Range) -> TextRange {
+    let start = position_utf16_to_offset_utf8(file, range.start);
+    let end = position_utf16_to_offset_utf8(file, range.end);
     TextRange::new(start, end)
 }
 
-fn file_line_range(file: &FileData, line: u32) -> TextRange {
+pub fn range_utf8_to_range_utf16(file: &FileData, range: TextRange) -> lsp::Range {
+    let start = offset_utf8_to_position_utf16(file, range.start());
+    let end = offset_utf8_to_position_utf16(file, range.end());
+    lsp::Range::new(start, end)
+}
+
+pub fn position_utf16_to_offset_utf8(file: &FileData, position: lsp::Position) -> TextOffset {
+    let line_range = line_range(file, position.line);
+    let line_text = &file.source[line_range.as_usize()];
+
+    let mut chars = line_text.chars();
+    let mut offset = line_range.start();
+    let mut char_utf16: u32 = 0;
+
+    while char_utf16 != position.character {
+        if let Some(c) = chars.next() {
+            offset += (c.len_utf8() as u32).into();
+            char_utf16 += c.len_utf16() as u32;
+        } else {
+            crate::server_error!(
+                "position_utf16_to_offset_utf8() failed\nfile: {}\nline: {}\ncharacter: {}",
+                file.path.to_string_lossy(),
+                position.line,
+                position.character,
+            )
+        }
+    }
+    offset
+}
+
+pub fn offset_utf8_to_position_utf16(file: &FileData, offset: TextOffset) -> lsp::Position {
+    let pos = text::find_text_location(&file.source, offset, &file.line_ranges);
+    let line_range = file.line_ranges[pos.line_index() - 1];
+    let prefix_range = TextRange::new(line_range.start(), offset);
+    let prefix_text = &file.source[prefix_range.as_usize()];
+    lsp::Position::new(pos.line() - 1, string_len_utf16(prefix_text))
+}
+
+fn line_range(file: &FileData, line: u32) -> TextRange {
     if file.line_ranges.is_empty() {
         TextRange::zero()
     } else if line < file.line_ranges.len() as u32 {
@@ -24,35 +60,9 @@ fn file_line_range(file: &FileData, line: u32) -> TextRange {
         TextRange::new(last.end(), last.end())
     } else {
         crate::server_error!(
-            "file_line_range() failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
+            "line_range() failed\nfile: {}\nline: {line}\nline_ranges.len: {}",
             file.path.to_string_lossy(),
             file.line_ranges.len()
         );
     }
-}
-
-fn file_line_char_utf16_offset(
-    file: &FileData,
-    line_range: TextRange,
-    character: u32,
-) -> TextOffset {
-    let line_text = &file.source[line_range.as_usize()];
-    let mut chars = line_text.chars();
-    let mut offset = line_range.start();
-    let mut char_utf16: u32 = 0;
-
-    while char_utf16 != character {
-        if let Some(c) = chars.next() {
-            offset += (c.len_utf8() as u32).into();
-            char_utf16 += c.len_utf16() as u32;
-        } else {
-            crate::server_error!(
-                "file_line_char_utf16_offset() failed\nfile: {}\nline_range: {:?}\ncharacter: {}",
-                file.path.to_string_lossy(),
-                line_range,
-                character,
-            )
-        }
-    }
-    offset
 }

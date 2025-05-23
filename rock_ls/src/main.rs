@@ -34,11 +34,11 @@ fn main() {
     initialize_handshake(&conn);
     if let Ok(mut server) = initialize_server(&conn) {
         compile_project(&mut server);
-        //@resolving all symbol scopes, required for correct semantic tokens.
-        //impossible to know dependencies for lazy eval in advance.
-        //make sure to initialize symbols for FileOpened.
         for module_id in server.session.module.ids() {
-            update_module_symbols(&mut server, module_id);
+            update_module_symbols(&mut server, module_id, SymbolUpdate::Defined);
+        }
+        for module_id in server.session.module.ids() {
+            update_module_symbols(&mut server, module_id, SymbolUpdate::Imports);
         }
         server_loop(&mut server);
     }
@@ -244,23 +244,32 @@ fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     module.tree_version = file.version;
 }
 
-fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
+#[derive(PartialEq)]
+enum SymbolUpdate {
+    All,
+    Defined,
+    Imports,
+}
+
+fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update: SymbolUpdate) {
     let module = server.session.module.get(module_id);
     let data = &mut server.modules[module_id.index()];
-    if data.symbols_version == module.tree_version {
+    if update == SymbolUpdate::All && data.symbols_version == module.tree_version {
         return;
     }
 
     let tree = module.tree_expect();
     let file = server.session.vfs.file(module.file_id());
-    data.symbols.clear();
-    data.symbols.reserve(tree.root().content.len());
-    data.symbols_version = module.tree_version;
+    if update == SymbolUpdate::All {
+        data.symbols.clear();
+        data.symbols.reserve(tree.root().content.len());
+        data.symbols_version = module.tree_version;
+    }
 
     let root = cst::SourceFile::cast(tree.root()).unwrap();
     for item in root.items(tree) {
         match item {
-            cst::Item::Proc(item) => {
+            cst::Item::Proc(item) if update != SymbolUpdate::Imports => {
                 if let Some(name) = item.name(&tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
@@ -268,7 +277,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                         .insert(id, Symbol::Defined(SymbolKind::Proc));
                 }
             }
-            cst::Item::Enum(item) => {
+            cst::Item::Enum(item) if update != SymbolUpdate::Imports => {
                 if let Some(name) = item.name(&tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
@@ -276,7 +285,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                         .insert(id, Symbol::Defined(SymbolKind::Enum));
                 }
             }
-            cst::Item::Struct(item) => {
+            cst::Item::Struct(item) if update != SymbolUpdate::Imports => {
                 if let Some(name) = item.name(&tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
@@ -284,7 +293,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                         .insert(id, Symbol::Defined(SymbolKind::Struct));
                 }
             }
-            cst::Item::Const(item) => {
+            cst::Item::Const(item) if update != SymbolUpdate::Imports => {
                 if let Some(name) = item.name(&tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
@@ -292,7 +301,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                         .insert(id, Symbol::Defined(SymbolKind::Const));
                 }
             }
-            cst::Item::Global(item) => {
+            cst::Item::Global(item) if update != SymbolUpdate::Imports => {
                 if let Some(name) = item.name(&tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
@@ -300,7 +309,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                         .insert(id, Symbol::Defined(SymbolKind::Global));
                 }
             }
-            cst::Item::Import(item) => {
+            cst::Item::Import(item) if update != SymbolUpdate::Defined => {
                 let module_name = if let Some(rename) = item.rename(&tree) {
                     if rename.t_discard(tree).is_some() {
                         continue;
@@ -360,6 +369,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID) {
                 }
             }
             cst::Item::Directive(_) => {}
+            _ => {}
         }
     }
 }
@@ -465,7 +475,7 @@ fn handle_semantic_tokens(server: &mut ServerContext, id: RequestId, path: PathB
     };
 
     update_syntax_tree(session, module_id);
-    update_module_symbols(server, module_id);
+    update_module_symbols(server, module_id, SymbolUpdate::All);
 
     let data = semantic_tokens(server, module_id);
     send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
@@ -497,15 +507,9 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
             continue;
         };
 
-        //@have fn for correct utf16 position
-        let offset = bind.0.range.end();
-        let loc = text::find_text_location(&file.source, offset, &file.line_ranges);
-        let position = lsp::Position { line: loc.line() - 1, character: loc.col() - 1 };
-        let label = lsp::InlayHintLabel::String(": <unknown>".to_string());
-
         hints.push(lsp::InlayHint {
-            position,
-            label,
+            position: text_ops::offset_utf8_to_position_utf16(file, bind.0.range.end()),
+            label: lsp::InlayHintLabel::String(": <unknown>".to_string()),
             kind: Some(lsp::InlayHintKind::TYPE),
             text_edits: None,
             tooltip: None,
@@ -531,16 +535,15 @@ fn handle_goto_definition(
     };
 
     update_syntax_tree(&mut server.session, module_id);
-    update_module_symbols(server, module_id);
+    update_module_symbols(server, module_id, SymbolUpdate::All);
 
     let module = server.session.module.get(module_id);
-    let data = &server.modules[module_id.index()];
     let file = server.session.vfs.file(module.file_id());
     let tree = module.tree_expect();
 
-    //@not handling utf16
-    let offset = file.line_ranges[pos.line as usize].start() + pos.character.into();
+    let offset = text_ops::position_utf16_to_offset_utf8(file, pos);
     let chain = node_chain(tree, offset);
+    let data = &server.modules[module_id.index()];
     send_response(server.conn, id, serde_json::Value::Null)
 }
 
@@ -678,7 +681,7 @@ fn handle_file_changed(
 
     for change in changes {
         if let Some(range) = change.range {
-            let range = text_ops::file_text_range(file, range);
+            let range = text_ops::range_utf16_to_range_utf8(file, range);
             file.source.replace_range(range.as_usize(), &change.text);
             text::find_line_ranges(&mut file.line_ranges, &file.source);
         } else {
@@ -704,33 +707,6 @@ fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
         }
     }
     None
-}
-
-fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
-    match severity {
-        Severity::Info => Some(lsp::DiagnosticSeverity::HINT),
-        Severity::Error => Some(lsp::DiagnosticSeverity::ERROR),
-        Severity::Warning => Some(lsp::DiagnosticSeverity::WARNING),
-    }
-}
-
-fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
-    let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id());
-    &file.path
-}
-
-fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
-    let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id());
-
-    let start = text::find_text_location(&file.source, source.range().start(), &file.line_ranges);
-    let end = text::find_text_location(&file.source, source.range().end(), &file.line_ranges);
-
-    lsp::Range::new(
-        lsp::Position::new(start.line() - 1, start.col() - 1),
-        lsp::Position::new(end.line() - 1, end.col() - 1),
-    )
 }
 
 fn create_diagnostic(
@@ -785,6 +761,26 @@ fn create_diagnostic(
     );
 
     Some(diagnostic)
+}
+
+fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
+    let module = session.module.get(source.module_id());
+    let file = session.vfs.file(module.file_id());
+    &file.path
+}
+
+fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
+    let module = session.module.get(source.module_id());
+    let file = session.vfs.file(module.file_id());
+    text_ops::range_utf8_to_range_utf16(file, source.range())
+}
+
+fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
+    match severity {
+        Severity::Info => Some(lsp::DiagnosticSeverity::HINT),
+        Severity::Error => Some(lsp::DiagnosticSeverity::ERROR),
+        Severity::Warning => Some(lsp::DiagnosticSeverity::WARNING),
+    }
 }
 
 struct SemanticTokenBuilder<'s_ref, 's> {
@@ -1064,10 +1060,10 @@ fn semantic_token_add(b: &mut SemanticTokenBuilder, semantic: SemanticToken, ran
     let mut delta_range = TextRange::empty_at(start);
     delta_range.extend_by(offset);
     let token_str = &source[delta_range.as_usize()];
-    let delta_start = text_ops::str_char_len_utf16(token_str);
+    let delta_start = text_ops::string_len_utf16(token_str);
 
     let token_str = &source[range.as_usize()];
-    let length = text_ops::str_char_len_utf16(token_str);
+    let length = text_ops::string_len_utf16(token_str);
 
     b.prev_range = Some(range);
     b.semantic_tokens.push(lsp::SemanticToken {
