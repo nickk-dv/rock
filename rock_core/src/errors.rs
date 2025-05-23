@@ -396,7 +396,7 @@ pub fn directive_param_value_unknown(
     param_name: &str,
     param_value: &str,
 ) {
-    let msg = format!("directive parameter `{param_name}` value `{param_value}` is unknown");
+    let msg = format!("directive parameter value `{param_value}` for `{param_name}` is unknown");
     emit.error(Error::new(msg, value_src, None));
 }
 
@@ -407,17 +407,6 @@ pub fn directive_cannot_apply(
     item_kinds: &'static str,
 ) {
     let msg = format!("directive `#{name}` cannot be applied to {item_kinds}",);
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn directive_not_compatible(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    name: &str,
-    old_flag: &str,
-    item_kinds: &'static str,
-) {
-    let msg = format!("directive `#{name}` cannot be applied to `{old_flag}` {item_kinds}",);
     emit.error(Error::new(msg, src, None));
 }
 
@@ -437,15 +426,9 @@ pub fn directive_param_must_be_last(emit: &mut impl ErrorSink, src: SourceRange,
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn flag_not_compatible(
-    emit: &mut impl ErrorSink,
-    item_src: SourceRange,
-    new_flag: &str,
-    old_flag: &str,
-    item_kinds: &'static str,
-) {
-    let msg = format!("`{new_flag}` {item_kinds} cannot be `{old_flag}`",);
-    emit.error(Error::new(msg, item_src, None));
+pub fn flag_proc_intrinsic_non_core(emit: &mut impl ErrorSink, proc_src: SourceRange) {
+    let msg = "`intrinsic` procedures can only be defined in core library";
+    emit.error(Error::new(msg, proc_src, None));
 }
 
 pub fn flag_proc_variadic_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
@@ -455,7 +438,7 @@ pub fn flag_proc_variadic_external(emit: &mut impl ErrorSink, proc_src: SourceRa
 }
 
 pub fn flag_proc_c_variadic_not_external(emit: &mut impl ErrorSink, proc_src: SourceRange) {
-    let msg = "`c_variadic` procedures must be `external`";
+    let msg = "`c_variadic` procedures must be `external`\ndid you mean to use #variadic instead?";
     emit.error(Error::new(msg, proc_src, None));
 }
 
@@ -1211,18 +1194,9 @@ pub fn entry_main_mod_not_found(emit: &mut impl ErrorSink) {
 }
 
 pub fn entry_main_proc_not_found(emit: &mut impl ErrorSink) {
-    let msg = "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() -> s32 { return 0; }`";
+    let msg =
+        "could not find entry point in `src/main.rock`\ndefine it like this: `proc main() void {}`";
     emit.error(Error::message(msg));
-}
-
-pub fn entry_main_with_parameters(emit: &mut impl ErrorSink, main_src: SourceRange) {
-    let msg = "`main` procedure cannot have any parameters`";
-    emit.error(Error::new(msg, main_src, None));
-}
-
-pub fn entry_main_wrong_return_ty(emit: &mut impl ErrorSink, ret_src: SourceRange) {
-    let msg = "`main` procedure must return `s32` or `never`";
-    emit.error(Error::new(msg, ret_src, None));
 }
 
 //==================== BACKEND ====================

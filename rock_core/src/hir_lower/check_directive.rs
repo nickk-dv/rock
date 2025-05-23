@@ -1,9 +1,9 @@
 use super::context::HirCtx;
 use crate::ast::{self, DirectiveKind};
 use crate::config;
-use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
+use crate::session;
 use crate::support::{AsStr, BitSet};
 
 #[derive(Copy, Clone)]
@@ -32,7 +32,16 @@ pub fn check_proc_directives(
         }
         let new_flag = match directive.kind {
             DirectiveKind::Inline => hir::ProcFlag::Inline,
-            DirectiveKind::Intrinsic => hir::ProcFlag::Intrinsic,
+            DirectiveKind::Intrinsic => {
+                let module = ctx.session.module.get(ctx.scope.origin);
+                if module.origin() == session::CORE_PACKAGE_ID {
+                    hir::ProcFlag::Intrinsic
+                } else {
+                    let src = ctx.src(directive.range);
+                    err::flag_proc_intrinsic_non_core(&mut ctx.emit, src);
+                    continue;
+                }
+            }
             _ => {
                 let src = ctx.src(directive.range);
                 let name = directive.kind.as_str();
@@ -40,14 +49,7 @@ pub fn check_proc_directives(
                 continue;
             }
         };
-        apply_item_flag(
-            ctx,
-            &mut flag_set,
-            new_flag,
-            ctx.src(item.name.range),
-            Some(directive),
-            "procedures",
-        );
+        flag_set.set(new_flag);
     }
 
     if item.block.is_none() && !flag_set.contains(hir::ProcFlag::Intrinsic) {
@@ -107,7 +109,6 @@ pub fn check_param_directive<'hir>(
                 err::flag_proc_variadic_external(&mut ctx.emit, src);
                 return None;
             }
-
             flag_set.set(hir::ProcFlag::Variadic);
             let elem_ty = ctx.core.any.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
             let slice = hir::ArraySlice { mutt: ast::Mut::Immutable, elem_ty };
@@ -129,7 +130,6 @@ pub fn check_param_directive<'hir>(
                 err::flag_proc_c_variadic_zero_params(&mut ctx.emit, src);
                 return None;
             }
-
             flag_set.set(hir::ProcFlag::CVariadic);
             None
         }
@@ -282,55 +282,4 @@ fn check_config_parameter(
         err::directive_param_value_unknown(&mut ctx.emit, value_src, param_name, param_value);
     }
     config
-}
-
-pub fn apply_item_flag<T>(
-    ctx: &mut HirCtx,
-    flag_set: &mut BitSet<T>,
-    new_flag: T,
-    item_src: SourceRange,
-    directive: Option<&ast::Directive>,
-    item_kinds: &'static str,
-) where
-    T: Copy + Clone + Into<u32> + hir::ItemFlag + AsStr,
-{
-    if flag_set.contains(new_flag) {
-        if let Some(directive) = directive {
-            let src = ctx.src(directive.range);
-            err::directive_duplicate(&mut ctx.emit, src, directive.kind.as_str());
-            return;
-        } else {
-            unreachable!()
-        }
-    }
-
-    for old_flag in T::ALL.iter().copied() {
-        if !flag_set.contains(old_flag) {
-            continue;
-        }
-        if !new_flag.not_compatible(old_flag) {
-            continue;
-        }
-        if let Some(directive) = directive {
-            let src = ctx.src(directive.range);
-            err::directive_not_compatible(
-                &mut ctx.emit,
-                src,
-                directive.kind.as_str(),
-                old_flag.as_str(),
-                item_kinds,
-            );
-        } else {
-            err::flag_not_compatible(
-                &mut ctx.emit,
-                item_src,
-                new_flag.as_str(),
-                old_flag.as_str(),
-                item_kinds,
-            );
-        }
-        return;
-    }
-
-    flag_set.set(new_flag);
 }

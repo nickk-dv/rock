@@ -362,10 +362,6 @@ macro_rules! define_id {
     }
 }
 
-/// multi-purpose trait designed for enums:  
-/// `const ALL` slice of all variants.  
-/// `fn as_str()` convert enum to string.  
-/// `fn from_str()` try to convert string to an enum.
 pub trait AsStr
 where
     Self: Sized + 'static,

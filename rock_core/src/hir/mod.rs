@@ -606,14 +606,16 @@ pub enum BinOp {
     LogicOr(BoolType),
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum CmpPred {
-    Eq,
-    NotEq,
-    Less,
-    LessEq,
-    Greater,
-    GreaterEq,
+crate::enum_as_str! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum CmpPred {
+        Eq "==",
+        NotEq "!=",
+        Less "<",
+        LessEq "<=",
+        Greater ">",
+        GreaterEq ">=",
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -667,26 +669,26 @@ crate::enum_as_str! {
     }
 }
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone)]
     pub enum EnumFlag {
         WasUsed "was used",
         WithFields "with fields",
     }
 }
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone)]
     pub enum StructFlag {
         WasUsed "was used",
     }
 }
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone)]
     pub enum ConstFlag {
         WasUsed "was used",
     }
 }
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone)]
     pub enum GlobalFlag {
         WasUsed "was used",
     }
@@ -715,48 +717,6 @@ impl Into<u32> for ConstFlag {
 impl Into<u32> for GlobalFlag {
     fn into(self) -> u32 {
         self as u32
-    }
-}
-
-pub trait ItemFlag
-where
-    Self: PartialEq,
-{
-    fn not_compatible(self, other: Self) -> bool;
-}
-
-impl ItemFlag for ProcFlag {
-    fn not_compatible(self, other: ProcFlag) -> bool {
-        use ProcFlag::*;
-        match self {
-            Inline => false,
-            Intrinsic => false,
-            WasUsed => false,
-            External => matches!(other, EntryPoint),
-            Variadic => matches!(other, EntryPoint | CVariadic),
-            CVariadic => matches!(other, EntryPoint | Variadic),
-            EntryPoint => matches!(other, External | Variadic | CVariadic),
-        }
-    }
-}
-impl ItemFlag for EnumFlag {
-    fn not_compatible(self, _: EnumFlag) -> bool {
-        false
-    }
-}
-impl ItemFlag for StructFlag {
-    fn not_compatible(self, _: StructFlag) -> bool {
-        false
-    }
-}
-impl ItemFlag for ConstFlag {
-    fn not_compatible(self, _: ConstFlag) -> bool {
-        false
-    }
-}
-impl ItemFlag for GlobalFlag {
-    fn not_compatible(self, _: GlobalFlag) -> bool {
-        false
     }
 }
 
@@ -1097,7 +1057,7 @@ impl BoolType {
             BoolType::Bool16 => IntType::U16,
             BoolType::Bool32 => IntType::U32,
             BoolType::Bool64 => IntType::U64,
-            BoolType::Untyped => todo!(),
+            BoolType::Untyped => unreachable!(),
         }
     }
 }
@@ -1122,19 +1082,6 @@ impl BinOp {
             BinOp::Cmp_String(pred, _, _) => pred.as_str(),
             BinOp::LogicAnd(_) => "&&",
             BinOp::LogicOr(_) => "||",
-        }
-    }
-}
-
-impl CmpPred {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CmpPred::Eq => "==",
-            CmpPred::NotEq => "!=",
-            CmpPred::Less => "<",
-            CmpPred::LessEq => "<=",
-            CmpPred::Greater => ">",
-            CmpPred::GreaterEq => ">=",
         }
     }
 }

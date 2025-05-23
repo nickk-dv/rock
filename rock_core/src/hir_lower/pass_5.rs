@@ -10,7 +10,6 @@ use crate::ast;
 use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
-use crate::session;
 use crate::support::AsStr;
 use crate::text::{TextOffset, TextRange};
 
@@ -60,7 +59,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
 
 //@remove ref / multi ref coercion for polymorphic types
 // make coercion behavior conditional, right now T(&N) and T([&]N) is considered same.
-pub fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
+fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     if ty.is_error() || ty2.is_error() || ty.is_unknown() {
         return true;
     }
@@ -341,31 +340,29 @@ pub fn type_expectation_check(
     found_ty: hir::Type,
     expect: Expectation,
 ) {
-    match expect {
-        Expectation::None => {}
-        Expectation::HasType(expect_ty, expect_src) => {
-            // `never` coerses to any type
-            if found_ty.is_never() {
-                return;
-            }
-            if type_matches(ctx, expect_ty, found_ty) {
-                return;
-            }
-            let src = ctx.src(from_range);
-            let expected_ty = type_format(ctx, expect_ty);
-            let found_ty = type_format(ctx, found_ty);
-            err::tycheck_type_mismatch(
-                &mut ctx.emit,
-                src,
-                expect_src,
-                expected_ty.as_str(),
-                found_ty.as_str(),
-            );
-        }
+    let Expectation::HasType(expect_ty, expect_src) = expect else {
+        return;
+    };
+    // `never` coerses to any type
+    if found_ty.is_never() {
+        return;
     }
+    if type_matches(ctx, expect_ty, found_ty) {
+        return;
+    }
+    let src = ctx.src(from_range);
+    let expected_ty = type_format(ctx, expect_ty);
+    let found_ty = type_format(ctx, found_ty);
+    err::tycheck_type_mismatch(
+        &mut ctx.emit,
+        src,
+        expect_src,
+        expected_ty.as_str(),
+        found_ty.as_str(),
+    );
 }
 
-pub fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
+fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
     match ty {
         hir::Type::Error | hir::Type::Int(_) => {}
         _ => {
@@ -376,7 +373,7 @@ pub fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
     }
 }
 
-pub fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
+fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
     match ty {
         hir::Type::Error | hir::Type::Bool(_) => {}
         _ => {
@@ -389,7 +386,7 @@ pub fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
 
 #[must_use]
 pub struct TypeResult<'hir> {
-    ty: hir::Type<'hir>,
+    pub ty: hir::Type<'hir>,
     expr: hir::Expr<'hir>,
     ignore: bool,
 }
@@ -475,7 +472,7 @@ pub fn typecheck_expr_untyped<'hir, 'ast>(
     typecheck_expr_impl(ctx, expect, expr, false)
 }
 
-pub fn typecheck_expr_impl<'hir, 'ast>(
+fn typecheck_expr_impl<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     expr: &ast::Expr<'ast>,
@@ -1748,76 +1745,7 @@ fn typecheck_item<'hir, 'ast>(
                     expr_range.start(),
                 );
             } else {
-                //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
-                let data = ctx.registry.proc_data(proc_id);
-                if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
-                    let src = ctx.src(expr_range);
-                    err::tycheck_intrinsic_proc_ptr(&mut ctx.emit, src, data.src());
-                    return TypeResult::error();
-                }
-
-                let (infer, is_poly) = ctx.scope.infer.start_context(data.poly_params);
-                if let Some(poly_types) = poly_types {
-                    for (poly_idx, ty) in poly_types.iter().copied().enumerate() {
-                        ctx.scope.infer.resolve(infer, poly_idx, ty);
-                    }
-                }
-                if is_poly {
-                    if let Expectation::HasType(hir::Type::Procedure(proc_ty), _) = expect {
-                        types::apply_inference(
-                            ctx.scope.infer.inferred_mut(infer),
-                            proc_ty.return_ty,
-                            data.return_ty,
-                        );
-                        for (idx, param) in data.params.iter().enumerate() {
-                            if let Some(expect_param) = proc_ty.params.get(idx) {
-                                types::apply_inference(
-                                    ctx.scope.infer.inferred_mut(infer),
-                                    expect_param.ty,
-                                    param.ty,
-                                );
-                            }
-                        }
-                    }
-                }
-
-                if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_unknown()) {
-                    let src = ctx.src(expr_range);
-                    err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
-                    ctx.scope.infer.end_context(infer);
-                    return TypeResult::error();
-                }
-                //@use these poly_types to queue procedure for generation in the backend?
-                let poly_types = match poly_types {
-                    Some(poly_types) => poly_types,
-                    None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
-                };
-
-                let offset = ctx.cache.proc_ty_params.start();
-                for param in data.params {
-                    let param_ty = type_substitute_inferred(ctx, is_poly, infer, param.ty);
-                    let param = hir::ProcTypeParam { ty: param_ty, kind: param.kind };
-                    ctx.cache.proc_ty_params.push(param);
-                }
-                let data = ctx.registry.proc_data(proc_id);
-                let mut proc_ty = hir::ProcType {
-                    flag_set: data.flag_set,
-                    params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
-                    return_ty: type_substitute_inferred(ctx, is_poly, infer, data.return_ty),
-                };
-                ctx.scope.infer.end_context(infer);
-
-                //@hack, clearing unrelated flags
-                proc_ty.flag_set.clear(hir::ProcFlag::Inline);
-                proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
-                proc_ty.flag_set.clear(hir::ProcFlag::EntryPoint);
-
-                let poly_types =
-                    if poly_types.is_empty() { None } else { Some(ctx.arena.alloc(poly_types)) };
-                let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
-                let proc_value = hir::ConstValue::Procedure { proc_id, poly_types };
-                let proc_expr = hir::Expr::Const(proc_value, hir::ConstID::dummy());
-                return TypeResult::new(proc_ty, proc_expr);
+                return check_item_procedure(ctx, expect, proc_id, poly_types, expr_range);
             }
         }
         ValueID::Enum(enum_id, variant_id, poly_types) => {
@@ -1871,6 +1799,83 @@ fn typecheck_item<'hir, 'ast>(
     } else {
         target_res
     }
+}
+
+pub fn check_item_procedure<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    proc_id: hir::ProcID,
+    poly_types: Option<&'hir [hir::Type<'hir>]>,
+    range: TextRange,
+) -> TypeResult<'hir> {
+    //@creating proc type each time its encountered / called, waste of arena memory 25.05.24
+    let data = ctx.registry.proc_data(proc_id);
+    if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
+        let src = ctx.src(range);
+        err::tycheck_intrinsic_proc_ptr(&mut ctx.emit, src, data.src());
+        return TypeResult::error();
+    }
+
+    let (infer, is_poly) = ctx.scope.infer.start_context(data.poly_params);
+    if let Some(poly_types) = poly_types {
+        for (poly_idx, ty) in poly_types.iter().copied().enumerate() {
+            ctx.scope.infer.resolve(infer, poly_idx, ty);
+        }
+    }
+    if is_poly {
+        if let Expectation::HasType(hir::Type::Procedure(proc_ty), _) = expect {
+            types::apply_inference(
+                ctx.scope.infer.inferred_mut(infer),
+                proc_ty.return_ty,
+                data.return_ty,
+            );
+            for (idx, param) in data.params.iter().enumerate() {
+                if let Some(expect_param) = proc_ty.params.get(idx) {
+                    types::apply_inference(
+                        ctx.scope.infer.inferred_mut(infer),
+                        expect_param.ty,
+                        param.ty,
+                    );
+                }
+            }
+        }
+    }
+
+    if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_unknown()) {
+        let src = ctx.src(range);
+        err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
+        ctx.scope.infer.end_context(infer);
+        return TypeResult::error();
+    }
+    let poly_types = match poly_types {
+        Some(poly_types) => poly_types,
+        None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
+    };
+
+    let offset = ctx.cache.proc_ty_params.start();
+    for param in data.params {
+        let param_ty = type_substitute_inferred(ctx, is_poly, infer, param.ty);
+        let param = hir::ProcTypeParam { ty: param_ty, kind: param.kind };
+        ctx.cache.proc_ty_params.push(param);
+    }
+    let data = ctx.registry.proc_data(proc_id);
+    let mut proc_ty = hir::ProcType {
+        flag_set: data.flag_set,
+        params: ctx.cache.proc_ty_params.take(offset, &mut ctx.arena),
+        return_ty: type_substitute_inferred(ctx, is_poly, infer, data.return_ty),
+    };
+    ctx.scope.infer.end_context(infer);
+
+    //clear unrelated flags
+    proc_ty.flag_set.clear(hir::ProcFlag::Inline);
+    proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
+    proc_ty.flag_set.clear(hir::ProcFlag::EntryPoint);
+
+    let poly_types = if poly_types.is_empty() { None } else { Some(ctx.arena.alloc(poly_types)) };
+    let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
+    let proc_value = hir::ConstValue::Procedure { proc_id, poly_types };
+    let proc_expr = hir::Expr::Const(proc_value, hir::ConstID::dummy());
+    return TypeResult::new(proc_ty, proc_expr);
 }
 
 fn typecheck_variant<'hir, 'ast>(
@@ -2253,24 +2258,6 @@ fn typecheck_address<'hir, 'ast>(
     let ref_ty = ctx.arena.alloc(rhs_res.ty);
     let ref_ty = hir::Type::Reference(mutt, ref_ty);
     TypeResult::new(ref_ty, hir::Expr::Address { rhs: rhs_res.expr })
-}
-
-//@move handling of core dependencies to context
-pub fn core_find_struct(
-    ctx: &HirCtx,
-    module_name: &'static str,
-    struct_name: &'static str,
-) -> Option<hir::StructID> {
-    let module_name = ctx.session.intern_name.get_id(module_name)?;
-    let struct_name = ctx.session.intern_name.get_id(struct_name)?;
-
-    let core_package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
-    let target_id = match core_package.src().find(ctx.session, module_name) {
-        session::ModuleOrDirectory::None => return None,
-        session::ModuleOrDirectory::Module(module_id) => module_id,
-        session::ModuleOrDirectory::Directory(_) => return None,
-    };
-    ctx.scope.global.find_defined_struct(target_id, struct_name)
 }
 
 fn typecheck_unary<'hir, 'ast>(
@@ -3170,7 +3157,7 @@ fn typecheck_block<'hir, 'ast>(
     block_result
 }
 
-pub fn check_stmt_diverges(ctx: &mut HirCtx, will_diverge: bool, stmt_range: TextRange) {
+fn check_stmt_diverges(ctx: &mut HirCtx, will_diverge: bool, stmt_range: TextRange) {
     match ctx.scope.local.diverges() {
         Diverges::Maybe => {
             if will_diverge {

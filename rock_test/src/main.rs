@@ -184,12 +184,9 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
 
         for test in test_file.tests {
             let main_src = if test.no_run {
-                format!("import test.{{test_{0}}}\nproc main() s32 {{ return 0; }}", test.entry)
+                format!("import test.{{test_{0}}}\nproc main() void {{}}", test.entry)
             } else {
-                format!(
-                    "import test.{{test_{0}}}\nproc main() s32 {{ test_{0}(); return 0; }}",
-                    test.entry
-                )
+                format!("import test.{{test_{0}}}\nproc main() void {{ test_{0}(); }}", test.entry)
             };
             let test_src = format!("{}{}", test.source, test_file.prelude);
 

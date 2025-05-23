@@ -1,9 +1,10 @@
-use super::check_directive;
 use super::context::HirCtx;
+use super::pass_5::{self, Expectation};
 use crate::errors as err;
 use crate::hir;
 use crate::package::manifest::PackageKind;
 use crate::session::{ModuleID, ModuleOrDirectory};
+use crate::support::BitSet;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {
     let root_package = ctx.session.graph.package(ctx.session.root_id);
@@ -11,53 +12,27 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
         return;
     }
 
-    let main_id = ctx.session.intern_name.intern("main");
-    let module_or_directory = root_package.src().find(ctx.session, main_id);
-
-    let target_id = match module_or_directory {
-        ModuleOrDirectory::Module(module_id) => module_id,
-        _ => {
-            err::entry_main_mod_not_found(&mut ctx.emit);
-            return;
-        }
+    let name_id = ctx.session.intern_name.intern("main");
+    let ModuleOrDirectory::Module(target_id) = root_package.src().find(ctx.session, name_id) else {
+        err::entry_main_mod_not_found(&mut ctx.emit);
+        return;
+    };
+    let Some(proc_id) = ctx.scope.global.find_defined_proc(target_id, name_id) else {
+        err::entry_main_proc_not_found(&mut ctx.emit);
+        return;
     };
 
-    if let Some(proc_id) = ctx.scope.global.find_defined_proc(target_id, main_id) {
-        check_main_procedure(ctx, proc_id);
-    } else {
-        err::entry_main_proc_not_found(&mut ctx.emit);
-    }
-}
-
-fn check_main_procedure(ctx: &mut HirCtx, proc_id: hir::ProcID) {
-    let data = ctx.registry.proc_data_mut(proc_id);
-    let mut flag_set = data.flag_set;
-    let main_src = data.src();
+    let data = ctx.registry.proc_data(proc_id);
+    let range = data.name.range;
     ctx.scope.origin = data.origin_id;
 
-    check_directive::apply_item_flag(
-        ctx,
-        &mut flag_set,
-        hir::ProcFlag::EntryPoint,
-        main_src,
-        None,
-        "procedures",
-    );
+    let ty = hir::ProcType { flag_set: BitSet::empty(), params: &[], return_ty: hir::Type::Void };
+    let ty = hir::Type::Procedure(ctx.arena.alloc(ty));
+    let expect = Expectation::HasType(ty, None);
 
-    let item = ctx.registry.proc_item(proc_id);
-    let data = ctx.registry.proc_data_mut(proc_id);
-    data.flag_set = flag_set;
-
-    if !data.params.is_empty() {
-        err::entry_main_with_parameters(&mut ctx.emit, main_src);
-    }
-    if !data.return_ty.is_error()
-        && !data.return_ty.is_never()
-        && !matches!(data.return_ty, hir::Type::Int(hir::IntType::S32))
-    {
-        let ret_src = ctx.src(item.return_ty.range);
-        err::entry_main_wrong_return_ty(&mut ctx.emit, ret_src);
-    }
+    let type_res = pass_5::check_item_procedure(ctx, expect, proc_id, None, range);
+    pass_5::type_expectation_check(ctx, range, type_res.ty, expect);
+    ctx.registry.proc_data_mut(proc_id).flag_set.set(hir::ProcFlag::EntryPoint);
 }
 
 pub fn check_unused_items(ctx: &mut HirCtx) {
