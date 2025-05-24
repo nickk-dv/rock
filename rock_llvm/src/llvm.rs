@@ -37,6 +37,7 @@ pub type CallConv = sys::LLVMCallConv;
 pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
 pub type AtomicOrdering = sys::LLVMAtomicOrdering;
+pub type AtomicRMWBinOp = sys::LLVMAtomicRMWBinOp;
 
 #[derive(Copy, Clone)]
 pub struct Type(sys::LLVMTypeRef);
@@ -436,6 +437,11 @@ impl IRBuilder {
         })
     }
 
+    pub fn set_weak(&self, cmp_xchg_inst: Value, weak: bool) {
+        unsafe {
+            core::LLVMSetWeak(cmp_xchg_inst.0, weak as i32);
+        }
+    }
     pub fn set_ordering(&self, access_inst: Value, order: AtomicOrdering) {
         unsafe {
             core::LLVMSetOrdering(access_inst.0, order);
@@ -510,6 +516,36 @@ impl IRBuilder {
                 agg_val.0,
                 index,
                 self.cstr_buf.cstr(name),
+            ))
+        }
+    }
+
+    pub fn atomic_rmw(
+        &self,
+        op: AtomicRMWBinOp,
+        ptr: ValuePtr,
+        val: Value,
+        order: AtomicOrdering,
+    ) -> Value {
+        unsafe { Value(core::LLVMBuildAtomicRMW(self.builder, op, ptr.0, val.0, order, 0)) }
+    }
+    pub fn atomic_cmp_xchg(
+        &self,
+        ptr: ValuePtr,
+        cmp: Value,
+        new: Value,
+        success: AtomicOrdering,
+        failure: AtomicOrdering,
+    ) -> Value {
+        unsafe {
+            Value(core::LLVMBuildAtomicCmpXchg(
+                self.builder,
+                ptr.0,
+                cmp.0,
+                new.0,
+                success,
+                failure,
+                0,
             ))
         }
     }

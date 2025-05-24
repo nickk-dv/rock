@@ -1035,6 +1035,19 @@ fn codegen_variant<'c>(
     }
 }
 
+fn const_expr_ordering(expr: &hir::Expr) -> llvm::AtomicOrdering {
+    let hir::Expr::Const(value, _) = *expr else { unreachable!() };
+    let hir::ConstValue::Variant { variant_id, .. } = value else { unreachable!() };
+    match variant_id.raw() {
+        0 => llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic,
+        1 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquire,
+        2 => llvm::AtomicOrdering::LLVMAtomicOrderingRelease,
+        3 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquireRelease,
+        4 => llvm::AtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent,
+        _ => unreachable!(),
+    }
+}
+
 //@ret in function can cause type mismatch on ir level
 //example: i64 vs Handle.{ ptr }, external and normal fn confilict
 pub fn codegen_call_direct<'c>(
@@ -1064,17 +1077,37 @@ pub fn codegen_call_direct<'c>(
             }
             "load" => {
                 let ptr_ty = cg.ty(poly_types[0]);
-                let dst = codegen_expr_value(cg, input[0]);
-                let inst = cg.build.load(ptr_ty, dst.into_ptr(), "atomic_load");
-                cg.build.set_ordering(inst, llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic);
+                let dst = codegen_expr_value(cg, input[0]).into_ptr();
+                let order = const_expr_ordering(input[1]);
+
+                let inst = cg.build.load(ptr_ty, dst, "atomic_load");
+                cg.build.set_ordering(inst, order);
                 return Some(inst);
             }
             "store" => {
-                let dst = codegen_expr_value(cg, input[0]);
+                let dst = codegen_expr_value(cg, input[0]).into_ptr();
                 let value = codegen_expr_value(cg, input[1]);
-                let inst = cg.build.store(value, dst.into_ptr());
-                cg.build.set_ordering(inst, llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic);
+                let order = const_expr_ordering(input[2]);
+
+                let inst = cg.build.store(value, dst);
+                cg.build.set_ordering(inst, order);
                 return None;
+            }
+            "compare_exchange" | "compare_exchange_weak" => {
+                let dst = codegen_expr_value(cg, input[0]).into_ptr();
+                let expect = codegen_expr_value(cg, input[1]);
+                let new = codegen_expr_value(cg, input[2]);
+                let success = const_expr_ordering(input[3]);
+                let failure = const_expr_ordering(input[4]);
+
+                let inst = cg.build.atomic_cmp_xchg(dst, expect, new, success, failure);
+                if name == "compare_exchange_weak" {
+                    cg.build.set_weak(inst, true);
+                }
+                //@wrap in Result, requires doing a branch here..
+                let _ = cg.build.extract_value(inst, 0, "stored_val");
+                let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
+                return Some(exchange_ok);
             }
             _ => unimplemented!(),
         }

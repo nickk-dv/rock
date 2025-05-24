@@ -551,6 +551,8 @@ pub mod core {
             idx: c_uint,
             name: *const c_char,
         ) -> LLVMValueRef;
+
+        pub fn LLVMSetWeak(cmp_xchg_inst: LLVMValueRef, weak: LLVMBool);
         pub fn LLVMSetOrdering(access_inst: LLVMValueRef, order: LLVMAtomicOrdering);
 
         pub fn LLVMBuildCast(
@@ -602,6 +604,24 @@ pub mod core {
             agg_val: LLVMValueRef,
             index: c_uint,
             name: *const c_char,
+        ) -> LLVMValueRef;
+
+        pub fn LLVMBuildAtomicRMW(
+            b: LLVMBuilderRef,
+            op: LLVMAtomicRMWBinOp,
+            ptr: LLVMValueRef,
+            val: LLVMValueRef,
+            ordering: LLVMAtomicOrdering,
+            single_thread: LLVMBool,
+        ) -> LLVMValueRef;
+        pub fn LLVMBuildAtomicCmpXchg(
+            b: LLVMBuilderRef,
+            ptr: LLVMValueRef,
+            cmp: LLVMValueRef,
+            new: LLVMValueRef,
+            success: LLVMAtomicOrdering,
+            failure: LLVMAtomicOrdering,
+            single_thread: LLVMBool,
         ) -> LLVMValueRef;
     }
 }
