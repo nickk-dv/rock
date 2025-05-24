@@ -1,7 +1,7 @@
 use crate::ast;
-use crate::config::TargetPtrWidth;
 use crate::error::SourceRange;
 use crate::intern::{LitID, NameID};
+use crate::session::config::TargetPtrWidth;
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::{self, TextOffset, TextRange};

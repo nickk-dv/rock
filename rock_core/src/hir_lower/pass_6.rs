@@ -2,8 +2,7 @@ use super::context::HirCtx;
 use super::pass_5::{self, Expectation};
 use crate::errors as err;
 use crate::hir;
-use crate::package::manifest::PackageKind;
-use crate::session::{ModuleID, ModuleOrDirectory};
+use crate::session::{manifest::PackageKind, ModuleID, ModuleOrDirectory};
 use crate::support::BitSet;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {

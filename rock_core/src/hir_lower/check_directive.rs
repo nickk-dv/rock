@@ -1,9 +1,8 @@
 use super::context::HirCtx;
 use crate::ast::{self, DirectiveKind};
-use crate::config;
 use crate::errors as err;
 use crate::hir;
-use crate::session;
+use crate::session::{self, config};
 use crate::support::{AsStr, BitSet};
 
 #[derive(Copy, Clone)]

@@ -1,17 +1,14 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
-use rock_core::config::{Build, Config, TargetTriple};
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir_lower;
-use rock_core::package;
-use rock_core::package::manifest::{BuildManifest, Manifest, PackageKind, PackageManifest};
-use rock_core::package::semver::Semver;
+use rock_core::session::config::{Build, Config, TargetTriple};
+use rock_core::session::manifest::{self, PackageKind};
 use rock_core::session::{self, BuildStats, Session};
 use rock_core::support::{os, AsStr, Timer};
-use rock_core::syntax;
-use rock_core::syntax::format;
+use rock_core::syntax::{self, format};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -38,34 +35,37 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
     let root_dir = cwd.join(&data.name);
     let src_dir = root_dir.join("src");
 
-    package::verify_name(&data.name)?;
+    manifest::package_verify_name(&data.name)?;
     os::dir_create(&root_dir, true)?;
     os::dir_create(&src_dir, true)?;
     if let PackageKind::Bin = data.kind {
         os::file_create(&src_dir.join("main.rock"), "proc main() void {}\n")?;
     }
 
-    let package = PackageManifest {
+    let package = manifest::PackageManifest {
         name: data.name.clone(),
         kind: data.kind,
-        version: Semver::new(0, 1, 0),
+        version: manifest::Semver::new(0, 1, 0),
         owner: None,
         authors: None,
         description: None,
     };
     let build = match data.kind {
-        PackageKind::Bin => BuildManifest {
+        PackageKind::Bin => manifest::BuildManifest {
             bin_name: Some(data.name.clone()),
             nodefaultlib: None,
             lib_paths: None,
             links: None,
         },
-        PackageKind::Lib => {
-            BuildManifest { bin_name: None, nodefaultlib: None, lib_paths: None, links: None }
-        }
+        PackageKind::Lib => manifest::BuildManifest {
+            bin_name: None,
+            nodefaultlib: None,
+            lib_paths: None,
+            links: None,
+        },
     };
-    let manifest = Manifest { package, build, dependencies: BTreeMap::new() };
-    let manifest_text = package::manifest_serialize(&manifest)?;
+    let manifest = manifest::Manifest { package, build, dependencies: BTreeMap::new() };
+    let manifest_text = manifest::serialize(&manifest)?;
     os::file_create(&root_dir.join("Rock.toml"), &manifest_text)?;
 
     if !data.no_git {
@@ -324,6 +324,5 @@ fn version() {
     let style = AnsiStyle::new();
     let g = style.out.green_bold;
     let r = style.out.reset;
-
     println!("  {g}Rock version:{r} {}\n", rock_core::VERSION);
 }

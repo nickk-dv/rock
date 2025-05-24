@@ -1,7 +1,7 @@
-use rock_core::config::Build;
 use rock_core::error::ErrorBuffer;
 use rock_core::errors as err;
-use rock_core::package::manifest::PackageKind;
+use rock_core::session::config::Build;
+use rock_core::session::manifest::PackageKind;
 use rock_core::support::AsStr;
 use rock_llvm::build::BuildOptions;
 use std::collections::{HashMap, HashSet};

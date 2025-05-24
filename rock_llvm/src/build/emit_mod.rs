@@ -3,13 +3,12 @@ use super::emit_expr;
 use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
-use rock_core::config::TargetTriple;
 use rock_core::hir;
-use rock_core::session::Session;
+use rock_core::session::{config, Session};
 
 pub fn codegen_module(
     hir: hir::Hir,
-    target: TargetTriple,
+    target: config::TargetTriple,
     session: &mut Session,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, session);
@@ -24,7 +23,7 @@ pub fn codegen_module(
 }
 
 fn codegen_string_lits(cg: &mut Codegen) {
-    //@hack prepare all possible required lit_id's (used in index expr)
+    //prepare possible required lit_id's
     cg.session.intern_lit.intern("index out of bounds");
     for module_id in cg.session.module.ids() {
         let _ = hir::source_location(cg.session, module_id, 0.into());

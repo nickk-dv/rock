@@ -168,7 +168,9 @@ pub fn has_poly_param(ty: hir::Type) -> bool {
     }
 }
 
-//@assuming that enum and struct poly_types always affect their layout
+//making an assumption that polymorphic type parameter,
+//that is part of the enum or struct type affects its layout.
+//this avoids tracking extra param data or walking the type fields.
 pub fn has_poly_layout_dep(ty: hir::Type) -> bool {
     match ty {
         hir::Type::Error | hir::Type::Unknown | hir::Type::Char | hir::Type::Void => false,

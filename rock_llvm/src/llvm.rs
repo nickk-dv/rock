@@ -5,7 +5,7 @@ use crate::sys::analysis;
 use crate::sys::core;
 use crate::sys::pass;
 use crate::sys::target;
-use rock_core::config::{Build, TargetArch, TargetTriple};
+use rock_core::session::config::{Build, TargetArch, TargetTriple};
 use rock_core::support::AsStr;
 use std::ffi::c_char;
 

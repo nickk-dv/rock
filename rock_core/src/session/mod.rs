@@ -1,17 +1,16 @@
+pub mod config;
 mod graph;
+pub mod manifest;
 pub mod vfs;
 
 use crate::ast::Ast;
-use crate::config::Config;
 use crate::error::{Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
-use crate::package;
-use crate::package::manifest::{Manifest, PackageKind};
 use crate::support::os;
 use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::syntax_tree::SyntaxTree;
-use graph::PackageGraph;
+use manifest::{Manifest, PackageKind};
 use std::path::PathBuf;
 pub use vfs::FileData;
 use vfs::{FileID, Vfs};
@@ -22,10 +21,10 @@ pub struct Session<'s> {
     pub curr_work_dir: PathBuf,
     pub intern_lit: InternPool<'s, LitID>,
     pub intern_name: InternPool<'s, NameID>,
-    pub graph: PackageGraph,
+    pub graph: graph::PackageGraph,
     pub module: Modules<'s>,
     pub stats: BuildStats,
-    pub config: Config,
+    pub config: config::Config,
     pub errors: ErrorBuffer,
     pub root_id: PackageID,
     pub ast_state: AstBuildState<'s>,
@@ -258,14 +257,14 @@ impl BuildStats {
     }
 }
 
-pub fn create_session<'s>(config: Config) -> Result<Session<'s>, Error> {
+pub fn create_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
     let mut session = Session {
         vfs: Vfs::new(64),
         curr_exe_dir: os::current_exe_path()?,
         curr_work_dir: os::dir_get_current_working()?,
         intern_lit: InternPool::new(512),
         intern_name: InternPool::new(1024),
-        graph: PackageGraph::new(8),
+        graph: graph::PackageGraph::new(8),
         module: Modules::new(64),
         stats: BuildStats::default(),
         config,
@@ -308,7 +307,7 @@ fn process_package(
     }
 
     let manifest = os::file_read(&manifest_path)?;
-    let manifest = package::manifest_deserialize(&manifest, &manifest_path)?;
+    let manifest = manifest::deserialize(&manifest, &manifest_path)?;
     let name_id = session.intern_name.intern(&manifest.package.name);
 
     if let Some(dep_id) = dep_from {

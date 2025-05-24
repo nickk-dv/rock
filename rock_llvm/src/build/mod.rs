@@ -3,10 +3,10 @@ mod emit_expr;
 mod emit_mod;
 mod emit_stmt;
 
-use rock_core::config::{Build, TargetOS};
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir;
+use rock_core::session::config::{Build, TargetOS};
 use rock_core::session::Session;
 use rock_core::support::os;
 use rock_core::support::{AsStr, Timer};

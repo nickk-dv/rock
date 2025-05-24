@@ -1,9 +1,9 @@
 use crate::llvm;
-use rock_core::config::TargetTriple;
 use rock_core::error::{ErrorWarningBuffer, SourceRange};
 use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
 use rock_core::intern::NameID;
+use rock_core::session::config::TargetTriple;
 use rock_core::session::{ModuleID, Session};
 use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
 use rock_core::text::TextRange;
