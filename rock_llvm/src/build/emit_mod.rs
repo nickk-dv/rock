@@ -349,12 +349,13 @@ pub fn codegen_function_value<'c>(
     if by_pointer_ret {
         fn_val.set_param_attr(cg.cache.sret, 1);
     }
-    //@non polymorphed type! might be `never` through poly
-    if data.return_ty.is_never() {
-        fn_val.set_attr(cg.cache.noreturn);
-    }
+
     if data.flag_set.contains(hir::ProcFlag::Inline) {
         fn_val.set_attr(cg.cache.inlinehint);
+    }
+    let return_ty = context::substitute_type(cg, data.return_ty, &[]);
+    if return_ty.is_never() {
+        fn_val.set_attr(cg.cache.noreturn);
     }
 
     cg.proc.poly_types = curr_poly;

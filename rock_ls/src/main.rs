@@ -649,20 +649,14 @@ fn compile_project(server: &mut ServerContext) {
     }
 }
 
+//@use 3.16 features: didCreateFiles, didDeleteFiles, didRenameFiles.
+
 fn handle_file_opened(server: &mut ServerContext, path: PathBuf, text: String) {
     debug_eprintln!("[file opened] path: {}, text bytes: {}", path.to_string_lossy(), text.len());
-    //@todo, sent when:
-    // 1) new file created
-    // 2) existing file renamed
-    // 3) file opened in the editor
 }
 
 fn handle_file_closed(server: &mut ServerContext, path: PathBuf) {
     debug_eprintln!("[file closed] path: {}", path.to_string_lossy());
-    //@todo, sent when:
-    // 1) existing file deleted
-    // 2) existing file renamed
-    // 3) file closed in the editor
 }
 
 fn handle_file_changed(

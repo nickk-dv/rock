@@ -2533,6 +2533,9 @@ fn check_binary_op<'hir>(
     lhs_ty: hir::Type<'hir>,
     rhs_ty: hir::Type,
 ) -> Result<hir::BinOp, ()> {
+    if lhs_ty.is_error() || rhs_ty.is_error() {
+        return Err(());
+    }
     if op != ast::BinOp::BitShl && op != ast::BinOp::BitShr && !type_matches(ctx, lhs_ty, rhs_ty) {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));

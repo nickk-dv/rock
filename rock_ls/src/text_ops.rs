@@ -44,7 +44,7 @@ pub fn position_utf16_to_offset_utf8(file: &FileData, position: lsp::Position) -
 
 pub fn offset_utf8_to_position_utf16(file: &FileData, offset: TextOffset) -> lsp::Position {
     let pos = text::find_text_location(&file.source, offset, &file.line_ranges);
-    let line_range = file.line_ranges[pos.line_index() - 1];
+    let line_range = file.line_ranges[pos.line_index()];
     let prefix_range = TextRange::new(line_range.start(), offset);
     let prefix_text = &file.source[prefix_range.as_usize()];
     lsp::Position::new(pos.line() - 1, string_len_utf16(prefix_text))
