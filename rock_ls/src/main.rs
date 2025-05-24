@@ -56,6 +56,25 @@ fn initialize_handshake(conn: &Connection) {
         })),
     };
 
+    let filter = lsp::FileOperationRegistrationOptions {
+        filters: vec![lsp::FileOperationFilter {
+            scheme: Some("file".to_string()),
+            pattern: lsp::FileOperationPattern {
+                glob: "**/*.rock".to_string(),
+                matches: None,
+                options: None,
+            },
+        }],
+    };
+    let file_ops = lsp::WorkspaceFileOperationsServerCapabilities {
+        did_create: Some(filter.clone()),
+        did_rename: Some(filter.clone()),
+        did_delete: Some(filter.clone()),
+        will_create: None,
+        will_rename: None,
+        will_delete: None,
+    };
+
     let semantic_tokens = lsp::SemanticTokensOptions {
         work_done_progress_options: lsp::WorkDoneProgressOptions { work_done_progress: None },
         legend: lsp::SemanticTokensLegend {
@@ -83,6 +102,10 @@ fn initialize_handshake(conn: &Connection) {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
         definition_provider: Some(lsp::OneOf::Left(true)),
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
+        workspace: Some(lsp::WorkspaceServerCapabilities {
+            workspace_folders: None,
+            file_operations: Some(file_ops),
+        }),
         semantic_tokens_provider: Some(
             lsp::SemanticTokensServerCapabilities::SemanticTokensOptions(semantic_tokens),
         ),
@@ -223,9 +246,10 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
             },
             Message::Notification(not) => match not {
                 Notification::FileSaved => compile_project(server),
-                Notification::FileOpened(path, text) => handle_file_opened(server, path, text),
-                Notification::FileClosed(path) => handle_file_closed(server, path),
-                Notification::FileChanged(path, c) => handle_file_changed(server, path, c),
+                Notification::FileCreate(p) => handle_file_create(server, p),
+                Notification::FileDelete(p) => handle_file_delete(server, p),
+                Notification::FileRename(p) => handle_file_rename(server, p),
+                Notification::FileChanged(p) => handle_file_changed(server, p),
             },
         }
     }
@@ -649,22 +673,25 @@ fn compile_project(server: &mut ServerContext) {
     }
 }
 
-//@use 3.16 features: didCreateFiles, didDeleteFiles, didRenameFiles.
-
-fn handle_file_opened(server: &mut ServerContext, path: PathBuf, text: String) {
-    debug_eprintln!("[file opened] path: {}, text bytes: {}", path.to_string_lossy(), text.len());
+fn handle_file_create(server: &mut ServerContext, p: lsp::CreateFilesParams) {
+    debug_eprintln!("[file create] {:?}", p);
 }
 
-fn handle_file_closed(server: &mut ServerContext, path: PathBuf) {
-    debug_eprintln!("[file closed] path: {}", path.to_string_lossy());
+fn handle_file_delete(server: &mut ServerContext, p: lsp::DeleteFilesParams) {
+    debug_eprintln!("[file delete] {:?}", p);
 }
 
-fn handle_file_changed(
-    server: &mut ServerContext,
-    path: PathBuf,
-    changes: Vec<lsp::TextDocumentContentChangeEvent>,
-) {
-    debug_eprintln!("[file changed] path: {}, changes: {}", path.to_string_lossy(), changes.len());
+fn handle_file_rename(server: &mut ServerContext, p: lsp::RenameFilesParams) {
+    debug_eprintln!("[file rename] {:?}", p);
+}
+
+fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocumentParams) {
+    let path = uri_to_path(&p.text_document.uri);
+    debug_eprintln!(
+        "[file changed] path: {}, changes: {}",
+        path.to_string_lossy(),
+        p.content_changes.len()
+    );
     let session = &mut server.session;
     let module = match module_id_from_path(session, &path) {
         Some(module_id) => session.module.get(module_id),
@@ -673,7 +700,7 @@ fn handle_file_changed(
     let file = session.vfs.file_mut(module.file_id());
     file.version += 1;
 
-    for change in changes {
+    for change in p.content_changes {
         if let Some(range) = change.range {
             let range = text_ops::range_utf16_to_range_utf8(file, range);
             file.source.replace_range(range.as_usize(), &change.text);

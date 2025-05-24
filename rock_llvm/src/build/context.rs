@@ -227,7 +227,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                     let ty = self.ty_impl(field.ty, key.1);
                     self.cache.types.push(ty);
                 }
-                let field_types = self.cache.types.view(offset.clone());
+                let field_types = self.cache.types.view(offset);
                 self.context.struct_named_set_body(opaque, &field_types, false);
                 self.cache.types.pop_view(offset);
                 opaque.as_ty()

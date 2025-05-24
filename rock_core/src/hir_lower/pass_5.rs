@@ -2075,7 +2075,7 @@ fn typecheck_struct_init<'hir, 'ast>(
             return TypeResult::error();
         }
         let const_offset = ctx.cache.const_values.start();
-        let fields = ctx.cache.field_inits.view(offset_init.clone());
+        let fields = ctx.cache.field_inits.view(offset_init);
         for field in fields {
             match field.expr {
                 hir::Expr::Error => return TypeResult::error(),
@@ -2164,7 +2164,7 @@ fn typecheck_array_init<'hir, 'ast>(
             hir::Expr::Const(array, hir::ConstID::dummy())
         } else {
             let const_offset = ctx.cache.const_values.start();
-            let values = ctx.cache.exprs.view(offset.clone());
+            let values = ctx.cache.exprs.view(offset);
             for (idx, value) in values.iter().enumerate() {
                 match value {
                     hir::Expr::Error => return TypeResult::error(),

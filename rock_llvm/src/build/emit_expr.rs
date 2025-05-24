@@ -481,7 +481,7 @@ fn codegen_const_struct<'c>(
     }
 
     let struct_ty = cg.ty(hir::Type::Struct(struct_id, struct_.poly_types)).as_st();
-    let values = cg.cache.values.view(offset.clone());
+    let values = cg.cache.values.view(offset);
     let struct_ = llvm::const_struct_named(struct_ty, values);
     cg.cache.values.pop_view(offset);
     struct_
@@ -496,7 +496,7 @@ fn codegen_const_array<'c>(
         let value = codegen_const(cg, *value);
         cg.cache.values.push(value);
     }
-    let values = cg.cache.values.view(offset.clone());
+    let values = cg.cache.values.view(offset);
 
     let elem_ty = llvm::typeof_value(values[0]);
     let array = llvm::const_array(elem_ty, values);
@@ -513,7 +513,7 @@ fn codegen_const_array_repeat<'c>(
     for _ in 0..array.len {
         cg.cache.values.push(value);
     }
-    let values = cg.cache.values.view(offset.clone());
+    let values = cg.cache.values.view(offset);
 
     let elem_ty = llvm::typeof_value(values[0]);
     let array = llvm::const_array(elem_ty, values);
@@ -691,7 +691,7 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
     let on_value = extract_slice_len_if_needed(cg, match_.kind, on_value);
     let else_bb = wild_bb.unwrap_or(exit_bb);
 
-    let cases = cg.cache.cases.view(offset.clone());
+    let cases = cg.cache.cases.view(offset);
     let switch = cg.build.switch(on_value, else_bb, cases.len() as u32);
     for (case_val, dest_bb) in cases.iter().copied() {
         cg.build.add_case(switch, case_val, dest_bb);
@@ -1171,7 +1171,7 @@ pub fn codegen_call_direct<'c>(
         fn_res
     };
 
-    let input_values = cg.cache.values.view(offset.clone());
+    let input_values = cg.cache.values.view(offset);
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val");
     cg.cache.values.pop_view(offset);
 
@@ -1259,7 +1259,7 @@ fn codegen_call_indirect<'c>(
     }
 
     let fn_ty = cg.proc_type(proc_ty);
-    let input_values = cg.cache.values.view(offset.clone());
+    let input_values = cg.cache.values.view(offset);
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "icall_val");
     cg.cache.values.pop_view(offset);
 

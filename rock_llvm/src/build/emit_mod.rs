@@ -333,7 +333,7 @@ pub fn codegen_function_value<'c>(
         cg.namebuf.as_str()
     };
 
-    let param_types = cg.cache.types.view(offset.clone());
+    let param_types = cg.cache.types.view(offset);
     let fn_ty = llvm::function_type(return_ty, param_types, is_variadic);
     cg.cache.types.pop_view(offset);
 
