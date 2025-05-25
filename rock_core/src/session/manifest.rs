@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
-    pub package: PackageManifest,               // table key [package]
-    pub build: BuildManifest,                   // table key [build]
-    pub dependencies: BTreeMap<String, Semver>, // table key [dependencies]
+    pub package: PackageManifest,                   // table key [package]
+    pub build: BuildManifest,                       // table key [build]
+    pub dependencies: BTreeMap<String, Dependency>, // table key [dependencies]
 }
 
 #[derive(Serialize, Deserialize)]
@@ -27,6 +27,13 @@ pub struct BuildManifest {
     pub nodefaultlib: Option<bool>,      // dont link against default lib
     pub lib_paths: Option<Vec<PathBuf>>, // library search paths
     pub links: Option<Vec<String>>,      // library names or paths to link against
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum Dependency {
+    Dep(Semver),
+    Path { path: String },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -103,7 +110,7 @@ pub fn index_deserialize(
 }
 
 pub fn package_verify_name(name: &str) -> Result<&str, Error> {
-    const MAX_NAME_LEN: usize = 32;
+    const MAX_NAME_LEN: usize = 64;
 
     if name.len() > MAX_NAME_LEN {
         return Err(Error::message(format!(

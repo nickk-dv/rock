@@ -57,19 +57,29 @@ fn initialize_handshake(conn: &Connection) {
     };
 
     let filter = lsp::FileOperationRegistrationOptions {
-        filters: vec![lsp::FileOperationFilter {
-            scheme: Some("file".to_string()),
-            pattern: lsp::FileOperationPattern {
-                glob: "**/*.rock".to_string(),
-                matches: None,
-                options: None,
+        filters: vec![
+            lsp::FileOperationFilter {
+                scheme: Some("file".to_string()),
+                pattern: lsp::FileOperationPattern {
+                    glob: "**/*.rock".to_string(),
+                    matches: Some(lsp::FileOperationPatternKind::File),
+                    options: None,
+                },
             },
-        }],
+            lsp::FileOperationFilter {
+                scheme: Some("file".to_string()),
+                pattern: lsp::FileOperationPattern {
+                    glob: "**/*".to_string(),
+                    matches: Some(lsp::FileOperationPatternKind::Folder),
+                    options: None,
+                },
+            },
+        ],
     };
     let file_ops = lsp::WorkspaceFileOperationsServerCapabilities {
         did_create: Some(filter.clone()),
         did_rename: Some(filter.clone()),
-        did_delete: Some(filter.clone()),
+        did_delete: Some(filter),
         will_create: None,
         will_rename: None,
         will_delete: None,

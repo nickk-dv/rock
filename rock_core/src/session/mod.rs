@@ -336,9 +336,18 @@ fn process_package(
     let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps, modules };
     let package_id = session.graph.add(package, root_dir);
 
-    //@semver not considered
-    for (dep_name, _) in dependencies.iter() {
-        let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
+    for (dep_name, dep) in dependencies.iter() {
+        let dep_root_dir = match dep {
+            manifest::Dependency::Dep(semver) => {
+                return Err(Error::message(format!(
+                    "package fetch not implemented, cannot find: {dep_name}-{semver}"
+                )));
+            }
+            manifest::Dependency::Path { path } => {
+                PathBuf::from(path.as_str()).canonicalize().unwrap()
+            }
+        };
+        //let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
         let dep_id = match session.graph.get_unique(&dep_root_dir) {
             Some(dep_id) => dep_id,
             None => process_package(session, &dep_root_dir, Some(package_id), false)?,
