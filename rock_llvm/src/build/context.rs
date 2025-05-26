@@ -2,13 +2,14 @@ use crate::llvm;
 use rock_core::error::{ErrorWarningBuffer, SourceRange};
 use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
-use rock_core::intern::NameID;
+use rock_core::intern::{LitID, NameID};
 use rock_core::session::config::TargetTriple;
 use rock_core::session::{ModuleID, Session};
 use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
 use rock_core::text::TextRange;
 use rock_core::{ast, hir};
 use std::collections::HashMap;
+use std::hash::Hash;
 
 pub struct Codegen<'c, 's, 'sref> {
     pub proc: ProcCodegen<'c>,
@@ -16,19 +17,18 @@ pub struct Codegen<'c, 's, 'sref> {
     pub target: llvm::IRTarget,
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
-    pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
+    pub procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub enums: Vec<llvm::TypeStruct>,
     pub structs: Vec<llvm::TypeStruct>,
     pub globals: Vec<llvm::ValueGlobal>,
-    pub string_lits: Vec<llvm::ValueGlobal>,
+    pub string_lits: HashMap<LitID, llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
     pub namebuf: String,
     pub cache: CodegenCache<'c>,
-    pub poly_procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub poly_enums: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
     pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
-    pub poly_proc_queue: Vec<hir::ProcKey<'c>>,
+    pub proc_queue: Vec<hir::ProcKey<'c>>,
     pub type_info_ptr: llvm::ValueGlobal,
     pub type_info_arr: llvm::ValueGlobal,
     pub type_ids: HashMap<hir::Type<'c>, u64>,
@@ -116,19 +116,18 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             target,
             module,
             build,
-            procs: Vec::with_capacity(hir.procs.len()),
+            procs: HashMap::with_capacity(hir.procs.len()),
             enums: Vec::with_capacity(hir.enums.len()),
             structs: Vec::with_capacity(hir.structs.len()),
             globals: Vec::with_capacity(hir.globals.len()),
-            string_lits: Vec::with_capacity(session.intern_lit.get_all().len()),
+            string_lits: HashMap::with_capacity(session.intern_lit.get_all().len()),
             hir,
             session,
             namebuf: String::with_capacity(256),
             cache,
-            poly_procs: HashMap::with_capacity(256),
             poly_enums: HashMap::with_capacity(256),
             poly_structs: HashMap::with_capacity(256),
-            poly_proc_queue: Vec::with_capacity(64),
+            proc_queue: Vec::with_capacity(64),
             type_info_ptr: llvm::ValueGlobal::null(),
             type_info_arr: llvm::ValueGlobal::null(),
             type_ids: HashMap::with_capacity(128),

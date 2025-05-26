@@ -15,6 +15,7 @@ pub struct Hir<'hir> {
     pub globals: Vec<GlobalData<'hir>>,
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
+    pub entry_point: Option<ProcID>,
     pub enum_layout: HashMap<EnumKey<'hir>, Layout>,
     pub struct_layout: HashMap<StructKey<'hir>, StructLayout<'hir>>,
     pub variant_layout: HashMap<VariantKey<'hir>, StructLayout<'hir>>,

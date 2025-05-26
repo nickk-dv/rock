@@ -4,6 +4,8 @@ use super::emit_stmt;
 use crate::llvm;
 use rock_core::ast;
 use rock_core::hir;
+use rock_core::hir_lower::types;
+use rock_core::intern::LitID;
 use rock_core::session::{config, Session};
 
 pub fn codegen_module(
@@ -12,29 +14,30 @@ pub fn codegen_module(
     session: &mut Session,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, session);
-    codegen_string_lits(&mut cg);
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
-    codegen_function_values(&mut cg);
     codegen_globals(&mut cg);
-    codegen_function_bodies(&mut cg);
+
+    let entry_point = cg.hir.entry_point.unwrap();
+    codegen_function(&mut cg, entry_point, &[]);
+    while let Some((proc_id, poly_types)) = cg.proc_queue.pop() {
+        codegen_function_body(&mut cg, proc_id, poly_types);
+    }
+
     codegen_type_info(&mut cg);
     (cg.target, cg.module)
 }
 
-fn codegen_string_lits(cg: &mut Codegen) {
-    //prepare possible required lit_id's
-    cg.session.intern_lit.intern("index out of bounds");
-    for module_id in cg.session.module.ids() {
-        let _ = hir::source_location(cg.session, module_id, 0.into());
+pub fn codegen_string_lit(cg: &mut Codegen, val: LitID) -> llvm::ValuePtr {
+    if let Some(string_lit) = cg.string_lits.get(&val) {
+        return string_lit.as_ptr();
     }
-
-    for string in cg.session.intern_lit.get_all().iter().copied() {
-        let string_val = llvm::const_string(&cg.context, string, true);
-        let string_ty = llvm::typeof_value(string_val);
-        let global = cg.module.add_global("rock.string", Some(string_val), string_ty, true, true);
-        cg.string_lits.push(global);
-    }
+    let string = cg.session.intern_lit.get(val);
+    let string_val = llvm::const_string(&cg.context, string, true);
+    let string_ty = llvm::typeof_value(string_val);
+    let global = cg.module.add_global("rock.string", Some(string_val), string_ty, true, true);
+    cg.string_lits.insert(val, global);
+    global.as_ptr()
 }
 
 fn codegen_enum_types(cg: &mut Codegen) {
@@ -258,29 +261,23 @@ fn codegen_type_info(cg: &mut Codegen) {
     cg.module.init_global(cg.type_info_ptr, cg.type_info_arr.as_ptr().as_val());
 }
 
-fn codegen_function_values(cg: &mut Codegen) {
-    for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
-        if cg.hir.proc_data(proc_id).poly_params.is_none() {
-            let fn_res = codegen_function_value(cg, proc_id, &[]);
-            cg.procs.push(fn_res);
-        } else {
-            cg.procs.push((llvm::ValueFn::null(), llvm::TypeFn::null()));
-        }
+pub fn codegen_function<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    proc_id: hir::ProcID,
+    poly_types: &'c [hir::Type<'c>],
+) -> (llvm::ValueFn, llvm::TypeFn) {
+    types::expect_concrete(poly_types);
+    if let Some(fn_res) = cg.procs.get(&(proc_id, poly_types)) {
+        *fn_res
+    } else {
+        let fn_res = codegen_function_value(cg, proc_id, poly_types);
+        cg.procs.insert((proc_id, poly_types), fn_res);
+        cg.proc_queue.push((proc_id, poly_types));
+        fn_res
     }
 }
 
-fn codegen_function_bodies(cg: &mut Codegen) {
-    for proc_id in (0..cg.hir.procs.len()).map(hir::ProcID::new) {
-        if cg.hir.proc_data(proc_id).poly_params.is_none() {
-            codegen_function_body(cg, proc_id, &[]);
-        }
-    }
-    while let Some((proc_id, poly_types)) = cg.poly_proc_queue.pop() {
-        codegen_function_body(cg, proc_id, poly_types);
-    }
-}
-
-pub fn codegen_function_value<'c>(
+fn codegen_function_value<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     proc_id: hir::ProcID,
     poly_types: &'c [hir::Type<'c>],
@@ -372,11 +369,7 @@ fn codegen_function_body<'c>(
         return;
     }
 
-    let fn_val = if poly_types.is_empty() {
-        cg.procs[proc_id.index()].0
-    } else {
-        cg.poly_procs.get(&(proc_id, poly_types)).unwrap().0
-    };
+    let fn_val = cg.procs.get(&(proc_id, poly_types)).unwrap().0;
     cg.proc.reset(proc_id, fn_val, poly_types);
 
     let entry_bb = cg.context.append_bb(fn_val, "entry_bb");

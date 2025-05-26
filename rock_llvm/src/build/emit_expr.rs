@@ -266,7 +266,7 @@ fn write_const<'c>(
             write_const_int(cg, val as u64, false, hir::IntType::U32)
         }
         hir::ConstValue::String { val, string_ty } => {
-            let string_ptr = cg.string_lits[val.index()].as_ptr();
+            let string_ptr = emit_mod::codegen_string_lit(cg, val);
             writer.write_ptr_or_undef(cg, string_ptr.as_val());
 
             if string_ty == hir::StringType::String {
@@ -275,21 +275,10 @@ fn write_const<'c>(
             }
         }
         hir::ConstValue::Procedure { proc_id, poly_types } => {
-            let proc_ptr = match poly_types {
-                Some(poly_types) => {
-                    let poly_types = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
-                    types::expect_concrete(poly_types);
-                    if let Some((fn_val, _)) = cg.poly_procs.get(&(proc_id, poly_types)) {
-                        fn_val.as_val()
-                    } else {
-                        let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
-                        cg.poly_procs.insert((proc_id, poly_types), fn_res);
-                        cg.poly_proc_queue.push((proc_id, poly_types));
-                        fn_res.0.as_val()
-                    }
-                }
-                None => cg.procs[proc_id.index()].0.as_val(),
-            };
+            let poly_types = poly_types
+                .map(|p| context::substitute_types(cg, *p, cg.proc.poly_types))
+                .unwrap_or(&[]);
+            let proc_ptr = emit_mod::codegen_function(cg, proc_id, poly_types).0.as_val();
             writer.write_ptr_or_undef(cg, proc_ptr);
         }
         hir::ConstValue::Variant { enum_id, variant_id } => {
@@ -407,21 +396,12 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Float { val, float_ty } => llvm::const_float(cg.float_type(float_ty), val),
         hir::ConstValue::Char { val, .. } => llvm::const_int(cg.char_type(), val as u64, false),
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
-        hir::ConstValue::Procedure { proc_id, poly_types } => match poly_types {
-            Some(poly_types) => {
-                let poly_types = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
-                types::expect_concrete(poly_types);
-                if let Some((fn_val, _)) = cg.poly_procs.get(&(proc_id, poly_types)) {
-                    fn_val.as_val()
-                } else {
-                    let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
-                    cg.poly_procs.insert((proc_id, poly_types), fn_res);
-                    cg.poly_proc_queue.push((proc_id, poly_types));
-                    fn_res.0.as_val()
-                }
-            }
-            None => cg.procs[proc_id.index()].0.as_val(),
-        },
+        hir::ConstValue::Procedure { proc_id, poly_types } => {
+            let poly_types = poly_types
+                .map(|p| context::substitute_types(cg, *p, cg.proc.poly_types))
+                .unwrap_or(&[]);
+            emit_mod::codegen_function(cg, proc_id, poly_types).0.as_val()
+        }
         hir::ConstValue::Variant { enum_id, variant_id } => {
             codegen_const_variant(cg, enum_id, variant_id)
         }
@@ -443,8 +423,8 @@ fn codegen_const_bool(cg: &Codegen, val: bool, bool_ty: hir::BoolType) -> llvm::
     llvm::const_int(cg.bool_type(bool_ty), val as u64, false)
 }
 
-fn codegen_const_string(cg: &Codegen, val: LitID, string_ty: hir::StringType) -> llvm::Value {
-    let string_ptr = cg.string_lits[val.index()].as_ptr();
+fn codegen_const_string(cg: &mut Codegen, val: LitID, string_ty: hir::StringType) -> llvm::Value {
+    let string_ptr = emit_mod::codegen_string_lit(cg, val);
     match string_ty {
         hir::StringType::String => {
             let string = cg.session.intern_lit.get(val);
@@ -809,7 +789,7 @@ fn codegen_index<'c>(
         let value = hir::ConstValue::Struct { struct_id, struct_: &struct_ };
         let loc = codegen_expr_value(cg, &hir::Expr::Const(value, hir::ConstID::dummy()));
 
-        let (fn_val, fn_ty) = cg.procs[cg.hir.core.index_out_of_bounds.index()];
+        let (fn_val, fn_ty) = emit_mod::codegen_function(cg, cg.hir.core.index_out_of_bounds, &[]);
         let _ = cg.build.call(fn_ty, fn_val, &[index_val, bound, loc], "call_val");
         cg.build.unreachable();
         cg.build.position_at_end(exit_bb);
@@ -1158,18 +1138,7 @@ pub fn codegen_call_direct<'c>(
     }
 
     let poly_types = context::substitute_types(cg, poly_types, cg.proc.poly_types);
-    types::expect_concrete(poly_types);
-
-    let (fn_val, fn_ty) = if poly_types.is_empty() {
-        cg.procs[proc_id.index()]
-    } else if let Some(fn_res) = cg.poly_procs.get(&(proc_id, poly_types)) {
-        *fn_res
-    } else {
-        let fn_res = emit_mod::codegen_function_value(cg, proc_id, poly_types);
-        cg.poly_procs.insert((proc_id, poly_types), fn_res);
-        cg.poly_proc_queue.push((proc_id, poly_types));
-        fn_res
-    };
+    let (fn_val, fn_ty) = emit_mod::codegen_function(cg, proc_id, poly_types);
 
     let input_values = cg.cache.values.view(offset);
     let ret_val = cg.build.call(fn_ty, fn_val, input_values, "call_val");
@@ -1584,8 +1553,12 @@ pub fn codegen_binary_op(
         }
         hir::BinOp::Cmp_String(pred, bool_ty, string_ty) => {
             let (fn_val, fn_ty) = match string_ty {
-                hir::StringType::String => cg.procs[cg.hir.core.string_equals.index()],
-                hir::StringType::CString => cg.procs[cg.hir.core.cstring_equals.index()],
+                hir::StringType::String => {
+                    emit_mod::codegen_function(cg, cg.hir.core.string_equals, &[])
+                }
+                hir::StringType::CString => {
+                    emit_mod::codegen_function(cg, cg.hir.core.cstring_equals, &[])
+                }
                 hir::StringType::Untyped => unreachable!(),
             };
             let mut value = cg.build.call(fn_ty, fn_val, &[lhs, rhs], "bin_str_cmp").unwrap();

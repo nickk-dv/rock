@@ -21,6 +21,7 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
         return;
     };
 
+    ctx.entry_point = Some(proc_id);
     let data = ctx.registry.proc_data(proc_id);
     let range = data.name.range;
     ctx.scope.origin = data.origin_id;

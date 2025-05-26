@@ -344,10 +344,10 @@ fn process_package(
                 )));
             }
             manifest::Dependency::Path { path } => {
-                PathBuf::from(path.as_str()).canonicalize().unwrap()
+                let path = PathBuf::from(path.as_str()).canonicalize().unwrap();
+                remove_windows_trash(path)
             }
         };
-        //let dep_root_dir = session.curr_exe_dir.join("packages").join(dep_name);
         let dep_id = match session.graph.get_unique(&dep_root_dir) {
             Some(dep_id) => dep_id,
             None => process_package(session, &dep_root_dir, Some(package_id), false)?,
@@ -355,6 +355,16 @@ fn process_package(
         session.graph.add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
     }
     Ok(package_id)
+}
+
+//@have os::canonicalize that handles this
+fn remove_windows_trash(path: PathBuf) -> PathBuf {
+    let s = path.as_os_str().to_string_lossy();
+    if s.starts_with(r"\\?\") {
+        PathBuf::from(&s[4..])
+    } else {
+        path
+    }
 }
 
 fn process_directory(
