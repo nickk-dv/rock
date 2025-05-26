@@ -1,0 +1,65 @@
+//#prelude
+
+//#entry "poly_proc_error_propagation"
+//#expect
+//error: name `Error` is not found in this scope
+//  │
+//2 │     let _: s32 = poly_proc:(Error);
+//  │                             ^^^^^
+//  └─ src/test.rock:2:29
+//
+//#!
+proc test_poly_proc_error_propagation() void {
+    let _: s32 = poly_proc:(Error);
+}
+proc poly_proc(value: T)(T) T {
+    value
+}
+
+//#entry "poly_proc_call_error_propagation"
+//#expect
+//error: name `error` is not found in this scope
+//  │
+//2 │     let _: s32 = poly_proc_call([error]);
+//  │                                  ^^^^^
+//  └─ src/test.rock:2:34
+//
+//#!
+proc test_poly_proc_call_error_propagation() void {
+    let _: s32 = poly_proc_call([error]);
+}
+proc poly_proc_call(value: [1]T)(T) [1]T {
+    value
+}
+
+//#entry "poly_enum_error_propagation"
+//#expect
+//error: name `error` is not found in this scope
+//  │
+//2 │     let _: s32 = PolyEnum.Value(error);
+//  │                                 ^^^^^
+//  └─ src/test.rock:2:33
+//
+//#!
+proc test_poly_enum_error_propagation() void {
+    let _: s32 = PolyEnum.Value(error);
+}
+enum PolyEnum(T) {
+    Value(T),
+}
+
+//#entry "poly_struct_error_propagation"
+//#expect
+//error: name `error` is not found in this scope
+//  │
+//2 │     let _: s32 = PolyStruct.{ value: error };
+//  │                                      ^^^^^
+//  └─ src/test.rock:2:38
+//
+//#!
+proc test_poly_struct_error_propagation() void {
+    let _: s32 = PolyStruct.{ value: error };
+}
+struct PolyStruct(T) {
+    value: T,
+}

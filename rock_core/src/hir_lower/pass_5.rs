@@ -1847,6 +1847,9 @@ pub fn check_item_procedure<'hir, 'ast>(
         ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
+    if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        return TypeResult::error();
+    }
     let poly_types = match poly_types {
         Some(poly_types) => poly_types,
         None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
@@ -2061,6 +2064,9 @@ fn typecheck_struct_init<'hir, 'ast>(
         let src = ctx.src(error_range(struct_init, expr_range));
         err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
         ctx.scope.infer.end_context(infer);
+        return TypeResult::error();
+    }
+    if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
         return TypeResult::error();
     }
     let poly_types = match poly_types {
@@ -4174,6 +4180,9 @@ fn check_call_direct<'hir, 'ast>(
         ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
+    if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        return TypeResult::error();
+    }
     let return_ty = type_substitute_inferred(ctx, is_poly, infer, return_ty);
 
     let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
@@ -4379,6 +4388,9 @@ fn check_variant_input_opt<'hir, 'ast>(
         let src = ctx.src(range); //@improve range to include everything up to arg list same as struct_init and proc call
         err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
         ctx.scope.infer.end_context(infer);
+        return TypeResult::error();
+    }
+    if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
         return TypeResult::error();
     }
     let poly_types = match poly_types {
