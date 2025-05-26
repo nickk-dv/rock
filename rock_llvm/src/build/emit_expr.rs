@@ -6,7 +6,6 @@ use crate::llvm;
 use rock_core::error::SourceRange;
 use rock_core::hir::{self, CmpPred};
 use rock_core::hir_lower::layout;
-use rock_core::hir_lower::types;
 use rock_core::intern::LitID;
 use rock_core::session::ModuleID;
 use rock_core::support::TempOffset;
@@ -1054,6 +1053,14 @@ pub fn codegen_call_direct<'c>(
                 let layout =
                     layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
                 return Some(llvm::const_int(cg.ptr_sized_int(), layout.align, false));
+            }
+            "from_raw_parts" => {
+                let ptr = codegen_expr_value(cg, input[0]);
+                let len = codegen_expr_value(cg, input[1]);
+                let undef = llvm::undef(cg.slice_type().as_ty());
+                let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
+                let second = cg.build.insert_value(first, len, 1, "raw_parts.ptr_len");
+                return Some(second);
             }
             "load" => {
                 let ptr_ty = cg.ty(poly_types[0]);

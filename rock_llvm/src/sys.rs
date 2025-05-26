@@ -605,6 +605,13 @@ pub mod core {
             index: c_uint,
             name: *const c_char,
         ) -> LLVMValueRef;
+        pub fn LLVMBuildInsertValue(
+            b: LLVMBuilderRef,
+            agg_val: LLVMValueRef,
+            val: LLVMValueRef,
+            index: c_uint,
+            name: *const c_char,
+        ) -> LLVMValueRef;
 
         pub fn LLVMBuildAtomicRMW(
             b: LLVMBuilderRef,

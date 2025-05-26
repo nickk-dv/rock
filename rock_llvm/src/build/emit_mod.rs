@@ -14,6 +14,8 @@ pub fn codegen_module(
     session: &mut Session,
 ) -> (llvm::IRTarget, llvm::IRModule) {
     let mut cg = Codegen::new(hir, target, session);
+    cg.procs.resize(cg.procs.capacity(), (llvm::ValueFn::null(), llvm::TypeFn::null()));
+
     codegen_enum_types(&mut cg);
     codegen_struct_types(&mut cg);
     codegen_globals(&mut cg);
@@ -29,14 +31,14 @@ pub fn codegen_module(
 }
 
 pub fn codegen_string_lit(cg: &mut Codegen, val: LitID) -> llvm::ValuePtr {
-    if let Some(string_lit) = cg.string_lits.get(&val) {
+    if let Some(string_lit) = cg.strings.get(&val) {
         return string_lit.as_ptr();
     }
     let string = cg.session.intern_lit.get(val);
     let string_val = llvm::const_string(&cg.context, string, true);
     let string_ty = llvm::typeof_value(string_val);
     let global = cg.module.add_global("rock.string", Some(string_val), string_ty, true, true);
-    cg.string_lits.insert(val, global);
+    cg.strings.insert(val, global);
     global.as_ptr()
 }
 
@@ -266,14 +268,26 @@ pub fn codegen_function<'c>(
     proc_id: hir::ProcID,
     poly_types: &'c [hir::Type<'c>],
 ) -> (llvm::ValueFn, llvm::TypeFn) {
-    types::expect_concrete(poly_types);
-    if let Some(fn_res) = cg.procs.get(&(proc_id, poly_types)) {
-        *fn_res
+    if poly_types.is_empty() {
+        let fn_res = &cg.procs[proc_id.index()];
+        if !fn_res.0.is_null() {
+            *fn_res
+        } else {
+            let fn_res = codegen_function_value(cg, proc_id, &[]);
+            cg.procs[proc_id.index()] = fn_res;
+            cg.proc_queue.push((proc_id, &[]));
+            fn_res
+        }
     } else {
-        let fn_res = codegen_function_value(cg, proc_id, poly_types);
-        cg.procs.insert((proc_id, poly_types), fn_res);
-        cg.proc_queue.push((proc_id, poly_types));
-        fn_res
+        types::expect_concrete(poly_types);
+        if let Some(fn_res) = cg.procs_poly.get(&(proc_id, poly_types)) {
+            *fn_res
+        } else {
+            let fn_res = codegen_function_value(cg, proc_id, poly_types);
+            cg.procs_poly.insert((proc_id, poly_types), fn_res);
+            cg.proc_queue.push((proc_id, poly_types));
+            fn_res
+        }
     }
 }
 
@@ -369,7 +383,11 @@ fn codegen_function_body<'c>(
         return;
     }
 
-    let fn_val = cg.procs.get(&(proc_id, poly_types)).unwrap().0;
+    let fn_val = if poly_types.is_empty() {
+        cg.procs[proc_id.index()].0
+    } else {
+        cg.procs_poly.get(&(proc_id, poly_types)).unwrap().0
+    };
     cg.proc.reset(proc_id, fn_val, poly_types);
 
     let entry_bb = cg.context.append_bb(fn_val, "entry_bb");

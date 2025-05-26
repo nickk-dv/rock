@@ -519,6 +519,17 @@ impl IRBuilder {
             ))
         }
     }
+    pub fn insert_value(&mut self, agg_val: Value, val: Value, index: u32, name: &str) -> Value {
+        unsafe {
+            Value(core::LLVMBuildInsertValue(
+                self.builder,
+                agg_val.0,
+                val.0,
+                index,
+                self.cstr_buf.cstr(name),
+            ))
+        }
+    }
 
     pub fn atomic_rmw(
         &self,
@@ -610,6 +621,10 @@ impl ValueFn {
     #[inline]
     pub fn null() -> ValueFn {
         ValueFn(std::ptr::null_mut())
+    }
+    #[inline]
+    pub fn is_null(self) -> bool {
+        self.0.is_null()
     }
     #[inline]
     pub fn as_val(self) -> Value {

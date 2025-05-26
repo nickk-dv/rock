@@ -17,17 +17,18 @@ pub struct Codegen<'c, 's, 'sref> {
     pub target: llvm::IRTarget,
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
-    pub procs: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
+    pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
+    pub procs_poly: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub enums: Vec<llvm::TypeStruct>,
+    pub enums_poly: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
     pub structs: Vec<llvm::TypeStruct>,
+    pub structs_poly: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub globals: Vec<llvm::ValueGlobal>,
-    pub string_lits: HashMap<LitID, llvm::ValueGlobal>,
+    pub strings: HashMap<LitID, llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
     pub namebuf: String,
     pub cache: CodegenCache<'c>,
-    pub poly_enums: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
-    pub poly_structs: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub proc_queue: Vec<hir::ProcKey<'c>>,
     pub type_info_ptr: llvm::ValueGlobal,
     pub type_info_arr: llvm::ValueGlobal,
@@ -116,17 +117,18 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             target,
             module,
             build,
-            procs: HashMap::with_capacity(hir.procs.len()),
+            procs: Vec::with_capacity(hir.procs.len()),
+            procs_poly: HashMap::with_capacity((hir.procs.len() / 4).next_power_of_two()),
             enums: Vec::with_capacity(hir.enums.len()),
+            enums_poly: HashMap::with_capacity((hir.enums.len() / 8).next_power_of_two()),
             structs: Vec::with_capacity(hir.structs.len()),
+            structs_poly: HashMap::with_capacity((hir.structs.len() / 8).next_power_of_two()),
             globals: Vec::with_capacity(hir.globals.len()),
-            string_lits: HashMap::with_capacity(session.intern_lit.get_all().len()),
+            strings: HashMap::with_capacity(session.intern_lit.get_all().len()),
             hir,
             session,
             namebuf: String::with_capacity(256),
             cache,
-            poly_enums: HashMap::with_capacity(256),
-            poly_structs: HashMap::with_capacity(256),
             proc_queue: Vec::with_capacity(64),
             type_info_ptr: llvm::ValueGlobal::null(),
             type_info_arr: llvm::ValueGlobal::null(),
@@ -186,7 +188,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
 
                 let key = (enum_id, substitute_types(self, poly_types, poly_set));
                 types::expect_concrete(key.1);
-                if let Some(t) = self.poly_enums.get(&key) {
+                if let Some(t) = self.enums_poly.get(&key) {
                     return t.as_ty();
                 }
 
@@ -194,7 +196,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 self.namebuf.clear();
                 write_symbol_name(self, data.name.id, data.origin_id, key.1);
                 let opaque = self.context.struct_named_create(&self.namebuf);
-                self.poly_enums.insert(key, opaque);
+                self.enums_poly.insert(key, opaque);
 
                 let enum_ty = hir::Type::Enum(key.0, key.1);
                 let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
@@ -210,7 +212,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
 
                 let key = (struct_id, substitute_types(self, poly_types, poly_set));
                 types::expect_concrete(key.1);
-                if let Some(t) = self.poly_structs.get(&key) {
+                if let Some(t) = self.structs_poly.get(&key) {
                     return t.as_ty();
                 }
 
@@ -218,7 +220,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 self.namebuf.clear();
                 write_symbol_name(self, data.name.id, data.origin_id, key.1);
                 let opaque = self.context.struct_named_create(&self.namebuf);
-                self.poly_structs.insert(key, opaque);
+                self.structs_poly.insert(key, opaque);
 
                 let data = self.hir.struct_data(struct_id);
                 let offset = self.cache.types.start();
