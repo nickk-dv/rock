@@ -1,9 +1,9 @@
+use rock_core::codegen::BuildOptions;
 use rock_core::error::ErrorBuffer;
 use rock_core::errors as err;
 use rock_core::session::config::Build;
 use rock_core::session::manifest::PackageKind;
 use rock_core::support::AsStr;
-use rock_llvm::build::BuildOptions;
 use std::collections::{HashMap, HashSet};
 
 pub enum Command {

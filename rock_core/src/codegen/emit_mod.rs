@@ -1,12 +1,12 @@
 use super::context::{self, Codegen, Expect};
 use super::emit_expr;
 use super::emit_stmt;
-use crate::llvm;
-use rock_core::ast;
-use rock_core::hir;
-use rock_core::hir_lower::types;
-use rock_core::intern::LitID;
-use rock_core::session::{config, Session};
+use super::llvm;
+use crate::ast;
+use crate::hir;
+use crate::hir_lower::types;
+use crate::intern::LitID;
+use crate::session::{config, Session};
 
 pub fn codegen_module(
     hir: hir::Hir,

@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod ast;
+pub mod codegen;
 pub mod error;
 pub mod errors;
 pub mod hir;

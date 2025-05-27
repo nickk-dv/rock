@@ -1,7 +1,7 @@
 use super::context::{Codegen, Expect};
 use super::emit_expr;
-use crate::llvm;
-use rock_core::hir;
+use super::llvm;
+use crate::hir;
 
 pub fn codegen_block<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, block: hir::Block<'c>) {
     cg.proc.block_enter();

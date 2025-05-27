@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "rock_cli",
     "rock_core",
-    "rock_llvm",
     "rock_ls",
     "rock_test",
 ]

@@ -164,7 +164,6 @@ name = "rock_cli"
 version = "0.0.0"
 dependencies = [
  "rock_core",
- "rock_llvm",
 ]
 
 [[package]]
@@ -172,16 +171,9 @@ name = "rock_core"
 version = "0.0.0"
 dependencies = [
  "basic-toml",
+ "llvm-sys",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "rock_llvm"
-version = "0.0.0"
-dependencies = [
- "llvm-sys",
- "rock_core",
 ]
 
 [[package]]

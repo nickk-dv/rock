@@ -2,14 +2,16 @@ mod context;
 mod emit_expr;
 mod emit_mod;
 mod emit_stmt;
+#[allow(unsafe_code)]
+mod llvm;
 
-use rock_core::error::Error;
-use rock_core::errors as err;
-use rock_core::hir;
-use rock_core::session::config::{Build, TargetOS};
-use rock_core::session::Session;
-use rock_core::support::os;
-use rock_core::support::{AsStr, Timer};
+use crate::error::Error;
+use crate::errors as err;
+use crate::hir;
+use crate::session::config::{Build, TargetOS};
+use crate::session::Session;
+use crate::support::os;
+use crate::support::{AsStr, Timer};
 use std::path::PathBuf;
 
 pub struct BuildOptions {

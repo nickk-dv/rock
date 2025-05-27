@@ -1,6 +1,7 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
+use rock_core::codegen;
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir_lower;
@@ -145,7 +146,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
         session.stats.check_ms = timer.measure_ms();
 
         error_print::print_session_errors(session);
-        if let Err(error) = rock_llvm::build::build(hir, session, data.options) {
+        if let Err(error) = codegen::build(hir, session, data.options) {
             error_print::print_error(Some(session), error);
             return Err(());
         }
@@ -184,7 +185,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         session.stats.check_ms = timer.measure_ms();
 
         error_print::print_session_errors(session);
-        let bin_path = match rock_llvm::build::build(hir, session, data.options) {
+        let bin_path = match codegen::build(hir, session, data.options) {
             Ok(path) => path,
             Err(error) => {
                 error_print::print_error(Some(session), error);
@@ -199,7 +200,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
         print_build_finished(session, &style, &session.stats);
 
         print_build_running(session, &style, &bin_path);
-        if let Err(error) = rock_llvm::build::run(bin_path, data.args) {
+        if let Err(error) = codegen::run(bin_path, data.args) {
             error_print::print_error(Some(session), error);
             return Err(());
         }
