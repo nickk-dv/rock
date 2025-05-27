@@ -5,3 +5,4 @@ build = "build.rs"
 
 [dependencies]
 rock_core = { path = "../rock_core" }
+llvm-sys = { version = "191.0.0", features = ["no-llvm-linking"] }

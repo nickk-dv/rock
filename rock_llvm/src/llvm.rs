@@ -1,31 +1,31 @@
-//! api on top of `sys` bindings to LLVM-C api.
-
-use crate::sys;
-use crate::sys::analysis;
-use crate::sys::core;
-use crate::sys::pass;
-use crate::sys::target;
+use llvm_sys as sys;
+use llvm_sys::analysis;
+use llvm_sys::core;
+use llvm_sys::prelude::*;
+use llvm_sys::target as tg;
+use llvm_sys::target_machine as tm;
+use llvm_sys::transforms::pass_builder as pass;
 use rock_core::session::config::{Build, TargetArch, TargetTriple};
 use rock_core::support::AsStr;
 use std::ffi::c_char;
 
 pub struct IRContext {
-    context: sys::LLVMContextRef,
+    context: LLVMContextRef,
     cstr_buf: CStringBuffer,
 }
 
 pub struct IRTarget {
-    target_data: target::LLVMTargetDataRef,
-    target_machine: target::LLVMTargetMachineRef,
+    target_data: tg::LLVMTargetDataRef,
+    target_machine: tm::LLVMTargetMachineRef,
 }
 
 pub struct IRModule {
-    module: sys::LLVMModuleRef,
+    module: LLVMModuleRef,
     cstr_buf: CStringBuffer,
 }
 
 pub struct IRBuilder {
-    builder: sys::LLVMBuilderRef,
+    builder: LLVMBuilderRef,
     cstr_buf: CStringBuffer,
     void_val_type: TypeStruct,
 }
@@ -40,27 +40,27 @@ pub type AtomicOrdering = sys::LLVMAtomicOrdering;
 pub type AtomicRMWBinOp = sys::LLVMAtomicRMWBinOp;
 
 #[derive(Copy, Clone)]
-pub struct Type(sys::LLVMTypeRef);
+pub struct Type(LLVMTypeRef);
 #[derive(Copy, Clone)]
-pub struct TypeFn(sys::LLVMTypeRef);
+pub struct TypeFn(LLVMTypeRef);
 #[derive(Copy, Clone)]
-pub struct TypeStruct(sys::LLVMTypeRef);
+pub struct TypeStruct(LLVMTypeRef);
 
 #[derive(Copy, Clone)]
-pub struct Value(sys::LLVMValueRef);
+pub struct Value(LLVMValueRef);
 #[derive(Copy, Clone)]
-pub struct ValuePtr(sys::LLVMValueRef);
+pub struct ValuePtr(LLVMValueRef);
 #[derive(Copy, Clone)]
-pub struct ValueFn(sys::LLVMValueRef);
+pub struct ValueFn(LLVMValueRef);
 #[derive(Copy, Clone)]
-pub struct ValueGlobal(sys::LLVMValueRef);
+pub struct ValueGlobal(LLVMValueRef);
 #[derive(Copy, Clone)]
-pub struct ValueInstr(sys::LLVMValueRef);
+pub struct ValueInstr(LLVMValueRef);
 
 #[derive(Copy, Clone)]
-pub struct Attribute(sys::LLVMAttributeRef);
+pub struct Attribute(LLVMAttributeRef);
 #[derive(Copy, Clone)]
-pub struct BasicBlock(sys::LLVMBasicBlockRef);
+pub struct BasicBlock(LLVMBasicBlockRef);
 
 impl IRContext {
     pub fn new() -> IRContext {
@@ -114,7 +114,7 @@ impl IRContext {
         unsafe {
             core::LLVMStructSetBody(
                 struct_ty.0,
-                field_types.as_ptr() as *mut sys::LLVMTypeRef,
+                field_types.as_ptr() as *mut LLVMTypeRef,
                 field_types.len() as u32,
                 packed as i32,
             )
@@ -124,7 +124,7 @@ impl IRContext {
         TypeStruct(unsafe {
             core::LLVMStructTypeInContext(
                 self.context,
-                field_types.as_ptr() as *mut sys::LLVMTypeRef,
+                field_types.as_ptr() as *mut LLVMTypeRef,
                 field_types.len() as u32,
                 packed as i32,
             )
@@ -136,16 +136,16 @@ impl IRTarget {
     pub fn new(triple: TargetTriple, build: Build) -> IRTarget {
         match triple.arch() {
             TargetArch::x86_64 => unsafe {
-                target::LLVMInitializeX86Target();
-                target::LLVMInitializeX86TargetMC();
-                target::LLVMInitializeX86TargetInfo();
-                target::LLVMInitializeX86AsmPrinter();
+                tg::LLVMInitializeX86Target();
+                tg::LLVMInitializeX86TargetMC();
+                tg::LLVMInitializeX86TargetInfo();
+                tg::LLVMInitializeX86AsmPrinter();
             },
             TargetArch::Arm_64 => unsafe {
-                target::LLVMInitializeAArch64Target();
-                target::LLVMInitializeAArch64TargetMC();
-                target::LLVMInitializeAArch64TargetInfo();
-                target::LLVMInitializeAArch64AsmPrinter();
+                tg::LLVMInitializeAArch64Target();
+                tg::LLVMInitializeAArch64TargetMC();
+                tg::LLVMInitializeAArch64TargetInfo();
+                tg::LLVMInitializeAArch64AsmPrinter();
             },
         }
 
@@ -153,11 +153,7 @@ impl IRTarget {
         let mut target = std::mem::MaybeUninit::uninit();
         let mut err_str = std::mem::MaybeUninit::uninit();
         let code = unsafe {
-            target::LLVMGetTargetFromTriple(
-                ctriple.as_ptr(),
-                target.as_mut_ptr(),
-                err_str.as_mut_ptr(),
-            )
+            tm::LLVMGetTargetFromTriple(ctriple.as_ptr(), target.as_mut_ptr(), err_str.as_mut_ptr())
         };
         if code == 1 {
             let err_str = unsafe { err_str.assume_init() };
@@ -171,34 +167,34 @@ impl IRTarget {
         assert!(!target.is_null());
 
         let opt_level = match build {
-            Build::Debug => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
-            Build::Release => target::LLVMCodeGenOptLevel::LLVMCodeGenLevelAggressive,
+            Build::Debug => tm::LLVMCodeGenOptLevel::LLVMCodeGenLevelNone,
+            Build::Release => tm::LLVMCodeGenOptLevel::LLVMCodeGenLevelAggressive,
         };
         let target_machine = unsafe {
-            target::LLVMCreateTargetMachine(
+            tm::LLVMCreateTargetMachine(
                 target,
                 ctriple.as_ptr(),
                 "\0".as_ptr() as *const c_char,
                 "\0".as_ptr() as *const c_char,
                 opt_level,
-                target::LLVMRelocMode::LLVMRelocDefault,
-                target::LLVMCodeModel::LLVMCodeModelDefault,
+                tm::LLVMRelocMode::LLVMRelocDefault,
+                tm::LLVMCodeModel::LLVMCodeModelDefault,
             )
         };
-        let target_data = unsafe { target::LLVMCreateTargetDataLayout(target_machine) };
+        let target_data = unsafe { tm::LLVMCreateTargetDataLayout(target_machine) };
 
         IRTarget { target_data, target_machine }
     }
 
     pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
-        Type(unsafe { target::LLVMIntPtrTypeInContext(context.context, self.target_data) })
+        Type(unsafe { tg::LLVMIntPtrTypeInContext(context.context, self.target_data) })
     }
 }
 
 impl Drop for IRTarget {
     fn drop(&mut self) {
-        unsafe { target::LLVMDisposeTargetData(self.target_data) }
-        unsafe { target::LLVMDisposeTargetMachine(self.target_machine) }
+        unsafe { tg::LLVMDisposeTargetData(self.target_data) }
+        unsafe { tm::LLVMDisposeTargetMachine(self.target_machine) }
     }
 }
 
@@ -207,7 +203,7 @@ impl IRModule {
         let mut cstr_buf = CStringBuffer::new();
         let name = cstr_buf.cstr(name);
         let module = unsafe { core::LLVMModuleCreateWithNameInContext(name, context.context) };
-        unsafe { target::LLVMSetModuleDataLayout(module, target.target_data) };
+        unsafe { tg::LLVMSetModuleDataLayout(module, target.target_data) };
         IRModule { module, cstr_buf }
     }
 
@@ -282,9 +278,9 @@ impl IRModule {
 
     pub fn emit_to_file(&mut self, target: &IRTarget, filename: &str) -> Result<(), String> {
         let mut err_str = std::mem::MaybeUninit::uninit();
-        let codegen = target::LLVMCodeGenFileType::LLVMObjectFile;
+        let codegen = tm::LLVMCodeGenFileType::LLVMObjectFile;
         let code = unsafe {
-            target::LLVMTargetMachineEmitToFile(
+            tm::LLVMTargetMachineEmitToFile(
                 target.target_machine,
                 self.module,
                 self.cstr_buf.cstr(filename) as *mut c_char,
@@ -393,7 +389,7 @@ impl IRBuilder {
                 self.builder,
                 ptr_ty.0,
                 ptr_val.0,
-                indices.as_ptr() as *mut sys::LLVMValueRef,
+                indices.as_ptr() as *mut LLVMValueRef,
                 indices.len() as u32,
                 self.cstr_buf.cstr(name),
             )
@@ -412,7 +408,7 @@ impl IRBuilder {
                 self.builder,
                 ptr_ty.0,
                 ptr_val.0,
-                indices.as_ptr() as *mut sys::LLVMValueRef,
+                indices.as_ptr() as *mut LLVMValueRef,
                 indices.len() as u32,
                 self.cstr_buf.cstr(name),
             )
@@ -471,9 +467,12 @@ impl IRBuilder {
     pub fn phi_add_incoming(&self, phi: Value, values: &[Value], blocks: &[BasicBlock]) {
         let count = values.len() as u32;
         unsafe {
-            let values_ptr: *const sys::LLVMValueRef = std::mem::transmute(values.as_ptr());
-            let blocks_ptr: *const sys::LLVMBasicBlockRef = std::mem::transmute(blocks.as_ptr());
-            core::LLVMAddIncoming(phi.0, values_ptr, blocks_ptr, count);
+            core::LLVMAddIncoming(
+                phi.0,
+                values.as_ptr() as *mut LLVMValueRef,
+                blocks.as_ptr() as *mut LLVMBasicBlockRef,
+                count,
+            );
         }
     }
 
@@ -497,7 +496,7 @@ impl IRBuilder {
                 self.builder,
                 fn_ty.0,
                 fn_val.0,
-                args.as_ptr() as *mut sys::LLVMValueRef,
+                args.as_ptr() as *mut LLVMValueRef,
                 args.len() as u32,
                 name,
             )
@@ -641,11 +640,11 @@ impl ValueFn {
         panic!("internal: `ValueFn::param_val` out of bounds param `{param_idx} >= {param_count}`");
     }
     pub fn set_call_conv(&self, cc: CallConv) {
-        unsafe { core::LLVMSetFunctionCallConv(self.0, cc) };
+        unsafe { core::LLVMSetFunctionCallConv(self.0, cc as u32) };
     }
     pub fn set_attr(self, attr: Attribute) {
         unsafe {
-            core::LLVMAddAttributeAtIndex(self.0, sys::LLVM_ATTR_FUNCTION_INDEX, attr.0);
+            core::LLVMAddAttributeAtIndex(self.0, sys::LLVMAttributeFunctionIndex, attr.0);
         }
     }
     pub fn set_param_attr(self, attr: Attribute, param_n: u32) {
@@ -668,7 +667,7 @@ impl ValueGlobal {
 
 impl ValueInstr {
     #[inline]
-    fn new_opt(raw: sys::LLVMValueRef) -> Option<ValueInstr> {
+    fn new_opt(raw: LLVMValueRef) -> Option<ValueInstr> {
         if raw.is_null() {
             None
         } else {
@@ -729,18 +728,14 @@ pub fn const_string(ctx: &IRContext, string: &str, null_terminate: bool) -> Valu
 }
 pub fn const_array(elem_ty: Type, values: &[Value]) -> Value {
     Value(unsafe {
-        core::LLVMConstArray2(
-            elem_ty.0,
-            values.as_ptr() as *mut sys::LLVMValueRef,
-            values.len() as u64,
-        )
+        core::LLVMConstArray2(elem_ty.0, values.as_ptr() as *mut LLVMValueRef, values.len() as u64)
     })
 }
 pub fn const_struct_inline(ctx: &IRContext, values: &[Value], packed: bool) -> Value {
     Value(unsafe {
         core::LLVMConstStructInContext(
             ctx.context,
-            values.as_ptr() as *mut sys::LLVMValueRef,
+            values.as_ptr() as *mut LLVMValueRef,
             values.len() as u32,
             packed as i32,
         )
@@ -750,13 +745,10 @@ pub fn const_struct_named(struct_ty: TypeStruct, values: &[Value]) -> Value {
     Value(unsafe {
         core::LLVMConstNamedStruct(
             struct_ty.0,
-            values.as_ptr() as *mut sys::LLVMValueRef,
+            values.as_ptr() as *mut LLVMValueRef,
             values.len() as u32,
         )
     })
-}
-pub fn const_bitcast(const_val: Value, into_ty: Type) -> Value {
-    Value(unsafe { core::LLVMConstBitCast(const_val.0, into_ty.0) })
 }
 
 pub fn array_type(elem_ty: Type, len: u64) -> Type {
@@ -766,7 +758,7 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
     TypeFn(unsafe {
         core::LLVMFunctionType(
             return_ty.0,
-            param_types.as_ptr() as *mut sys::LLVMTypeRef,
+            param_types.as_ptr() as *mut LLVMTypeRef,
             param_types.len() as u32,
             is_variadic as i32,
         )
