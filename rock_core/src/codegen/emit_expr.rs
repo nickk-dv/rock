@@ -119,7 +119,8 @@ fn codegen_expr<'c>(
             codegen_call_direct(cg, expect, proc_id, input, &[])
         }
         hir::Expr::CallDirectPoly { proc_id, input } => {
-            codegen_call_direct(cg, expect, proc_id, input.0, input.1)
+            let poly_types = context::substitute_types(cg, input.1, cg.proc.poly_types);
+            codegen_call_direct(cg, expect, proc_id, input.0, poly_types)
         }
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
@@ -1014,19 +1015,6 @@ fn codegen_variant<'c>(
     }
 }
 
-fn const_expr_ordering(expr: &hir::Expr) -> llvm::AtomicOrdering {
-    let hir::Expr::Const(value, _) = *expr else { unreachable!() };
-    let hir::ConstValue::Variant { variant_id, .. } = value else { unreachable!() };
-    match variant_id.raw() {
-        0 => llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic,
-        1 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquire,
-        2 => llvm::AtomicOrdering::LLVMAtomicOrderingRelease,
-        3 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquireRelease,
-        4 => llvm::AtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent,
-        _ => unreachable!(),
-    }
-}
-
 //@ret in function can cause type mismatch on ir level
 //example: i64 vs Handle.{ ptr }, external and normal fn confilict
 pub fn codegen_call_direct<'c>(
@@ -1037,69 +1025,11 @@ pub fn codegen_call_direct<'c>(
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let data = cg.hir.proc_data(proc_id);
-    let is_external = data.flag_set.contains(hir::ProcFlag::External);
-
     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
-        let name = cg.session.intern_name.get(data.name.id);
-        match name {
-            "size_of" => {
-                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-                let layout =
-                    layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-                return Some(llvm::const_int(cg.ptr_sized_int(), layout.size, false));
-            }
-            "align_of" => {
-                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-                let layout =
-                    layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-                return Some(llvm::const_int(cg.ptr_sized_int(), layout.align, false));
-            }
-            "from_raw_parts" => {
-                let ptr = codegen_expr_value(cg, input[0]);
-                let len = codegen_expr_value(cg, input[1]);
-                let undef = llvm::undef(cg.slice_type().as_ty());
-                let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
-                let second = cg.build.insert_value(first, len, 1, "raw_parts.ptr_len");
-                return Some(second);
-            }
-            "load" => {
-                let ptr_ty = cg.ty(poly_types[0]);
-                let dst = codegen_expr_value(cg, input[0]).into_ptr();
-                let order = const_expr_ordering(input[1]);
-
-                let inst = cg.build.load(ptr_ty, dst, "atomic_load");
-                cg.build.set_ordering(inst, order);
-                return Some(inst);
-            }
-            "store" => {
-                let dst = codegen_expr_value(cg, input[0]).into_ptr();
-                let value = codegen_expr_value(cg, input[1]);
-                let order = const_expr_ordering(input[2]);
-
-                let inst = cg.build.store(value, dst);
-                cg.build.set_ordering(inst, order);
-                return None;
-            }
-            "compare_exchange" | "compare_exchange_weak" => {
-                let dst = codegen_expr_value(cg, input[0]).into_ptr();
-                let expect = codegen_expr_value(cg, input[1]);
-                let new = codegen_expr_value(cg, input[2]);
-                let success = const_expr_ordering(input[3]);
-                let failure = const_expr_ordering(input[4]);
-
-                let inst = cg.build.atomic_cmp_xchg(dst, expect, new, success, failure);
-                if name == "compare_exchange_weak" {
-                    cg.build.set_weak(inst, true);
-                }
-                //@wrap in Result, requires doing a branch here..
-                let _ = cg.build.extract_value(inst, 0, "stored_val");
-                let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
-                return Some(exchange_ok);
-            }
-            _ => unimplemented!(),
-        }
+        return codegen_call_intrinsic(cg, proc_id, input, poly_types);
     }
 
+    let is_external = data.flag_set.contains(hir::ProcFlag::External);
     let offset = cg.cache.values.start();
     let mut ret_ptr = None;
 
@@ -1144,7 +1074,6 @@ pub fn codegen_call_direct<'c>(
         cg.cache.values.push(value);
     }
 
-    let poly_types = context::substitute_types(cg, poly_types, cg.proc.poly_types);
     let (fn_val, fn_ty) = emit_mod::codegen_function(cg, proc_id, poly_types);
 
     let input_values = cg.cache.values.view(offset);
@@ -1262,6 +1191,122 @@ fn codegen_call_indirect<'c>(
             Some(ptr.as_val())
         }
         _ => Some(ret_val),
+    }
+}
+
+pub fn codegen_call_intrinsic<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    proc_id: hir::ProcID,
+    input: &[&hir::Expr<'c>],
+    poly_types: &'c [hir::Type<'c>],
+) -> Option<llvm::Value> {
+    let data = cg.hir.proc_data(proc_id);
+    let name = cg.session.intern_name.get(data.name.id);
+
+    match name {
+        "size_of" => {
+            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+            let layout = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+            Some(llvm::const_int(cg.ptr_sized_int(), layout.size, false))
+        }
+        "align_of" => {
+            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
+            let layout = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
+            Some(llvm::const_int(cg.ptr_sized_int(), layout.align, false))
+        }
+        "transmute" => {
+            let value = codegen_expr_value(cg, input[0]);
+            let from = cg.ty(poly_types[0]);
+            let into = cg.ty(poly_types[1]);
+            if llvm::type_equals(from, into) {
+                return Some(value);
+            }
+            let from_kind = llvm::type_kind(from);
+            let into_kind = llvm::type_kind(into);
+
+            if is_numeric(from_kind) && is_numeric(into_kind) {
+                return Some(cg.build.bitcast(value, into, "transmute.bitcast"));
+            }
+            if from_kind == llvm::TypeKind::LLVMPointerTypeKind
+                && into_kind == llvm::TypeKind::LLVMIntegerTypeKind
+            {
+                return Some(cg.build.ptr_to_int(value, into, "transmute.ptr_to_int"));
+            }
+            if from_kind == llvm::TypeKind::LLVMIntegerTypeKind
+                && into_kind == llvm::TypeKind::LLVMPointerTypeKind
+            {
+                return Some(cg.build.int_to_ptr(value, into, "transmute.int_to_ptr"));
+            }
+
+            let copy_ptr = cg.entry_alloca(from, "transmute.copy");
+            cg.build.store(value, copy_ptr);
+            Some(cg.build.load(into, copy_ptr, "transmute.into"))
+        }
+        "from_raw_parts" => {
+            let ptr = codegen_expr_value(cg, input[0]);
+            let len = codegen_expr_value(cg, input[1]);
+            let undef = llvm::undef(cg.slice_type().as_ty());
+            let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
+            let second = cg.build.insert_value(first, len, 1, "raw_parts.ptr_len");
+            Some(second)
+        }
+        "load" => {
+            let ptr_ty = cg.ty(poly_types[0]);
+            let dst = codegen_expr_value(cg, input[0]).into_ptr();
+            let order = const_expr_ordering(input[1]);
+
+            let inst = cg.build.load(ptr_ty, dst, "atomic_load");
+            cg.build.set_ordering(inst, order);
+            Some(inst)
+        }
+        "store" => {
+            let dst = codegen_expr_value(cg, input[0]).into_ptr();
+            let value = codegen_expr_value(cg, input[1]);
+            let order = const_expr_ordering(input[2]);
+
+            let inst = cg.build.store(value, dst);
+            cg.build.set_ordering(inst, order);
+            None
+        }
+        "compare_exchange" | "compare_exchange_weak" => {
+            let dst = codegen_expr_value(cg, input[0]).into_ptr();
+            let expect = codegen_expr_value(cg, input[1]);
+            let new = codegen_expr_value(cg, input[2]);
+            let success = const_expr_ordering(input[3]);
+            let failure = const_expr_ordering(input[4]);
+
+            let inst = cg.build.atomic_cmp_xchg(dst, expect, new, success, failure);
+            if name == "compare_exchange_weak" {
+                cg.build.set_weak(inst, true);
+            }
+            //@wrap in Result, use existing api
+            let _ = cg.build.extract_value(inst, 0, "stored_val");
+            let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
+            Some(exchange_ok)
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn is_numeric(kind: llvm::TypeKind) -> bool {
+    matches!(
+        kind,
+        llvm::TypeKind::LLVMIntegerTypeKind
+            | llvm::TypeKind::LLVMFloatTypeKind
+            | llvm::TypeKind::LLVMDoubleTypeKind
+    )
+}
+
+fn const_expr_ordering(expr: &hir::Expr) -> llvm::AtomicOrdering {
+    let hir::Expr::Const(value, _) = *expr else { unreachable!() };
+    let hir::ConstValue::Variant { variant_id, .. } = value else { unreachable!() };
+    match variant_id.raw() {
+        0 => llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic,
+        1 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquire,
+        2 => llvm::AtomicOrdering::LLVMAtomicOrderingRelease,
+        3 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquireRelease,
+        4 => llvm::AtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent,
+        _ => unreachable!(),
     }
 }
 

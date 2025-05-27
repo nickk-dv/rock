@@ -32,6 +32,7 @@ pub struct IRBuilder {
 
 struct CStringBuffer(String);
 pub type OpCode = sys::LLVMOpcode;
+pub type TypeKind = sys::LLVMTypeKind;
 pub type Linkage = sys::LLVMLinkage;
 pub type CallConv = sys::LLVMCallConv;
 pub type IntPred = sys::LLVMIntPredicate;
@@ -444,11 +445,27 @@ impl IRBuilder {
         }
     }
 
-    pub fn cast(&mut self, op: OpCode, val: Value, into_ty: Type, name: &str) -> Value {
+    pub fn ptr_to_int(&mut self, val: Value, into: Type, name: &str) -> Value {
         Value(unsafe {
-            core::LLVMBuildCast(self.builder, op, val.0, into_ty.0, self.cstr_buf.cstr(name))
+            core::LLVMBuildPtrToInt(self.builder, val.0, into.0, self.cstr_buf.cstr(name))
         })
     }
+    pub fn int_to_ptr(&mut self, val: Value, into: Type, name: &str) -> Value {
+        Value(unsafe {
+            core::LLVMBuildIntToPtr(self.builder, val.0, into.0, self.cstr_buf.cstr(name))
+        })
+    }
+    pub fn bitcast(&mut self, val: Value, into: Type, name: &str) -> Value {
+        Value(unsafe {
+            core::LLVMBuildBitCast(self.builder, val.0, into.0, self.cstr_buf.cstr(name))
+        })
+    }
+    pub fn cast(&mut self, op: OpCode, val: Value, into: Type, name: &str) -> Value {
+        Value(unsafe {
+            core::LLVMBuildCast(self.builder, op, val.0, into.0, self.cstr_buf.cstr(name))
+        })
+    }
+
     pub fn icmp(&mut self, op: IntPred, lhs: Value, rhs: Value, name: &str) -> Value {
         Value(unsafe {
             core::LLVMBuildICmp(self.builder, op, lhs.0, rhs.0, self.cstr_buf.cstr(name))
@@ -768,6 +785,10 @@ pub fn function_type(return_ty: Type, param_types: &[Type], is_variadic: bool) -
 #[inline(always)]
 pub fn typeof_value(val: Value) -> Type {
     Type(unsafe { core::LLVMTypeOf(val.0) })
+}
+#[inline(always)]
+pub fn type_kind(ty: Type) -> TypeKind {
+    unsafe { core::LLVMGetTypeKind(ty.0) }
 }
 #[inline(always)]
 pub fn type_equals(a: Type, b: Type) -> bool {
