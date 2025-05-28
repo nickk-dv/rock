@@ -108,7 +108,6 @@ fn codegen_expr<'c>(
         hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
         hir::Expr::Slice { access, .. } => codegen_expr(cg, &access.op_call, expect),
         hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
-        hir::Expr::Builtin { builtin } => Some(codegen_builtin(cg, expect, *builtin)),
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
         hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
@@ -864,54 +863,6 @@ fn codegen_cast_op<'c>(
         CastKind::Enum_Trunc_to_Int => cg.build.cast(OpCode::LLVMTrunc, val, into, "ecast"),
         CastKind::EnumS_Extend_to_Int => cg.build.cast(OpCode::LLVMSExt, val, into, "ecast"),
         CastKind::EnumU_Extend_to_Int => cg.build.cast(OpCode::LLVMZExt, val, into, "ecast"),
-    }
-}
-
-fn codegen_builtin<'c>(
-    cg: &mut Codegen<'c, '_, '_>,
-    expect: Expect,
-    builtin: hir::Builtin<'c>,
-) -> llvm::Value {
-    match builtin {
-        hir::Builtin::SizeOf(ty) => {
-            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-            let layout = layout::type_layout(cg, ty, cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-            llvm::const_int(cg.ptr_sized_int(), layout.size, false)
-        }
-        hir::Builtin::AlignOf(ty) => {
-            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-            let layout = layout::type_layout(cg, ty, cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-            llvm::const_int(cg.ptr_sized_int(), layout.align, false)
-        }
-        hir::Builtin::Transmute(target, into) => {
-            let val = codegen_expr_value(cg, target);
-            let into_ty = cg.ty(into);
-
-            //@use bitcast when possible?
-            let local_ptr = cg.entry_alloca(into_ty, "transmute_local");
-            cg.build.store(val, local_ptr);
-
-            match expect {
-                Expect::Value(_) | Expect::Store(_) => {
-                    cg.build.load(into_ty, local_ptr, "transmute_val")
-                }
-                Expect::Pointer => local_ptr.as_val(),
-            }
-        }
-        hir::Builtin::RawSlice(ptr, len) => {
-            let slice_ty = cg.slice_type();
-            let slice_ptr = cg.entry_alloca(slice_ty.as_ty(), "raw_slice");
-
-            let ptr = codegen_expr_pointer(cg, ptr).as_val();
-            let ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
-            cg.build.store(ptr, ptr_ptr);
-
-            let len = llvm::const_int(cg.ptr_sized_int(), len, false);
-            let len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
-            cg.build.store(len, len_ptr);
-
-            cg.build.load(slice_ty.as_ty(), slice_ptr, "raw_slice_val")
-        }
     }
 }
 

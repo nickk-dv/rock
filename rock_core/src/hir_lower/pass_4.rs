@@ -1,12 +1,11 @@
+use super::check_path::{self, ValueID};
+use super::context::HirCtx;
 use super::layout;
+use super::{pass_3, pass_5, pass_5::Expectation};
 use crate::ast;
 use crate::error::{ErrorSink, Info, SourceRange};
 use crate::errors as err;
 use crate::hir;
-use crate::hir_lower::check_path::{self, ValueID};
-use crate::hir_lower::context::HirCtx;
-use crate::hir_lower::types;
-use crate::hir_lower::{pass_3, pass_5, pass_5::Expectation};
 use crate::session::ModuleID;
 
 pub fn resolve_const_dependencies(ctx: &mut HirCtx) {
@@ -566,51 +565,12 @@ fn add_expr_deps<'ast>(
         }
         ast::ExprKind::Slice { .. } => Err("slice"),
         ast::ExprKind::Call { .. } => Err("procedure call"),
-        ast::ExprKind::Cast { target, .. } => {
+        ast::ExprKind::Cast { target, into } => {
+            let into = pass_3::type_resolve(ctx, *into, true);
             add_expr_deps(ctx, tree, parent_id, origin_id, target)?;
+            add_type_usage_deps(ctx, tree, parent_id, into)?;
             Ok(())
         }
-        ast::ExprKind::Builtin { builtin } => match builtin {
-            ast::Builtin::Error(name) => {
-                let name = ctx.name(name.id);
-                let src = SourceRange::new(origin_id, expr.range);
-                err::tycheck_builtin_unknown(&mut ctx.emit, src, name);
-                return Err(parent_id);
-            }
-            ast::Builtin::SizeOf(ty) => {
-                let ty = pass_3::type_resolve(ctx, *ty, true);
-                return if types::has_poly_layout_dep(ty) {
-                    let ty = pass_5::type_format(ctx, ty);
-                    let src = SourceRange::new(origin_id, expr.range);
-                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "size_of");
-                    Err(parent_id)
-                } else {
-                    add_type_size_deps(ctx, tree, parent_id, ty, &[])
-                };
-            }
-            ast::Builtin::AlignOf(ty) => {
-                let ty = pass_3::type_resolve(ctx, *ty, true);
-                return if types::has_poly_layout_dep(ty) {
-                    let ty = pass_5::type_format(ctx, ty);
-                    let src = SourceRange::new(origin_id, expr.range);
-                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), "align_of");
-                    Err(parent_id)
-                } else {
-                    add_type_size_deps(ctx, tree, parent_id, ty, &[])
-                };
-            }
-            ast::Builtin::Transmute(_, _) => Err("builtin @transmute"),
-            ast::Builtin::AtomicLoad(_) => Err("builtin @atomic_load"),
-            ast::Builtin::AtomicStore(_) => Err("builtin @atomic_store"),
-            ast::Builtin::AtomicOp(_) => Err("builtin @atomic_op"),
-            ast::Builtin::AtomicCompareSwap(weak, _) => {
-                if *weak {
-                    Err("builtin @atomic_compare_swap_weak")
-                } else {
-                    Err("builtin @atomic_compare_swap")
-                }
-            }
-        },
         ast::ExprKind::Item { path, args_list } => {
             match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => return Err(parent_id),
@@ -619,22 +579,8 @@ fn add_expr_deps<'ast>(
                     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
                         let name = ctx.name(data.name.id);
                         if let "size_of" | "align_of" = name {
-                            if let Some(poly_types) = poly_types {
-                                if let Some(ty) = poly_types.get(0).copied() {
-                                    if types::has_poly_layout_dep(ty) {
-                                        let ty = pass_5::type_format(ctx, ty);
-                                        let src = SourceRange::new(origin_id, expr.range);
-                                        err::tycheck_const_poly_dep(
-                                            &mut ctx.emit,
-                                            src,
-                                            ty.as_str(),
-                                            name,
-                                        );
-                                        return Err(parent_id);
-                                    } else {
-                                        add_type_size_deps(ctx, tree, parent_id, ty, &[])?;
-                                    };
-                                }
+                            if let Some(Some(ty)) = poly_types.map(|p| p.get(0).copied()) {
+                                add_type_size_deps(ctx, tree, parent_id, ty, &[])?;
                             }
                         }
                     }
@@ -880,19 +826,29 @@ pub fn resolve_const_expr<'hir, 'ast>(
     };
     ctx.in_const = false;
 
-    if !ctx.emit.did_error(error_count) {
-        match expr_res.expr {
-            hir::Expr::Error => (Err(()), expr_res.ty),
-            hir::Expr::Const(value, _) => (Ok(*value), expr_res.ty),
-            _ => {
-                let src = ctx.src(expr.0.range);
-                err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
-                (Err(()), expr_res.ty)
+    if ctx.emit.did_error(error_count) {
+        return (Err(()), expr_res.ty);
+    }
+    match expr_res.expr {
+        hir::Expr::Error => return (Err(()), expr_res.ty),
+        hir::Expr::Const(value, _) => return (Ok(*value), expr_res.ty),
+        hir::Expr::CallDirectPoly { proc_id, input } => {
+            let data = ctx.registry.proc_data(*proc_id);
+            if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
+                let name = ctx.name(data.name.id);
+                if let "size_of" | "align_of" = name {
+                    let ty = pass_5::type_format(ctx, input.1[0]);
+                    let src = ctx.src(expr.0.range);
+                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), name);
+                    return (Err(()), expr_res.ty);
+                }
             }
         }
-    } else {
-        (Err(()), expr_res.ty)
+        _ => {}
     }
+    let src = ctx.src(expr.0.range);
+    err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+    (Err(()), expr_res.ty)
 }
 
 #[derive(Copy, Clone, PartialEq)]

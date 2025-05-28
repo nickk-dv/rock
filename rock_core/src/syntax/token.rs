@@ -236,10 +236,10 @@ macro_rules! token_gen {
             $( [$token] => [Token::$name]; )+
         }
 
-        /// lenght in bytes of `normal` tokens,  
+        /// length in bytes of `normal` tokens,  
         /// `special` tokens will have length of 0.
-        const NORMAL_TOKEN_LEN: [u8; 97] = {
-            let mut token_len: [u8; 97] = [
+        const NORMAL_TOKEN_LEN: [u8; 96] = {
+            let mut token_len: [u8; 96] = [
                 $($string.len() as u8,)+
             ];
             token_len[T![eof] as usize] = 0;
@@ -422,7 +422,6 @@ token_gen! {
     [:]      | ":"      | Colon        |
     [;]      | ";"      | Semicolon    |
     [#]      | "#"      | Hash         |
-    [@]      | "@"      | AtSign       |
     ['(']    | "("      | ParenOpen    |
     [')']    | ")"      | ParenClose   |
     ['[']    | "["      | BracketOpen  |
@@ -482,7 +481,6 @@ token_from_char! {
     ':' => T![:]
     ';' => T![;]
     '#' => T![#]
-    '@' => T![@]
     '(' => T!['(']
     ')' => T![')']
     '[' => T!['[']

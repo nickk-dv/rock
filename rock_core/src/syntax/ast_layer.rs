@@ -457,9 +457,6 @@ ast_node_impl!(ExprIndex, SyntaxKind::EXPR_INDEX);
 ast_node_impl!(ExprSlice, SyntaxKind::EXPR_SLICE);
 ast_node_impl!(ExprCall, SyntaxKind::EXPR_CALL);
 ast_node_impl!(ExprCast, SyntaxKind::EXPR_CAST);
-ast_node_impl!(BuiltinWithType, SyntaxKind::BUILTIN_WITH_TYPE);
-ast_node_impl!(BuiltinTransmute, SyntaxKind::BUILTIN_TRANSMUTE);
-ast_node_impl!(BuiltinWithArgs, SyntaxKind::BUILTIN_WITH_ARGS);
 ast_node_impl!(ExprItem, SyntaxKind::EXPR_ITEM);
 ast_node_impl!(ExprVariant, SyntaxKind::EXPR_VARIANT);
 ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
@@ -653,7 +650,6 @@ pub enum Expr<'syn> {
     Slice(ExprSlice<'syn>),
     Call(ExprCall<'syn>),
     Cast(ExprCast<'syn>),
-    Builtin(Builtin<'syn>),
     Item(ExprItem<'syn>),
     Variant(ExprVariant<'syn>),
     StructInit(ExprStructInit<'syn>),
@@ -686,15 +682,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
             SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
-            _ => {
-                if let Some(lit) = Lit::cast(node) {
-                    Some(Expr::Lit(lit))
-                } else if let Some(builtin) = Builtin::cast(node) {
-                    Some(Expr::Builtin(builtin))
-                } else {
-                    None
-                }
-            }
+            _ => Lit::cast(node).map(|lit| Expr::Lit(lit)),
         }
     }
     fn range(self) -> TextRange {
@@ -709,7 +697,6 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::Slice(expr) => expr.0.range,
             Expr::Call(expr) => expr.0.range,
             Expr::Cast(expr) => expr.0.range,
-            Expr::Builtin(builtin) => builtin.range(),
             Expr::Item(expr) => expr.0.range,
             Expr::Variant(expr) => expr.0.range,
             Expr::StructInit(expr) => expr.0.range,
@@ -741,31 +728,6 @@ impl<'syn> AstNode<'syn> for Branch<'syn> {
         match self {
             Branch::Cond(branch) => branch.0.range,
             Branch::Pat(branch) => branch.0.range,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-pub enum Builtin<'syn> {
-    WithType(BuiltinWithType<'syn>),
-    Transmute(BuiltinTransmute<'syn>),
-    WithArgs(BuiltinWithArgs<'syn>),
-}
-
-impl<'syn> AstNode<'syn> for Builtin<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Builtin<'syn>> {
-        match node.kind {
-            SyntaxKind::BUILTIN_WITH_TYPE => Some(Builtin::WithType(BuiltinWithType(node))),
-            SyntaxKind::BUILTIN_TRANSMUTE => Some(Builtin::Transmute(BuiltinTransmute(node))),
-            SyntaxKind::BUILTIN_WITH_ARGS => Some(Builtin::WithArgs(BuiltinWithArgs(node))),
-            _ => None,
-        }
-    }
-    fn range(self) -> TextRange {
-        match self {
-            Builtin::WithType(builtin) => builtin.0.range,
-            Builtin::Transmute(builtin) => builtin.0.range,
-            Builtin::WithArgs(builtin) => builtin.0.range,
         }
     }
 }
@@ -1163,21 +1125,6 @@ impl<'syn> ExprCall<'syn> {
 impl<'syn> ExprCast<'syn> {
     node_find!(target, Expr);
     node_find!(into_ty, Type);
-}
-
-impl<'syn> BuiltinWithType<'syn> {
-    node_find!(name, Name);
-    node_find!(ty, Type);
-}
-
-impl<'syn> BuiltinTransmute<'syn> {
-    node_find!(expr, Expr);
-    node_find!(into_ty, Type);
-}
-
-impl<'syn> BuiltinWithArgs<'syn> {
-    node_find!(name, Name);
-    node_find!(args_list, ArgsList);
 }
 
 impl<'syn> ExprItem<'syn> {

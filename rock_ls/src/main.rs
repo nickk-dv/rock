@@ -929,9 +929,6 @@ fn semantic_visit_node(
                     SyntaxKind::STMT_LOCAL => Some(SemanticToken::Variable),
 
                     SyntaxKind::EXPR_FIELD => Some(SemanticToken::Property),
-                    SyntaxKind::BUILTIN_WITH_TYPE => Some(SemanticToken::Function),
-                    SyntaxKind::BUILTIN_TRANSMUTE => Some(SemanticToken::Function),
-                    SyntaxKind::BUILTIN_WITH_ARGS => Some(SemanticToken::Function),
                     SyntaxKind::EXPR_VARIANT => Some(SemanticToken::EnumMember),
                     SyntaxKind::FIELD_INIT => Some(SemanticToken::Property),
 
@@ -1135,7 +1132,6 @@ fn semantic_token_style(
         T![void] => SemanticToken::Number,
 
         T![.] | T![,] | T![:] | T![;] | T![#] => return None,
-        T![@] => SemanticToken::Function,
         T!['('] | T![')'] | T!['['] | T![']'] | T!['{'] | T!['}'] => return None,
 
         T![..] | T![->] | T!["..<"] | T!["..="] | T![~] | T![!] |

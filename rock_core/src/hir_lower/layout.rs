@@ -1,7 +1,7 @@
+use super::types;
 use crate::error::{ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::hir;
-use crate::hir_lower::types;
 use crate::support::{TempBuffer, TempOffset};
 use std::collections::HashMap;
 

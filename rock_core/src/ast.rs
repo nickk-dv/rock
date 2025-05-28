@@ -331,7 +331,6 @@ pub enum ExprKind<'ast> {
     Slice       { target: &'ast Expr<'ast>, range: &'ast SliceRange<'ast> },
     Call        { target: &'ast Expr<'ast>, args_list: &'ast ArgumentList<'ast> },
     Cast        { target: &'ast Expr<'ast>, into: &'ast Type<'ast> },
-    Builtin     { builtin: &'ast Builtin<'ast> },
     Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
@@ -383,18 +382,6 @@ pub struct SliceRange<'ast> {
 pub enum RangeKind {
     Exclusive,
     Inclusive,
-}
-
-#[derive(Copy, Clone)]
-pub enum Builtin<'ast> {
-    Error(Name),
-    SizeOf(Type<'ast>),
-    AlignOf(Type<'ast>),
-    Transmute(&'ast Expr<'ast>, Type<'ast>),
-    AtomicLoad(ArgumentList<'ast>),
-    AtomicStore(ArgumentList<'ast>),
-    AtomicOp(ArgumentList<'ast>),
-    AtomicCompareSwap(bool, &'ast ArgumentList<'ast>),
 }
 
 #[derive(Copy, Clone)]

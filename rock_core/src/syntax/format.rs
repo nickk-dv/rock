@@ -734,7 +734,6 @@ fn expr<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::Expr<'syn>) {
         cst::Expr::Slice(expr) => expr_slice(fmt, expr),
         cst::Expr::Call(expr) => expr_call(fmt, expr),
         cst::Expr::Cast(expr) => expr_cast(fmt, expr),
-        cst::Expr::Builtin(builtin) => expr_builtin(fmt, builtin),
         cst::Expr::Item(expr) => expr_item(fmt, expr),
         cst::Expr::Variant(expr) => expr_variant(fmt, expr),
         cst::Expr::StructInit(expr) => expr_struct_init(fmt, expr),
@@ -875,31 +874,6 @@ fn expr_cast<'syn>(fmt: &mut Formatter<'syn, '_>, cast: cst::ExprCast<'syn>) {
     fmt.write_str("as");
     fmt.space();
     ty(fmt, cast.into_ty(fmt.tree).unwrap());
-}
-
-fn expr_builtin<'syn>(fmt: &mut Formatter<'syn, '_>, builtin: cst::Builtin<'syn>) {
-    fmt.write('@');
-    match builtin {
-        cst::Builtin::WithType(builtin) => {
-            name(fmt, builtin.name(fmt.tree).unwrap());
-            fmt.write('(');
-            ty(fmt, builtin.ty(fmt.tree).unwrap());
-            fmt.write(')');
-        }
-        cst::Builtin::Transmute(builtin) => {
-            fmt.write_str("transmute");
-            fmt.write('(');
-            expr(fmt, builtin.expr(fmt.tree).unwrap());
-            fmt.write(',');
-            fmt.space();
-            ty(fmt, builtin.into_ty(fmt.tree).unwrap());
-            fmt.write(')');
-        }
-        cst::Builtin::WithArgs(builtin) => {
-            name(fmt, builtin.name(fmt.tree).unwrap());
-            args_list(fmt, builtin.args_list(fmt.tree).unwrap());
-        }
-    }
 }
 
 fn expr_item<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::ExprItem<'syn>) {

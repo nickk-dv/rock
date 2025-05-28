@@ -648,7 +648,6 @@ fn expr_kind<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> ast::Ex
             let into = ty(ctx, cast.into_ty(ctx.tree).unwrap());
             ast::ExprKind::Cast { target, into: ctx.arena.alloc(into) }
         }
-        cst::Expr::Builtin(builtin) => expr_builtin(ctx, builtin),
         cst::Expr::Item(item) => {
             let path = path(ctx, item.path(ctx.tree).unwrap());
             let args_list = item.args_list(ctx.tree).map(|al| args_list(ctx, al));
@@ -791,42 +790,6 @@ fn expr_slice<'ast>(ctx: &mut AstBuild<'ast, '_>, slice: cst::ExprSlice) -> ast:
         ast::SliceRange { start, end: None }
     };
     ast::ExprKind::Slice { target, range: ctx.arena.alloc(range) }
-}
-
-fn expr_builtin<'ast>(ctx: &mut AstBuild<'ast, '_>, builtin: cst::Builtin) -> ast::ExprKind<'ast> {
-    let builtin = match builtin {
-        cst::Builtin::WithType(builtin) => {
-            let name = name(ctx, builtin.name(ctx.tree).unwrap());
-            let ty = ty(ctx, builtin.ty(ctx.tree).unwrap());
-            match ctx.intern.get(name.id) {
-                "size_of" => ast::Builtin::SizeOf(ty),
-                "align_of" => ast::Builtin::AlignOf(ty),
-                _ => ast::Builtin::Error(name),
-            }
-        }
-        cst::Builtin::Transmute(builtin) => ast::Builtin::Transmute(
-            expr(ctx, builtin.expr(ctx.tree).unwrap()),
-            ty(ctx, builtin.into_ty(ctx.tree).unwrap()),
-        ),
-        cst::Builtin::WithArgs(builtin) => {
-            let name = name(ctx, builtin.name(ctx.tree).unwrap());
-            let args = args_list_value(ctx, builtin.args_list(ctx.tree).unwrap());
-            match ctx.intern.get(name.id) {
-                "atomic_load" => ast::Builtin::AtomicLoad(args),
-                "atomic_store" => ast::Builtin::AtomicStore(args),
-                "atomic_op" => ast::Builtin::AtomicOp(args),
-                "atomic_compare_swap" => {
-                    ast::Builtin::AtomicCompareSwap(false, ctx.arena.alloc(args))
-                }
-                "atomic_compare_swap_weak" => {
-                    ast::Builtin::AtomicCompareSwap(true, ctx.arena.alloc(args))
-                }
-                _ => ast::Builtin::Error(name),
-            }
-        }
-    };
-    let builtin = ctx.arena.alloc(builtin);
-    ast::ExprKind::Builtin { builtin }
 }
 
 //==================== PAT ====================

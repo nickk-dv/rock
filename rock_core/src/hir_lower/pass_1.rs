@@ -38,6 +38,8 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
         scope::find_core_proc(ctx, "ops", "string_equals").unwrap_or(hir::ProcID::dummy());
     ctx.core.cstring_equals =
         scope::find_core_proc(ctx, "ops", "cstring_equals").unwrap_or(hir::ProcID::dummy());
+    ctx.core.from_raw_parts =
+        scope::find_core_proc(ctx, "mem", "from_raw_parts").unwrap_or(hir::ProcID::dummy());
 
     ctx.core.range_bound = scope::find_core_enum(ctx, "ops", "RangeBound");
     ctx.core.type_info =

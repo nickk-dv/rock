@@ -490,7 +490,6 @@ fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
-        ast::ExprKind::Builtin { builtin } => typecheck_builtin(ctx, expr.range, builtin),
         ast::ExprKind::Item { path, args_list } => {
             typecheck_item(ctx, expect, path, args_list, expr.range)
         }
@@ -1289,16 +1288,21 @@ fn typecheck_slice<'hir, 'ast>(
             }
         }
         CollectionKind::Array(array) => {
-            let ptr = if let hir::Type::Reference(mutt, ref_ty) = target_res.ty {
-                let deref = hir::Expr::Deref { rhs: target_res.expr, mutt, ref_ty };
-                ctx.arena.alloc(deref)
+            let ptr = if let hir::Type::Reference(_, _) = target_res.ty {
+                target_res.expr
             } else {
                 ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
             };
             let len = ctx.array_len(array.len).unwrap_or(0);
-            let builtin = hir::Builtin::RawSlice(ptr, len);
-            let builtin = hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) };
-            ctx.arena.alloc(builtin)
+            let len = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::from_u64(len, IntType::Usize),
+                hir::ConstID::dummy(),
+            ));
+            let proc_id = ctx.core.from_raw_parts;
+            let input = ctx.arena.alloc_slice(&[ptr, len]);
+            let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
+            let input = ctx.arena.alloc((input, poly_types));
+            ctx.arena.alloc(hir::Expr::CallDirectPoly { proc_id, input })
         }
     };
 
@@ -1587,134 +1591,6 @@ fn constfold_cast<'hir>(
                 hir::VariantKind::Constant(id) => ctx.registry.const_eval(id).0.resolved()?,
             };
             int_range_check(ctx, src, tag_value.into_int(), into.unwrap_int())
-        }
-    }
-}
-
-fn typecheck_builtin<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
-    range: TextRange,
-    builtin: &ast::Builtin<'ast>,
-) -> TypeResult<'hir> {
-    let src = ctx.src(range);
-    match *builtin {
-        ast::Builtin::Error(name) => {
-            let name = ctx.name(name.id);
-            err::tycheck_builtin_unknown(&mut ctx.emit, src, name);
-            TypeResult::error()
-        }
-        ast::Builtin::SizeOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, ty, false); //@in def?
-            let expr = if types::has_poly_layout_dep(ty) {
-                let builtin = hir::Builtin::SizeOf(ty);
-                hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
-            } else {
-                layout::type_layout(ctx, ty, &[], src)
-                    .map(|layout| {
-                        int_range_check(ctx, src, layout.size as i128, IntType::Usize)
-                            .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
-                            .unwrap_or(hir::Expr::Error)
-                    })
-                    .unwrap_or(hir::Expr::Error)
-            };
-            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
-        }
-        ast::Builtin::AlignOf(ty) => {
-            let ty = super::pass_3::type_resolve(ctx, ty, false); //@in def?
-            let expr = if types::has_poly_layout_dep(ty) {
-                let builtin = hir::Builtin::AlignOf(ty);
-                hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) }
-            } else {
-                layout::type_layout(ctx, ty, &[], src)
-                    .map(|layout| {
-                        int_range_check(ctx, src, layout.align as i128, IntType::Usize)
-                            .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
-                            .unwrap_or(hir::Expr::Error)
-                    })
-                    .unwrap_or(hir::Expr::Error)
-            };
-            TypeResult::new(hir::Type::Int(IntType::Usize), expr)
-        }
-        ast::Builtin::Transmute(expr, into) => {
-            let from_src = ctx.src(expr.range);
-            let into_src = ctx.src(into.range);
-            let expr_res = typecheck_expr(ctx, Expectation::None, expr);
-            let into_ty = super::pass_3::type_resolve(ctx, into, false);
-
-            if types::has_poly_layout_dep(expr_res.ty) {
-                let ty = type_format(ctx, expr_res.ty);
-                err::tycheck_transumute_poly_dep(&mut ctx.emit, from_src, ty.as_str());
-                return TypeResult::error();
-            }
-            if types::has_poly_layout_dep(into_ty) {
-                let ty = type_format(ctx, into_ty);
-                err::tycheck_transumute_poly_dep(&mut ctx.emit, into_src, ty.as_str());
-                return TypeResult::error();
-            }
-
-            let from_res = layout::type_layout(ctx, expr_res.ty, &[], from_src);
-            let into_res = layout::type_layout(ctx, into_ty, &[], into_src);
-
-            if let (Ok(from_layout), Ok(into_layout)) = (from_res, into_res) {
-                let subject = if from_layout.size != into_layout.size {
-                    "size"
-                } else if from_layout.align != into_layout.align {
-                    "alignment"
-                } else {
-                    let builtin = hir::Builtin::Transmute(expr_res.expr, into_ty);
-                    let expr = hir::Expr::Builtin { builtin: ctx.arena.alloc(builtin) };
-                    return TypeResult::new(into_ty, expr);
-                };
-
-                let from_ty = type_format(ctx, expr_res.ty);
-                let into_ty = type_format(ctx, into_ty);
-                err::tycheck_transmute_mismatch(
-                    &mut ctx.emit,
-                    src,
-                    subject,
-                    from_ty.as_str(),
-                    into_ty.as_str(),
-                );
-                TypeResult::error()
-            } else {
-                TypeResult::error()
-            }
-        }
-        ast::Builtin::AtomicLoad(args) => {
-            if !check_call_arg_count(ctx, &args, None, 2, false) {
-                return TypeResult::error();
-            }
-            let src = ctx.src(range);
-            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_load");
-            TypeResult::error()
-        }
-        ast::Builtin::AtomicStore(args) => {
-            if !check_call_arg_count(ctx, &args, None, 3, false) {
-                return TypeResult::error();
-            }
-            let src = ctx.src(range);
-            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_store");
-            TypeResult::error()
-        }
-        ast::Builtin::AtomicOp(args) => {
-            if !check_call_arg_count(ctx, &args, None, 4, false) {
-                return TypeResult::error();
-            }
-            let src = ctx.src(range);
-            err::internal_not_implemented(&mut ctx.emit, src, "@atomic_op");
-            TypeResult::error()
-        }
-        ast::Builtin::AtomicCompareSwap(weak, args) => {
-            if !check_call_arg_count(ctx, &args, None, 5, false) {
-                return TypeResult::error();
-            }
-            let src = ctx.src(range);
-            if weak {
-                err::internal_not_implemented(&mut ctx.emit, src, "@atomic_compare_swap_weak");
-            } else {
-                err::internal_not_implemented(&mut ctx.emit, src, "@atomic_compare_swap");
-            }
-            TypeResult::error()
         }
     }
 }
@@ -3900,7 +3776,6 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Index { .. } => Some("index access"),
         hir::Expr::Slice { .. } => Some("slice value"),
         hir::Expr::Cast { .. } => Some("cast value"),
-        hir::Expr::Builtin { .. } => Some("builtin value"),
         hir::Expr::ParamVar { .. } => Some("parameter value"),
         hir::Expr::Variable { .. } => Some("variable value"),
         hir::Expr::GlobalVar { .. } => Some("global value"),
@@ -4331,12 +4206,12 @@ fn check_call_intrinsic<'hir>(
 
             if types::has_poly_layout_dep(from_ty) {
                 let ty = type_format(ctx, from_ty);
-                err::tycheck_transumute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, ty.as_str());
                 return Some(TypeResult::error());
             }
             if types::has_poly_layout_dep(into_ty) {
                 let ty = type_format(ctx, into_ty);
-                err::tycheck_transumute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, ty.as_str());
                 return Some(TypeResult::error());
             }
 
@@ -4346,10 +4221,10 @@ fn check_call_intrinsic<'hir>(
                 return Some(TypeResult::error());
             };
 
-            let subject = if from_layout.size != into_layout.size {
-                "size"
+            let (subject, from_val, into_val) = if from_layout.size != into_layout.size {
+                ("size", from_layout.size, into_layout.size)
             } else if from_layout.align != into_layout.align {
-                "alignment"
+                ("alignment", from_layout.align, into_layout.align)
             } else {
                 return None;
             };
@@ -4361,7 +4236,9 @@ fn check_call_intrinsic<'hir>(
                 src,
                 subject,
                 from_ty.as_str(),
+                from_val,
                 into_ty.as_str(),
+                into_val,
             );
             Some(TypeResult::error())
         }
@@ -4682,7 +4559,6 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::Match { .. } => AddrBase::Temporary,
             hir::Expr::SliceField { .. } => AddrBase::SliceField,
             hir::Expr::Cast { .. } => AddrBase::Temporary,
-            hir::Expr::Builtin { .. } => AddrBase::Temporary,
             hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
             hir::Expr::CallDirect { .. } => AddrBase::Temporary,
             hir::Expr::CallDirectPoly { .. } => AddrBase::Temporary,

@@ -737,8 +737,6 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![if] => expr_if(p),
         T!['{'] => block(p),
         T![match] => expr_match(p),
-        T![@] => expr_builtin(p),
-        T![#] => directive(p).0,
         T![ident] => expr_item_or_struct_init(p),
         T![.] => expr_variant_or_struct_init(p),
         T!['['] => expr_array_init_or_repeat(p),
@@ -856,46 +854,6 @@ fn match_arm(p: &mut Parser) {
     p.expect(T![->]);
     expr(p);
     m.complete(p, SyntaxKind::MATCH_ARM);
-}
-
-fn expr_builtin(p: &mut Parser) -> MarkerClosed {
-    let m = p.start();
-    p.bump(T![@]);
-
-    let kind = if p.at(T![ident]) {
-        match p.current_token_string() {
-            "size_of" | "align_of" => SyntaxKind::BUILTIN_WITH_TYPE,
-            "transmute" => SyntaxKind::BUILTIN_TRANSMUTE,
-            _ => SyntaxKind::BUILTIN_WITH_ARGS,
-        }
-    } else {
-        SyntaxKind::BUILTIN_WITH_ARGS
-    };
-    name(p);
-
-    match kind {
-        SyntaxKind::BUILTIN_WITH_TYPE => {
-            p.expect(T!['(']);
-            ty(p);
-            p.expect(T![')']);
-        }
-        SyntaxKind::BUILTIN_TRANSMUTE => {
-            p.expect(T!['(']);
-            expr(p);
-            p.expect(T![,]);
-            ty(p);
-            p.expect(T![')']);
-        }
-        SyntaxKind::BUILTIN_WITH_ARGS => {
-            if p.at(T!['(']) {
-                args_list(p);
-            } else {
-                p.error("expected argument list");
-            }
-        }
-        _ => {}
-    }
-    m.complete(p, kind)
 }
 
 fn expr_item_or_struct_init(p: &mut Parser) -> MarkerClosed {
