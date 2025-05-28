@@ -1736,14 +1736,7 @@ fn typecheck_item<'hir, 'ast>(
         }
         ValueID::Proc(proc_id, poly_types) => {
             if let Some(args_list) = args_list {
-                return check_call_direct(
-                    ctx,
-                    expect,
-                    proc_id,
-                    poly_types,
-                    args_list,
-                    expr_range.start(),
-                );
+                return check_call_direct(ctx, expect, proc_id, poly_types, args_list, expr_range);
             } else {
                 return check_item_procedure(ctx, expect, proc_id, poly_types, expr_range);
             }
@@ -4085,7 +4078,7 @@ fn check_call_direct<'hir, 'ast>(
     proc_id: hir::ProcID,
     poly_types: Option<&'hir [hir::Type<'hir>]>,
     arg_list: &ast::ArgumentList<'ast>,
-    start: TextOffset,
+    range: TextRange,
 ) -> TypeResult<'hir> {
     let data = ctx.registry.proc_data(proc_id);
     let origin_id = data.origin_id;
@@ -4147,7 +4140,7 @@ fn check_call_direct<'hir, 'ast>(
             }
             hir::ParamKind::CallerLocation => {
                 let expr = if let Some(struct_id) = ctx.core.source_loc {
-                    let values = hir::source_location(ctx.session, ctx.scope.origin, start);
+                    let values = hir::source_location(ctx.session, ctx.scope.origin, range.start());
                     let values = ctx.arena.alloc_slice(&values);
                     let struct_ = hir::ConstStruct { values, poly_types: &[] };
                     let struct_ = ctx.arena.alloc(struct_);
@@ -4174,7 +4167,7 @@ fn check_call_direct<'hir, 'ast>(
     }
 
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_unknown()) {
-        let src = ctx.src(TextRange::new(start, arg_list.range.start()));
+        let src = ctx.src(TextRange::new(range.start(), arg_list.range.start()));
         err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
         ctx.cache.exprs.pop_view(offset);
         ctx.scope.infer.end_context(infer);
@@ -4183,20 +4176,27 @@ fn check_call_direct<'hir, 'ast>(
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
         return TypeResult::error();
     }
-    let return_ty = type_substitute_inferred(ctx, is_poly, infer, return_ty);
+    let poly_types = match poly_types {
+        Some(poly_types) => poly_types,
+        None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
+    };
 
+    let return_ty = type_substitute_inferred(ctx, is_poly, infer, return_ty);
     let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
+    ctx.scope.infer.end_context(infer);
+
+    let data = ctx.registry.proc_data(proc_id);
+    if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
+        if let Some(result) = check_call_intrinsic(ctx, proc_id, poly_types, range) {
+            return result;
+        }
+    }
+
     let expr = if is_poly {
-        let poly_types = match poly_types {
-            Some(poly_types) => poly_types,
-            None => ctx.arena.alloc_slice(ctx.scope.infer.inferred(infer)),
-        };
         hir::Expr::CallDirectPoly { proc_id, input: ctx.arena.alloc((input, poly_types)) }
     } else {
         hir::Expr::CallDirect { proc_id, input }
     };
-
-    ctx.scope.infer.end_context(infer);
     TypeResult::new(return_ty, expr)
 }
 
@@ -4285,6 +4285,94 @@ fn check_call_indirect<'hir, 'ast>(
     let expr =
         hir::Expr::CallIndirect { target: target_res.expr, indirect: ctx.arena.alloc(indirect) };
     TypeResult::new(proc_ty.return_ty, expr)
+}
+
+fn check_call_intrinsic<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    proc_id: hir::ProcID,
+    poly_types: &'hir [hir::Type<'hir>],
+    range: TextRange,
+) -> Option<TypeResult<'hir>> {
+    let data = ctx.registry.proc_data(proc_id);
+    let src = ctx.src(range);
+
+    match ctx.name(data.name.id) {
+        "size_of" => {
+            if types::has_poly_layout_dep(poly_types[0]) {
+                return None;
+            }
+            let layout = layout::type_layout(ctx, poly_types[0], &[], src);
+            let expr = layout
+                .map(|layout| {
+                    int_range_check(ctx, src, layout.size as i128, IntType::Usize)
+                        .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
+                        .unwrap_or(hir::Expr::Error)
+                })
+                .unwrap_or(hir::Expr::Error);
+            Some(TypeResult::new(hir::Type::Int(IntType::Usize), expr))
+        }
+        "align_of" => {
+            if types::has_poly_layout_dep(poly_types[0]) {
+                return None;
+            }
+            let layout = layout::type_layout(ctx, poly_types[0], &[], src);
+            let expr = layout
+                .map(|layout| {
+                    int_range_check(ctx, src, layout.align as i128, IntType::Usize)
+                        .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
+                        .unwrap_or(hir::Expr::Error)
+                })
+                .unwrap_or(hir::Expr::Error);
+            Some(TypeResult::new(hir::Type::Int(IntType::Usize), expr))
+        }
+        "transmute" => {
+            let from_ty = poly_types[0];
+            let into_ty = poly_types[1];
+
+            if types::has_poly_layout_dep(from_ty) {
+                let ty = type_format(ctx, from_ty);
+                err::tycheck_transumute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                return Some(TypeResult::error());
+            }
+            if types::has_poly_layout_dep(into_ty) {
+                let ty = type_format(ctx, into_ty);
+                err::tycheck_transumute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                return Some(TypeResult::error());
+            }
+
+            let from_res = layout::type_layout(ctx, from_ty, &[], src);
+            let into_res = layout::type_layout(ctx, into_ty, &[], src);
+            let (Ok(from_layout), Ok(into_layout)) = (from_res, into_res) else {
+                return Some(TypeResult::error());
+            };
+
+            let subject = if from_layout.size != into_layout.size {
+                "size"
+            } else if from_layout.align != into_layout.align {
+                "alignment"
+            } else {
+                return None;
+            };
+
+            let from_ty = type_format(ctx, from_ty);
+            let into_ty = type_format(ctx, into_ty);
+            err::tycheck_transmute_mismatch(
+                &mut ctx.emit,
+                src,
+                subject,
+                from_ty.as_str(),
+                into_ty.as_str(),
+            );
+            Some(TypeResult::error())
+        }
+        "from_raw_parts" => None,
+        "load" => None,
+        "store" => None,
+        "modify" => None,
+        "compare_exchange" => None,
+        "compare_exchange_weak" => None,
+        _ => unreachable!(),
+    }
 }
 
 fn check_call_arg_count(

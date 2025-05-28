@@ -1268,6 +1268,7 @@ pub fn codegen_call_intrinsic<'c>(
             cg.build.set_ordering(inst, order);
             None
         }
+        "modify" => unimplemented!("atomic modify"),
         "compare_exchange" | "compare_exchange_weak" => {
             let dst = codegen_expr_value(cg, input[0]).into_ptr();
             let expect = codegen_expr_value(cg, input[1]);

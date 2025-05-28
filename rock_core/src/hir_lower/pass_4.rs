@@ -615,20 +615,44 @@ fn add_expr_deps<'ast>(
             match check_path::path_resolve_value(ctx, path, true) {
                 ValueID::None => return Err(parent_id),
                 ValueID::Proc(proc_id, poly_types) => {
+                    let data = ctx.registry.proc_data(proc_id);
+                    if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
+                        let name = ctx.name(data.name.id);
+                        if let "size_of" | "align_of" = name {
+                            if let Some(poly_types) = poly_types {
+                                if let Some(ty) = poly_types.get(0).copied() {
+                                    if types::has_poly_layout_dep(ty) {
+                                        let ty = pass_5::type_format(ctx, ty);
+                                        let src = SourceRange::new(origin_id, expr.range);
+                                        err::tycheck_const_poly_dep(
+                                            &mut ctx.emit,
+                                            src,
+                                            ty.as_str(),
+                                            name,
+                                        );
+                                        return Err(parent_id);
+                                    } else {
+                                        add_type_size_deps(ctx, tree, parent_id, ty, &[])?;
+                                    };
+                                }
+                            }
+                        }
+                    }
+
                     for param in ctx.registry.proc_data(proc_id).params {
                         add_type_usage_deps(ctx, tree, parent_id, param.ty)?;
                     }
                     let data = ctx.registry.proc_data(proc_id);
                     add_type_usage_deps(ctx, tree, parent_id, data.return_ty)?;
 
-                    if let Some(arg_list) = args_list {
-                        for arg in arg_list.exprs {
-                            add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
-                        }
-                    }
                     if let Some(poly_types) = poly_types {
                         for ty in poly_types.iter().copied() {
                             add_type_usage_deps(ctx, tree, parent_id, ty)?;
+                        }
+                    }
+                    if let Some(arg_list) = args_list {
+                        for arg in arg_list.exprs {
+                            add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
                         }
                     }
                     Ok(())
@@ -636,14 +660,14 @@ fn add_expr_deps<'ast>(
                 ValueID::Enum(enum_id, variant_id, poly_types) => {
                     add_variant_usage_deps(ctx, tree, parent_id, enum_id, variant_id)?;
 
-                    if let Some(arg_list) = args_list {
-                        for arg in arg_list.exprs {
-                            add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
-                        }
-                    }
                     if let Some(poly_types) = poly_types {
                         for ty in poly_types.iter().copied() {
                             add_type_usage_deps(ctx, tree, parent_id, ty)?;
+                        }
+                    }
+                    if let Some(arg_list) = args_list {
+                        for arg in arg_list.exprs {
+                            add_expr_deps(ctx, tree, parent_id, origin_id, arg)?;
                         }
                     }
                     Ok(())
