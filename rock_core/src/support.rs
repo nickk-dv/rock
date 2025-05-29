@@ -307,6 +307,18 @@ pub mod os {
         let extension = path.extension()?;
         extension.to_str()
     }
+
+    pub fn canonicalize(path: &PathBuf) -> Result<PathBuf, Error> {
+        let path = path
+            .canonicalize()
+            .map_err(|io_error| err::os_canonicalize(io_error.to_string(), path))?;
+        let s = path.as_os_str().to_string_lossy();
+        if s.starts_with(r"\\?\") {
+            Ok(PathBuf::from(&s[4..]))
+        } else {
+            Ok(path)
+        }
+    }
 }
 
 /// prevent accidental size changes

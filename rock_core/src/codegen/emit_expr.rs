@@ -124,7 +124,7 @@ fn codegen_expr<'c>(
         hir::Expr::CallIndirect { target, indirect } => {
             codegen_call_indirect(cg, expect, target, indirect)
         }
-        hir::Expr::Variadics { args } => Some(codegen_variadics(cg, args)),
+        hir::Expr::VariadicArg { arg } => Some(codegen_variadic_arg(cg, arg)),
         hir::Expr::StructInit { struct_id, input } => {
             codegen_struct_init(cg, expect, struct_id, input, &[])
         }
@@ -159,16 +159,15 @@ fn codegen_const_expr<'c>(
 
 pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> bool {
     match value {
-        hir::ConstValue::Void => false,
-        hir::ConstValue::Null => false,
-        hir::ConstValue::Bool { .. } => false,
-        hir::ConstValue::Int { .. } => false,
-        hir::ConstValue::Float { .. } => false,
-        hir::ConstValue::Char { .. } => false,
+        hir::ConstValue::Void
+        | hir::ConstValue::Null
+        | hir::ConstValue::Bool { .. }
+        | hir::ConstValue::Int { .. }
+        | hir::ConstValue::Float { .. }
+        | hir::ConstValue::Char { .. } => false,
         hir::ConstValue::String { .. } if in_variant => true,
         hir::ConstValue::Procedure { .. } if in_variant => true,
-        hir::ConstValue::String { .. } => false,
-        hir::ConstValue::Procedure { .. } => false,
+        hir::ConstValue::String { .. } | hir::ConstValue::Procedure { .. } => false,
         hir::ConstValue::Variant { .. } => false,
         hir::ConstValue::VariantPoly { variant, .. } => {
             variant.values.iter().copied().any(|v| const_has_variant_with_ptrs(v, true))
@@ -1196,10 +1195,7 @@ pub fn codegen_call_intrinsic<'c>(
         "from_raw_parts" => {
             let ptr = codegen_expr_value(cg, input[0]);
             let len = codegen_expr_value(cg, input[1]);
-            let undef = llvm::undef(cg.slice_type().as_ty());
-            let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
-            let second = cg.build.insert_value(first, len, 1, "raw_parts.ptr_len");
-            Some(second)
+            Some(codegen_from_raw_parts(cg, ptr, len))
         }
         "load" => {
             let ptr_ty = cg.ty(poly_types[0]);
@@ -1240,6 +1236,12 @@ pub fn codegen_call_intrinsic<'c>(
     }
 }
 
+fn codegen_from_raw_parts(cg: &mut Codegen, ptr: llvm::Value, len: llvm::Value) -> llvm::Value {
+    let undef = llvm::undef(cg.slice_type().as_ty());
+    let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
+    cg.build.insert_value(first, len, 1, "raw_parts.ptr_len")
+}
+
 fn is_numeric(kind: llvm::TypeKind) -> bool {
     matches!(
         kind,
@@ -1262,51 +1264,35 @@ fn const_expr_ordering(expr: &hir::Expr) -> llvm::AtomicOrdering {
     }
 }
 
-fn codegen_variadics<'c>(cg: &mut Codegen<'c, '_, '_>, args: &[hir::Variadic<'c>]) -> llvm::Value {
+fn codegen_variadic_arg<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    arg: &hir::VariadicArg<'c>,
+) -> llvm::Value {
+    let arg_types = context::substitute_types(cg, arg.types, &[]);
     let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
-    let any_array_ty = llvm::array_type(any_ty.as_ty(), args.len() as u64);
-    let any_array_ptr = cg.entry_alloca(any_array_ty, "any_array");
-    let any_array_len = cg.const_usize(args.len() as u64);
+    let array_ty = llvm::array_type(any_ty.as_ty(), arg.exprs.len() as u64);
+    let array_ptr = cg.entry_alloca(array_ty, "any_array");
 
-    for (idx, arg) in args.iter().enumerate() {
-        let arg_ty = context::substitute_type(cg, arg.ty, &[]);
-        let arg_ty_ir = cg.ty(arg_ty);
-        let arg_ptr = cg.entry_alloca(arg_ty_ir, "var_arg");
-        //@can be done in entry
+    for idx in 0..arg.exprs.len() {
+        let insert_bb = cg.entry_position();
+        let arg_ty = cg.ty(arg_types[idx]);
+        let arg_ptr = cg.build.alloca(arg_ty, "var.arg");
         let array_gep = cg.build.gep_inbounds(
-            any_array_ty,
-            any_array_ptr,
+            array_ty,
+            array_ptr,
             &[cg.const_usize(0), cg.const_usize(idx as u64)],
             "any_array.idx",
         );
         let data_ptr = cg.build.gep_struct(any_ty, array_gep, 0, "any.data");
         cg.build.store(arg_ptr.as_val(), data_ptr);
-
-        let types_ptr = cg.build.load(cg.ptr_type(), cg.type_info_ptr.as_ptr(), "types_array");
-        let type_id = emit_mod::codegen_type_id(cg, arg_ty);
-        let types_info_arr = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
-        let info_ptr = cg.build.gep_inbounds(
-            llvm::array_type(types_info_arr, 4), //@4 temp
-            types_ptr.into_ptr(),
-            &[cg.const_usize(0), cg.const_usize(type_id)],
-            "info_ptr",
-        );
-        let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
-        cg.build.store(info_ptr.as_val(), type_ptr);
-
-        //@will copy values, not always optimal, Expect::Pointer not supported for all exprs
-        codegen_expr_store(cg, arg.expr, arg_ptr);
+        cg.build.position_at_end(insert_bb);
+        //@always copy the value, could expect pointer always when such api is available
+        codegen_expr_store(cg, arg.exprs[idx], arg_ptr);
     }
 
-    //@repetative copy paste for slice creation
-    let slice_ty = cg.slice_type();
-    let slice_ptr = cg.entry_alloca(slice_ty.as_ty(), "raw_slice");
-    //@can be done in entry
-    let ptr_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 0, "slice_ptr_ptr");
-    cg.build.store(any_array_ptr.as_val(), ptr_ptr);
-    let len_ptr = cg.build.gep_struct(slice_ty, slice_ptr, 1, "slice_len_ptr");
-    cg.build.store(any_array_len, len_ptr);
-    cg.build.load(slice_ty.as_ty(), slice_ptr, "raw_slice_val")
+    cg.info.var_args.push((array_ptr.as_val(), arg_types));
+    let array_len = cg.const_usize(arg.exprs.len() as u64);
+    codegen_from_raw_parts(cg, array_ptr.as_val(), array_len)
 }
 
 fn codegen_struct_init<'c>(

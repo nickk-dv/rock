@@ -30,12 +30,21 @@ pub struct CoreItems {
     pub cstring_equals: ProcID,
     pub from_raw_parts: ProcID,
     pub range_bound: Option<EnumID>,
+    pub any: Option<StructID>,
     pub type_info: EnumID,
     pub int_ty: EnumID,
     pub float_ty: EnumID,
     pub bool_ty: EnumID,
     pub string_ty: EnumID,
-    pub any: Option<StructID>,
+    pub type_info_enum: StructID,
+    pub type_info_variant: StructID,
+    pub type_info_variant_field: StructID,
+    pub type_info_struct: StructID,
+    pub type_info_field: StructID,
+    pub type_info_reference: StructID,
+    pub type_info_procedure: StructID,
+    pub type_info_array_slice: StructID,
+    pub type_info_array_static: StructID,
     pub source_loc: Option<StructID>,
 }
 
@@ -290,7 +299,7 @@ pub enum Expr<'hir> {
     CallDirect   { proc_id: ProcID, input: &'hir [&'hir Expr<'hir>] },
     CallDirectPoly { proc_id: ProcID, input: &'hir (&'hir [&'hir Expr<'hir>], &'hir [Type<'hir>]) },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
-    Variadics    { args: &'hir [Variadic<'hir>] },
+    VariadicArg  { arg: &'hir VariadicArg<'hir> },
     StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
     StructInitPoly { struct_id: StructID, input: &'hir (&'hir [FieldInit<'hir>], &'hir [Type<'hir>]) },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
@@ -479,9 +488,9 @@ pub struct CallIndirect<'hir> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Variadic<'hir> {
-    pub ty: Type<'hir>,
-    pub expr: &'hir Expr<'hir>,
+pub struct VariadicArg<'hir> {
+    pub exprs: &'hir [&'hir Expr<'hir>],
+    pub types: &'hir [Type<'hir>],
 }
 
 #[derive(Copy, Clone)]

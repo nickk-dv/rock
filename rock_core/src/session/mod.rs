@@ -343,10 +343,7 @@ fn process_package(
                     "package fetch not implemented, cannot find: {dep_name}-{semver}"
                 )));
             }
-            manifest::Dependency::Path { path } => {
-                let path = PathBuf::from(path.as_str()).canonicalize().unwrap();
-                remove_windows_trash(path)
-            }
+            manifest::Dependency::Path { path } => os::canonicalize(&PathBuf::from(path.as_str()))?,
         };
         let dep_id = match session.graph.get_unique(&dep_root_dir) {
             Some(dep_id) => dep_id,
@@ -355,16 +352,6 @@ fn process_package(
         session.graph.add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
     }
     Ok(package_id)
-}
-
-//@have os::canonicalize that handles this
-fn remove_windows_trash(path: PathBuf) -> PathBuf {
-    let s = path.as_os_str().to_string_lossy();
-    if s.starts_with(r"\\?\") {
-        PathBuf::from(&s[4..])
-    } else {
-        path
-    }
 }
 
 fn process_directory(

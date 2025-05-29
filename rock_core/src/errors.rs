@@ -61,6 +61,12 @@ pub fn os_filename_non_utf8(path: &PathBuf) -> Error {
     Error::message(msg)
 }
 
+pub fn os_canonicalize(io_error: String, path: &PathBuf) -> Error {
+    let path = path.to_string_lossy();
+    let msg = format!("failed to canonicalize path: `{path}`\nreason: {io_error}");
+    Error::message(msg)
+}
+
 //==================== COMMAND ====================
 
 pub fn cmd_name_missing(emit: &mut impl ErrorSink) {

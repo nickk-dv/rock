@@ -28,11 +28,8 @@ pub struct Codegen<'c, 's, 'sref> {
     pub session: &'sref mut Session<'s>,
     pub namebuf: String,
     pub cache: CodegenCache<'c>,
+    pub info: CodegenTypeInfo<'c>,
     pub proc_queue: Vec<hir::ProcKey<'c>>,
-    pub type_info_ptr: llvm::ValueGlobal,
-    pub type_info_arr: llvm::ValueGlobal,
-    pub type_ids: HashMap<hir::Type<'c>, u64>,
-    pub type_id_types: Vec<hir::Type<'c>>,
     //@errors ignored, layout overfow can happen
     pub emit: ErrorWarningBuffer,
 }
@@ -98,6 +95,33 @@ pub struct CodegenCache<'c> {
     pub hir_proc_ty_params: TempBuffer<hir::ProcTypeParam<'c>>,
 }
 
+pub struct CodegenTypeInfo<'c> {
+    pub var_args: Vec<(llvm::Value, &'c [hir::Type<'c>])>,
+    pub type_ids: HashMap<hir::Type<'c>, u64>,
+    pub types: Vec<hir::ConstValue<'c>>,
+    pub enums: Vec<hir::ConstValue<'c>>,
+    pub structs: Vec<hir::ConstValue<'c>>,
+    pub references: Vec<hir::ConstValue<'c>>,
+    pub procedures: Vec<hir::ConstValue<'c>>,
+    pub array_slices: Vec<hir::ConstValue<'c>>,
+    pub array_statics: Vec<hir::ConstValue<'c>>,
+    pub variants: Vec<hir::ConstValue<'c>>,
+    pub variant_fields: Vec<hir::ConstValue<'c>>,
+    pub fields: Vec<hir::ConstValue<'c>>,
+    pub param_types: Vec<hir::ConstValue<'c>>,
+    pub types_id: hir::GlobalID,
+    pub enums_id: hir::GlobalID,
+    pub structs_id: hir::GlobalID,
+    pub references_id: hir::GlobalID,
+    pub procedures_id: hir::GlobalID,
+    pub array_slices_id: hir::GlobalID,
+    pub array_statics_id: hir::GlobalID,
+    pub variants_id: hir::GlobalID,
+    pub variant_fields_id: hir::GlobalID,
+    pub fields_id: hir::GlobalID,
+    pub param_types_id: hir::GlobalID,
+}
+
 impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     pub fn new(
         hir: hir::Hir<'c>,
@@ -108,6 +132,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         let target = llvm::IRTarget::new(triple, session.config.build);
         let module = llvm::IRModule::new(&context, &target, "rock_module");
         let cache = CodegenCache::new(&mut context, &target);
+        let info = CodegenTypeInfo::new();
         let build = llvm::IRBuilder::new(&context, cache.void_val_type);
 
         Codegen {
@@ -128,11 +153,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             session,
             namebuf: String::with_capacity(256),
             cache,
+            info,
             proc_queue: Vec::with_capacity(64),
-            type_info_ptr: llvm::ValueGlobal::null(),
-            type_info_arr: llvm::ValueGlobal::null(),
-            type_ids: HashMap::with_capacity(128),
-            type_id_types: Vec::with_capacity(128),
             emit: ErrorWarningBuffer::default(),
         }
     }
@@ -347,6 +369,17 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         self.build.position_at_end(insert_bb);
         ptr_val
     }
+    #[must_use]
+    pub fn entry_position(&self) -> llvm::BasicBlock {
+        let insert_bb = self.build.insert_bb();
+        let entry_bb = self.proc.fn_val.entry_bb();
+        if let Some(instr) = entry_bb.first_instr() {
+            self.build.position_before_instr(instr);
+        } else {
+            self.build.position_at_end(entry_bb);
+        }
+        insert_bb
+    }
 
     #[inline]
     pub fn const_usize(&self, val: u64) -> llvm::Value {
@@ -466,6 +499,37 @@ impl<'c> CodegenCache<'c> {
             cases: TempBuffer::new(128),
             hir_types: TempBuffer::new(32),
             hir_proc_ty_params: TempBuffer::new(32),
+        }
+    }
+}
+
+impl<'c> CodegenTypeInfo<'c> {
+    fn new() -> CodegenTypeInfo<'c> {
+        CodegenTypeInfo {
+            var_args: Vec::with_capacity(256),
+            type_ids: HashMap::with_capacity(256),
+            types: Vec::with_capacity(256),
+            enums: Vec::with_capacity(64),
+            structs: Vec::with_capacity(64),
+            references: Vec::with_capacity(32),
+            procedures: Vec::with_capacity(32),
+            array_slices: Vec::with_capacity(32),
+            array_statics: Vec::with_capacity(32),
+            variants: Vec::with_capacity(128),
+            variant_fields: Vec::with_capacity(128),
+            fields: Vec::with_capacity(128),
+            param_types: Vec::with_capacity(64),
+            types_id: hir::GlobalID::dummy(),
+            enums_id: hir::GlobalID::dummy(),
+            structs_id: hir::GlobalID::dummy(),
+            references_id: hir::GlobalID::dummy(),
+            procedures_id: hir::GlobalID::dummy(),
+            array_slices_id: hir::GlobalID::dummy(),
+            array_statics_id: hir::GlobalID::dummy(),
+            variants_id: hir::GlobalID::dummy(),
+            variant_fields_id: hir::GlobalID::dummy(),
+            fields_id: hir::GlobalID::dummy(),
+            param_types_id: hir::GlobalID::dummy(),
         }
     }
 }

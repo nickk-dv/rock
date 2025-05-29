@@ -619,7 +619,17 @@ impl LocalVariableID {
     }
 }
 
-pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::ProcID> {
+pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> hir::ProcID {
+    find_core_proc_opt(ctx, module, name).unwrap_or(hir::ProcID::dummy())
+}
+pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> hir::EnumID {
+    find_core_enum_opt(ctx, module, name).unwrap_or(hir::EnumID::dummy())
+}
+pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> hir::StructID {
+    find_core_struct_opt(ctx, module, name).unwrap_or(hir::StructID::dummy())
+}
+
+pub fn find_core_proc_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::ProcID> {
     let module_id = find_core_module(ctx, module)?;
 
     let name_id = ctx.session.intern_name.get_id(name);
@@ -633,7 +643,7 @@ pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir:
     proc_id
 }
 
-pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::EnumID> {
+pub fn find_core_enum_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::EnumID> {
     let module_id = find_core_module(ctx, module)?;
 
     let name_id = ctx.session.intern_name.get_id(name);
@@ -647,7 +657,7 @@ pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir:
     enum_id
 }
 
-pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::StructID> {
+pub fn find_core_struct_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::StructID> {
     let module_id = find_core_module(ctx, module)?;
 
     let name_id = ctx.session.intern_name.get_id(name);

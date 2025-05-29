@@ -5,9 +5,6 @@ use crate::session::{Package, PackageID};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-//@hashmap can be replaced with a vec
-// unless dynamic graph mutation is required,
-// in that case use incrementing ids + hashmap
 pub struct PackageGraph {
     unique: HashMap<PathBuf, PackageID>,
     packages: HashMap<PackageID, Package>,

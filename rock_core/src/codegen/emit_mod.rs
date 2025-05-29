@@ -7,6 +7,7 @@ use crate::hir;
 use crate::hir_lower::types;
 use crate::intern::LitID;
 use crate::session::{config, Session};
+use crate::support::AsStr;
 
 pub fn codegen_module(
     hir: hir::Hir,
@@ -117,150 +118,6 @@ fn codegen_globals(cg: &mut Codegen) {
         let global = cg.module.add_global(&cg.namebuf, Some(value), global_ty, constant, false);
         cg.globals.push(global);
     }
-
-    codegen_type_id(cg, hir::Type::Char);
-    codegen_type_id(cg, hir::Type::Void);
-    codegen_type_id(cg, hir::Type::Never);
-    codegen_type_id(cg, hir::Type::Rawptr);
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::S8));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::S16));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::S32));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::S64));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::Ssize));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::U8));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::U16));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::U32));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::U64));
-    codegen_type_id(cg, hir::Type::Int(hir::IntType::Usize));
-    codegen_type_id(cg, hir::Type::Float(hir::FloatType::F32));
-    codegen_type_id(cg, hir::Type::Float(hir::FloatType::F64));
-    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool));
-    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool16));
-    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool32));
-    codegen_type_id(cg, hir::Type::Bool(hir::BoolType::Bool64));
-    codegen_type_id(cg, hir::Type::String(hir::StringType::String));
-    codegen_type_id(cg, hir::Type::String(hir::StringType::CString));
-
-    cg.type_info_ptr = cg.module.add_global("type_info.ptr", None, cg.ptr_type(), true, false);
-}
-
-pub fn codegen_type_id<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> u64 {
-    *cg.type_ids.entry(ty).or_insert_with(|| {
-        let type_id = cg.type_id_types.len() as u64;
-        cg.type_id_types.push(ty);
-        type_id
-    })
-}
-
-//@regular lang doesnt support constant references,
-// will likely need custom writing logic to represent type info array
-fn codegen_type_info(cg: &mut Codegen) {
-    let enum_id = cg.hir.core.type_info;
-    let mut values = Vec::with_capacity(cg.type_id_types.len());
-
-    for ty in cg.type_id_types.iter().copied() {
-        let value = match ty {
-            hir::Type::Char => {
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(0),
-                    values: &[],
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Void => {
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(1),
-                    values: &[],
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Never => {
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(2),
-                    values: &[],
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Rawptr => {
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(3),
-                    values: &[],
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Int(ty) => {
-                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
-                    enum_id: cg.hir.core.int_ty,
-                    variant_id: hir::VariantID::new(ty as usize),
-                }]);
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(4),
-                    values,
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Float(ty) => {
-                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
-                    enum_id: cg.hir.core.float_ty,
-                    variant_id: hir::VariantID::new(ty as usize),
-                }]);
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(5),
-                    values,
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::Bool(ty) => {
-                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
-                    enum_id: cg.hir.core.bool_ty,
-                    variant_id: hir::VariantID::new(ty as usize),
-                }]);
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(6),
-                    values,
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            hir::Type::String(ty) => {
-                let values = cg.hir.arena.alloc_slice(&[hir::ConstValue::Variant {
-                    enum_id: cg.hir.core.string_ty,
-                    variant_id: hir::VariantID::new(ty as usize),
-                }]);
-                let variant = hir::ConstVariant {
-                    variant_id: hir::VariantID::new(7),
-                    values,
-                    poly_types: &[],
-                };
-                let variant = cg.hir.arena.alloc(variant);
-                hir::ConstValue::VariantPoly { enum_id, variant }
-            }
-            _ => unimplemented!("unsupported type info: {:?}", ty),
-        };
-        values.push(value);
-    }
-
-    let values = cg.hir.arena.alloc_slice(&values);
-    let array = cg.hir.arena.alloc(hir::ConstArray { values });
-    let array = hir::ConstValue::Array { array: &array };
-    let types = emit_expr::const_writer(cg, array);
-
-    cg.type_info_arr =
-        cg.module.add_global("type_info.arr", Some(types), llvm::typeof_value(types), true, false);
-    cg.module.init_global(cg.type_info_ptr, cg.type_info_arr.as_ptr().as_val());
 }
 
 pub fn codegen_function<'c>(
@@ -502,4 +359,205 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
     };
 
     ParamAbi { pass_ty, by_pointer: false }
+}
+
+fn codegen_type_info(cg: &mut Codegen) {
+    let next_idx = cg.globals.len();
+    cg.info.types_id = hir::GlobalID::new(next_idx);
+    cg.info.enums_id = hir::GlobalID::new(next_idx + 1);
+    cg.info.structs_id = hir::GlobalID::new(next_idx + 2);
+    cg.info.references_id = hir::GlobalID::new(next_idx + 3);
+    cg.info.procedures_id = hir::GlobalID::new(next_idx + 4);
+    cg.info.array_slices_id = hir::GlobalID::new(next_idx + 5);
+    cg.info.array_statics_id = hir::GlobalID::new(next_idx + 6);
+    cg.info.variants_id = hir::GlobalID::new(next_idx + 7);
+    cg.info.variant_fields_id = hir::GlobalID::new(next_idx + 8);
+    cg.info.fields_id = hir::GlobalID::new(next_idx + 9);
+    cg.info.param_types_id = hir::GlobalID::new(next_idx + 10);
+
+    register_type_info(cg, hir::Type::Char);
+    register_type_info(cg, hir::Type::Void);
+    register_type_info(cg, hir::Type::Never);
+    register_type_info(cg, hir::Type::Rawptr);
+    for ty in hir::IntType::ALL.iter().copied() {
+        if ty != hir::IntType::Untyped {
+            register_type_info(cg, hir::Type::Int(ty));
+        }
+    }
+    for ty in hir::FloatType::ALL.iter().copied() {
+        if ty != hir::FloatType::Untyped {
+            register_type_info(cg, hir::Type::Float(ty));
+        }
+    }
+    for ty in hir::BoolType::ALL.iter().copied() {
+        if ty != hir::BoolType::Untyped {
+            register_type_info(cg, hir::Type::Bool(ty));
+        }
+    }
+    for ty in hir::StringType::ALL.iter().copied() {
+        if ty != hir::StringType::Untyped {
+            register_type_info(cg, hir::Type::String(ty));
+        }
+    }
+    for idx in 0..cg.info.var_args.len() {
+        for ty in cg.info.var_args[idx].1.iter().copied() {
+            register_type_info(cg, ty);
+        }
+    }
+
+    macro_rules! add_type_info_global {
+        ($cg:expr, $values:ident, $ty:expr, $name:expr) => {{
+            let elem_ty = $cg.ty($ty);
+            let array_ty = llvm::array_type(elem_ty, $cg.info.$values.len() as u64);
+            $cg.globals.push($cg.module.add_global($name, None, array_ty, true, false));
+        }};
+    }
+
+    macro_rules! init_type_info_global {
+        ($cg:expr, $values:ident, $ty:expr, $id_name:ident) => {{
+            let array = if cg.info.$values.is_empty() {
+                hir::ConstValue::ArrayEmpty { elem_ty: $cg.hir.arena.alloc($ty) }
+            } else {
+                let array =
+                    hir::ConstArray { values: $cg.hir.arena.alloc_slice(&$cg.info.$values) };
+                hir::ConstValue::Array { array: $cg.hir.arena.alloc(array) }
+            };
+            let value = emit_expr::codegen_const($cg, array);
+            $cg.module.init_global($cg.globals[$cg.info.$id_name.index()], value);
+        }};
+    }
+
+    let type_info_enum = hir::Type::Struct(cg.hir.core.type_info_enum, &[]);
+    let type_info_struct = hir::Type::Struct(cg.hir.core.type_info_struct, &[]);
+    let type_info_reference = hir::Type::Struct(cg.hir.core.type_info_reference, &[]);
+    let type_info_procedure = hir::Type::Struct(cg.hir.core.type_info_procedure, &[]);
+    let type_info_array_slice = hir::Type::Struct(cg.hir.core.type_info_array_slice, &[]);
+    let type_info_array_static = hir::Type::Struct(cg.hir.core.type_info_array_static, &[]);
+    let type_info_variant = hir::Type::Struct(cg.hir.core.type_info_variant, &[]);
+    let type_info_variant_field = hir::Type::Struct(cg.hir.core.type_info_variant_field, &[]);
+    let type_info_field = hir::Type::Struct(cg.hir.core.type_info_field, &[]);
+    let type_info_param_types = hir::Type::Rawptr;
+
+    cg.globals.push(llvm::ValueGlobal::null());
+    add_type_info_global!(cg, enums, type_info_enum, "TYPE_INFO_ENUM");
+    add_type_info_global!(cg, structs, type_info_struct, "TYPE_INFO_STRUCT");
+    add_type_info_global!(cg, references, type_info_reference, "TYPE_INFO_REFERENCE");
+    add_type_info_global!(cg, procedures, type_info_procedure, "TYPE_INFO_PROCEDURE");
+    add_type_info_global!(cg, array_slices, type_info_array_slice, "TYPE_INFO_ARRAY_SLICE");
+    add_type_info_global!(cg, array_statics, type_info_array_static, "TYPE_INFO_ARRAY_STATIC");
+    add_type_info_global!(cg, variants, type_info_variant, "TYPE_INFO_VARIANT");
+    add_type_info_global!(cg, variant_fields, type_info_variant_field, "TYPE_INFO_VARIANT_FIELD");
+    add_type_info_global!(cg, fields, type_info_field, "TYPE_INFO_FIELD");
+    add_type_info_global!(cg, param_types, type_info_param_types, "TYPE_INFO_PARAM_TYPE");
+
+    let array = hir::ConstArray { values: cg.hir.arena.alloc_slice(&cg.info.types) };
+    let array = hir::ConstValue::Array { array: cg.hir.arena.alloc(array) };
+    let value = emit_expr::const_writer(cg, array);
+    let global_ty = llvm::typeof_value(value);
+    let global = cg.module.add_global("TYPE_INFO", Some(value), global_ty, true, false);
+    cg.globals[cg.info.types_id.index()] = global;
+
+    init_type_info_global!(cg, enums, type_info_enum, enums_id);
+    init_type_info_global!(cg, structs, type_info_struct, structs_id);
+    init_type_info_global!(cg, references, type_info_reference, references_id);
+    init_type_info_global!(cg, procedures, type_info_procedure, procedures_id);
+    init_type_info_global!(cg, array_slices, type_info_array_slice, array_slices_id);
+    init_type_info_global!(cg, array_statics, type_info_array_static, array_statics_id);
+    init_type_info_global!(cg, variants, type_info_variant, variants_id);
+    init_type_info_global!(cg, variant_fields, type_info_variant_field, variant_fields_id);
+    init_type_info_global!(cg, fields, type_info_field, fields_id);
+    init_type_info_global!(cg, param_types, type_info_param_types, param_types_id);
+
+    let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
+    let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
+    let type_info_arr = llvm::array_type(type_info, cg.info.types.len() as u64);
+    let type_info_ptr = cg.globals[cg.info.types_id.index()].as_ptr();
+
+    for (idx, (inst, types)) in cg.info.var_args.iter().copied().enumerate() {
+        let array_ty = llvm::array_type(any_ty.as_ty(), types.len() as u64);
+        for ty in types {
+            cg.build.position_before_instr(inst.into_inst());
+            let array_gep = cg.build.gep_inbounds(
+                array_ty,
+                inst.into_ptr(),
+                &[cg.const_usize(0), cg.const_usize(idx as u64)],
+                "any_array.idx",
+            );
+            let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
+
+            let type_id = *cg.info.type_ids.get(&ty).unwrap();
+            let info_ptr = cg.build.gep_inbounds(
+                type_info_arr,
+                type_info_ptr,
+                &[cg.const_usize(0), cg.const_usize(type_id)],
+                "type_info",
+            );
+            cg.build.store(info_ptr.as_val(), type_ptr);
+        }
+    }
+}
+
+fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) {
+    if cg.info.type_ids.get(&ty).is_some() {
+        return;
+    }
+    let type_id = cg.info.types.len();
+    cg.info.type_ids.insert(ty, type_id as u64);
+    cg.info.types.push(hir::ConstValue::Void);
+
+    cg.info.types[type_id] = match ty {
+        hir::Type::Error
+        | hir::Type::Unknown
+        | hir::Type::UntypedChar
+        | hir::Type::PolyProc(_, _)
+        | hir::Type::PolyEnum(_, _)
+        | hir::Type::PolyStruct(_, _) => {
+            unreachable!()
+        }
+        hir::Type::Char => const_enum(cg, cg.hir.core.type_info, 0, &[]),
+        hir::Type::Void => const_enum(cg, cg.hir.core.type_info, 1, &[]),
+        hir::Type::Never => const_enum(cg, cg.hir.core.type_info, 2, &[]),
+        hir::Type::Rawptr => const_enum(cg, cg.hir.core.type_info, 3, &[]),
+        hir::Type::Int(ty) => {
+            let int_ty = const_enum_simple(cg.hir.core.int_ty, ty as u32);
+            const_enum(cg, cg.hir.core.type_info, 4, &[int_ty])
+        }
+        hir::Type::Float(ty) => {
+            let float_ty = const_enum_simple(cg.hir.core.float_ty, ty as u32);
+            const_enum(cg, cg.hir.core.type_info, 5, &[float_ty])
+        }
+        hir::Type::Bool(ty) => {
+            let bool_ty = const_enum_simple(cg.hir.core.bool_ty, ty as u32);
+            const_enum(cg, cg.hir.core.type_info, 6, &[bool_ty])
+        }
+        hir::Type::String(ty) => {
+            let string_ty = const_enum_simple(cg.hir.core.string_ty, ty as u32);
+            const_enum(cg, cg.hir.core.type_info, 7, &[string_ty])
+        }
+        hir::Type::Enum(id, poly_types) => todo!(),
+        hir::Type::Struct(id, poly_types) => todo!(),
+        hir::Type::Reference(mutt, ref_ty) => todo!(),
+        hir::Type::MultiReference(mutt, ref_ty) => todo!(),
+        hir::Type::Procedure(proc_ty) => todo!(),
+        hir::Type::ArraySlice(slice) => todo!(),
+        hir::Type::ArrayStatic(array) => todo!(),
+    };
+}
+
+fn const_enum_simple<'c>(id: hir::EnumID, var: u32) -> hir::ConstValue<'c> {
+    hir::ConstValue::Variant { enum_id: id, variant_id: hir::VariantID::new(var as usize) }
+}
+
+fn const_enum<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    id: hir::EnumID,
+    var: u32,
+    values: &[hir::ConstValue<'c>],
+) -> hir::ConstValue<'c> {
+    let variant = hir::ConstVariant {
+        variant_id: hir::VariantID::new(var as usize),
+        values: cg.hir.arena.alloc_slice(values),
+        poly_types: &[],
+    };
+    hir::ConstValue::VariantPoly { enum_id: id, variant: cg.hir.arena.alloc(variant) }
 }

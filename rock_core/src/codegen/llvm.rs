@@ -624,6 +624,9 @@ impl Value {
             _ => panic!("internal: `Value::into_fn` type kind `{}` not a pointer", ty_kind as i32),
         }
     }
+    pub fn into_inst(self) -> ValueInstr {
+        ValueInstr(self.0)
+    }
 }
 
 impl ValuePtr {
