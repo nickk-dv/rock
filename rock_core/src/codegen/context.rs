@@ -370,13 +370,12 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         ptr_val
     }
     #[must_use]
-    pub fn entry_position(&self) -> llvm::BasicBlock {
+    pub fn position_after(&self, inst: llvm::ValueInstr) -> llvm::BasicBlock {
         let insert_bb = self.build.insert_bb();
-        let entry_bb = self.proc.fn_val.entry_bb();
-        if let Some(instr) = entry_bb.first_instr() {
-            self.build.position_before_instr(instr);
+        if let Some(next) = self.build.next_inst(inst) {
+            self.build.position_before_instr(next);
         } else {
-            self.build.position_at_end(entry_bb);
+            self.build.position_at_end(self.build.inst_block(inst));
         }
         insert_bb
     }

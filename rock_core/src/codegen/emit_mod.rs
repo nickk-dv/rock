@@ -473,19 +473,19 @@ fn codegen_type_info(cg: &mut Codegen) {
     let type_info_arr = llvm::array_type(type_info, cg.info.types.len() as u64);
     let type_info_ptr = cg.globals[cg.info.types_id.index()].as_ptr();
 
-    for (idx, (inst, types)) in cg.info.var_args.iter().copied().enumerate() {
+    for (inst, types) in cg.info.var_args.iter().copied() {
+        let _ = cg.position_after(inst.as_inst());
         let array_ty = llvm::array_type(any_ty.as_ty(), types.len() as u64);
-        for ty in types {
-            cg.build.position_before_instr(inst.into_inst());
+        for (arg_idx, ty) in types.iter().enumerate() {
             let array_gep = cg.build.gep_inbounds(
                 array_ty,
                 inst.into_ptr(),
-                &[cg.const_usize(0), cg.const_usize(idx as u64)],
+                &[cg.const_usize(0), cg.const_usize(arg_idx as u64)],
                 "any_array.idx",
             );
             let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
 
-            let type_id = *cg.info.type_ids.get(&ty).unwrap();
+            let type_id = *cg.info.type_ids.get(ty).unwrap();
             let info_ptr = cg.build.gep_inbounds(
                 type_info_arr,
                 type_info_ptr,
@@ -497,9 +497,9 @@ fn codegen_type_info(cg: &mut Codegen) {
     }
 }
 
-fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) {
-    if cg.info.type_ids.get(&ty).is_some() {
-        return;
+fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hir::ConstValue<'c> {
+    if let Some(type_id) = cg.info.type_ids.get(&ty).copied() {
+        return hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id };
     }
     let type_id = cg.info.types.len();
     cg.info.type_ids.insert(ty, type_id as u64);
@@ -536,12 +536,62 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) {
         }
         hir::Type::Enum(id, poly_types) => todo!(),
         hir::Type::Struct(id, poly_types) => todo!(),
-        hir::Type::Reference(mutt, ref_ty) => todo!(),
-        hir::Type::MultiReference(mutt, ref_ty) => todo!(),
+        hir::Type::Reference(mutt, ref_ty) => {
+            let ref_ty = register_type_info(cg, *ref_ty);
+            let values = [
+                hir::ConstValue::Bool { val: false, bool_ty: hir::BoolType::Bool },
+                hir::ConstValue::Bool {
+                    val: mutt == ast::Mut::Mutable,
+                    bool_ty: hir::BoolType::Bool,
+                },
+                ref_ty,
+            ];
+            let struct_ =
+                hir::ConstStruct { values: cg.hir.arena.alloc_slice(&values), poly_types: &[] };
+            let struct_ = cg.hir.arena.alloc(struct_);
+
+            let global_id = hir::GlobalID::new(cg.info.references.len());
+            let info =
+                hir::ConstValue::Struct { struct_id: cg.hir.core.type_info_reference, struct_ };
+            cg.info.references.push(info);
+
+            let refs_ptr = hir::ConstValue::GlobalIndex {
+                global_id: cg.info.references_id,
+                index: global_id.index() as u64,
+            };
+            const_enum(cg, cg.hir.core.type_info, 10, &[refs_ptr])
+        }
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            let ref_ty = register_type_info(cg, *ref_ty);
+            let values = [
+                hir::ConstValue::Bool { val: true, bool_ty: hir::BoolType::Bool },
+                hir::ConstValue::Bool {
+                    val: mutt == ast::Mut::Mutable,
+                    bool_ty: hir::BoolType::Bool,
+                },
+                ref_ty,
+            ];
+            let struct_ =
+                hir::ConstStruct { values: cg.hir.arena.alloc_slice(&values), poly_types: &[] };
+            let struct_ = cg.hir.arena.alloc(struct_);
+
+            let global_id = hir::GlobalID::new(cg.info.references.len());
+            let info =
+                hir::ConstValue::Struct { struct_id: cg.hir.core.type_info_reference, struct_ };
+            cg.info.references.push(info);
+
+            let refs_ptr = hir::ConstValue::GlobalIndex {
+                global_id: cg.info.references_id,
+                index: global_id.index() as u64,
+            };
+            const_enum(cg, cg.hir.core.type_info, 10, &[refs_ptr])
+        }
         hir::Type::Procedure(proc_ty) => todo!(),
         hir::Type::ArraySlice(slice) => todo!(),
         hir::Type::ArrayStatic(array) => todo!(),
     };
+
+    hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id as u64 }
 }
 
 fn const_enum_simple<'c>(id: hir::EnumID, var: u32) -> hir::ConstValue<'c> {

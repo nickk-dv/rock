@@ -165,9 +165,7 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
         | hir::ConstValue::Int { .. }
         | hir::ConstValue::Float { .. }
         | hir::ConstValue::Char { .. } => false,
-        hir::ConstValue::String { .. } if in_variant => true,
-        hir::ConstValue::Procedure { .. } if in_variant => true,
-        hir::ConstValue::String { .. } | hir::ConstValue::Procedure { .. } => false,
+        hir::ConstValue::String { .. } | hir::ConstValue::Procedure { .. } => in_variant,
         hir::ConstValue::Variant { .. } => false,
         hir::ConstValue::VariantPoly { variant, .. } => {
             variant.values.iter().copied().any(|v| const_has_variant_with_ptrs(v, true))
@@ -182,6 +180,7 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
             const_has_variant_with_ptrs(array.value, in_variant)
         }
         hir::ConstValue::ArrayEmpty { .. } => false,
+        hir::ConstValue::GlobalIndex { .. } => in_variant,
     }
 }
 
@@ -318,6 +317,22 @@ fn write_const<'c>(
             (0..array.len).for_each(|_| write_const(cg, writer, array.value));
         }
         hir::ConstValue::ArrayEmpty { .. } => {}
+        hir::ConstValue::GlobalIndex { global_id, index } => {
+            let global = cg.globals[global_id.index()];
+            let ptr_ty = if global_id == cg.info.types_id {
+                let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
+                llvm::array_type(type_info, cg.info.types.len() as u64)
+            } else {
+                global.value_type()
+            };
+            let ptr = cg.build.gep_inbounds(
+                ptr_ty,
+                global.as_ptr(),
+                &[cg.const_usize(0), cg.const_usize(index)],
+                "global.idx",
+            );
+            writer.write_ptr_or_undef(cg, ptr.as_val());
+        }
     }
 }
 
@@ -414,6 +429,23 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::Array { array } => codegen_const_array(cg, array),
         hir::ConstValue::ArrayRepeat { array } => codegen_const_array_repeat(cg, array),
         hir::ConstValue::ArrayEmpty { elem_ty } => llvm::const_array(cg.ty(*elem_ty), &[]),
+        hir::ConstValue::GlobalIndex { global_id, index } => {
+            let global = cg.globals[global_id.index()];
+            let ptr_ty = if global_id == cg.info.types_id {
+                let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
+                llvm::array_type(type_info, cg.info.types.len() as u64)
+            } else {
+                global.value_type()
+            };
+            cg.build
+                .gep_inbounds(
+                    ptr_ty,
+                    global.as_ptr(),
+                    &[cg.const_usize(0), cg.const_usize(index)],
+                    "global.idx",
+                )
+                .as_val()
+        }
     }
 }
 
@@ -1203,7 +1235,7 @@ pub fn codegen_call_intrinsic<'c>(
             let order = const_expr_ordering(input[1]);
 
             let inst = cg.build.load(ptr_ty, dst, "atomic_load");
-            cg.build.set_ordering(inst, order);
+            cg.build.set_ordering(inst.as_inst(), order);
             Some(inst)
         }
         "store" => {
@@ -1268,13 +1300,14 @@ fn codegen_variadic_arg<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     arg: &hir::VariadicArg<'c>,
 ) -> llvm::Value {
-    let arg_types = context::substitute_types(cg, arg.types, &[]);
     let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
     let array_ty = llvm::array_type(any_ty.as_ty(), arg.exprs.len() as u64);
     let array_ptr = cg.entry_alloca(array_ty, "any_array");
+    let arg_types = context::substitute_types(cg, arg.types, &[]);
+    let mut curr_inst = array_ptr.as_val().as_inst();
 
     for idx in 0..arg.exprs.len() {
-        let insert_bb = cg.entry_position();
+        let insert_bb = cg.position_after(curr_inst);
         let arg_ty = cg.ty(arg_types[idx]);
         let arg_ptr = cg.build.alloca(arg_ty, "var.arg");
         let array_gep = cg.build.gep_inbounds(
@@ -1284,7 +1317,7 @@ fn codegen_variadic_arg<'c>(
             "any_array.idx",
         );
         let data_ptr = cg.build.gep_struct(any_ty, array_gep, 0, "any.data");
-        cg.build.store(arg_ptr.as_val(), data_ptr);
+        curr_inst = cg.build.store(arg_ptr.as_val(), data_ptr);
         cg.build.position_at_end(insert_bb);
         //@always copy the value, could expect pointer always when such api is available
         codegen_expr_store(cg, arg.exprs[idx], arg_ptr);

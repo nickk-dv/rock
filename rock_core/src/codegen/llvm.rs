@@ -323,6 +323,12 @@ impl IRBuilder {
     pub fn position_before_instr(&self, instr: ValueInstr) {
         unsafe { core::LLVMPositionBuilderBefore(self.builder, instr.0) }
     }
+    pub fn next_inst(&self, inst: ValueInstr) -> Option<ValueInstr> {
+        ValueInstr::new_opt(unsafe { core::LLVMGetNextInstruction(inst.0) })
+    }
+    pub fn inst_block(&self, inst: ValueInstr) -> BasicBlock {
+        BasicBlock(unsafe { core::LLVMGetInstructionParent(inst.0) })
+    }
 
     pub fn ret(&self, val: Option<Value>) {
         if let Some(val) = val {
@@ -374,8 +380,8 @@ impl IRBuilder {
             core::LLVMBuildLoad2(self.builder, ptr_ty.0, ptr_val.0, self.cstr_buf.cstr(name))
         })
     }
-    pub fn store(&self, val: Value, ptr_val: ValuePtr) -> Value {
-        unsafe { Value(core::LLVMBuildStore(self.builder, val.0, ptr_val.0)) }
+    pub fn store(&self, val: Value, ptr_val: ValuePtr) -> ValueInstr {
+        unsafe { ValueInstr(core::LLVMBuildStore(self.builder, val.0, ptr_val.0)) }
     }
 
     pub fn gep(
@@ -439,7 +445,7 @@ impl IRBuilder {
             core::LLVMSetWeak(cmp_xchg_inst.0, weak as i32);
         }
     }
-    pub fn set_ordering(&self, access_inst: Value, order: AtomicOrdering) {
+    pub fn set_ordering(&self, access_inst: ValueInstr, order: AtomicOrdering) {
         unsafe {
             core::LLVMSetOrdering(access_inst.0, order);
         }
@@ -606,6 +612,9 @@ impl BasicBlock {
 }
 
 impl Value {
+    pub fn as_inst(self) -> ValueInstr {
+        ValueInstr(self.0)
+    }
     pub fn into_ptr(self) -> ValuePtr {
         let ty = typeof_value(self);
         let ty_kind = unsafe { core::LLVMGetTypeKind(ty.0) };
@@ -623,9 +632,6 @@ impl Value {
             sys::LLVMTypeKind::LLVMPointerTypeKind => ValueFn(self.0),
             _ => panic!("internal: `Value::into_fn` type kind `{}` not a pointer", ty_kind as i32),
         }
-    }
-    pub fn into_inst(self) -> ValueInstr {
-        ValueInstr(self.0)
     }
 }
 
@@ -682,6 +688,13 @@ impl ValueGlobal {
     #[inline]
     pub fn as_ptr(self) -> ValuePtr {
         ValuePtr(self.0)
+    }
+    pub fn value_type(self) -> Type {
+        unsafe {
+            let ty = core::LLVMGlobalGetValueType(self.0);
+            assert!(!ty.is_null());
+            Type(ty)
+        }
     }
 }
 
