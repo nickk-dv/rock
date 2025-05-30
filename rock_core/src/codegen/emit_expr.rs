@@ -181,6 +181,7 @@ pub fn const_has_variant_with_ptrs(value: hir::ConstValue, in_variant: bool) -> 
         }
         hir::ConstValue::ArrayEmpty { .. } => false,
         hir::ConstValue::GlobalIndex { .. } => in_variant,
+        hir::ConstValue::GlobalSlice { .. } => in_variant,
     }
 }
 
@@ -333,6 +334,23 @@ fn write_const<'c>(
             );
             writer.write_ptr_or_undef(cg, ptr.as_val());
         }
+        hir::ConstValue::GlobalSlice { global_id, index, len } => {
+            let global = cg.globals[global_id.index()];
+            let ptr_ty = if global_id == cg.info.types_id {
+                let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
+                llvm::array_type(type_info, cg.info.types.len() as u64)
+            } else {
+                global.value_type()
+            };
+            let ptr = cg.build.gep_inbounds(
+                ptr_ty,
+                global.as_ptr(),
+                &[cg.const_usize(0), cg.const_usize(index as u64)],
+                "global.idx",
+            );
+            writer.write_ptr_or_undef(cg, ptr.as_val());
+            write_const_int(cg, len as u64, false, hir::IntType::Usize);
+        }
     }
 }
 
@@ -445,6 +463,25 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
                     "global.idx",
                 )
                 .as_val()
+        }
+        hir::ConstValue::GlobalSlice { global_id, index, len } => {
+            let global = cg.globals[global_id.index()];
+            let ptr_ty = if global_id == cg.info.types_id {
+                let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
+                llvm::array_type(type_info, cg.info.types.len() as u64)
+            } else {
+                global.value_type()
+            };
+            let slice_ptr = cg
+                .build
+                .gep_inbounds(
+                    ptr_ty,
+                    global.as_ptr(),
+                    &[cg.const_usize(0), cg.const_usize(index as u64)],
+                    "global.idx",
+                )
+                .as_val();
+            llvm::const_struct_named(cg.slice_type(), &[slice_ptr, cg.const_usize(len as u64)])
         }
     }
 }

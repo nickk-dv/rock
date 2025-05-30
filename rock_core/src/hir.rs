@@ -328,6 +328,7 @@ pub enum ConstValue<'hir> {
     ArrayRepeat { array: &'hir ConstArrayRepeat<'hir> },
     ArrayEmpty  { elem_ty: &'hir Type<'hir> },
     GlobalIndex { global_id: GlobalID, index: u64 },
+    GlobalSlice { global_id: GlobalID, index: u32, len: u32 },
 }
 
 #[derive(Copy, Clone)]

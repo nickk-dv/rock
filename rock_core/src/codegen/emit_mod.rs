@@ -368,8 +368,8 @@ fn codegen_type_info(cg: &mut Codegen) {
     cg.info.structs_id = hir::GlobalID::new(next_idx + 2);
     cg.info.references_id = hir::GlobalID::new(next_idx + 3);
     cg.info.procedures_id = hir::GlobalID::new(next_idx + 4);
-    cg.info.array_slices_id = hir::GlobalID::new(next_idx + 5);
-    cg.info.array_statics_id = hir::GlobalID::new(next_idx + 6);
+    cg.info.slices_id = hir::GlobalID::new(next_idx + 5);
+    cg.info.arrays_id = hir::GlobalID::new(next_idx + 6);
     cg.info.variants_id = hir::GlobalID::new(next_idx + 7);
     cg.info.variant_fields_id = hir::GlobalID::new(next_idx + 8);
     cg.info.fields_id = hir::GlobalID::new(next_idx + 9);
@@ -443,8 +443,8 @@ fn codegen_type_info(cg: &mut Codegen) {
     add_type_info_global!(cg, structs, type_info_struct, "TYPE_INFO_STRUCT");
     add_type_info_global!(cg, references, type_info_reference, "TYPE_INFO_REFERENCE");
     add_type_info_global!(cg, procedures, type_info_procedure, "TYPE_INFO_PROCEDURE");
-    add_type_info_global!(cg, array_slices, type_info_array_slice, "TYPE_INFO_ARRAY_SLICE");
-    add_type_info_global!(cg, array_statics, type_info_array_static, "TYPE_INFO_ARRAY_STATIC");
+    add_type_info_global!(cg, slices, type_info_array_slice, "TYPE_INFO_ARRAY_SLICE");
+    add_type_info_global!(cg, arrays, type_info_array_static, "TYPE_INFO_ARRAY_STATIC");
     add_type_info_global!(cg, variants, type_info_variant, "TYPE_INFO_VARIANT");
     add_type_info_global!(cg, variant_fields, type_info_variant_field, "TYPE_INFO_VARIANT_FIELD");
     add_type_info_global!(cg, fields, type_info_field, "TYPE_INFO_FIELD");
@@ -461,8 +461,8 @@ fn codegen_type_info(cg: &mut Codegen) {
     init_type_info_global!(cg, structs, type_info_struct, structs_id);
     init_type_info_global!(cg, references, type_info_reference, references_id);
     init_type_info_global!(cg, procedures, type_info_procedure, procedures_id);
-    init_type_info_global!(cg, array_slices, type_info_array_slice, array_slices_id);
-    init_type_info_global!(cg, array_statics, type_info_array_static, array_statics_id);
+    init_type_info_global!(cg, slices, type_info_array_slice, slices_id);
+    init_type_info_global!(cg, arrays, type_info_array_static, arrays_id);
     init_type_info_global!(cg, variants, type_info_variant, variants_id);
     init_type_info_global!(cg, variant_fields, type_info_variant_field, variant_fields_id);
     init_type_info_global!(cg, fields, type_info_field, fields_id);
@@ -534,61 +534,181 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hi
             let string_ty = const_enum_simple(cg.hir.core.string_ty, ty as u32);
             const_enum(cg, cg.hir.core.type_info, 7, &[string_ty])
         }
-        hir::Type::Enum(id, poly_types) => todo!(),
-        hir::Type::Struct(id, poly_types) => todo!(),
-        hir::Type::Reference(mutt, ref_ty) => {
-            let ref_ty = register_type_info(cg, *ref_ty);
-            let values = [
-                hir::ConstValue::Bool { val: false, bool_ty: hir::BoolType::Bool },
-                hir::ConstValue::Bool {
-                    val: mutt == ast::Mut::Mutable,
-                    bool_ty: hir::BoolType::Bool,
-                },
-                ref_ty,
-            ];
-            let struct_ =
-                hir::ConstStruct { values: cg.hir.arena.alloc_slice(&values), poly_types: &[] };
-            let struct_ = cg.hir.arena.alloc(struct_);
+        hir::Type::Enum(id, poly_types) => {
+            let layout = cg.enum_layout((id, poly_types));
+            let data = cg.hir.enum_data(id);
+            let enum_name = cg.session.intern_name.get(data.name.id);
+            let tag_ty = data.tag_ty.resolved_unwrap();
 
-            let global_id = hir::GlobalID::new(cg.info.references.len());
-            let info =
-                hir::ConstValue::Struct { struct_id: cg.hir.core.type_info_reference, struct_ };
-            cg.info.references.push(info);
+            let offset = cg.cache.const_values.start();
+            for (idx, variant) in data.variants.iter().enumerate() {
+                let variant_id = hir::VariantID::new(idx);
+                let variant_name = cg.session.intern_name.get(variant.name.id);
+                let variant_layout = cg.variant_layout((id, variant_id, poly_types));
 
-            let refs_ptr = hir::ConstValue::GlobalIndex {
-                global_id: cg.info.references_id,
-                index: global_id.index() as u64,
+                let offset_field = cg.cache.const_values.start();
+                for (field_idx, field) in variant.fields.iter().enumerate() {
+                    let field_ty = context::substitute_type(cg, field.ty, poly_types);
+
+                    let values = [
+                        register_type_info(cg, field_ty),
+                        const_usize(variant_layout.field_offset[field_idx + 1]),
+                    ];
+                    let field_info = const_struct(cg, cg.hir.core.type_info_variant_field, &values);
+                    cg.cache.const_values.push(field_info);
+                }
+
+                let slice_index = cg.info.variant_fields.len();
+                let field_infos = cg.cache.const_values.view(offset_field);
+                for info in field_infos {
+                    cg.info.variant_fields.push(*info);
+                }
+                cg.cache.const_values.pop_view(offset_field);
+                let slice_len = cg.info.variant_fields.len() - slice_index;
+                let field_slice = hir::ConstValue::GlobalSlice {
+                    global_id: cg.info.variant_fields_id,
+                    index: slice_index as u32,
+                    len: slice_len as u32,
+                };
+
+                //@tag values outside i64 range not represented, panic?
+                let data = cg.hir.enum_data(id);
+                let tag = match data.variant(variant_id).kind {
+                    hir::VariantKind::Default(id) => {
+                        cg.hir.variant_eval_values[id.index()].into_int_i64()
+                    }
+                    hir::VariantKind::Constant(id) => {
+                        cg.hir.const_eval_values[id.index()].into_int_i64()
+                    }
+                };
+                let values = [
+                    const_string(cg.session.intern_lit.intern(variant_name)),
+                    hir::ConstValue::from_i64(tag, hir::IntType::S64),
+                    field_slice,
+                ];
+                let info = const_struct(cg, cg.hir.core.type_info_variant, &values);
+                cg.cache.const_values.push(info);
+            }
+
+            let slice_index = cg.info.variants.len();
+            let variant_infos = cg.cache.const_values.view(offset);
+            for info in variant_infos {
+                cg.info.variants.push(*info);
+            }
+            cg.cache.const_values.pop_view(offset);
+            let slice_len = cg.info.variants.len() - slice_index;
+            let variant_slice = hir::ConstValue::GlobalSlice {
+                global_id: cg.info.variants_id,
+                index: slice_index as u32,
+                len: slice_len as u32,
             };
-            const_enum(cg, cg.hir.core.type_info, 10, &[refs_ptr])
+
+            let values = [
+                const_string(cg.session.intern_lit.intern(enum_name)),
+                const_enum_simple(cg.hir.core.int_ty, tag_ty as u32),
+                variant_slice,
+                const_usize(layout.size),
+            ];
+            let info = const_struct(cg, cg.hir.core.type_info_enum, &values);
+
+            let index = cg.info.enums.len() as u64;
+            cg.info.enums.push(info);
+            let enum_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.enums_id, index };
+            const_enum(cg, cg.hir.core.type_info, 8, &[enum_ptr])
+        }
+        hir::Type::Struct(id, poly_types) => {
+            let layout = cg.struct_layout((id, poly_types));
+            let data = cg.hir.struct_data(id);
+            let struct_name = cg.session.intern_name.get(data.name.id);
+
+            let offset = cg.cache.const_values.start();
+            for (field_idx, field) in data.fields.iter().enumerate() {
+                let field_ty = context::substitute_type(cg, field.ty, poly_types);
+                let field_name = cg.session.intern_name.get(field.name.id);
+
+                let values = [
+                    const_string(cg.session.intern_lit.intern(field_name)),
+                    register_type_info(cg, field_ty),
+                    const_usize(layout.field_offset[field_idx]),
+                ];
+                let field_info = const_struct(cg, cg.hir.core.type_info_field, &values);
+                cg.cache.const_values.push(field_info);
+            }
+
+            let slice_index = cg.info.fields.len();
+            let field_infos = cg.cache.const_values.view(offset);
+            for info in field_infos {
+                cg.info.fields.push(*info);
+            }
+            cg.cache.const_values.pop_view(offset);
+            let slice_len = cg.info.fields.len() - slice_index;
+            let field_slice = hir::ConstValue::GlobalSlice {
+                global_id: cg.info.fields_id,
+                index: slice_index as u32,
+                len: slice_len as u32,
+            };
+
+            let values = [
+                const_string(cg.session.intern_lit.intern(struct_name)),
+                field_slice,
+                const_usize(layout.total.size),
+            ];
+            let info = const_struct(cg, cg.hir.core.type_info_struct, &values);
+
+            let index = cg.info.structs.len() as u64;
+            cg.info.structs.push(info);
+            let struct_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.structs_id, index };
+            const_enum(cg, cg.hir.core.type_info, 9, &[struct_ptr])
+        }
+        hir::Type::Reference(mutt, ref_ty) => {
+            let values = [
+                const_bool(false),
+                const_bool(mutt == ast::Mut::Mutable),
+                register_type_info(cg, *ref_ty),
+            ];
+            let info = const_struct(cg, cg.hir.core.type_info_reference, &values);
+
+            let index = cg.info.references.len() as u64;
+            cg.info.references.push(info);
+            let ref_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.references_id, index };
+            const_enum(cg, cg.hir.core.type_info, 10, &[ref_ptr])
         }
         hir::Type::MultiReference(mutt, ref_ty) => {
-            let ref_ty = register_type_info(cg, *ref_ty);
             let values = [
-                hir::ConstValue::Bool { val: true, bool_ty: hir::BoolType::Bool },
-                hir::ConstValue::Bool {
-                    val: mutt == ast::Mut::Mutable,
-                    bool_ty: hir::BoolType::Bool,
-                },
-                ref_ty,
+                const_bool(true),
+                const_bool(mutt == ast::Mut::Mutable),
+                register_type_info(cg, *ref_ty),
             ];
-            let struct_ =
-                hir::ConstStruct { values: cg.hir.arena.alloc_slice(&values), poly_types: &[] };
-            let struct_ = cg.hir.arena.alloc(struct_);
+            let info = const_struct(cg, cg.hir.core.type_info_reference, &values);
 
-            let global_id = hir::GlobalID::new(cg.info.references.len());
-            let info =
-                hir::ConstValue::Struct { struct_id: cg.hir.core.type_info_reference, struct_ };
+            let index = cg.info.references.len() as u64;
             cg.info.references.push(info);
-
-            let refs_ptr = hir::ConstValue::GlobalIndex {
-                global_id: cg.info.references_id,
-                index: global_id.index() as u64,
-            };
-            const_enum(cg, cg.hir.core.type_info, 10, &[refs_ptr])
+            let ref_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.references_id, index };
+            const_enum(cg, cg.hir.core.type_info, 10, &[ref_ptr])
         }
-        hir::Type::Procedure(proc_ty) => todo!(),
-        hir::Type::ArraySlice(slice) => todo!(),
-        hir::Type::ArrayStatic(array) => todo!(),
+        hir::Type::Procedure(proc_ty) => unimplemented!(),
+        hir::Type::ArraySlice(slice) => {
+            let values = [
+                const_bool(slice.mutt == ast::Mut::Mutable),
+                register_type_info(cg, slice.elem_ty),
+            ];
+            let info = const_struct(cg, cg.hir.core.type_info_array_slice, &values);
+
+            let index = cg.info.slices.len() as u64;
+            cg.info.slices.push(info);
+            let slice_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.slices_id, index };
+            const_enum(cg, cg.hir.core.type_info, 12, &[slice_ptr])
+        }
+        hir::Type::ArrayStatic(array) => {
+            let values =
+                [const_usize(cg.array_len(array.len)), register_type_info(cg, array.elem_ty)];
+            let info = const_struct(cg, cg.hir.core.type_info_array_static, &values);
+
+            let index = cg.info.arrays.len() as u64;
+            cg.info.arrays.push(info);
+            let array_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.arrays_id, index };
+            const_enum(cg, cg.hir.core.type_info, 13, &[array_ptr])
+        }
     };
 
     hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id as u64 }
@@ -610,4 +730,27 @@ fn const_enum<'c>(
         poly_types: &[],
     };
     hir::ConstValue::VariantPoly { enum_id: id, variant: cg.hir.arena.alloc(variant) }
+}
+
+fn const_struct<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    id: hir::StructID,
+    values: &[hir::ConstValue<'c>],
+) -> hir::ConstValue<'c> {
+    let values = cg.hir.arena.alloc_slice(values);
+    let struct_ = hir::ConstStruct { values, poly_types: &[] };
+    let struct_ = cg.hir.arena.alloc(struct_);
+    hir::ConstValue::Struct { struct_id: id, struct_ }
+}
+
+fn const_bool<'c>(val: bool) -> hir::ConstValue<'c> {
+    hir::ConstValue::Bool { val, bool_ty: hir::BoolType::Bool }
+}
+
+fn const_usize<'c>(val: u64) -> hir::ConstValue<'c> {
+    hir::ConstValue::Int { val, neg: false, int_ty: hir::IntType::Usize }
+}
+
+fn const_string<'c>(val: LitID) -> hir::ConstValue<'c> {
+    hir::ConstValue::String { val, string_ty: hir::StringType::String }
 }
