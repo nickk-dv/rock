@@ -800,7 +800,6 @@ fn codegen_slice_field<'c>(
     }
 }
 
-//@no bounds check
 fn codegen_index<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,

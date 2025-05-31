@@ -1096,12 +1096,12 @@ pub fn source_location<'hir>(
     offset: TextOffset,
 ) -> [ConstValue<'hir>; 3] {
     let module = session.module.get(origin_id);
-    let file = session.vfs.file(module.file_id());
-    let package_id = module.origin();
+    let file = session.vfs.file(module.file_id);
+    let package_id = module.origin;
     let package = session.graph.package(package_id);
 
     let path = if package_id == session.root_id {
-        file.path.strip_prefix(package.root_dir()).unwrap()
+        file.path.strip_prefix(&package.root_dir).unwrap()
     } else {
         &file.path
     };

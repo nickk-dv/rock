@@ -7,12 +7,12 @@ use crate::support::BitSet;
 
 pub fn check_entry_point(ctx: &mut HirCtx) {
     let root_package = ctx.session.graph.package(ctx.session.root_id);
-    if root_package.manifest().package.kind != PackageKind::Bin {
+    if root_package.manifest.package.kind != PackageKind::Bin {
         return;
     }
 
     let name_id = ctx.session.intern_name.intern("main");
-    let ModuleOrDirectory::Module(target_id) = root_package.src().find(ctx.session, name_id) else {
+    let ModuleOrDirectory::Module(target_id) = root_package.src.find(ctx.session, name_id) else {
         err::entry_main_mod_not_found(&mut ctx.emit);
         return;
     };
@@ -91,6 +91,6 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
 #[inline(always)]
 fn module_is_library(ctx: &HirCtx, origin_id: ModuleID) -> bool {
     let module = ctx.session.module.get(origin_id);
-    let package = ctx.session.graph.package(module.origin());
-    package.manifest().package.kind == PackageKind::Lib
+    let package = ctx.session.graph.package(module.origin);
+    package.manifest.package.kind == PackageKind::Lib
 }

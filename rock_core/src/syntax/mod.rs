@@ -16,12 +16,24 @@ use crate::session::{ModuleID, Session};
 use parser::Parser;
 use syntax_tree::SyntaxTree;
 
-pub fn parse_root(session: &mut Session) -> Result<(), ()> {
-    let package = session.graph.package(session.root_id);
+pub fn parse_all(session: &mut Session) -> Result<(), ()> {
+    parse_all_trees(session)?;
 
-    for module_id in package.module_ids().iter().copied() {
+    for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
+        let tree = module.tree_expect();
+        let source = session.vfs.file(module.file_id).source.as_str();
+
+        let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
+        session.module.get_mut(module_id).set_ast(ast);
+    }
+    Ok(())
+}
+
+pub fn parse_all_trees(session: &mut Session) -> Result<(), ()> {
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
+        let file = session.vfs.file(module.file_id);
 
         let tree_result = parse_tree_complete(&file.source, module_id, &mut session.intern_lit);
         let module = session.module.get_mut(module_id);
@@ -38,40 +50,10 @@ pub fn parse_root(session: &mut Session) -> Result<(), ()> {
     session.module.result()
 }
 
-pub fn parse_all(session: &mut Session) -> Result<(), ()> {
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
-
-        let tree_result = parse_tree_complete(&file.source, module_id, &mut session.intern_lit);
-        let module = session.module.get_mut(module_id);
-
-        match tree_result {
-            Ok(tree) => {
-                session.stats.line_count += file.line_ranges.len() as u32;
-                session.stats.token_count += tree.tokens().token_count() as u32;
-                module.set_tree(tree);
-            }
-            Err(errors) => module.parse_errors = errors,
-        }
-    }
-    session.module.result()?;
-
-    for module_id in session.module.ids() {
-        let module = session.module.get(module_id);
-        let tree = module.tree_expect();
-        let source = session.vfs.file(module.file_id()).source.as_str();
-
-        let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
-        session.module.get_mut(module_id).set_ast(ast);
-    }
-    Ok(())
-}
-
 pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
+        let file = session.vfs.file(module.file_id);
         if module.tree_version == file.version {
             continue;
         }
@@ -86,7 +68,7 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
+        let file = session.vfs.file(module.file_id);
         if module.ast_version == file.version {
             continue;
         }

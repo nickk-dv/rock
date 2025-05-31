@@ -15,7 +15,7 @@ pub fn resolve_imports(ctx: &mut HirCtx) {
 }
 
 fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
-    let source_package_id = ctx.session.module.get(ctx.scope.origin).origin();
+    let source_package_id = ctx.session.module.get(ctx.scope.origin).origin;
     let mut source_package = ctx.session.graph.package(source_package_id);
 
     if let Some(package_name) = import.package {
@@ -25,7 +25,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
         } else {
             let src = ctx.src(package_name.range);
             let dep_name = ctx.name(package_name.id);
-            let src_name = ctx.name(source_package.name());
+            let src_name = ctx.name(source_package.name_id);
             err::import_package_dependency_not_found(&mut ctx.emit, src, dep_name, src_name);
             return;
         }
@@ -35,14 +35,14 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
     let directory_count = import.import_path.len() - 1;
     let directory_names = &import.import_path[0..directory_count];
     let module_name = import.import_path.last().copied().unwrap();
-    let mut target_dir = source_package.src();
+    let mut target_dir = &source_package.src;
 
     for name in directory_names {
         match target_dir.find(ctx.session, name.id) {
             ModuleOrDirectory::None => {
                 let src = ctx.src(name.range);
                 let dir_name = ctx.name(name.id);
-                let pkg_name = ctx.name(source_package.name());
+                let pkg_name = ctx.name(source_package.name_id);
                 err::import_expected_dir_not_found(&mut ctx.emit, src, dir_name, pkg_name);
                 return;
             }
@@ -62,7 +62,7 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
         ModuleOrDirectory::None => {
             let src = ctx.src(module_name.range);
             let mod_name = ctx.name(module_name.id);
-            let pkg_name = ctx.name(source_package.name());
+            let pkg_name = ctx.name(source_package.name_id);
             err::import_expected_mod_not_found(&mut ctx.emit, src, mod_name, pkg_name);
             return;
         }

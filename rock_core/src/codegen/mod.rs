@@ -36,7 +36,7 @@ pub fn build(
     build_path.push(config.build.as_str());
     os::dir_create(&build_path, false)?;
 
-    let root_manifest = session.graph.package(session.root_id).manifest();
+    let root_manifest = &session.graph.package(session.root_id).manifest;
     let bin_name = match &root_manifest.build.bin_name {
         Some(name) => name.as_str(),
         None => root_manifest.package.name.as_str(),
@@ -106,7 +106,7 @@ pub fn build(
         .graph
         .all_packages()
         .values()
-        .any(|pkg| pkg.manifest().build.nodefaultlib == Some(true));
+        .any(|pkg| pkg.manifest.build.nodefaultlib == Some(true));
     if !nodefaultlib {
         match config.target_os {
             TargetOS::Windows => args.push("/defaultlib:libcmt.lib".into()),
@@ -115,11 +115,11 @@ pub fn build(
     }
 
     for package in session.graph.all_packages().values() {
-        let manifest = package.manifest();
+        let manifest = &package.manifest;
 
         if let Some(lib_paths) = manifest.build.lib_paths.as_ref() {
             for lib_path in lib_paths {
-                let lib_path = package.root_dir().join(lib_path);
+                let lib_path = package.root_dir.join(lib_path);
                 match config.target_os {
                     TargetOS::Windows => {
                         args.push(format!("/libpath:{}", lib_path.to_string_lossy()))

@@ -682,28 +682,12 @@ pub fn const_int_overflow(
     lhs: i128,
     rhs: i128,
 ) {
-    let msg = format!("integer constant overflow\nwhen computing: `{lhs} {op} {rhs}`");
+    let msg = format!("integer constant overflow when computing: `{lhs} {op} {rhs}`");
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn const_item_size_overflow(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    item_kind: &'static str,
-    lhs: u64,
-    rhs: u64,
-) {
-    let msg = format!("{item_kind} size overflow\nwhen computing: `{lhs} + {rhs}`");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn const_array_size_overflow(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    elem_size: u64,
-    len: u64,
-) {
-    let msg = format!("array size overflow\nwhen computing: `{elem_size} * {len}`");
+pub fn const_size_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("constant size overflow when computing type layout");
     emit.error(Error::new(msg, src, None));
 }
 

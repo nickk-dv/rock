@@ -636,9 +636,9 @@ pub fn write_symbol_name(
 ) {
     use std::fmt::Write;
     let module = cg.session.module.get(origin);
-    let module_name = cg.session.intern_name.get(module.name());
-    let package = cg.session.graph.package(module.origin());
-    let package_name = cg.session.intern_name.get(package.name());
+    let module_name = cg.session.intern_name.get(module.name_id);
+    let package = cg.session.graph.package(module.origin);
+    let package_name = cg.session.intern_name.get(package.name_id);
     let symbol_name = cg.session.intern_name.get(name);
 
     let _ = write!(cg.namebuf, "{package_name}:{module_name}:{symbol_name}");

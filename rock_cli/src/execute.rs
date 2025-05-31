@@ -127,7 +127,7 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    let root_manifest = session.graph.package(session.root_id).manifest();
+    let root_manifest = &session.graph.package(session.root_id).manifest;
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_build_lib_package());
     }
@@ -166,7 +166,7 @@ fn run(data: CommandRun) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    let root_manifest = session.graph.package(session.root_id).manifest();
+    let root_manifest = &session.graph.package(session.root_id).manifest;
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_run_lib_package());
     }
@@ -253,7 +253,7 @@ fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &PathBuf)
 
 fn fmt() -> Result<(), Error> {
     let config = Config::new(TargetTriple::host(), Build::Debug);
-    let mut session = session::create_session(config)?;
+    let mut session = session::format_session(config)?;
 
     if let Err(()) = fmt_impl(&mut session) {
         error_print::print_session_errors(&session);
@@ -261,14 +261,12 @@ fn fmt() -> Result<(), Error> {
     return Ok(());
 
     fn fmt_impl(session: &mut Session) -> Result<(), ()> {
-        syntax::parse_root(session)?;
+        syntax::parse_all_trees(session)?;
         let mut cache = format::FormatterCache::new();
 
-        let package = session.graph.package(session.root_id);
-        for module_id in package.module_ids().iter().copied() {
+        for module_id in session.module.ids() {
             let module = session.module.get(module_id);
-            let file = session.vfs.file(module.file_id());
-
+            let file = session.vfs.file(module.file_id);
             let tree = module.tree_expect();
             let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
 

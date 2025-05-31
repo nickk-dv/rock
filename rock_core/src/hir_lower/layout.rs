@@ -100,7 +100,7 @@ pub fn type_layout<'hir>(
             if let Some(total) = elem_size.checked_mul(len) {
                 Ok(hir::Layout::new(total, elem_layout.align))
             } else {
-                err::const_array_size_overflow(ctx.error(), src, elem_size, len);
+                err::const_size_overflow(ctx.error(), src);
                 Err(())
             }
         }
@@ -161,7 +161,7 @@ pub fn resolve_struct_layout<'hir>(
     let src = SourceRange::new(data.origin_id, data.name.range);
 
     let types = data.fields.iter().map(|f| f.ty);
-    resolve_aggregate_layout(ctx, src, "struct", types, poly_types)
+    resolve_aggregate_layout(ctx, src, types, poly_types)
 }
 
 fn resolve_variant_layout<'hir>(
@@ -176,13 +176,12 @@ fn resolve_variant_layout<'hir>(
 
     let tag_ty = [hir::Type::Int(data.tag_ty.resolved()?)];
     let types = tag_ty.into_iter().chain(variant.fields.iter().map(|f| f.ty));
-    resolve_aggregate_layout(ctx, src, "variant", types, poly_types)
+    resolve_aggregate_layout(ctx, src, types, poly_types)
 }
 
 fn resolve_aggregate_layout<'hir>(
     ctx: &mut impl LayoutContext<'hir>,
     src: SourceRange,
-    item_kind: &'static str,
     types: impl Iterator<Item = hir::Type<'hir>>,
     poly_types: &[hir::Type<'hir>],
 ) -> Result<hir::StructLayout<'hir>, ()> {
@@ -214,7 +213,7 @@ fn resolve_aggregate_layout<'hir>(
         } else {
             ctx.u8s().pop_view(offset_u8);
             ctx.u64s().pop_view(offset_u64);
-            err::const_item_size_overflow(ctx.error(), src, item_kind, aligned, layout.size);
+            err::const_size_overflow(ctx.error(), src);
             return Err(());
         }
     }

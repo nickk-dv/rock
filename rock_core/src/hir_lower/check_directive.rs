@@ -33,7 +33,7 @@ pub fn check_proc_directives(
             DirectiveKind::Inline => hir::ProcFlag::Inline,
             DirectiveKind::Intrinsic => {
                 let module = ctx.session.module.get(ctx.scope.origin);
-                if module.origin() == session::CORE_PACKAGE_ID {
+                if module.origin == session::CORE_PACKAGE_ID {
                     hir::ProcFlag::Intrinsic
                 } else {
                     let src = ctx.src(directive.range);

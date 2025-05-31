@@ -267,7 +267,7 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
 
 fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     let module = session.module.get_mut(module_id);
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     if module.tree_version == file.version {
         return;
     }
@@ -293,7 +293,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
     }
 
     let tree = module.tree_expect();
-    let file = server.session.vfs.file(module.file_id());
+    let file = server.session.vfs.file(module.file_id);
     if update == SymbolUpdate::All {
         data.symbols.clear();
         data.symbols.reserve(tree.root().content.len());
@@ -415,17 +415,17 @@ fn resolve_import_module(
 ) -> Option<ModuleID> {
     let module = session.module.get(origin_id);
     let tree = module.tree_expect();
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     let path = import.import_path(tree)?;
 
-    let mut package_id = module.origin();
+    let mut package_id = module.origin;
     if let Some(name) = import.package(tree) {
         let id = name_id_opt(name, tree, file, &session.intern_name)?;
-        package_id = session.graph.find_package_dep(module.origin(), id)?;
+        package_id = session.graph.find_package_dep(module.origin, id)?;
     }
 
     let mut module_name = None;
-    let mut target_dir = session.graph.package(package_id).src();
+    let mut target_dir = &session.graph.package(package_id).src;
     let mut path_names = path.names(tree).peekable();
 
     while let Some(name) = path_names.next() {
@@ -486,7 +486,7 @@ fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
         return send_response(server.conn, id, serde_json::Value::Null);
     }
 
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     let formatted = rock_core::syntax::format::format(
         tree,
         &file.source,
@@ -527,7 +527,7 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
 
     let mut hints = Vec::with_capacity(64);
     let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     let tree = module.tree_expect();
 
     for node in tree.nodes() {
@@ -572,7 +572,7 @@ fn handle_goto_definition(
     update_module_symbols(server, module_id, SymbolUpdate::All);
 
     let module = server.session.module.get(module_id);
-    let file = server.session.vfs.file(module.file_id());
+    let file = server.session.vfs.file(module.file_id);
     let tree = module.tree_expect();
 
     let offset = text_ops::position_utf16_to_offset_utf8(file, pos);
@@ -613,7 +613,7 @@ fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: Path
     update_syntax_tree(session, module_id);
 
     let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     let tree = module.tree_expect();
     let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
     send_response(server.conn, id, tree_display);
@@ -642,7 +642,7 @@ fn compile_project(server: &mut ServerContext) {
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id());
+        let file = session.vfs.file(module.file_id);
 
         let capacity = module.parse_errors.errors.len()
             + module.errors.errors.len()
@@ -707,7 +707,7 @@ fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocument
         Some(module_id) => session.module.get(module_id),
         None => return,
     };
-    let file = session.vfs.file_mut(module.file_id());
+    let file = session.vfs.file_mut(module.file_id);
     file.version += 1;
 
     for change in p.content_changes {
@@ -732,7 +732,7 @@ use std::path::PathBuf;
 fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
     if let Some(file_id) = session.vfs.path_to_file_id(path) {
         for module_id in session.module.ids() {
-            if session.module.get(module_id).file_id() == file_id {
+            if session.module.get(module_id).file_id == file_id {
                 return Some(module_id);
             }
         }
@@ -796,13 +796,13 @@ fn create_diagnostic(
 
 fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
     let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     &file.path
 }
 
 fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
     let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id());
+    let file = session.vfs.file(module.file_id);
     text_ops::range_utf8_to_range_utf16(file, source.range())
 }
 
@@ -853,7 +853,7 @@ enum SymbolKind {
 fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::SemanticToken> {
     let module = server.session.module.get(module_id);
     let tree = module.tree_expect();
-    let file = server.session.vfs.file(module.file_id());
+    let file = server.session.vfs.file(module.file_id);
     let modules = server.modules.as_slice();
     let intern_name = &mut server.session.intern_name;
 

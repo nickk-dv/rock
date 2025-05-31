@@ -61,6 +61,7 @@ pub struct LocalScope<'hir> {
     variables: Vec<hir::Variable<'hir>>,
     variables_in_scope: Vec<hir::VariableID>,
     defer_blocks_in_scope: Vec<hir::Block<'hir>>,
+    discard_id: NameID,
 }
 
 #[derive(Copy, Clone)]
@@ -116,11 +117,12 @@ pub struct InferContext {
 //==================== SCOPES IMPL ====================
 
 impl<'hir> Scope<'hir> {
-    pub(super) fn new(session: &Session) -> Scope<'hir> {
+    pub fn new(session: &mut Session) -> Scope<'hir> {
+        let discard_id = session.intern_name.intern("_");
         Scope {
             origin: ModuleID::dummy(),
             global: GlobalScope::new(session),
-            local: LocalScope::new(),
+            local: LocalScope::new(discard_id),
             poly: PolyScope::None,
             infer: InferScope::new(),
         }
@@ -207,7 +209,7 @@ impl GlobalScope {
             }
 
             modules.push(ModuleScope {
-                name_id: module.name(),
+                name_id: module.name_id,
                 symbols: HashMap::with_capacity(symbol_count),
             });
         }
@@ -237,8 +239,8 @@ impl GlobalScope {
                 return match symbol_id.vis(registry) {
                     hir::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
                     hir::Vis::Package => {
-                        let origin_package_id = session.module.get(origin_id).origin();
-                        let target_package_id = session.module.get(target_id).origin();
+                        let origin_package_id = session.module.get(origin_id).origin;
+                        let target_package_id = session.module.get(target_id).origin;
 
                         if origin_package_id == target_package_id {
                             Ok(SymbolOrModule::Symbol(symbol_id))
@@ -339,7 +341,7 @@ impl GlobalScope {
 }
 
 impl<'hir> LocalScope<'hir> {
-    fn new() -> LocalScope<'hir> {
+    fn new(discard_id: NameID) -> LocalScope<'hir> {
         LocalScope {
             proc_id: None,
             return_expect: Expectation::None,
@@ -349,6 +351,7 @@ impl<'hir> LocalScope<'hir> {
             variables: Vec::with_capacity(128),
             variables_in_scope: Vec::with_capacity(128),
             defer_blocks_in_scope: Vec::with_capacity(32),
+            discard_id,
         }
     }
 
@@ -407,7 +410,7 @@ impl<'hir> LocalScope<'hir> {
     pub fn add_variable(&mut self, var: hir::Variable<'hir>) -> hir::VariableID {
         let var_id = hir::VariableID::new(self.variables.len());
         self.variables.push(var);
-        if var.name.id.raw() != 0 {
+        if var.name.id != self.discard_id {
             self.variables_in_scope.push(var_id);
             self.current_block_mut().var_count += 1;
         }
@@ -675,7 +678,7 @@ fn find_core_module(ctx: &mut HirCtx, name: &str) -> Option<ModuleID> {
     let package = ctx.session.graph.package(session::CORE_PACKAGE_ID);
     let name_id = ctx.session.intern_name.get_id(name)?;
 
-    let module_id = match package.src().find(ctx.session, name_id) {
+    let module_id = match package.src.find(ctx.session, name_id) {
         session::ModuleOrDirectory::None => None,
         session::ModuleOrDirectory::Module(module_id) => Some(module_id),
         session::ModuleOrDirectory::Directory(_) => None,
@@ -738,8 +741,8 @@ pub fn check_find_struct_field(
     match field.vis {
         hir::Vis::Public => {}
         hir::Vis::Package => {
-            let origin_package_id = ctx.session.module.get(ctx.scope.origin).origin();
-            let struct_package_id = ctx.session.module.get(data.origin_id).origin();
+            let origin_package_id = ctx.session.module.get(ctx.scope.origin).origin;
+            let struct_package_id = ctx.session.module.get(data.origin_id).origin;
 
             if origin_package_id != struct_package_id {
                 let name_src = ctx.src(name.range);

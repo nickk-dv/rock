@@ -34,23 +34,20 @@ pub struct Modules<'s> {
     modules: Vec<Module<'s>>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
-pub struct PackageID(u32);
+crate::define_id!(pub PackageID);
 pub struct Package {
-    root_dir: PathBuf,
-    name_id: NameID,
-    src: Directory,
-    manifest: Manifest,
-    deps: Vec<PackageID>,
-    modules: Vec<ModuleID>,
+    pub root_dir: PathBuf,
+    pub name_id: NameID,
+    pub src: Directory,
+    pub manifest: Manifest,
+    pub deps: Vec<PackageID>,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct ModuleID(u32);
+crate::define_id!(pub ModuleID);
 pub struct Module<'s> {
-    origin: PackageID,
-    name_id: NameID,
-    file_id: FileID,
+    pub origin: PackageID,
+    pub name_id: NameID,
+    pub file_id: FileID,
     tree: Option<SyntaxTree<'s>>,
     pub tree_version: u32,
     ast: Option<Ast<'s>>,
@@ -123,71 +120,15 @@ impl<'s> Modules<'s> {
     }
 }
 
-impl Package {
-    #[inline]
-    pub fn root_dir(&self) -> &PathBuf {
-        &self.root_dir
-    }
-    #[inline]
-    pub fn name(&self) -> NameID {
-        self.name_id
-    }
-    #[inline]
-    pub fn src(&self) -> &Directory {
-        &self.src
-    }
-    #[inline]
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest
-    }
-    #[inline]
-    pub fn dep_ids(&self) -> &[PackageID] {
-        &self.deps
-    }
-    #[inline]
-    pub fn module_ids(&self) -> &[ModuleID] {
-        &self.modules
-    }
-}
-
-impl PackageID {
-    #[inline]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
 impl<'s> Module<'s> {
-    #[inline]
-    pub fn origin(&self) -> PackageID {
-        self.origin
-    }
-    #[inline]
-    pub fn name(&self) -> NameID {
-        self.name_id
-    }
-    #[inline]
-    pub fn file_id(&self) -> FileID {
-        self.file_id
-    }
-
-    #[inline]
-    pub fn tree(&self) -> Option<&SyntaxTree<'s>> {
-        self.tree.as_ref()
-    }
     #[inline]
     pub fn tree_expect(&self) -> &SyntaxTree<'s> {
         self.tree.as_ref().unwrap()
     }
     #[inline]
-    pub fn ast(&self) -> Option<&SyntaxTree<'s>> {
-        self.tree.as_ref()
-    }
-    #[inline]
     pub fn ast_expect(&self) -> &Ast<'s> {
         self.ast.as_ref().unwrap()
     }
-
     #[inline]
     pub fn set_ast<'ast: 's>(&mut self, ast: Ast<'ast>) {
         self.ast = Some(ast);
@@ -195,25 +136,6 @@ impl<'s> Module<'s> {
     #[inline]
     pub fn set_tree<'syn: 's>(&mut self, tree: SyntaxTree<'syn>) {
         self.tree = Some(tree);
-    }
-    #[inline]
-    pub fn unload_ast(&mut self) {
-        self.ast = None;
-    }
-    #[inline]
-    pub fn unload_tree(&mut self) {
-        self.tree = None;
-    }
-}
-
-impl ModuleID {
-    #[inline]
-    pub fn dummy() -> ModuleID {
-        ModuleID(u32::MAX)
-    }
-    #[inline]
-    pub fn index(self) -> usize {
-        self.0 as usize
     }
 }
 
@@ -224,12 +146,6 @@ pub enum ModuleOrDirectory<'s> {
 }
 
 impl Directory {
-    #[inline]
-    pub fn name(&self) -> NameID {
-        self.name_id
-    }
-
-    #[must_use]
     pub fn find(&self, session: &Session, name_id: NameID) -> ModuleOrDirectory {
         for module_id in self.modules.iter().copied() {
             if session.module.get(module_id).name_id == name_id {
@@ -257,8 +173,8 @@ impl BuildStats {
     }
 }
 
-pub fn create_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
-    let mut session = Session {
+fn default_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
+    Ok(Session {
         vfs: Vfs::new(64),
         curr_exe_dir: os::current_exe_path()?,
         curr_work_dir: os::dir_get_current_working()?,
@@ -271,18 +187,29 @@ pub fn create_session<'s>(config: config::Config) -> Result<Session<'s>, Error> 
         errors: ErrorBuffer::default(),
         root_id: PackageID(0),
         ast_state: AstBuildState::new(),
-    };
+    })
+}
+
+pub fn create_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
+    let mut session = default_session(config)?;
 
     let core_dir = session.curr_exe_dir.join("core");
-    process_package(&mut session, &core_dir, None, true)?;
+    process_package(&mut session, &core_dir, None, true, false)?;
 
     let root_dir = session.curr_work_dir.clone();
     if root_dir != core_dir {
-        session.root_id = process_package(&mut session, &root_dir, None, false)?;
+        session.root_id = process_package(&mut session, &root_dir, None, false, false)?;
     }
-
     session.stats.package_count = session.graph.package_count() as u32;
     session.stats.module_count = session.module.modules.len() as u32;
+    eprintln!("src name_id: {:?}", session.intern_name.get_id("src"));
+    Ok(session)
+}
+
+pub fn format_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
+    let mut session = default_session(config)?;
+    let root_dir = session.curr_work_dir.clone();
+    let _ = process_package(&mut session, &root_dir, None, false, true)?;
     Ok(session)
 }
 
@@ -291,6 +218,7 @@ fn process_package(
     root_dir: &PathBuf,
     dep_from: Option<PackageID>,
     is_core: bool,
+    format: bool,
 ) -> Result<PackageID, Error> {
     if dep_from.is_some() && !root_dir.exists() {
         return Err(err::session_pkg_not_found(root_dir));
@@ -304,6 +232,12 @@ fn process_package(
     let src_dir = root_dir.join("src");
     if !src_dir.exists() {
         return Err(err::session_src_not_found(root_dir));
+    }
+
+    let package_id = session.graph.next_id();
+    let src = process_directory(session, &src_dir, package_id)?;
+    if format {
+        return Ok(package_id);
     }
 
     let manifest = os::file_read(&manifest_path)?;
@@ -321,19 +255,13 @@ fn process_package(
         }
     }
 
-    let package_id = session.graph.next_id();
-    let src = process_directory(session, &src_dir, package_id)?;
-    let modules = directory_all_modules(&src);
-
     //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
     let dependencies = manifest.dependencies.clone();
 
     // disallow core lib from having any dependencies
     assert!(!is_core || manifest.dependencies.is_empty());
-    #[rustfmt::skip]
     let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
-    #[rustfmt::skip]
-    let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps, modules };
+    let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps };
     let package_id = session.graph.add(package, root_dir);
 
     for (dep_name, dep) in dependencies.iter() {
@@ -347,7 +275,7 @@ fn process_package(
         };
         let dep_id = match session.graph.get_unique(&dep_root_dir) {
             Some(dep_id) => dep_id,
-            None => process_package(session, &dep_root_dir, Some(package_id), false)?,
+            None => process_package(session, &dep_root_dir, Some(package_id), false, false)?,
         };
         session.graph.add_dep(package_id, dep_id, &session.intern_name, &manifest_path)?;
     }
@@ -397,27 +325,17 @@ fn process_module(
     let source = os::file_read_with_sentinel(path)?;
     let file_id = session.vfs.open(path, source);
 
-    #[rustfmt::skip]
     let module = Module {
-        origin, name_id, file_id,
-        tree: None, tree_version: 0,
-        ast: None, ast_version: 0,
+        origin,
+        name_id,
+        file_id,
+        tree: None,
+        tree_version: 0,
+        ast: None,
+        ast_version: 0,
         parse_errors: ErrorBuffer::default(),
         errors: ErrorWarningBuffer::default(),
     };
     let module_id = session.module.add(module);
     Ok(module_id)
-}
-
-fn directory_all_modules(dir: &Directory) -> Vec<ModuleID> {
-    let mut modules = Vec::new();
-    let mut dir_stack = vec![dir];
-
-    while let Some(dir) = dir_stack.pop() {
-        modules.extend(&dir.modules);
-        for sub_dir in dir.sub_dirs.iter().rev() {
-            dir_stack.push(sub_dir);
-        }
-    }
-    modules
 }
