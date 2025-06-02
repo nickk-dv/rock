@@ -404,7 +404,6 @@ pub struct StructFieldAccess<'hir> {
     pub deref: Option<ast::Mut>,
     pub struct_id: StructID,
     pub field_id: FieldID,
-    //@can reduce size later, poly required for correctness
     pub field_ty: Type<'hir>,
     pub poly_types: &'hir [Type<'hir>],
 }

@@ -153,7 +153,7 @@ fn codegen_function_value<'c>(
     proc_id: hir::ProcID,
     poly_types: &'c [hir::Type<'c>],
 ) -> (llvm::ValueFn, llvm::TypeFn) {
-    //@hack setting these poly_types to be used from PolyProc types in proc definition
+    //temporary override of poly_types in proc scope
     let curr_poly = cg.proc.poly_types;
     cg.proc.poly_types = poly_types;
 

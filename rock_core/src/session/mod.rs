@@ -10,7 +10,7 @@ use crate::intern::{InternPool, LitID, NameID};
 use crate::support::os;
 use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::syntax_tree::SyntaxTree;
-use manifest::{Manifest, PackageKind};
+use manifest::{Dependency, Manifest, PackageKind};
 use std::path::PathBuf;
 pub use vfs::FileData;
 use vfs::{FileID, Vfs};
@@ -252,23 +252,21 @@ fn process_package(
         }
     }
 
-    //@forced to clone to avoid a valid borrow issue, not store [dependencies] key? move out?
-    let dependencies = manifest.dependencies.clone();
-
     // disallow core lib from having any dependencies
     assert!(!is_core || manifest.dependencies.is_empty());
     let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
     let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps };
+    let package_deps = package.manifest.dependencies.clone();
     let package_id = session.graph.add(package, root_dir);
 
-    for (dep_name, dep) in dependencies.iter() {
+    for (dep_name, dep) in package_deps {
         let dep_root_dir = match dep {
-            manifest::Dependency::Dep(semver) => {
+            Dependency::Dep(semver) => {
                 return Err(Error::message(format!(
                     "package fetch not implemented, cannot find: {dep_name}-{semver}"
                 )));
             }
-            manifest::Dependency::Path { path } => os::canonicalize(&PathBuf::from(path.as_str()))?,
+            Dependency::Path { path } => os::canonicalize(&PathBuf::from(path.as_str()))?,
         };
         let dep_id = match session.graph.get_unique(&dep_root_dir) {
             Some(dep_id) => dep_id,

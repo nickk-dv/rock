@@ -515,12 +515,10 @@ fn typecheck_expr_impl<'hir, 'ast>(
 
     if untyped_promote {
         let with = expect.inner_type();
-        let promoted =
-            promote_untyped(ctx, expr.range, expr_res.expr, &mut expr_res.ty, with, true);
-        match promoted {
-            Some(Ok((v, id))) => expr_res.expr = hir::Expr::Const(v, id),
-            Some(Err(())) => {} //@handle differently?
-            None => {}
+        if let Some(Ok((v, id))) =
+            promote_untyped(ctx, expr.range, expr_res.expr, &mut expr_res.ty, with, true)
+        {
+            expr_res.expr = hir::Expr::Const(v, id);
         }
     }
 
@@ -753,17 +751,16 @@ fn typecheck_pat<'hir, 'ast>(
         ast::PatKind::Or { pats } => typecheck_pat_or(ctx, expect, pats, ref_mut),
     };
 
-    //@temp hacky fix, using expression based promotion, refactor const value promotion
+    //apply untyped promotion for literal values and constants
     let with = expect.inner_type();
     let expr = match pat_res.pat {
         hir::Pat::Lit(value) => hir::Expr::Const(value, hir::ConstID::dummy()),
         _ => hir::Expr::Error,
     };
-    let promoted = promote_untyped(ctx, pat.range, expr, &mut pat_res.pat_ty, with, true);
-    match promoted {
-        Some(Ok((value, _))) => pat_res.pat = hir::Pat::Lit(value),
-        Some(Err(())) => {} //@handle differently?
-        None => {}
+    if let Some(Ok((value, _))) =
+        promote_untyped(ctx, pat.range, expr, &mut pat_res.pat_ty, with, true)
+    {
+        pat_res.pat = hir::Pat::Lit(value);
     }
 
     type_expectation_check(ctx, pat.range, pat_res.pat_ty, expect);
@@ -3427,7 +3424,6 @@ fn typecheck_for<'hir, 'ast>(
                 err::tycheck_for_range_reverse(&mut ctx.emit, src);
             }
 
-            //@use untyped and unify the integer types
             let mut start_res = typecheck_expr_untyped(ctx, Expectation::None, header.start);
             check_expect_integer(ctx, header.start.range, start_res.ty);
             let mut end_res = typecheck_expr_untyped(ctx, Expectation::None, header.end);
@@ -4463,14 +4459,14 @@ fn check_variant_bind_list<'hir>(
             ast::Binding::Discard(_) => continue,
         };
 
-        //@total mess, cleanup
-        let ty = if let Some(variant) = variant {
+        let mut ty = hir::Type::Error;
+        if let Some(variant) = variant {
             if let Some(field_id) = variant.field_id(idx) {
                 let field = variant.field(field_id);
                 if let Expectation::HasType(hir::Type::Enum(_, poly_types), _) = expect {
                     let field_ty =
                         type_substitute(ctx, !poly_types.is_empty(), poly_types, field.ty);
-                    match ref_mut {
+                    ty = match ref_mut {
                         Some(ref_mut) => {
                             if field_ty.is_error() {
                                 hir::Type::Error
@@ -4480,15 +4476,9 @@ fn check_variant_bind_list<'hir>(
                         }
                         None => field_ty,
                     }
-                } else {
-                    hir::Type::Error
                 }
-            } else {
-                hir::Type::Error
             }
-        } else {
-            hir::Type::Error
-        };
+        }
 
         if ctx.scope.check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit).is_ok()
         {
