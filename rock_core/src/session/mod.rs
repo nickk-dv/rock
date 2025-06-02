@@ -4,7 +4,9 @@ pub mod manifest;
 pub mod vfs;
 
 use crate::ast::Ast;
-use crate::error::{Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer};
+use crate::error::{
+    DiagnosticData, Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer, Warning, WarningSink,
+};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::support::os;
@@ -78,6 +80,45 @@ pub struct BuildStats {
 
 pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
 
+impl<'s> Session<'s> {
+    pub fn result(&self) -> Result<(), ()> {
+        if self.errors.did_error(0) {
+            return Err(());
+        }
+        for module in &self.module.modules {
+            if module.parse_errors.did_error(0) {
+                return Err(());
+            }
+            if module.errors.did_error(0) {
+                return Err(());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn move_errors(&mut self, errors: Vec<Error>, warnings: Vec<Warning>) {
+        for e in errors {
+            let origin = match e.diagnostic().data() {
+                DiagnosticData::Message => {
+                    self.errors.error(e);
+                    continue;
+                }
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.module.get_mut(origin).errors.error(e);
+        }
+        for w in warnings {
+            let origin = match w.diagnostic().data() {
+                DiagnosticData::Message => unreachable!(),
+                DiagnosticData::Context { main, .. } => main.src().module_id(),
+                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+            };
+            self.module.get_mut(origin).errors.warning(w);
+        }
+    }
+}
+
 impl<'s> Modules<'s> {
     fn new(cap: usize) -> Modules<'s> {
         Modules { modules: Vec::with_capacity(cap) }
@@ -105,18 +146,6 @@ impl<'s> Modules<'s> {
         let module_id = ModuleID(self.modules.len() as u32);
         self.modules.push(module);
         module_id
-    }
-
-    pub fn result(&self) -> Result<(), ()> {
-        for module in &self.modules {
-            if module.parse_errors.did_error(0) {
-                return Err(());
-            }
-            if module.errors.did_error(0) {
-                return Err(());
-            }
-        }
-        Ok(())
     }
 }
 

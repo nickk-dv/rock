@@ -47,7 +47,7 @@ pub fn parse_all_trees(session: &mut Session) -> Result<(), ()> {
             Err(errors) => module.parse_errors = errors,
         }
     }
-    session.module.result()
+    session.result()
 }
 
 pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
@@ -64,7 +64,7 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
         module.tree_version = file.version;
         module.parse_errors = errors;
     }
-    session.module.result()?;
+    session.result()?;
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);

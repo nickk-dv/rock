@@ -1,7 +1,7 @@
 use super::check_match::PatCov;
 use super::scope::{PolyScope, Scope};
 use crate::ast;
-use crate::error::{DiagnosticData, ErrorSink, ErrorWarningBuffer, SourceRange, WarningSink};
+use crate::error::{ErrorSink, ErrorWarningBuffer, SourceRange};
 use crate::hir;
 use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
@@ -134,33 +134,10 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     }
 
     pub fn finish(self) -> Result<hir::Hir<'hir>, ()> {
-        //moving errors into per module storage
         let (errors, warnings) = self.emit.collect();
-        let did_error = !errors.is_empty();
+        self.session.move_errors(errors, warnings);
+        self.session.result()?;
 
-        for e in errors {
-            let origin = match e.diagnostic().data() {
-                DiagnosticData::Message => {
-                    self.session.errors.error(e);
-                    continue;
-                }
-                DiagnosticData::Context { main, .. } => main.src().module_id(),
-                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
-            };
-            self.session.module.get_mut(origin).errors.error(e);
-        }
-        for w in warnings {
-            let origin = match w.diagnostic().data() {
-                DiagnosticData::Message => unreachable!(),
-                DiagnosticData::Context { main, .. } => main.src().module_id(),
-                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
-            };
-            self.session.module.get_mut(origin).errors.warning(w);
-        }
-
-        if did_error {
-            return Err(());
-        }
         let mut const_eval_values = Vec::with_capacity(self.registry.const_evals.len());
         for (eval, _, _) in self.registry.const_evals.iter() {
             const_eval_values.push(eval.resolved_unwrap());
