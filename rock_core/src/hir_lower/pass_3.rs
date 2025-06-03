@@ -410,9 +410,24 @@ pub fn type_resolve<'hir, 'ast>(
             let elem_ty = type_resolve(ctx, array.elem_ty, in_definition);
 
             let len = if in_definition {
-                let eval_id =
-                    ctx.registry.add_const_eval(array.len, ctx.scope.origin, ctx.scope.poly);
-                hir::ArrayStaticLen::ConstEval(eval_id)
+                //@temp hack to immediately resolve some expression
+                //will avoid hash/eq != between same array types in codegen
+                if let ast::ExprKind::Lit { lit } = array.len.0.kind {
+                    if let ast::Lit::Int(value) = lit {
+                        hir::ArrayStaticLen::Immediate(value)
+                    } else {
+                        let eval_id = ctx.registry.add_const_eval(
+                            array.len,
+                            ctx.scope.origin,
+                            ctx.scope.poly,
+                        );
+                        hir::ArrayStaticLen::ConstEval(eval_id)
+                    }
+                } else {
+                    let eval_id =
+                        ctx.registry.add_const_eval(array.len, ctx.scope.origin, ctx.scope.poly);
+                    hir::ArrayStaticLen::ConstEval(eval_id)
+                }
             } else {
                 let (len_res, _) = pass_4::resolve_const_expr(ctx, Expectation::USIZE, array.len);
                 match len_res {
