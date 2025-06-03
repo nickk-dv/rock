@@ -57,8 +57,21 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     }
 }
 
-//@remove ref / multi ref coercion for polymorphic types
-// make coercion behavior conditional, right now T(&N) and T([&]N) is considered same.
+fn type_matches_coerced(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
+    if type_matches(ctx, ty, ty2) {
+        return true;
+    }
+    match (ty, ty2) {
+        (hir::Type::Reference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
+        }
+        (hir::Type::MultiReference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
+            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
+        }
+        _ => false,
+    }
+}
+
 fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     if ty.is_error() || ty2.is_error() || ty.is_unknown() {
         return true;
@@ -97,14 +110,6 @@ fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
         (hir::Type::MultiReference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
-            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
-        }
-        // implicit conversion: [&]T -> &T
-        (hir::Type::Reference(mutt, ref_ty), hir::Type::MultiReference(mutt2, ref_ty2)) => {
-            (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
-        }
-        // implicit conversion: &T -> [&]T
-        (hir::Type::MultiReference(mutt, ref_ty), hir::Type::Reference(mutt2, ref_ty2)) => {
             (mutt2 == ast::Mut::Mutable || mutt == mutt2) && type_matches(ctx, *ref_ty, *ref_ty2)
         }
         (hir::Type::Procedure(proc_ty), hir::Type::Procedure(proc_ty2)) => {
@@ -347,7 +352,7 @@ pub fn type_expectation_check(
     if found_ty.is_never() {
         return;
     }
-    if type_matches(ctx, expect_ty, found_ty) {
+    if type_matches_coerced(ctx, expect_ty, found_ty) {
         return;
     }
     let src = ctx.src(from_range);
@@ -1485,7 +1490,7 @@ fn typecheck_cast<'hir, 'ast>(
         }
         (hir::Type::Reference(_, _), hir::Type::MultiReference(_, _))
         | (hir::Type::MultiReference(_, _), hir::Type::Reference(_, _)) => {
-            if type_matches(ctx, into, from) {
+            if type_matches_coerced(ctx, into, from) {
                 CastKind::Rawptr_NoOp
             } else {
                 CastKind::Error
@@ -2408,7 +2413,10 @@ fn check_binary_op<'hir>(
     if lhs_ty.is_error() || rhs_ty.is_error() {
         return Err(());
     }
-    if op != ast::BinOp::BitShl && op != ast::BinOp::BitShr && !type_matches(ctx, lhs_ty, rhs_ty) {
+    if op != ast::BinOp::BitShl
+        && op != ast::BinOp::BitShr
+        && !type_matches_coerced(ctx, lhs_ty, rhs_ty)
+    {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
         let lhs_ty = type_format(ctx, lhs_ty);
@@ -4352,7 +4360,9 @@ fn check_variant_input_opt<'hir, 'ast>(
     }
 
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_unknown()) {
-        let src = ctx.src(range); //@improve range to include everything up to arg list same as struct_init and proc call
+        let range =
+            TextRange::new(range.start(), arg_list.map(|l| l.range.start()).unwrap_or(range.end()));
+        let src = ctx.src(range);
         err::tycheck_cannot_infer_poly_params(&mut ctx.emit, src);
         ctx.scope.infer.end_context(infer);
         return TypeResult::error();
