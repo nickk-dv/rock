@@ -129,7 +129,10 @@ fn codegen_expr<'c>(
         }
         hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
         hir::Expr::Slice { access, .. } => codegen_expr(cg, &access.op_call, expect),
-        hir::Expr::Cast { target, into, kind } => Some(codegen_cast(cg, target, into, kind)),
+        hir::Expr::Cast { target, into, kind } => {
+            let value = codegen_cast(cg, target, into, kind);
+            Some(maybe_alloc_copy(cg, expect, value))
+        }
         hir::Expr::ParamVar { param_id } => Some(codegen_param_var(cg, expect, param_id)),
         hir::Expr::Variable { var_id } => Some(codegen_variable(cg, expect, var_id)),
         hir::Expr::GlobalVar { global_id } => Some(codegen_global_var(cg, expect, global_id)),
@@ -157,8 +160,14 @@ fn codegen_expr<'c>(
         hir::Expr::ArrayRepeat { array } => codegen_array_repeat(cg, expect, array),
         hir::Expr::Deref { rhs, ref_ty, .. } => Some(codegen_deref(cg, expect, rhs, *ref_ty)),
         hir::Expr::Address { rhs } => Some(codegen_address(cg, expect, rhs)),
-        hir::Expr::Unary { op, rhs } => Some(codegen_unary(cg, op, rhs)),
-        hir::Expr::Binary { op, lhs, rhs } => Some(codegen_binary(cg, op, lhs, rhs)),
+        hir::Expr::Unary { op, rhs } => {
+            let value = codegen_unary(cg, op, rhs);
+            Some(maybe_alloc_copy(cg, expect, value))
+        }
+        hir::Expr::Binary { op, lhs, rhs } => {
+            let value = codegen_binary(cg, op, lhs, rhs);
+            Some(maybe_alloc_copy(cg, expect, value))
+        }
     }
 }
 

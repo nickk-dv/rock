@@ -72,3 +72,30 @@ proc test_expr_if_yield_nested() void {
     };
     assert(x == 3, "x == 3");
 }
+
+//#entry "expect_pointer_expr_cast"
+//#expect(no_new_line)
+//10
+//#!
+proc test_expect_pointer_expr_cast() void {
+    let val = 10;
+    fmt.print(val as u8);
+}
+
+//#entry "expect_pointer_expr_unary"
+//#expect(no_new_line)
+//10
+//#!
+proc test_expect_pointer_expr_unary() void {
+    let val = -10;
+    fmt.print(-val);
+}
+
+//#entry "expect_pointer_expr_binary"
+//#expect(no_new_line)
+//10
+//#!
+proc test_expect_pointer_expr_binary() void {
+    let val = 5;
+    fmt.print(val + val);
+}
