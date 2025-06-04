@@ -301,12 +301,48 @@ impl<'hir> Expectation<'hir> {
             _ => BoolType::Bool,
         }
     }
+    fn infer_ref_ty(&self) -> Expectation<'hir> {
+        match self {
+            Expectation::None => Expectation::None,
+            Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+                hir::Type::Error => Expectation::ERROR,
+                hir::Type::Reference(_, ref_ty) => Expectation::HasType(**ref_ty, *expect_src),
+                hir::Type::MultiReference(_, ref_ty) => Expectation::HasType(**ref_ty, *expect_src),
+                _ => Expectation::None,
+            },
+        }
+    }
     fn infer_array_elem(&self) -> Expectation<'hir> {
         match self {
             Expectation::None => Expectation::None,
             Expectation::HasType(expect_ty, expect_src) => match expect_ty {
                 hir::Type::Error => Expectation::ERROR,
                 hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, *expect_src),
+                _ => Expectation::None,
+            },
+        }
+    }
+    fn infer_slicing_array_type(
+        &self,
+        ctx: &mut HirCtx<'hir, '_, '_>,
+        target: &ast::Expr,
+    ) -> Expectation<'hir> {
+        match self {
+            Expectation::None => Expectation::None,
+            Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+                hir::Type::Error => Expectation::ERROR,
+                hir::Type::ArraySlice(slice) => {
+                    if let ast::ExprKind::ArrayInit { input } = target.kind {
+                        let array_ty = hir::ArrayStatic {
+                            len: hir::ArrayStaticLen::Immediate(input.len() as u64),
+                            elem_ty: slice.elem_ty,
+                        };
+                        let array_ty = ctx.arena.alloc(array_ty);
+                        Expectation::HasType(hir::Type::ArrayStatic(array_ty), *expect_src)
+                    } else {
+                        Expectation::None
+                    }
+                }
                 _ => Expectation::None,
             },
         }
@@ -492,7 +528,9 @@ fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
         ast::ExprKind::Index { target, index } => typecheck_index(ctx, expr.range, target, index),
-        ast::ExprKind::Slice { target, range } => typecheck_slice(ctx, target, range, expr.range),
+        ast::ExprKind::Slice { target, range } => {
+            typecheck_slice(ctx, expect, target, range, expr.range)
+        }
         ast::ExprKind::Call { target, args_list } => typecheck_call(ctx, target, args_list),
         ast::ExprKind::Cast { target, into } => typecheck_cast(ctx, expr.range, target, into),
         ast::ExprKind::Item { path, args_list } => {
@@ -509,7 +547,9 @@ fn typecheck_expr_impl<'hir, 'ast>(
             typecheck_array_repeat(ctx, expect, value, len)
         }
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
-        ast::ExprKind::Address { mutt, rhs } => typecheck_address(ctx, mutt, rhs, expr.range),
+        ast::ExprKind::Address { mutt, rhs } => {
+            typecheck_address(ctx, expect, mutt, rhs, expr.range)
+        }
         ast::ExprKind::Unary { op, op_range, rhs } => {
             typecheck_unary(ctx, expr.range, op, op_range, rhs)
         }
@@ -1244,11 +1284,13 @@ fn typecheck_index<'hir, 'ast>(
 
 fn typecheck_slice<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
     target: &ast::Expr<'ast>,
     range: &ast::SliceRange<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let target_res = typecheck_expr(ctx, Expectation::None, target);
+    let expect = expect.infer_slicing_array_type(ctx, target);
+    let target_res = typecheck_expr(ctx, expect, target);
     let addr_res = resolve_expr_addressability(ctx, target_res.expr);
     //@check that expression value is addressable
 
@@ -2124,11 +2166,12 @@ fn typecheck_deref<'hir, 'ast>(
 
 fn typecheck_address<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
     mutt: ast::Mut,
     rhs: &ast::Expr<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
+    let rhs_res = typecheck_expr(ctx, expect.infer_ref_ty(), rhs);
     let addr_res = resolve_expr_addressability(ctx, rhs_res.expr);
     check_address_addressability(ctx, mutt, &addr_res, expr_range);
 
