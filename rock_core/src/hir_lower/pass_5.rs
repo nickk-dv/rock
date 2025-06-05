@@ -491,10 +491,6 @@ impl<'hir> BlockResult<'hir> {
     ) -> BlockResult<'hir> {
         BlockResult { ty, block, tail_range, diverges }
     }
-
-    fn into_type_result(self) -> TypeResult<'hir> {
-        TypeResult::new(self.ty, hir::Expr::Block { block: self.block })
-    }
 }
 
 pub fn typecheck_expr<'hir, 'ast>(
@@ -523,7 +519,8 @@ fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
-            typecheck_block(ctx, expect, *block, BlockStatus::None).into_type_result()
+            let block_res = typecheck_block(ctx, expect, *block, BlockStatus::None);
+            TypeResult::new_ignore(block_res.ty, hir::Expr::Block { block: block_res.block })
         }
         ast::ExprKind::Match { match_ } => typecheck_match(ctx, expect, match_, expr.range),
         ast::ExprKind::Field { target, name } => typecheck_field(ctx, target, name),
@@ -715,7 +712,7 @@ fn typecheck_if<'hir, 'ast>(
         if_type = hir::Type::Void;
     }
     if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
-        let src = ctx.src(expr_range);
+        let src = ctx.src(TextRange::new(expr_range.start(), expr_range.start() + 2.into()));
         err::tycheck_if_missing_else(&mut ctx.emit, src);
     }
 
@@ -2975,10 +2972,9 @@ fn typecheck_block<'hir, 'ast>(
                 hir::Stmt::ExprSemi(expr_res.expr)
             }
             ast::StmtKind::ExprTail(expr) => {
-                // type expectation is delegated to tail expression, instead of the block itself
+                //type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
-                // @seems to fix the problem (still a hack) - will_diverge was `true`
 
                 let will_diverge = expr_res.ty.is_never();
                 check_stmt_diverges(ctx, will_diverge, stmt.range);
@@ -3062,20 +3058,17 @@ fn typecheck_block<'hir, 'ast>(
     let stmts = ctx.cache.stmts.take(offset, &mut ctx.arena);
     let hir_block = hir::Block { stmts };
 
-    //@wip approach, will change 03.07.24
+    //type expectation is delegated to tail expression, instead of the block itself
     let block_result = if let Some(block_ty) = block_tail_ty {
         BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
     } else {
-        //@potentially incorrect aproach, verify that `void`
-        // as the expectation and block result ty are valid 29.05.24
-
-        //@change to last `}` range?
-        // verify that all block are actual blocks in that case
-        if !diverges {
-            type_expectation_check(ctx, block.range, hir::Type::Void, expect);
-        }
-        //@hack but should be correct
+        let range = if block.stmts.is_empty() {
+            block.range
+        } else {
+            TextRange::new(block.range.end() - 1.into(), block.range.end())
+        };
         let block_ty = if diverges { hir::Type::Never } else { hir::Type::Void };
+        type_expectation_check(ctx, range, block_ty, expect);
         BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
     };
 
