@@ -643,7 +643,7 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
             }
 
             if with_fields {
-                let mut enum_ptr = codegen_expr_pointer(cg, match_.on_expr);
+                let mut enum_ptr = codegen_expr_pointer_to_expr_value(cg, match_.on_expr);
                 if ref_mut.is_some() {
                     enum_ptr = cg.build.load(cg.ptr_type(), enum_ptr, "deref").into_ptr();
                 }
