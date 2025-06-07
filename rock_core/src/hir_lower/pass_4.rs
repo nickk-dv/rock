@@ -821,8 +821,8 @@ pub fn resolve_const_expr<'hir, 'ast>(
     ctx.in_const = true;
     let error_count = ctx.emit.error_count();
     let expr_res = match expect {
+        Expectation::None => pass_5::typecheck_expr_untyped(ctx, expect, expr.0),
         Expectation::HasType(_, _) => pass_5::typecheck_expr(ctx, expect, expr.0),
-        _ => pass_5::typecheck_expr_untyped(ctx, expect, expr.0),
     };
     ctx.in_const = false;
 

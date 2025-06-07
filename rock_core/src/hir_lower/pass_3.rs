@@ -316,7 +316,7 @@ fn process_polymorph_params<'hir>(
 pub fn type_resolve<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     ast_ty: ast::Type<'ast>,
-    in_definition: bool,
+    const_eval_len: bool,
 ) -> hir::Type<'hir> {
     match ast_ty.kind {
         ast::TypeKind::Basic(basic) => match basic {
@@ -343,9 +343,9 @@ pub fn type_resolve<'hir, 'ast>(
             ast::BasicType::String => hir::Type::String(hir::StringType::String),
             ast::BasicType::CString => hir::Type::String(hir::StringType::CString),
         },
-        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, in_definition),
+        ast::TypeKind::Custom(path) => check_path::path_resolve_type(ctx, path, const_eval_len),
         ast::TypeKind::Reference(mutt, ref_ty) => {
-            let ref_ty = type_resolve(ctx, *ref_ty, in_definition);
+            let ref_ty = type_resolve(ctx, *ref_ty, const_eval_len);
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -353,7 +353,7 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::MultiReference(mutt, ref_ty) => {
-            let ref_ty = type_resolve(ctx, *ref_ty, in_definition);
+            let ref_ty = type_resolve(ctx, *ref_ty, const_eval_len);
             if ref_ty.is_error() {
                 hir::Type::Error
             } else {
@@ -371,7 +371,7 @@ pub fn type_resolve<'hir, 'ast>(
             for (param_idx, param) in proc_ty.params.iter().enumerate() {
                 let (ty, kind) = match *param {
                     ast::ParamKind::Normal(ty) => {
-                        (type_resolve(ctx, ty, in_definition), hir::ParamKind::Normal)
+                        (type_resolve(ctx, ty, const_eval_len), hir::ParamKind::Normal)
                     }
                     ast::ParamKind::Implicit(dir) => {
                         match check_directive::check_param_directive(
@@ -390,13 +390,13 @@ pub fn type_resolve<'hir, 'ast>(
                 ctx.cache.proc_ty_params.push(param);
             }
             let params = ctx.cache.proc_ty_params.take(offset, &mut ctx.arena);
-            let return_ty = type_resolve(ctx, proc_ty.return_ty, in_definition);
+            let return_ty = type_resolve(ctx, proc_ty.return_ty, const_eval_len);
 
             let proc_ty = hir::ProcType { flag_set, params, return_ty };
             hir::Type::Procedure(ctx.arena.alloc(proc_ty))
         }
         ast::TypeKind::ArraySlice(slice) => {
-            let elem_ty = type_resolve(ctx, slice.elem_ty, in_definition);
+            let elem_ty = type_resolve(ctx, slice.elem_ty, const_eval_len);
 
             if elem_ty.is_error() {
                 hir::Type::Error
@@ -407,9 +407,9 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::ArrayStatic(array) => {
-            let elem_ty = type_resolve(ctx, array.elem_ty, in_definition);
+            let elem_ty = type_resolve(ctx, array.elem_ty, const_eval_len);
 
-            let len = if in_definition {
+            let len = if const_eval_len {
                 //@temp hack to immediately resolve some expression
                 //will avoid hash/eq != between same array types in codegen
                 if let ast::ExprKind::Lit { lit } = array.len.0.kind {

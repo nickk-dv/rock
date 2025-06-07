@@ -831,7 +831,6 @@ fn typecheck_pat_item<'hir, 'ast>(
     in_or_pat: bool,
     range: TextRange,
 ) -> PatResult<'hir> {
-    //@pass correct in_definition
     match check_path::path_resolve_value(ctx, path, false) {
         ValueID::None => {
             check_variant_bind_list(ctx, expect, bind_list, None, None, in_or_pat);
@@ -1643,7 +1642,6 @@ fn typecheck_item<'hir, 'ast>(
     args_list: Option<&ast::ArgumentList<'ast>>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
-    //@pass correct in_definition
     let (item_res, fields) = match check_path::path_resolve_value(ctx, path, false) {
         ValueID::None => {
             if let Some(arg_list) = args_list {
@@ -1836,7 +1834,6 @@ fn typecheck_struct_init<'hir, 'ast>(
     }
 
     let struct_res = match struct_init.path {
-        //@pass correct in_definition
         Some(path) => check_path::path_resolve_struct(ctx, path, false),
         None => {
             let src = ctx.src(error_range(struct_init, expr_range));
@@ -1994,11 +1991,17 @@ fn typecheck_struct_init<'hir, 'ast>(
         let fields = ctx.cache.field_inits.view(offset_init);
         for field in fields {
             match field.expr {
-                hir::Expr::Error => return TypeResult::error(),
+                hir::Expr::Error => {
+                    ctx.cache.field_inits.pop_view(offset_init);
+                    ctx.cache.const_values.pop_view(const_offset);
+                    return TypeResult::error();
+                }
                 hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
                 _ => {
                     let src = ctx.src(struct_init.input[field.field_id.index()].expr.range);
                     err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+                    ctx.cache.field_inits.pop_view(offset_init);
+                    ctx.cache.const_values.pop_view(const_offset);
                     return TypeResult::error();
                 }
             }
@@ -3510,7 +3513,7 @@ fn typecheck_for<'hir, 'ast>(
                         rhs.as_str(),
                     );
                 }
-                lhs //@could be wrong to always use lhs
+                lhs //default
             } else {
                 IntType::S32 //default
             };
