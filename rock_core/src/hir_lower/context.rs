@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub struct HirCtx<'hir, 's, 'sref> {
     pub arena: Arena<'hir>,
     pub emit: ErrorWarningBuffer,
-    pub in_const: bool,
+    pub in_const: u32,
     pub scope: Scope<'hir>,
     pub registry: Registry<'hir, 's>,
     pub enum_tag_set: HashMap<i128, hir::VariantID>,
@@ -95,7 +95,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
         HirCtx {
             arena: Arena::new(),
             emit: ErrorWarningBuffer::default(),
-            in_const: false,
+            in_const: 0,
             scope: Scope::new(session),
             registry: Registry::new(session),
             enum_tag_set: HashMap::with_capacity(128),

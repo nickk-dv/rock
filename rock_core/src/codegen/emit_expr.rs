@@ -820,8 +820,6 @@ fn codegen_index<'c>(
     target: &hir::Expr<'c>,
     access: &hir::IndexAccess<'c>,
 ) -> llvm::Value {
-    //@also handle slice by value?
-    // sometimes causes proc results to stack allocate.
     let target_ptr = match access.kind {
         hir::IndexKind::Multi(_) => codegen_expr_value(cg, target).into_ptr(),
         hir::IndexKind::Slice(_) | hir::IndexKind::Array(_) => codegen_expr_pointer(cg, target),
@@ -878,16 +876,21 @@ fn codegen_index<'c>(
     let elem_ty = cg.ty(access.elem_ty);
     let elem_ptr = match access.kind {
         hir::IndexKind::Multi(_) => {
-            cg.build.gep(elem_ty, target_ptr, &[index_val], "multi_elem_ptr")
+            cg.build.gep_inbounds(elem_ty, target_ptr, &[index_val], "multi_elem_ptr")
         }
         hir::IndexKind::Slice(_) => {
             let slice_ptr = cg.build.load(cg.ptr_type(), target_ptr, "slice_ptr").into_ptr();
-            cg.build.gep(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
+            cg.build.gep_inbounds(elem_ty, slice_ptr, &[index_val], "slice_elem_ptr")
         }
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
             let array_ty = llvm::array_type(elem_ty, len);
-            cg.build.gep(array_ty, target_ptr, &[cg.const_usize(0), index_val], "array_elem_ptr")
+            cg.build.gep_inbounds(
+                array_ty,
+                target_ptr,
+                &[cg.const_usize(0), index_val],
+                "array_elem_ptr",
+            )
         }
     };
 

@@ -1982,7 +1982,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     };
     ctx.scope.infer.end_context(infer);
 
-    let expr = if ctx.in_const {
+    let expr = if ctx.in_const > 0 {
         if ctx.emit.did_error(error_count) {
             ctx.cache.field_inits.pop_view(offset_init);
             return TypeResult::error();
@@ -2070,7 +2070,7 @@ fn typecheck_array_init<'hir, 'ast>(
         }
     };
 
-    let array_expr = if ctx.in_const {
+    let array_expr = if ctx.in_const > 0 {
         // cannot constfold if any value is error
         if ctx.emit.did_error(error_count) {
             ctx.cache.exprs.pop_view(offset);
@@ -4421,7 +4421,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         return TypeResult::new(hir::Type::Enum(enum_id, &[]), expr);
     }
 
-    let expr = if ctx.in_const {
+    let expr = if ctx.in_const > 0 {
         let mut valid = true;
         let offset = ctx.cache.const_values.start();
         for (idx, field) in input.iter().copied().enumerate() {
