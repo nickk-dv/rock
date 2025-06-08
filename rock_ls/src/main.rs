@@ -991,20 +991,40 @@ fn semantic_visit_path(b: &mut SemanticTokenBuilder, path: cst::Path, parent: Sy
                 if let Some(name) = segment.name(b.tree) {
                     let name_id = b.name_id(name);
                     let data = &b.modules[origin_id.index()];
+                    let same_origin = origin_id == b.module_id;
 
                     let style = if let Some(symbol) = data.symbols.get(&name_id).copied() {
-                        let kind = match symbol {
-                            Symbol::Module(_) => unreachable!(),
-                            Symbol::Defined(kind) => kind,
-                            Symbol::Imported(_, kind) => kind,
-                        };
-                        is_enum = matches!(kind, SymbolKind::Enum);
-                        Some(match kind {
-                            SymbolKind::Proc => SemanticToken::Function,
-                            SymbolKind::Enum | SymbolKind::Struct => SemanticToken::Type,
-                            SymbolKind::Const | SymbolKind::Global => SemanticToken::Variable,
-                        })
-                    } else if b.params_in_scope.iter().any(|&n| n == name_id) {
+                        if same_origin {
+                            let kind = match symbol {
+                                Symbol::Module(_) => unreachable!(),
+                                Symbol::Defined(kind) => kind,
+                                Symbol::Imported(_, kind) => kind,
+                            };
+                            is_enum = matches!(kind, SymbolKind::Enum);
+                            Some(match kind {
+                                SymbolKind::Proc => SemanticToken::Function,
+                                SymbolKind::Enum | SymbolKind::Struct => SemanticToken::Type,
+                                SymbolKind::Const | SymbolKind::Global => SemanticToken::Variable,
+                            })
+                        } else {
+                            match symbol {
+                                Symbol::Module(_) => None,
+                                Symbol::Defined(kind) => {
+                                    is_enum = matches!(kind, SymbolKind::Enum);
+                                    Some(match kind {
+                                        SymbolKind::Proc => SemanticToken::Function,
+                                        SymbolKind::Enum | SymbolKind::Struct => {
+                                            SemanticToken::Type
+                                        }
+                                        SymbolKind::Const | SymbolKind::Global => {
+                                            SemanticToken::Variable
+                                        }
+                                    })
+                                }
+                                Symbol::Imported(_, _) => None,
+                            }
+                        }
+                    } else if same_origin && b.params_in_scope.iter().any(|&n| n == name_id) {
                         Some(SemanticToken::Parameter)
                     } else {
                         None
