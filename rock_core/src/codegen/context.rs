@@ -1,12 +1,11 @@
 use super::llvm;
-use crate::error::{ErrorWarningBuffer, SourceRange};
+use crate::error::ErrorBuffer;
 use crate::hir_lower::layout;
 use crate::hir_lower::types;
 use crate::intern::{LitID, NameID};
 use crate::session::config::TargetTriple;
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, TempBuffer, TempOffset};
-use crate::text::TextRange;
 use crate::{ast, hir};
 use std::collections::HashMap;
 
@@ -30,8 +29,7 @@ pub struct Codegen<'c, 's, 'sref> {
     pub cache: CodegenCache<'c>,
     pub info: CodegenTypeInfo<'c>,
     pub proc_queue: Vec<hir::ProcKey<'c>>,
-    //@errors ignored, layout overfow can happen
-    pub emit: ErrorWarningBuffer,
+    pub emit: ErrorBuffer,
 }
 
 pub struct ProcCodegen<'c> {
@@ -156,15 +154,19 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             cache,
             info,
             proc_queue: Vec::with_capacity(64),
-            emit: ErrorWarningBuffer::default(),
+            emit: ErrorBuffer::default(),
         }
     }
 
     pub fn enum_layout(&mut self, key: hir::EnumKey<'c>) -> hir::Layout {
         types::expect_concrete(key.1);
-        let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-        let enum_ty = hir::Type::Enum(key.0, key.1);
-        layout::type_layout(self, enum_ty, &[], src).unwrap() //@can fail
+        if let Some(layout) = self.hir.enum_layout.get(&key) {
+            return *layout;
+        }
+        let layout_res = layout::resolve_enum_layout(self, key.0, key.1);
+        let layout = layout_res.unwrap_or_else(|_| hir::Layout::new(0, 1));
+        self.hir.enum_layout.insert(key, layout);
+        layout
     }
 
     pub fn struct_layout(&mut self, key: hir::StructKey<'c>) -> hir::StructLayout<'c> {
@@ -172,7 +174,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         if let Some(layout) = self.hir.struct_layout.get(&key) {
             return *layout;
         }
-        layout::resolve_struct_layout(self, key.0, key.1).unwrap() //@can fail
+        let layout = layout::resolve_struct_layout(self, key.0, key.1).unwrap(); //@default
+        self.hir.struct_layout.insert(key, layout);
+        layout
     }
 
     pub fn variant_layout(&mut self, key: hir::VariantKey<'c>) -> hir::StructLayout<'c> {
@@ -180,8 +184,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         if let Some(layout) = self.hir.variant_layout.get(&key) {
             return *layout;
         }
-        layout::resolve_enum_layout(self, key.0, key.2).unwrap(); //@can fail
-        *self.hir.variant_layout.get(&key).expect("resolved layout")
+        let _ = self.enum_layout((key.0, key.2));
+        *self.hir.variant_layout.get(&key).unwrap() //@default + insert
     }
 
     pub fn ty(&mut self, ty: hir::Type<'c>) -> llvm::Type {
@@ -220,9 +224,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 let opaque = self.context.struct_named_create(&self.namebuf);
                 self.enums_poly.insert(key, opaque);
 
-                let enum_ty = hir::Type::Enum(key.0, key.1);
-                let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-                let layout = layout::type_layout(self, enum_ty, self.proc.poly_types, src).unwrap();
+                //@always 1 align, probably generating unaligned memory ops?
+                let layout = self.enum_layout(key);
                 let array_ty = llvm::array_type(self.cache.int_8, layout.size);
                 self.context.struct_named_set_body(opaque, &[array_ty], false);
                 opaque.as_ty()

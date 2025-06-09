@@ -13,7 +13,6 @@ pub fn main() {
             return;
         }
     };
-
     if let Err(error) = execute::command(command) {
         error_print::print_error(None, error);
     }

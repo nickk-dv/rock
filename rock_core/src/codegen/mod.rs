@@ -5,7 +5,7 @@ mod emit_stmt;
 #[allow(unsafe_code)]
 mod llvm;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorSink};
 use crate::errors as err;
 use crate::hir;
 use crate::session::config::{Build, TargetOS};
@@ -18,17 +18,35 @@ pub struct BuildOptions {
     pub emit_llvm: bool,
 }
 
-pub fn build(
-    hir: hir::Hir,
+pub fn run(bin_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
+    if let Err(error) = std::process::Command::new(&bin_path).args(args).status() {
+        Err(err::backend_run_command_failed(error.to_string(), &bin_path))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn build(hir: hir::Hir, session: &mut Session, options: BuildOptions) -> Result<PathBuf, ()> {
+    let timer = Timer::start();
+    let (target, module) = emit_mod::codegen_module(hir, session)?;
+    session.stats.llvm_ir_ms = timer.measure_ms();
+
+    match build_impl(session, options, target, module) {
+        Ok(bin_path) => Ok(bin_path),
+        Err(error) => {
+            session.errors.error(error);
+            Err(())
+        }
+    }
+}
+
+pub fn build_impl(
     session: &mut Session,
     options: BuildOptions,
+    target: llvm::IRTarget,
+    mut module: llvm::IRModule,
 ) -> Result<PathBuf, Error> {
     let config = session.config;
-
-    // generate the single ir module
-    let timer = Timer::start();
-    let (target, mut module) = emit_mod::codegen_module(hir, config.target, session);
-    session.stats.llvm_ir_ms = timer.measure_ms();
 
     // setup build output directories
     let mut build_path = session.curr_work_dir.join("build");
@@ -151,18 +169,10 @@ pub fn build(
             }
         }
         Err(error) => {
-            return Err(err::backend_link_command_failed(error.to_string(), &linker_path))
+            return Err(err::backend_link_command_failed(error.to_string(), &linker_path));
         }
     };
     session.stats.link_ms = timer.measure_ms();
 
     Ok(bin_path)
-}
-
-pub fn run(bin_path: PathBuf, args: Vec<String>) -> Result<(), Error> {
-    if let Err(error) = std::process::Command::new(&bin_path).args(args).status() {
-        Err(err::backend_run_command_failed(error.to_string(), &bin_path))
-    } else {
-        Ok(())
-    }
 }

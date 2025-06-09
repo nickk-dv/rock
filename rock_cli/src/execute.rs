@@ -4,6 +4,7 @@ use crate::error_print;
 use rock_core::codegen;
 use rock_core::error::Error;
 use rock_core::errors as err;
+use rock_core::hir;
 use rock_core::hir_lower;
 use rock_core::session::config::{Build, Config, TargetTriple};
 use rock_core::session::manifest::{self, PackageKind};
@@ -96,29 +97,10 @@ fn check(data: CommandCheck) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    if let Err(()) = check_impl(&mut session, data) {
+    if check_impl(&mut session, data).is_err() {
         error_print::print_session_errors(&session);
     }
-    return Ok(());
-
-    fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
-        let timer = Timer::start();
-        syntax::parse_all(session)?;
-        session.stats.parse_ms = timer.measure_ms();
-
-        let timer = Timer::start();
-        let _ = hir_lower::check(session)?;
-        session.stats.check_ms = timer.measure_ms();
-
-        error_print::print_session_errors(session);
-
-        let style = AnsiStyle::new();
-        if data.stats {
-            print_stats(&style, &session.stats, false);
-        }
-        print_build_finished(session, &style, &session.stats);
-        Ok(())
-    }
+    Ok(())
 }
 
 fn build(data: CommandBuild) -> Result<(), Error> {
@@ -131,33 +113,10 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_build_lib_package());
     }
-    if let Err(()) = build_impl(&mut session, data) {
+    if build_impl(&mut session, data).is_err() {
         error_print::print_session_errors(&session);
     }
-    return Ok(());
-
-    fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
-        let timer = Timer::start();
-        syntax::parse_all(session)?;
-        session.stats.parse_ms = timer.measure_ms();
-
-        let timer = Timer::start();
-        let hir = hir_lower::check(session)?;
-        session.stats.check_ms = timer.measure_ms();
-
-        error_print::print_session_errors(session);
-        if let Err(error) = codegen::build(hir, session, data.options) {
-            error_print::print_error(Some(session), error);
-            return Err(());
-        }
-
-        let style = AnsiStyle::new();
-        if data.stats {
-            print_stats(&style, &session.stats, true);
-        }
-        print_build_finished(session, &style, &session.stats);
-        Ok(())
-    }
+    Ok(())
 }
 
 fn run(data: CommandRun) -> Result<(), Error> {
@@ -170,45 +129,70 @@ fn run(data: CommandRun) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_run_lib_package());
     }
-    if let Err(()) = run_impl(&mut session, data) {
+    if run_impl(&mut session, data).is_err() {
         error_print::print_session_errors(&session);
     }
-    return Ok(());
-
-    fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ()> {
-        let timer = Timer::start();
-        syntax::parse_all(session)?;
-        session.stats.parse_ms = timer.measure_ms();
-
-        let timer = Timer::start();
-        let hir = hir_lower::check(session)?;
-        session.stats.check_ms = timer.measure_ms();
-
-        error_print::print_session_errors(session);
-        let bin_path = match codegen::build(hir, session, data.options) {
-            Ok(path) => path,
-            Err(error) => {
-                error_print::print_error(Some(session), error);
-                return Err(());
-            }
-        };
-
-        let style = AnsiStyle::new();
-        if data.stats {
-            print_stats(&style, &session.stats, true);
-        }
-        print_build_finished(session, &style, &session.stats);
-
-        print_build_running(session, &style, &bin_path);
-        if let Err(error) = codegen::run(bin_path, data.args) {
-            error_print::print_error(Some(session), error);
-            return Err(());
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
-fn print_stats(style: &AnsiStyle, stats: &BuildStats, build: bool) {
+fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
+    parse_stage(session)?;
+    let _ = check_stage(session)?;
+    error_print::print_session_errors(session);
+
+    let style = AnsiStyle::new();
+    print_stats(&style, data.stats.then_some(&session.stats), false);
+    print_build_finished(session, &style);
+    Ok(())
+}
+
+fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
+    parse_stage(session)?;
+    let hir = check_stage(session)?;
+    let _ = codegen::build(hir, session, data.options)?;
+    error_print::print_session_errors(session);
+
+    let style = AnsiStyle::new();
+    print_stats(&style, data.stats.then_some(&session.stats), true);
+    print_build_finished(session, &style);
+    Ok(())
+}
+
+fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ()> {
+    parse_stage(session)?;
+    let hir = check_stage(session)?;
+    let bin_path = codegen::build(hir, session, data.options)?;
+    error_print::print_session_errors(session);
+
+    let style = AnsiStyle::new();
+    print_stats(&style, data.stats.then_some(&session.stats), true);
+    print_build_finished(session, &style);
+    print_build_running(session, &style, &bin_path);
+
+    if let Err(error) = codegen::run(bin_path, data.args) {
+        error_print::print_error(Some(session), error);
+    }
+    Ok(())
+}
+
+fn parse_stage(session: &mut Session) -> Result<(), ()> {
+    let timer = Timer::start();
+    syntax::parse_all(session)?;
+    session.stats.parse_ms = timer.measure_ms();
+    Ok(())
+}
+
+fn check_stage<'hir>(session: &mut Session) -> Result<hir::Hir<'hir>, ()> {
+    let timer = Timer::start();
+    let hir = hir_lower::check(session)?;
+    session.stats.check_ms = timer.measure_ms();
+    Ok(hir)
+}
+
+fn print_stats(style: &AnsiStyle, stats: Option<&BuildStats>, build: bool) {
+    let Some(stats) = stats else {
+        return;
+    };
     let g = style.out.green_bold;
     let r = style.out.reset;
 
@@ -228,7 +212,7 @@ fn print_stats(style: &AnsiStyle, stats: &BuildStats, build: bool) {
     println!("     {g}link:{r} {:.2} ms\n", stats.link_ms);
 }
 
-fn print_build_finished(session: &Session, style: &AnsiStyle, stats: &BuildStats) {
+fn print_build_finished(session: &Session, style: &AnsiStyle) {
     let build = session.config.build;
     let description = match build {
         Build::Debug => "unoptimized",
@@ -240,7 +224,7 @@ fn print_build_finished(session: &Session, style: &AnsiStyle, stats: &BuildStats
         "  {g}Finished{r} `{}` ({}) in {:.2} sec",
         build.as_str(),
         description,
-        stats.total_secs(),
+        session.stats.total_secs(),
     );
 }
 
@@ -255,27 +239,23 @@ fn fmt() -> Result<(), Error> {
     let config = Config::new(TargetTriple::host(), Build::Debug);
     let mut session = session::format_session(config)?;
 
-    if let Err(()) = fmt_impl(&mut session) {
+    if syntax::parse_all_trees(&mut session).is_err() {
         error_print::print_session_errors(&session);
+        return Ok(());
     }
-    return Ok(());
 
-    fn fmt_impl(session: &mut Session) -> Result<(), ()> {
-        syntax::parse_all_trees(session)?;
-        let mut cache = format::FormatterCache::new();
+    let mut cache = format::FormatterCache::new();
+    for module_id in session.module.ids() {
+        let module = session.module.get(module_id);
+        let file = session.vfs.file(module.file_id);
+        let tree = module.tree_expect();
+        let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
 
-        for module_id in session.module.ids() {
-            let module = session.module.get(module_id);
-            let file = session.vfs.file(module.file_id);
-            let tree = module.tree_expect();
-            let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
-
-            if let Err(error) = os::file_create(&file.path, &formatted) {
-                error_print::print_error(Some(session), error);
-            }
+        if let Err(error) = os::file_create(&file.path, &formatted) {
+            error_print::print_error(Some(&session), error);
         }
-        Ok(())
     }
+    Ok(())
 }
 
 fn help() {

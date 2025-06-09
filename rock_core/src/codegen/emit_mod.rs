@@ -6,15 +6,14 @@ use crate::ast;
 use crate::hir;
 use crate::hir_lower::types;
 use crate::intern::LitID;
-use crate::session::{config, Session};
+use crate::session::Session;
 use crate::support::AsStr;
 
 pub fn codegen_module(
     hir: hir::Hir,
-    target: config::TargetTriple,
     session: &mut Session,
-) -> (llvm::IRTarget, llvm::IRModule) {
-    let mut cg = Codegen::new(hir, target, session);
+) -> Result<(llvm::IRTarget, llvm::IRModule), ()> {
+    let mut cg = Codegen::new(hir, session.config.target, session);
     cg.procs.resize(cg.procs.capacity(), (llvm::ValueFn::null(), llvm::TypeFn::null()));
 
     codegen_enum_types(&mut cg);
@@ -28,7 +27,10 @@ pub fn codegen_module(
     }
 
     codegen_type_info(&mut cg);
-    (cg.target, cg.module)
+
+    let (target, module, emit) = (cg.target, cg.module, cg.emit);
+    session.move_errors(emit.collect(), vec![]);
+    session.result().map(|_| (target, module))
 }
 
 pub fn codegen_string_lit(cg: &mut Codegen, val: LitID) -> llvm::ValuePtr {

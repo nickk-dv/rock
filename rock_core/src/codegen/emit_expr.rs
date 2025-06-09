@@ -1211,14 +1211,18 @@ pub fn codegen_call_intrinsic<'c>(
 
     match name {
         "size_of" => {
-            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-            let layout = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-            Some(llvm::const_int(cg.ptr_sized_int(), layout.size, false))
+            let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
+            let src = SourceRange::new(origin, TextRange::zero());
+            let layout_res = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src);
+            let size = layout_res.map(|l| l.size).unwrap_or(0);
+            Some(llvm::const_int(cg.ptr_sized_int(), size, false))
         }
         "align_of" => {
-            let src = SourceRange::new(ModuleID::dummy(), TextRange::zero());
-            let layout = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src).unwrap(); //@use unwrap_or(0) when errors are reported
-            Some(llvm::const_int(cg.ptr_sized_int(), layout.align, false))
+            let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
+            let src = SourceRange::new(origin, TextRange::zero());
+            let layout_res = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src);
+            let align = layout_res.map(|l| l.align).unwrap_or(1);
+            Some(llvm::const_int(cg.ptr_sized_int(), align, false))
         }
         "transmute" => {
             let value = codegen_expr_value(cg, input[0]);
