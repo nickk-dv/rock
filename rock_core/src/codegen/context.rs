@@ -321,15 +321,19 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         }
     }
 
-    //@allocates
     pub fn proc_type(&mut self, proc_ty: &hir::ProcType<'c>) -> llvm::TypeFn {
-        let mut param_types: Vec<llvm::Type> = Vec::with_capacity(proc_ty.params.len());
+        let offset = self.cache.types.start();
         for param in proc_ty.params {
-            param_types.push(self.ty(param.ty));
+            let ty = self.ty(param.ty);
+            self.cache.types.push(ty);
         }
         let return_ty = self.ty(proc_ty.return_ty);
         let is_variadic = proc_ty.flag_set.contains(hir::ProcFlag::CVariadic);
-        llvm::function_type(return_ty, &param_types, is_variadic)
+
+        let param_types = self.cache.types.view(offset);
+        let proc_ty = llvm::function_type(return_ty, param_types, is_variadic);
+        self.cache.types.pop_view(offset);
+        proc_ty
     }
 
     pub fn array_len(&self, len: hir::ArrayStaticLen) -> u64 {

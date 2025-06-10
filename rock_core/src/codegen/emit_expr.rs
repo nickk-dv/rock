@@ -810,7 +810,7 @@ fn codegen_slice_field<'c>(
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => cg.build.load(field_ty, field_ptr, value_name),
-        Expect::Pointer(_) => unreachable!(),
+        Expect::Pointer(_) => field_ptr.as_val(),
     }
 }
 
