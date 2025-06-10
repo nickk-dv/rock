@@ -516,7 +516,7 @@ fn typecheck_expr_impl<'hir, 'ast>(
     untyped_promote: bool,
 ) -> ExprResult<'hir> {
     let mut expr_res = match expr.kind {
-        ast::ExprKind::Lit { lit } => typecheck_lit(expect, lit),
+        ast::ExprKind::Lit { lit } => typecheck_lit(lit),
         ast::ExprKind::If { if_ } => typecheck_if(ctx, expect, if_, expr.range),
         ast::ExprKind::Block { block } => {
             let block_res = typecheck_block(ctx, expect, *block, BlockStatus::None);
@@ -570,23 +570,10 @@ fn typecheck_expr_impl<'hir, 'ast>(
     expr_res.into_expr_result(ctx)
 }
 
-fn typecheck_lit<'hir>(expect: Expectation<'hir>, lit: ast::Lit) -> TypeResult<'hir> {
+fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
     let (ty, value) = match lit {
         ast::Lit::Void => (hir::Type::Void, hir::ConstValue::Void),
-        ast::Lit::Null => {
-            //coerce `null` to all other pointer types
-            let ptr_ty = if let Some(expect_ty) = expect.inner_type() {
-                match expect_ty {
-                    hir::Type::Reference(_, _)
-                    | hir::Type::MultiReference(_, _)
-                    | hir::Type::Procedure(_) => expect_ty,
-                    _ => hir::Type::Rawptr,
-                }
-            } else {
-                hir::Type::Rawptr
-            };
-            (ptr_ty, hir::ConstValue::Null)
-        }
+        ast::Lit::Null => (hir::Type::Rawptr, hir::ConstValue::Null),
         ast::Lit::Bool(val) => (
             hir::Type::Bool(BoolType::Untyped),
             hir::ConstValue::Bool { val, bool_ty: BoolType::Untyped },
@@ -2281,6 +2268,17 @@ fn promote_untyped<'hir>(
     let src = ctx.src(range);
 
     let promoted = match value {
+        hir::ConstValue::Null => {
+            if let Some(with) = with {
+                match with {
+                    hir::Type::Reference(_, _)
+                    | hir::Type::MultiReference(_, _)
+                    | hir::Type::Procedure(_) => *expr_ty = with,
+                    _ => (),
+                }
+            }
+            return None; //ConstValue::Null remains the same
+        }
         hir::ConstValue::Int { val, neg, int_ty } => {
             if int_ty != IntType::Untyped {
                 return None;
@@ -2385,8 +2383,7 @@ fn typecheck_binary<'hir, 'ast>(
     lhs: &ast::Expr<'ast>,
     rhs: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
-    //@expectation model doesnt work for binary expr
-    // allow `null` literals to coerce, allow enum inference for lhs and rhs, etc..
+    //@bidirectional enum / struct type inference doesnt work, lhs biased.
     let mut lhs_res = typecheck_expr_untyped(ctx, Expectation::None, lhs);
     let rhs_expect = match lhs_res.ty {
         hir::Type::Enum(..) => Expectation::HasType(lhs_res.ty, Some(ctx.src(lhs.range))),
@@ -2520,9 +2517,13 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::Eq => match lhs_ty {
-            hir::Type::Char | hir::Type::UntypedChar | hir::Type::Rawptr | hir::Type::Bool(_) => {
-                Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool()))
-            }
+            hir::Type::Char
+            | hir::Type::UntypedChar
+            | hir::Type::Rawptr
+            | hir::Type::Bool(_)
+            | hir::Type::Reference(_, _)
+            | hir::Type::MultiReference(_, _)
+            | hir::Type::Procedure(_) => Ok(hir::BinOp::Eq_Int_Other(expect.infer_bool())),
             hir::Type::Int(int_ty) => {
                 Ok(hir::BinOp::Cmp_Int(CmpPred::Eq, expect.infer_bool(), int_ty))
             }
@@ -2543,9 +2544,13 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::NotEq => match lhs_ty {
-            hir::Type::Char | hir::Type::UntypedChar | hir::Type::Rawptr | hir::Type::Bool(_) => {
-                Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool()))
-            }
+            hir::Type::Char
+            | hir::Type::UntypedChar
+            | hir::Type::Rawptr
+            | hir::Type::Bool(_)
+            | hir::Type::Reference(_, _)
+            | hir::Type::MultiReference(_, _)
+            | hir::Type::Procedure(_) => Ok(hir::BinOp::NotEq_Int_Other(expect.infer_bool())),
             hir::Type::Int(int_ty) => {
                 Ok(hir::BinOp::Cmp_Int(CmpPred::NotEq, expect.infer_bool(), int_ty))
             }
@@ -2809,20 +2814,38 @@ fn constfold_binary<'hir>(
         }
         hir::BinOp::Eq_Int_Other(bool_ty) => {
             let val = match lhs {
-                hir::ConstValue::Char { val, .. } => val == rhs.into_char(),
-                hir::ConstValue::Null => true, //only value: null == null
                 hir::ConstValue::Bool { val, .. } => val == rhs.into_bool(),
+                hir::ConstValue::Char { val, .. } => val == rhs.into_char(),
                 hir::ConstValue::Variant { variant_id, .. } => variant_id == rhs.into_enum().1,
+                hir::ConstValue::Null => match rhs {
+                    hir::ConstValue::Null => true,
+                    hir::ConstValue::Procedure { .. } => false,
+                    _ => unreachable!(),
+                },
+                hir::ConstValue::Procedure { proc_id, .. } => match rhs {
+                    hir::ConstValue::Null => false,
+                    hir::ConstValue::Procedure { proc_id: rhs_id, .. } => proc_id == rhs_id,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             };
             Ok(hir::ConstValue::Bool { val, bool_ty })
         }
         hir::BinOp::NotEq_Int_Other(bool_ty) => {
             let val = match lhs {
-                hir::ConstValue::Char { val, .. } => val != rhs.into_char(),
-                hir::ConstValue::Null => false, //only value: null != null
                 hir::ConstValue::Bool { val, .. } => val != rhs.into_bool(),
+                hir::ConstValue::Char { val, .. } => val != rhs.into_char(),
                 hir::ConstValue::Variant { variant_id, .. } => variant_id != rhs.into_enum().1,
+                hir::ConstValue::Null => match rhs {
+                    hir::ConstValue::Null => false,
+                    hir::ConstValue::Procedure { .. } => true,
+                    _ => unreachable!(),
+                },
+                hir::ConstValue::Procedure { proc_id, .. } => match rhs {
+                    hir::ConstValue::Null => true,
+                    hir::ConstValue::Procedure { proc_id: rhs_id, .. } => proc_id != rhs_id,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             };
             Ok(hir::ConstValue::Bool { val, bool_ty })
