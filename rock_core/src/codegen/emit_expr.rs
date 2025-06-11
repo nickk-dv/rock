@@ -167,6 +167,7 @@ fn codegen_expr<'c>(
             let value = codegen_binary(cg, op, lhs, rhs);
             Some(maybe_alloc_copy(cg, expect, value))
         }
+        hir::Expr::ArrayBinary { op, array } => codegen_array_binary(cg, expect, op, array),
     }
 }
 
@@ -1520,6 +1521,73 @@ fn codegen_binary<'c>(
             let rhs = codegen_expr_value(cg, rhs);
             codegen_binary_op(cg, op, lhs, rhs)
         }
+    }
+}
+
+fn codegen_array_binary<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    expect: Expect,
+    op: hir::BinOp,
+    array: &hir::ArrayBinary<'c>,
+) -> Option<llvm::Value> {
+    let lhs_ptr = codegen_expr_pointer(cg, array.lhs);
+    let rhs_ptr = codegen_expr_pointer(cg, array.rhs);
+    codegen_array_binary_op(cg, expect, op, array, lhs_ptr, rhs_ptr)
+}
+
+pub fn codegen_array_binary_op<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    expect: Expect,
+    op: hir::BinOp,
+    array: &hir::ArrayBinary<'c>,
+    lhs_ptr: llvm::ValuePtr,
+    rhs_ptr: llvm::ValuePtr,
+) -> Option<llvm::Value> {
+    let elem_ty = cg.ty(array.elem_ty);
+    let array_ty = llvm::array_type(elem_ty, array.len);
+    let array_ptr = match expect {
+        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(array_ty, "array_binary"),
+        Expect::Store(ptr_val) => ptr_val,
+    };
+
+    let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
+    cg.build.store(cg.const_usize(0), count_ptr);
+
+    let entry_bb = cg.append_bb("rep_entry");
+    let body_bb = cg.append_bb("rep_body");
+    let exit_bb = cg.append_bb("rep_exit");
+
+    cg.build.br(entry_bb);
+    cg.build.position_at_end(entry_bb);
+    let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
+    let repeat_val = cg.const_usize(array.len);
+    let cond = codegen_binary_op(
+        cg,
+        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
+        count_val,
+        repeat_val,
+    );
+    cg.build.cond_br(cond, body_bb, exit_bb);
+
+    cg.build.position_at_end(body_bb);
+    let indices = [cg.const_usize(0), count_val];
+    let lhs_elem_ptr = cg.build.gep_inbounds(array_ty, lhs_ptr, &indices, "lhs_elem_ptr");
+    let rhs_elem_ptr = cg.build.gep_inbounds(array_ty, rhs_ptr, &indices, "rhs_elem_ptr");
+    let lhs = cg.build.load(elem_ty, lhs_elem_ptr, "lhs_val");
+    let rhs = cg.build.load(elem_ty, rhs_elem_ptr, "rhs_val");
+    let bin = codegen_binary_op(cg, op, lhs, rhs);
+    let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
+    cg.build.store(bin, elem_ptr);
+
+    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize(1));
+    cg.build.store(count_inc, count_ptr);
+    cg.build.br(entry_bb);
+    cg.build.position_at_end(exit_bb);
+
+    match expect {
+        Expect::Value(_) => Some(cg.build.load(array_ty, array_ptr, "array_val")),
+        Expect::Pointer(_) => Some(array_ptr.as_val()),
+        Expect::Store(_) => None,
     }
 }
 

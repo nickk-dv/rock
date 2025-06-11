@@ -273,7 +273,7 @@ pub enum LocalInit<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct Assign<'hir> {
-    pub op: AssignOp,
+    pub op: AssignOp<'hir>,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
     pub lhs_ty: Type<'hir>,
@@ -308,6 +308,7 @@ pub enum Expr<'hir> {
     Address      { rhs: &'hir Expr<'hir> },
     Unary        { op: UnOp, rhs: &'hir Expr<'hir> },
     Binary       { op: BinOp, lhs: &'hir Expr<'hir>, rhs: &'hir Expr<'hir> },
+    ArrayBinary  { op: BinOp, array: &'hir  ArrayBinary<'hir> },
 }
 
 #[rustfmt::skip]
@@ -508,9 +509,17 @@ pub struct ArrayInit<'hir> {
 
 #[derive(Copy, Clone)]
 pub struct ArrayRepeat<'hir> {
+    pub len: u64,
     pub elem_ty: Type<'hir>,
     pub value: &'hir Expr<'hir>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayBinary<'hir> {
     pub len: u64,
+    pub elem_ty: Type<'hir>,
+    pub lhs: &'hir Expr<'hir>,
+    pub rhs: &'hir Expr<'hir>,
 }
 
 crate::enum_as_str! {
@@ -622,9 +631,9 @@ crate::enum_as_str! {
 }
 
 #[derive(Copy, Clone)]
-pub enum AssignOp {
+pub enum AssignOp<'hir> {
     Assign,
-    Bin(BinOp),
+    Bin(BinOp, Option<&'hir ArrayBinary<'hir>>),
 }
 
 //==================== HIR IDS & EVALS ====================

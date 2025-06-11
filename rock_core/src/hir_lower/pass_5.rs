@@ -432,6 +432,7 @@ pub struct TypeResult<'hir> {
     ignore: bool,
 }
 
+#[derive(Clone)]
 #[must_use]
 pub struct ExprResult<'hir> {
     pub ty: hir::Type<'hir>,
@@ -2411,10 +2412,11 @@ fn typecheck_binary<'hir, 'ast>(
         None => {}
     }
 
-    let hir_op = match check_binary_op(ctx, expect, op, op_start, lhs_res.ty, rhs_res.ty) {
-        Ok(hir_op) => hir_op,
-        Err(()) => return TypeResult::error(),
-    };
+    let (hir_op, array) =
+        match check_binary_op(ctx, expect, op, op_start, lhs_res.clone(), rhs_res.clone()) {
+            Ok(hir_op) => hir_op,
+            Err(()) => return TypeResult::error(),
+        };
     let res_ty = match op {
         ast::BinOp::Eq
         | ast::BinOp::NotEq
@@ -2438,7 +2440,11 @@ fn typecheck_binary<'hir, 'ast>(
         }
     }
 
-    let binary = hir::Expr::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
+    let binary = if let Some(array) = array {
+        hir::Expr::ArrayBinary { op: hir_op, array }
+    } else {
+        hir::Expr::Binary { op: hir_op, lhs: lhs_res.expr, rhs: rhs_res.expr }
+    };
     TypeResult::new(res_ty, binary)
 }
 
@@ -2447,23 +2453,32 @@ fn check_binary_op<'hir>(
     expect: Expectation,
     op: ast::BinOp,
     op_start: TextOffset,
-    lhs_ty: hir::Type<'hir>,
-    rhs_ty: hir::Type,
-) -> Result<hir::BinOp, ()> {
-    if lhs_ty.is_error() || rhs_ty.is_error() {
+    lhs: ExprResult<'hir>,
+    rhs: ExprResult<'hir>,
+) -> Result<(hir::BinOp, Option<&'hir hir::ArrayBinary<'hir>>), ()> {
+    if lhs.ty.is_error() || rhs.ty.is_error() {
         return Err(());
     }
     if op != ast::BinOp::BitShl
         && op != ast::BinOp::BitShr
-        && !type_matches_coerced(ctx, lhs_ty, rhs_ty)
+        && !type_matches_coerced(ctx, lhs.ty, rhs.ty)
     {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
-        let lhs_ty = type_format(ctx, lhs_ty);
-        let rhs_ty = type_format(ctx, rhs_ty);
+        let lhs_ty = type_format(ctx, lhs.ty);
+        let rhs_ty = type_format(ctx, rhs.ty);
         err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
         return Err(());
     }
+
+    let lhs_ty = match lhs.ty {
+        hir::Type::ArrayStatic(array) => array.elem_ty,
+        other => other,
+    };
+    let rhs_ty = match rhs.ty {
+        hir::Type::ArrayStatic(array) => array.elem_ty,
+        other => other,
+    };
 
     let hir_op = match op {
         ast::BinOp::Add => match lhs_ty {
@@ -2616,11 +2631,36 @@ fn check_binary_op<'hir>(
         },
     };
 
-    if hir_op.is_err() {
+    let array = if let hir::Type::ArrayStatic(array) = lhs.ty {
+        let array = hir::ArrayBinary {
+            len: ctx.array_len(array.len).unwrap_or(0),
+            elem_ty: array.elem_ty,
+            lhs: lhs.expr,
+            rhs: rhs.expr,
+        };
+        Some(ctx.arena.alloc(array))
+    } else {
+        None
+    };
+
+    let array_op_banned = array.is_some()
+        && !matches!(
+            op,
+            ast::BinOp::Add
+                | ast::BinOp::Sub
+                | ast::BinOp::Mul
+                | ast::BinOp::Div
+                | ast::BinOp::Rem
+                | ast::BinOp::BitAnd
+                | ast::BinOp::BitOr
+                | ast::BinOp::BitXor,
+        );
+
+    if hir_op.is_err() || array_op_banned {
         let op_len = op.as_str().len() as u32;
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
-        let lhs_ty = type_format(ctx, lhs_ty);
-        let rhs_ty = type_format(ctx, rhs_ty);
+        let lhs_ty = type_format(ctx, lhs.ty);
+        let rhs_ty = type_format(ctx, rhs.ty);
         err::tycheck_bin_cannot_apply(
             &mut ctx.emit,
             src,
@@ -2630,7 +2670,7 @@ fn check_binary_op<'hir>(
         );
     }
 
-    hir_op
+    hir_op.map(|hir_op| (hir_op, array))
 }
 
 fn check_binary_const_rhs(
@@ -3038,7 +3078,7 @@ fn typecheck_block<'hir, 'ast>(
                             hir::ConstID::dummy(),
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                            op: hir::AssignOp::Bin(op),
+                            op: hir::AssignOp::Bin(op, None),
                             lhs: expr_var,
                             rhs: expr_one,
                             lhs_ty: hir::Type::Int(IntType::Usize),
@@ -3052,7 +3092,7 @@ fn typecheck_block<'hir, 'ast>(
                             hir::ConstID::dummy(),
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
                             lhs: expr_var,
                             rhs: expr_one,
                             lhs_ty: hir::Type::Int(int_ty),
@@ -3425,7 +3465,7 @@ fn typecheck_for<'hir, 'ast>(
             }));
 
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(index_change_op),
+                op: hir::AssignOp::Bin(index_change_op, None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
                 lhs_ty: hir::Type::Int(IntType::Usize),
@@ -3626,7 +3666,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::ConstID::dummy(),
             ));
             let stmt_value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
                 lhs: expr_start_var,
                 rhs: expr_one_iter,
                 lhs_ty: hir::Type::Int(int_ty),
@@ -3636,7 +3676,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::ConstID::dummy(),
             ));
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(hir::BinOp::Add_Int),
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
                 lhs_ty: hir::Type::Int(IntType::Usize),
@@ -3787,9 +3827,15 @@ fn typecheck_assign<'hir, 'ast>(
         ast::AssignOp::Assign => hir::AssignOp::Assign,
         ast::AssignOp::Bin(op) => {
             let op_start = assign.op_range.start();
-            let op_res =
-                check_binary_op(ctx, Expectation::None, op, op_start, lhs_res.ty, rhs_res.ty);
-            op_res.map(hir::AssignOp::Bin).unwrap_or(hir::AssignOp::Assign)
+            let op_res = check_binary_op(
+                ctx,
+                Expectation::None,
+                op,
+                op_start,
+                lhs_res.clone(),
+                rhs_res.clone(),
+            );
+            op_res.map(|op| hir::AssignOp::Bin(op.0, op.1)).unwrap_or(hir::AssignOp::Assign)
         }
     };
 
@@ -3865,7 +3911,7 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Deref { .. } => Some("dereference"),
         hir::Expr::Address { .. } => Some("address value"),
         hir::Expr::Unary { .. } => Some("unary operation"),
-        hir::Expr::Binary { .. } => Some("binary operation"),
+        hir::Expr::Binary { .. } | hir::Expr::ArrayBinary { .. } => Some("binary operation"),
     };
 
     if let Some(kind) = unused {
@@ -4638,7 +4684,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
             hir::Expr::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
             hir::Expr::Address { .. } => AddrBase::Temporary,
             hir::Expr::Unary { .. } => AddrBase::Temporary,
-            hir::Expr::Binary { .. } => AddrBase::Temporary,
+            hir::Expr::Binary { .. } | hir::Expr::ArrayBinary { .. } => AddrBase::Temporary,
             // addr_base: variable
             hir::Expr::ParamVar { param_id } => {
                 let param = ctx.scope.local.param(param_id);
