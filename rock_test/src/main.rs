@@ -199,7 +199,10 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
 
             //prevent stderr & stdout overlap
             if !output_out.is_empty() && !output_err.is_empty() {
-                panic!("expected test outputs to be either stderr or stdout, not combined");
+                eprintln!("expected test outputs to be either stderr or stdout, not combined:");
+                eprintln!("[stdout]:\n{output_out}");
+                eprintln!("[stderr]:\n{output_err}");
+                panic!("cannot verify outputs");
             }
 
             //trim feedback from stdout

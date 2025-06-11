@@ -7,7 +7,6 @@ use crate::error::SourceRange;
 use crate::hir::{self, CmpPred};
 use crate::hir_lower::layout;
 use crate::intern::LitID;
-use crate::session::ModuleID;
 use crate::support::TempOffset;
 use crate::text::TextRange;
 
@@ -1061,9 +1060,13 @@ pub fn codegen_call_direct<'c>(
 
     if is_external {
         if emit_mod::win_x64_parameter_type(cg, data.return_ty).by_pointer {
-            //@dont entry alloca when expect = store, use store ptr
-            let alloc_ty = cg.ty(data.return_ty);
-            let ptr = cg.entry_alloca(alloc_ty, "c_call_ptr_ret");
+            let ptr = match expect {
+                Expect::Value(_) | Expect::Pointer(_) => {
+                    let alloc_ty = cg.ty(data.return_ty);
+                    cg.entry_alloca(alloc_ty, "c_call_sret")
+                }
+                Expect::Store(store_ptr) => store_ptr,
+            };
             ret_ptr = Some(ptr);
             cg.cache.values.push(ptr.as_val());
         }
@@ -1141,9 +1144,13 @@ fn codegen_call_indirect<'c>(
 
     if is_external {
         if emit_mod::win_x64_parameter_type(cg, proc_ty.return_ty).by_pointer {
-            //@dont entry alloca when expect = store, use store ptr
-            let alloc_ty = cg.ty(proc_ty.return_ty);
-            let ptr = cg.entry_alloca(alloc_ty, "c_call_ptr_ret");
+            let ptr = match expect {
+                Expect::Value(_) | Expect::Pointer(_) => {
+                    let alloc_ty = cg.ty(proc_ty.return_ty);
+                    cg.entry_alloca(alloc_ty, "c_call_sret")
+                }
+                Expect::Store(store_ptr) => store_ptr,
+            };
             ret_ptr = Some(ptr);
             cg.cache.values.push(ptr.as_val());
         }
