@@ -74,6 +74,7 @@ pub struct BuildStats {
     pub parse_ms: f64,
     pub check_ms: f64,
     pub llvm_ir_ms: f64,
+    pub llvm_opt_ms: f64,
     pub object_ms: f64,
     pub link_ms: f64,
 }
@@ -196,6 +197,7 @@ impl BuildStats {
             + self.parse_ms
             + self.check_ms
             + self.llvm_ir_ms
+            + self.llvm_opt_ms
             + self.object_ms
             + self.link_ms;
         total_ms / 1000.0

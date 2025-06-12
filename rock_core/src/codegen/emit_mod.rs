@@ -25,7 +25,6 @@ pub fn codegen_module(
     while let Some((proc_id, poly_types)) = cg.proc_queue.pop() {
         codegen_function_body(&mut cg, proc_id, poly_types);
     }
-
     codegen_type_info(&mut cg);
 
     let (target, module, emit) = (cg.target, cg.module, cg.emit);
@@ -207,19 +206,17 @@ fn codegen_function_value<'c>(
     let fn_ty = llvm::function_type(return_ty, param_types, is_variadic);
     cg.cache.types.pop_view(offset);
 
-    let (linkage, call_conv) = if is_external || is_entry {
-        (llvm::Linkage::LLVMExternalLinkage, llvm::CallConv::LLVMCCallConv)
+    let linkage = if is_external || is_entry {
+        llvm::Linkage::LLVMExternalLinkage
     } else {
-        (llvm::Linkage::LLVMInternalLinkage, llvm::CallConv::LLVMFastCallConv)
+        llvm::Linkage::LLVMInternalLinkage
     };
     let fn_val = cg.module.add_function(name, fn_ty, linkage);
-    fn_val.set_call_conv(call_conv);
 
     let data = cg.hir.proc_data(proc_id);
     if by_pointer_ret {
         fn_val.set_param_attr(cg.cache.sret, 1);
     }
-
     if data.flag_set.contains(hir::ProcFlag::Inline) {
         fn_val.set_attr(cg.cache.inlinehint);
     }

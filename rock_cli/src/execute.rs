@@ -208,6 +208,9 @@ fn print_stats(style: &AnsiStyle, stats: Option<&BuildStats>, build: bool) {
         return;
     }
     println!("  {g}llvm-ir:{r} {:.2} ms", stats.llvm_ir_ms);
+    if stats.llvm_opt_ms != 0.0 {
+        println!(" {g}llvm-opt:{r} {:.2} ms", stats.llvm_opt_ms);
+    }
     println!("   {g}object:{r} {:.2} ms", stats.object_ms);
     println!("     {g}link:{r} {:.2} ms\n", stats.link_ms);
 }

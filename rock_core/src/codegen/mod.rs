@@ -74,8 +74,9 @@ pub fn build_impl(
 
     // optimize
     if session.config.build == Build::Release {
-        //@does this work at all? does default<O3> work?
+        let timer = Timer::start();
         module.run_optimization_passes(&target, "default<O3>");
+        session.stats.llvm_opt_ms = timer.measure_ms();
         if options.emit_llvm {
             os::file_create(&build_path.join(format!("{bin_name}_opt.ll")), &module.to_string())?;
         }

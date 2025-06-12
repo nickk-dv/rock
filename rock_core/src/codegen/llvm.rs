@@ -34,7 +34,6 @@ struct CStringBuffer(String);
 pub type OpCode = sys::LLVMOpcode;
 pub type TypeKind = sys::LLVMTypeKind;
 pub type Linkage = sys::LLVMLinkage;
-pub type CallConv = sys::LLVMCallConv;
 pub type IntPred = sys::LLVMIntPredicate;
 pub type FloatPred = sys::LLVMRealPredicate;
 pub type AtomicOrdering = sys::LLVMAtomicOrdering;
@@ -212,8 +211,7 @@ impl IRModule {
     pub fn add_function(&mut self, name: &str, fn_ty: TypeFn, linkage: Linkage) -> ValueFn {
         let name = self.cstr_buf.cstr(name);
         let fn_val = unsafe { core::LLVMAddFunction(self.module, name, fn_ty.0) };
-
-        unsafe { core::LLVMSetLinkage(fn_val, linkage) };
+        unsafe { core::LLVMSetLinkage(fn_val, linkage) }
         ValueFn(fn_val)
     }
 
@@ -227,19 +225,19 @@ impl IRModule {
         unnamed_addr: bool,
     ) -> ValueGlobal {
         let name = self.cstr_buf.cstr(name);
-        let global_val = unsafe { core::LLVMAddGlobal(self.module, global_ty.0, name) };
+        let global = unsafe { core::LLVMAddGlobal(self.module, global_ty.0, name) };
         let unnamed_addr = if unnamed_addr {
             sys::LLVMUnnamedAddr::LLVMGlobalUnnamedAddr
         } else {
             sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr
         };
         unsafe {
-            value.map(|v| core::LLVMSetInitializer(global_val, v.0));
-            core::LLVMSetGlobalConstant(global_val, constant as i32);
-            core::LLVMSetUnnamedAddress(global_val, unnamed_addr);
-            core::LLVMSetLinkage(global_val, Linkage::LLVMInternalLinkage);
+            value.map(|v| core::LLVMSetInitializer(global, v.0));
+            core::LLVMSetGlobalConstant(global, constant as i32);
+            core::LLVMSetUnnamedAddress(global, unnamed_addr);
+            core::LLVMSetLinkage(global, Linkage::LLVMInternalLinkage);
         }
-        ValueGlobal(global_val)
+        ValueGlobal(global)
     }
 
     pub fn init_global(&self, global: ValueGlobal, value: Value) {
@@ -264,16 +262,18 @@ impl IRModule {
         }
     }
 
-    pub fn run_optimization_passes(&self, target: &IRTarget, passes: &str) {
+    pub fn run_optimization_passes(&mut self, target: &IRTarget, passes: &str) {
         unsafe {
             let options = pass::LLVMCreatePassBuilderOptions();
-            pass::LLVMRunPasses(
+            let err = pass::LLVMRunPasses(
                 self.module,
-                passes.as_ptr() as *mut c_char,
+                self.cstr_buf.cstr(passes),
                 target.target_machine,
                 options,
             );
             pass::LLVMDisposePassBuilderOptions(options);
+            //@error handle the LLVMErrorRef from LLVMRunPasses
+            assert!(err.is_null(), "LLVMRunPasses() failed");
         }
     }
 
@@ -645,9 +645,6 @@ impl ValueFn {
             return Value(unsafe { core::LLVMGetParam(self.0, param_idx) });
         }
         panic!("internal: `ValueFn::param_val` out of bounds param `{param_idx} >= {param_count}`");
-    }
-    pub fn set_call_conv(&self, cc: CallConv) {
-        unsafe { core::LLVMSetFunctionCallConv(self.0, cc as u32) };
     }
     pub fn set_attr(self, attr: Attribute) {
         unsafe {
