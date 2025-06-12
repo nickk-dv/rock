@@ -1744,6 +1744,7 @@ pub fn check_item_procedure<'hir, 'ast>(
         return TypeResult::error();
     }
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
     let poly_types = match poly_types {
@@ -1962,6 +1963,7 @@ fn typecheck_struct_init<'hir, 'ast>(
         return TypeResult::error();
     }
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
     let poly_types = match poly_types {
@@ -4164,6 +4166,7 @@ fn check_call_direct<'hir, 'ast>(
         return TypeResult::error();
     }
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
     let poly_types = match poly_types {
@@ -4476,6 +4479,7 @@ fn check_variant_input_opt<'hir, 'ast>(
         return TypeResult::error();
     }
     if ctx.scope.infer.inferred(infer).iter().any(|t| t.is_error()) {
+        ctx.scope.infer.end_context(infer);
         return TypeResult::error();
     }
     let poly_types = match poly_types {

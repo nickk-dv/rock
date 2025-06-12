@@ -120,11 +120,15 @@ pub fn apply_inference<'hir>(
         return;
     }
     match (ty, def_ty) {
-        (hir::Type::Enum(_, types), hir::Type::Enum(_, def_types)) => {
-            (0..types.len()).for_each(|idx| apply_inference(infer, types[idx], def_types[idx]));
+        (hir::Type::Enum(id, types), hir::Type::Enum(def_id, def_types)) => {
+            if id == def_id {
+                (0..types.len()).for_each(|idx| apply_inference(infer, types[idx], def_types[idx]));
+            }
         }
-        (hir::Type::Struct(_, types), hir::Type::Struct(_, def_types)) => {
-            (0..types.len()).for_each(|idx| apply_inference(infer, types[idx], def_types[idx]));
+        (hir::Type::Struct(id, types), hir::Type::Struct(def_id, def_types)) => {
+            if id == def_id {
+                (0..types.len()).for_each(|idx| apply_inference(infer, types[idx], def_types[idx]));
+            }
         }
         (hir::Type::Reference(_, ref_ty), hir::Type::Reference(_, def_ref_ty)) => {
             apply_inference(infer, *ref_ty, *def_ref_ty)
