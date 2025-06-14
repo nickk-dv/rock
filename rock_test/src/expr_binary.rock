@@ -8,8 +8,8 @@ proc test_add_int() void {
     let a = 10;
     let b = -24;
 
-    assert(10 + -24 == -14, "");
-    assert(a + b == -14, "");
+    assert(10 + -24 == -14);
+    assert(a + b == -14);
 }
 
 //#entry "add_float"
@@ -19,8 +19,8 @@ proc test_add_float() void {
     let a = 10.0;
     let b = -24.0;
 
-    assert(10.0 + -24.0 == -14.0, "");
-    assert(a + b == -14.0, "");
+    assert(10.0 + -24.0 == -14.0);
+    assert(a + b == -14.0);
 }
 
 //#entry "sub_int"
@@ -30,8 +30,8 @@ proc test_sub_int() void {
     let a = 10;
     let b = -24;
 
-    assert(10 - -24 == 34, "");
-    assert(a - b == 34, "");
+    assert(10 - -24 == 34);
+    assert(a - b == 34);
 }
 
 //#entry "sub_float"
@@ -41,8 +41,8 @@ proc test_sub_float() void {
     let a = 10.0;
     let b = -24.0;
 
-    assert(10.0 - -24.0 == 34.0, "");
-    assert(a - b == 34.0, "");
+    assert(10.0 - -24.0 == 34.0);
+    assert(a - b == 34.0);
 }
 
 //#entry "mul_int"
@@ -52,8 +52,8 @@ proc test_mul_int() void {
     let a = 10;
     let b = -24;
 
-    assert(10 * -24 == -240, "");
-    assert(a * b == -240, "");
+    assert(10 * -24 == -240);
+    assert(a * b == -240);
 }
 
 //#entry "mul_float"
@@ -63,8 +63,8 @@ proc test_mul_float() void {
     let a = 10.0;
     let b = -24.0;
 
-    assert(10.0 * -24.0 == -240.0, "");
-    assert(a * b == -240.0, "");
+    assert(10.0 * -24.0 == -240.0);
+    assert(a * b == -240.0);
 }
 
 //#entry "div_int_signed"
@@ -74,8 +74,8 @@ proc test_div_int_signed() void {
     let a = 100;
     let b = -5;
 
-    assert(100 / -5 == -20, "");
-    assert(a / b == -20, "");
+    assert(100 / -5 == -20);
+    assert(a / b == -20);
 }
 
 //#entry "div_int_unsigned"
@@ -85,8 +85,8 @@ proc test_div_int_unsigned() void {
     let a: u8 = 0xFF;
     let b: u8 = 10;
 
-    assert((0xFF as u8) / (10 as u8) == 25, "");
-    assert(a / b == 25, "");
+    assert((0xFF as u8) / (10 as u8) == 25);
+    assert(a / b == 25);
 }
 
 //#entry "div_float"
@@ -96,17 +96,17 @@ proc test_div_float() void {
     let a = 100.0;
     let b = -5.0;
 
-    assert(100.0 / -5.0 == -20.0, "");
-    assert(a / b == -20.0, "");
+    assert(100.0 / -5.0 == -20.0);
+    assert(a / b == -20.0);
 }
 
 //#entry "bit_and_const"
 //#expect
 //#!
 proc test_bit_and_const() void {
-    assert(0 & 0b10101010 == 0, "");
-    assert(175 & 0b10101010 == 170, "");
-    assert(0xFF & 0b10101010 == 170, "");
+    assert(0 & 0b10101010 == 0);
+    assert(175 & 0b10101010 == 170);
+    assert(0xFF & 0b10101010 == 170);
 }
 
 //#entry "bit_and_signed"
@@ -118,9 +118,9 @@ proc test_bit_and_signed() void {
     let c: u8 = 0xFF;
     let m: u8 = 0b10101010;
 
-    assert(a & m == 0, "");
-    assert(b & m == 170, "");
-    assert(c & m == 170, "");
+    assert(a & m == 0);
+    assert(b & m == 170);
+    assert(c & m == 170);
 }
 
 //#entry "bit_and_unsigned"
@@ -132,18 +132,18 @@ proc test_bit_and_unsigned() void {
     let c: s8 = 127;
     let m: s8 = 0b1010101;
 
-    assert(a & m == 0, "");
-    assert(b & m == 16, "");
-    assert(c & m == 85, "");
+    assert(a & m == 0);
+    assert(b & m == 16);
+    assert(c & m == 85);
 }
 
 //#entry "bit_or_const"
 //#expect
 //#!
 proc test_bit_or_const() void {
-    assert(0 | 0b10101010 == 170, "");
-    assert(175 | 0b10101010 == 175, "");
-    assert(0xFF | 0b10101010 == 255, "");
+    assert(0 | 0b10101010 == 170);
+    assert(175 | 0b10101010 == 175);
+    assert(0xFF | 0b10101010 == 255);
 }
 
 //#entry "bit_or_signed"
@@ -155,9 +155,9 @@ proc test_bit_or_signed() void {
     let c: u8 = 0xFF;
     let m: u8 = 0b10101010;
 
-    assert(a | m == 170, "");
-    assert(b | m == 175, "");
-    assert(c | m == 255, "");
+    assert(a | m == 170);
+    assert(b | m == 175);
+    assert(c | m == 255);
 }
 
 //#entry "bit_or_unsigned"
@@ -169,18 +169,18 @@ proc test_bit_or_unsigned() void {
     let c: s8 = 127;
     let m: s8 = 0b1010101;
 
-    assert(a | m == 85, "");
-    assert(b | m == 125, "");
-    assert(c | m == 127, "");
+    assert(a | m == 85);
+    assert(b | m == 125);
+    assert(c | m == 127);
 }
 
 //#entry "bit_xor_const"
 //#expect
 //#!
 proc test_bit_xor_const() void {
-    assert(0 ^ 0b10101010 == 170, "");
-    assert(175 ^ 0b10101010 == 5, "");
-    assert(0xFF ^ 0b10101010 == 85, "");
+    assert(0 ^ 0b10101010 == 170);
+    assert(175 ^ 0b10101010 == 5);
+    assert(0xFF ^ 0b10101010 == 85);
 }
 
 //#entry "bit_xor_signed"
@@ -192,9 +192,9 @@ proc test_bit_xor_signed() void {
     let c: u8 = 0xFF;
     let m: u8 = 0b10101010;
 
-    assert(a ^ m == 170, "");
-    assert(b ^ m == 5, "");
-    assert(c ^ m == 85, "");
+    assert(a ^ m == 170);
+    assert(b ^ m == 5);
+    assert(c ^ m == 85);
 }
 
 //#entry "bit_xor_unsigned"
@@ -206,9 +206,9 @@ proc test_bit_xor_unsigned() void {
     let c: s8 = 127;
     let m: s8 = 0b1010101;
 
-    assert(a ^ m == 85, "");
-    assert(b ^ m == 109, "");
-    assert(c ^ m == 42, "");
+    assert(a ^ m == 85);
+    assert(b ^ m == 109);
+    assert(c ^ m == 42);
 }
 
 //#entry "char_eq"
@@ -218,13 +218,13 @@ proc test_char_eq() void {
     let a = 'a';
     let b = 'b';
 
-    assert('a' == 'a' == true, "");
-    assert('a' == 'b' == false, "");
-    assert('b' == 'a' == false, "");
+    assert('a' == 'a' == true);
+    assert('a' == 'b' == false);
+    assert('b' == 'a' == false);
 
-    assert(a == a == true, "");
-    assert(a == b == false, "");
-    assert(b == a == false, "");
+    assert(a == a == true);
+    assert(a == b == false);
+    assert(b == a == false);
 }
 
 //#entry "char_not_eq"
@@ -234,13 +234,13 @@ proc test_char_not_eq() void {
     let a = 'a';
     let b = 'b';
 
-    assert('a' != 'a' == false, "");
-    assert('a' != 'b' == true, "");
-    assert('b' != 'a' == true, "");
+    assert('a' != 'a' == false);
+    assert('a' != 'b' == true);
+    assert('b' != 'a' == true);
 
-    assert(a != a == false, "");
-    assert(a != b == true, "");
-    assert(b != a == true, "");
+    assert(a != a == false);
+    assert(a != b == true);
+    assert(b != a == true);
 }
 
 //#entry "rawptr_eq"
@@ -250,11 +250,11 @@ proc test_rawptr_eq() void {
     let a = null;
     let b = &a as rawptr;
 
-    assert(null == null == true, "");
+    assert(null == null == true);
 
-    assert(a == a == true, "");
-    assert(a == b == false, "");
-    assert(b == a == false, "");
+    assert(a == a == true);
+    assert(a == b == false);
+    assert(b == a == false);
 }
 
 //#entry "rawptr_not_eq"
@@ -264,11 +264,11 @@ proc test_rawptr_not_eq() void {
     let a = null;
     let b = &a as rawptr;
 
-    assert(null != null == false, "");
+    assert(null != null == false);
 
-    assert(a != a == false, "");
-    assert(a != b == true, "");
-    assert(b != a == true, "");
+    assert(a != a == false);
+    assert(a != b == true);
+    assert(b != a == true);
 }
 
 //#entry "bool_eq"
@@ -280,17 +280,17 @@ proc test_bool_eq() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert(true == true == true, "");
-    assert(true == false == false, "");
-    assert(false == true == false, "");
+    assert(true == true == true);
+    assert(true == false == false);
+    assert(false == true == false);
 
-    assert(a == a == true, "");
-    assert(a == b == false, "");
-    assert(b == a == false, "");
+    assert(a == a == true);
+    assert(a == b == false);
+    assert(b == a == false);
 
-    assert(a32 == a32 == true, "");
-    assert(a32 == b32 == false, "");
-    assert(b32 == a32 == false, "");
+    assert(a32 == a32 == true);
+    assert(a32 == b32 == false);
+    assert(b32 == a32 == false);
 }
 
 //#entry "bool_not_eq"
@@ -302,17 +302,17 @@ proc test_bool_not_eq() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert(true != true == false, "");
-    assert(true != false == true, "");
-    assert(false != true == true, "");
+    assert(true != true == false);
+    assert(true != false == true);
+    assert(false != true == true);
 
-    assert(a != a == false, "");
-    assert(a != b == true, "");
-    assert(b != a == true, "");
+    assert(a != a == false);
+    assert(a != b == true);
+    assert(b != a == true);
 
-    assert(a32 != a32 == false, "");
-    assert(a32 != b32 == true, "");
-    assert(b32 != a32 == true, "");
+    assert(a32 != a32 == false);
+    assert(a32 != b32 == true);
+    assert(b32 != a32 == true);
 }
 
 //#entry "string_eq"
@@ -324,17 +324,17 @@ proc test_string_eq() void {
     let ac: cstring = "one";
     let bc: cstring = "two";
 
-    assert("one" == "one" == true, "");
-    assert("one" == "two" == false, "");
-    assert("two" == "one" == false, "");
+    assert("one" == "one" == true);
+    assert("one" == "two" == false);
+    assert("two" == "one" == false);
 
-    assert(a == a == true, "");
-    assert(a == b == false, "");
-    assert(b == a == false, "");
+    assert(a == a == true);
+    assert(a == b == false);
+    assert(b == a == false);
 
-    assert(ac == ac == true, "");
-    assert(ac == bc == false, "");
-    assert(bc == ac == false, "");
+    assert(ac == ac == true);
+    assert(ac == bc == false);
+    assert(bc == ac == false);
 }
 
 //#entry "string_not_eq"
@@ -346,17 +346,17 @@ proc test_string_not_eq() void {
     let ac: cstring = "one";
     let bc: cstring = "two";
 
-    assert("one" != "one" == false, "");
-    assert("one" != "two" == true, "");
-    assert("two" != "one" == true, "");
+    assert("one" != "one" == false);
+    assert("one" != "two" == true);
+    assert("two" != "one" == true);
 
-    assert(a != a == false, "");
-    assert(a != b == true, "");
-    assert(b != a == true, "");
+    assert(a != a == false);
+    assert(a != b == true);
+    assert(b != a == true);
 
-    assert(ac != ac == false, "");
-    assert(ac != bc == true, "");
-    assert(bc != ac == true, "");
+    assert(ac != ac == false);
+    assert(ac != bc == true);
+    assert(bc != ac == true);
 }
 
 //#entry "enum_eq"
@@ -373,17 +373,17 @@ proc test_enum_eq() void {
     let pos = EnumEq.B;
     let neg = EnumEq.C;
 
-    assert(EnumEq.A == .A == true, "");
-    assert(EnumEq.A == .B == false, "");
-    assert(EnumEq.A == .C == false, "");
-    assert(EnumEq.B == .C == false, "");
-    assert(EnumEq.C == .B == false, "");
+    assert(EnumEq.A == .A == true);
+    assert(EnumEq.A == .B == false);
+    assert(EnumEq.A == .C == false);
+    assert(EnumEq.B == .C == false);
+    assert(EnumEq.C == .B == false);
 
-    assert(zero == zero == true, "");
-    assert(zero == pos == false, "");
-    assert(zero == neg == false, "");
-    assert(pos == neg == false, "");
-    assert(neg == pos == false, "");
+    assert(zero == zero == true);
+    assert(zero == pos == false);
+    assert(zero == neg == false);
+    assert(pos == neg == false);
+    assert(neg == pos == false);
 }
 
 //#entry "enum_not_eq"
@@ -400,17 +400,17 @@ proc test_enum_not_eq() void {
     let pos = EnumNotEq.B;
     let neg = EnumNotEq.C;
 
-    assert(EnumNotEq.A != .A == false, "");
-    assert(EnumNotEq.A != .B == true, "");
-    assert(EnumNotEq.A != .C == true, "");
-    assert(EnumNotEq.B != .C == true, "");
-    assert(EnumNotEq.C != .B == true, "");
+    assert(EnumNotEq.A != .A == false);
+    assert(EnumNotEq.A != .B == true);
+    assert(EnumNotEq.A != .C == true);
+    assert(EnumNotEq.B != .C == true);
+    assert(EnumNotEq.C != .B == true);
 
-    assert(zero != zero == false, "");
-    assert(zero != pos == true, "");
-    assert(zero != neg == true, "");
-    assert(pos != neg == true, "");
-    assert(neg != pos == true, "");
+    assert(zero != zero == false);
+    assert(zero != pos == true);
+    assert(zero != neg == true);
+    assert(pos != neg == true);
+    assert(neg != pos == true);
 }
 
 //#entry "int_eq"
@@ -421,17 +421,17 @@ proc test_int_eq() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 == 0 == true, "");
-    assert(0 == 10 == false, "");
-    assert(0 == -20 == false, "");
-    assert(10 == -20 == false, "");
-    assert(-20 == 10 == false, "");
+    assert(0 == 0 == true);
+    assert(0 == 10 == false);
+    assert(0 == -20 == false);
+    assert(10 == -20 == false);
+    assert(-20 == 10 == false);
 
-    assert(zero == zero == true, "");
-    assert(zero == pos == false, "");
-    assert(zero == neg == false, "");
-    assert(pos == neg == false, "");
-    assert(neg == pos == false, "");
+    assert(zero == zero == true);
+    assert(zero == pos == false);
+    assert(zero == neg == false);
+    assert(pos == neg == false);
+    assert(neg == pos == false);
 }
 
 //#entry "int_not_eq"
@@ -442,17 +442,17 @@ proc test_int_not_eq() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 != 0 == false, "");
-    assert(0 != 10 == true, "");
-    assert(0 != -20 == true, "");
-    assert(10 != -20 == true, "");
-    assert(-20 != 10 == true, "");
+    assert(0 != 0 == false);
+    assert(0 != 10 == true);
+    assert(0 != -20 == true);
+    assert(10 != -20 == true);
+    assert(-20 != 10 == true);
 
-    assert(zero != zero == false, "");
-    assert(zero != pos == true, "");
-    assert(zero != neg == true, "");
-    assert(pos != neg == true, "");
-    assert(neg != pos == true, "");
+    assert(zero != zero == false);
+    assert(zero != pos == true);
+    assert(zero != neg == true);
+    assert(pos != neg == true);
+    assert(neg != pos == true);
 }
 
 //#entry "int_less"
@@ -463,17 +463,17 @@ proc test_int_less() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 < 0 == false, "");
-    assert(0 < 10 == true, "");
-    assert(0 < -20 == false, "");
-    assert(10 < -20 == false, "");
-    assert(-20 < 10 == true, "");
+    assert(0 < 0 == false);
+    assert(0 < 10 == true);
+    assert(0 < -20 == false);
+    assert(10 < -20 == false);
+    assert(-20 < 10 == true);
 
-    assert(zero < zero == false, "");
-    assert(zero < pos == true, "");
-    assert(zero < neg == false, "");
-    assert(pos < neg == false, "");
-    assert(neg < pos == true, "");
+    assert(zero < zero == false);
+    assert(zero < pos == true);
+    assert(zero < neg == false);
+    assert(pos < neg == false);
+    assert(neg < pos == true);
 }
 
 //#entry "int_less_eq"
@@ -484,17 +484,17 @@ proc test_int_less_eq() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 <= 0 == true, "");
-    assert(0 <= 10 == true, "");
-    assert(0 <= -20 == false, "");
-    assert(10 <= -20 == false, "");
-    assert(-20 <= 10 == true, "");
+    assert(0 <= 0 == true);
+    assert(0 <= 10 == true);
+    assert(0 <= -20 == false);
+    assert(10 <= -20 == false);
+    assert(-20 <= 10 == true);
 
-    assert(zero <= zero == true, "");
-    assert(zero <= pos == true, "");
-    assert(zero <= neg == false, "");
-    assert(pos <= neg == false, "");
-    assert(neg <= pos == true, "");
+    assert(zero <= zero == true);
+    assert(zero <= pos == true);
+    assert(zero <= neg == false);
+    assert(pos <= neg == false);
+    assert(neg <= pos == true);
 }
 
 //#entry "int_greater"
@@ -505,17 +505,17 @@ proc test_int_greater() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 > 0 == false, "");
-    assert(0 > 10 == false, "");
-    assert(0 > -20 == true, "");
-    assert(10 > -20 == true, "");
-    assert(-20 > 10 == false, "");
+    assert(0 > 0 == false);
+    assert(0 > 10 == false);
+    assert(0 > -20 == true);
+    assert(10 > -20 == true);
+    assert(-20 > 10 == false);
 
-    assert(zero > zero == false, "");
-    assert(zero > pos == false, "");
-    assert(zero > neg == true, "");
-    assert(pos > neg == true, "");
-    assert(neg > pos == false, "");
+    assert(zero > zero == false);
+    assert(zero > pos == false);
+    assert(zero > neg == true);
+    assert(pos > neg == true);
+    assert(neg > pos == false);
 }
 
 //#entry "int_greater_eq"
@@ -526,17 +526,17 @@ proc test_int_greater_eq() void {
     let pos = 10;
     let neg = -20;
 
-    assert(0 >= 0 == true, "");
-    assert(0 >= 10 == false, "");
-    assert(0 >= -20 == true, "");
-    assert(10 >= -20 == true, "");
-    assert(-20 >= 10 == false, "");
+    assert(0 >= 0 == true);
+    assert(0 >= 10 == false);
+    assert(0 >= -20 == true);
+    assert(10 >= -20 == true);
+    assert(-20 >= 10 == false);
 
-    assert(zero >= zero == true, "");
-    assert(zero >= pos == false, "");
-    assert(zero >= neg == true, "");
-    assert(pos >= neg == true, "");
-    assert(neg >= pos == false, "");
+    assert(zero >= zero == true);
+    assert(zero >= pos == false);
+    assert(zero >= neg == true);
+    assert(pos >= neg == true);
+    assert(neg >= pos == false);
 }
 
 //#entry "float_eq"
@@ -547,17 +547,17 @@ proc test_float_eq() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 == 0.0 == true, "");
-    assert(0.0 == 10.2 == false, "");
-    assert(0.0 == -20.4 == false, "");
-    assert(10.2 == -20.4 == false, "");
-    assert(-20.4 == 10.2 == false, "");
+    assert(0.0 == 0.0 == true);
+    assert(0.0 == 10.2 == false);
+    assert(0.0 == -20.4 == false);
+    assert(10.2 == -20.4 == false);
+    assert(-20.4 == 10.2 == false);
 
-    assert(zero == zero == true, "");
-    assert(zero == pos == false, "");
-    assert(zero == neg == false, "");
-    assert(pos == neg == false, "");
-    assert(neg == pos == false, "");
+    assert(zero == zero == true);
+    assert(zero == pos == false);
+    assert(zero == neg == false);
+    assert(pos == neg == false);
+    assert(neg == pos == false);
 }
 
 //#entry "float_not_eq"
@@ -568,17 +568,17 @@ proc test_float_not_eq() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 != 0.0 == false, "");
-    assert(0.0 != 10.2 == true, "");
-    assert(0.0 != -20.4 == true, "");
-    assert(10.2 != -20.4 == true, "");
-    assert(-20.4 != 10.2 == true, "");
+    assert(0.0 != 0.0 == false);
+    assert(0.0 != 10.2 == true);
+    assert(0.0 != -20.4 == true);
+    assert(10.2 != -20.4 == true);
+    assert(-20.4 != 10.2 == true);
 
-    assert(zero != zero == false, "");
-    assert(zero != pos == true, "");
-    assert(zero != neg == true, "");
-    assert(pos != neg == true, "");
-    assert(neg != pos == true, "");
+    assert(zero != zero == false);
+    assert(zero != pos == true);
+    assert(zero != neg == true);
+    assert(pos != neg == true);
+    assert(neg != pos == true);
 }
 
 //#entry "float_less"
@@ -589,17 +589,17 @@ proc test_float_less() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 < 0.0 == false, "");
-    assert(0.0 < 10.2 == true, "");
-    assert(0.0 < -20.4 == false, "");
-    assert(10.2 < -20.4 == false, "");
-    assert(-20.4 < 10.2 == true, "");
+    assert(0.0 < 0.0 == false);
+    assert(0.0 < 10.2 == true);
+    assert(0.0 < -20.4 == false);
+    assert(10.2 < -20.4 == false);
+    assert(-20.4 < 10.2 == true);
 
-    assert(zero < zero == false, "");
-    assert(zero < pos == true, "");
-    assert(zero < neg == false, "");
-    assert(pos < neg == false, "");
-    assert(neg < pos == true, "");
+    assert(zero < zero == false);
+    assert(zero < pos == true);
+    assert(zero < neg == false);
+    assert(pos < neg == false);
+    assert(neg < pos == true);
 }
 
 //#entry "float_less_eq"
@@ -610,17 +610,17 @@ proc test_float_less_eq() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 <= 0.0 == true, "");
-    assert(0.0 <= 10.2 == true, "");
-    assert(0.0 <= -20.4 == false, "");
-    assert(10.2 <= -20.4 == false, "");
-    assert(-20.4 <= 10.2 == true, "");
+    assert(0.0 <= 0.0 == true);
+    assert(0.0 <= 10.2 == true);
+    assert(0.0 <= -20.4 == false);
+    assert(10.2 <= -20.4 == false);
+    assert(-20.4 <= 10.2 == true);
 
-    assert(zero <= zero == true, "");
-    assert(zero <= pos == true, "");
-    assert(zero <= neg == false, "");
-    assert(pos <= neg == false, "");
-    assert(neg <= pos == true, "");
+    assert(zero <= zero == true);
+    assert(zero <= pos == true);
+    assert(zero <= neg == false);
+    assert(pos <= neg == false);
+    assert(neg <= pos == true);
 }
 
 //#entry "float_greater"
@@ -631,17 +631,17 @@ proc test_float_greater() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 > 0.0 == false, "");
-    assert(0.0 > 10.2 == false, "");
-    assert(0.0 > -20.4 == true, "");
-    assert(10.2 > -20.4 == true, "");
-    assert(-20.4 > 10.2 == false, "");
+    assert(0.0 > 0.0 == false);
+    assert(0.0 > 10.2 == false);
+    assert(0.0 > -20.4 == true);
+    assert(10.2 > -20.4 == true);
+    assert(-20.4 > 10.2 == false);
 
-    assert(zero > zero == false, "");
-    assert(zero > pos == false, "");
-    assert(zero > neg == true, "");
-    assert(pos > neg == true, "");
-    assert(neg > pos == false, "");
+    assert(zero > zero == false);
+    assert(zero > pos == false);
+    assert(zero > neg == true);
+    assert(pos > neg == true);
+    assert(neg > pos == false);
 }
 
 //#entry "float_greater_eq"
@@ -652,17 +652,17 @@ proc test_float_greater_eq() void {
     let pos = 10.2;
     let neg = -20.4;
 
-    assert(0.0 >= 0.0 == true, "");
-    assert(0.0 >= 10.2 == false, "");
-    assert(0.0 >= -20.4 == true, "");
-    assert(10.2 >= -20.4 == true, "");
-    assert(-20.4 >= 10.2 == false, "");
+    assert(0.0 >= 0.0 == true);
+    assert(0.0 >= 10.2 == false);
+    assert(0.0 >= -20.4 == true);
+    assert(10.2 >= -20.4 == true);
+    assert(-20.4 >= 10.2 == false);
 
-    assert(zero >= zero == true, "");
-    assert(zero >= pos == false, "");
-    assert(zero >= neg == true, "");
-    assert(pos >= neg == true, "");
-    assert(neg >= pos == false, "");
+    assert(zero >= zero == true);
+    assert(zero >= pos == false);
+    assert(zero >= neg == true);
+    assert(pos >= neg == true);
+    assert(neg >= pos == false);
 }
 
 //#entry "logic_and"
@@ -674,20 +674,20 @@ proc test_logic_and() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert((true && true) == true, "");
-    assert((false && false) == false, "");
-    assert((true && false) == false, "");
-    assert((false && true) == false, "");
+    assert((true && true) == true);
+    assert((false && false) == false);
+    assert((true && false) == false);
+    assert((false && true) == false);
 
-    assert((a && a) == true, "");
-    assert((b && b) == false, "");
-    assert((a && b) == false, "");
-    assert((b && a) == false, "");
+    assert((a && a) == true);
+    assert((b && b) == false);
+    assert((a && b) == false);
+    assert((b && a) == false);
 
-    assert((a32 && a32) == true, "");
-    assert((b32 && b32) == false, "");
-    assert((a32 && b32) == false, "");
-    assert((b32 && a32) == false, "");
+    assert((a32 && a32) == true);
+    assert((b32 && b32) == false);
+    assert((a32 && b32) == false);
+    assert((b32 && a32) == false);
 }
 
 //#entry "logic_or"
@@ -699,18 +699,18 @@ proc test_logic_or() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert((true || true) == true, "");
-    assert((false || false) == false, "");
-    assert((true || false) == true, "");
-    assert((false || true) == true, "");
+    assert((true || true) == true);
+    assert((false || false) == false);
+    assert((true || false) == true);
+    assert((false || true) == true);
 
-    assert((a || a) == true, "");
-    assert((b || b) == false, "");
-    assert((a || b) == true, "");
-    assert((b || a) == true, "");
+    assert((a || a) == true);
+    assert((b || b) == false);
+    assert((a || b) == true);
+    assert((b || a) == true);
 
-    assert((a32 || a32) == true, "");
-    assert((b32 || b32) == false, "");
-    assert((a32 || b32) == true, "");
-    assert((b32 || a32) == true, "");
+    assert((a32 || a32) == true);
+    assert((b32 || b32) == false);
+    assert((a32 || b32) == true);
+    assert((b32 || a32) == true);
 }

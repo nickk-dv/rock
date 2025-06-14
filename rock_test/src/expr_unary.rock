@@ -8,11 +8,11 @@ proc test_neg_int() void {
     let a = 25;
     let b = -12;
 
-    assert(-(25) == -25, "");
-    assert(-(-12) == 12, "");
+    assert(-(25) == -25);
+    assert(-(-12) == 12);
 
-    assert(-a == -25, "");
-    assert(-b == 12, "");
+    assert(-a == -25);
+    assert(-b == 12);
 }
 
 //#entry "neg_float"
@@ -22,11 +22,11 @@ proc test_neg_float() void {
     let a = 25.3;
     let b = -12.4;
 
-    assert(-(25.3) == -25.3, "");
-    assert(-(-12.4) == 12.4, "");
+    assert(-(25.3) == -25.3);
+    assert(-(-12.4) == 12.4);
 
-    assert(-a == -25.3, "");
-    assert(-b == 12.4, "");
+    assert(-a == -25.3);
+    assert(-b == 12.4);
 }
 
 //#entry "bit_not_signed"
@@ -36,11 +36,11 @@ proc test_bit_not_signed() void {
     let a: s32 = 37;
     let b: s32 = -37;
 
-    assert(~(37 as s32) == -38, "");
-    assert(~(-37 as s32) == 36, "");
+    assert(~(37 as s32) == -38);
+    assert(~(-37 as s32) == 36);
 
-    assert(~a == -38, "");
-    assert(~b == 36, "");
+    assert(~a == -38);
+    assert(~b == 36);
 }
 
 //#entry "bit_not_unsigned"
@@ -51,13 +51,13 @@ proc test_bit_not_unsigned() void {
     let b: u8 = 123;
     let c: u8 = 255;
 
-    assert(~(0 as u8) == 255, "");
-    assert(~(123 as u8) == 132, "");
-    assert(~(255 as u8) == 0, "");
+    assert(~(0 as u8) == 255);
+    assert(~(123 as u8) == 132);
+    assert(~(255 as u8) == 0);
 
-    assert(~a == 255, "");
-    assert(~b == 132, "");
-    assert(~c == 0, "");
+    assert(~a == 255);
+    assert(~b == 132);
+    assert(~c == 0);
 }
 
 //#entry "logic_not"
@@ -69,14 +69,14 @@ proc test_logic_not() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert(!true == false, "");
-    assert(!false == true, "");
+    assert(!true == false);
+    assert(!false == true);
 
-    assert(!a == false, "");
-    assert(!b == true, "");
+    assert(!a == false);
+    assert(!b == true);
 
-    assert(!a32 == false, "");
-    assert(!b32 == true, "");
+    assert(!a32 == false);
+    assert(!b32 == true);
 }
 
 //#entry "logic_not_bit_pattern"
@@ -86,6 +86,6 @@ proc test_logic_not_bit_pattern() void {
     let a32: bool32 = true;
     let b32: bool32 = false;
 
-    assert((!a32) as s32 == 0, "");
-    assert((!b32) as s32 == 1, "");
+    assert((!a32) as s32 == 0);
+    assert((!b32) as s32 == 1);
 }

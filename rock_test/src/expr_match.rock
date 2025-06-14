@@ -10,7 +10,7 @@ proc test_match_bool_behavior() void {
         true -> 1,
         false -> 0,
     };
-    assert(p32 == 1, "p0 == 1");
+    assert(p32 == 1);
 
     // discard
     let p0 = match true {
@@ -19,8 +19,8 @@ proc test_match_bool_behavior() void {
     let p1 = match false {
         _ -> -1,
     };
-    assert(p0 == -1, "p0 == -1");
-    assert(p1 == -1, "p1 == -1");
+    assert(p0 == -1);
+    assert(p1 == -1);
 
     // single
     let p2 = match true {
@@ -31,8 +31,8 @@ proc test_match_bool_behavior() void {
         false -> 0,
         _ -> -1,
     };
-    assert(p2 == 1, "p2 == 1");
-    assert(p3 == 0, "p3 == 0");
+    assert(p2 == 1);
+    assert(p3 == 0);
 
     // or pattern
     let p4 = match true {
@@ -41,8 +41,8 @@ proc test_match_bool_behavior() void {
     let p5 = match false {
         true | false -> 2,
     };
-    assert(p4 == 2, "p4 == 2");
-    assert(p5 == 2, "p5 == 2");
+    assert(p4 == 2);
+    assert(p5 == 2);
 
     // multiple
     let p6 = match true {
@@ -53,8 +53,8 @@ proc test_match_bool_behavior() void {
         true -> 1,
         false -> 0,
     };
-    assert(p6 == 1, "p6 == 1");
-    assert(p7 == 0, "p7 == 0");
+    assert(p6 == 1);
+    assert(p7 == 0);
 }
 
 //#entry(no_run) "match_bool_coverage"
@@ -205,7 +205,7 @@ proc test_match_string_behavior() void {
     let p0 = match "rock" {
         _ -> 0,
     };
-    assert(p0 == 0, "p0 == 0");
+    assert(p0 == 0);
 
     let p1 = match "rock" {
         "rock" -> 10,
@@ -213,21 +213,21 @@ proc test_match_string_behavior() void {
         "scissors" -> 3,
         _ -> 0,
     };
-    assert(p1 == 10, "p1 == 10");
+    assert(p1 == 10);
 
     let p2 = match "paper" {
         "rock" | "paper" -> 10,
         "scissors" -> 3,
         _ -> 0,
     };
-    assert(p2 == 10, "p2 == 10");
+    assert(p2 == 10);
 
     let p3 = match "other" {
         "rock" | "paper" -> 10,
         "scissors" -> 3,
         _ -> 0,
     };
-    assert(p3 == 0, "p3 == 0");
+    assert(p3 == 0);
 
     let len = match "baz" {
         "" -> 0,
@@ -236,7 +236,7 @@ proc test_match_string_behavior() void {
         "foo" | "bar" | "baz" | "zap" -> 3,
         _ -> -1,
     };
-    assert(len == 3, "len == 3");
+    assert(len == 3);
 }
 
 //#entry(no_run) "match_string_coverage"
