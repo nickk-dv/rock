@@ -10,7 +10,7 @@ use crate::ast;
 use crate::error::{ErrorSink, SourceRange, StringOrStr};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
-use crate::support::AsStr;
+use crate::support::{AsStr, TempOffset};
 use crate::text::{TextOffset, TextRange};
 
 pub fn typecheck_procedures(ctx: &mut HirCtx) {
@@ -1645,7 +1645,7 @@ fn typecheck_item<'hir, 'ast>(
             }
         }
         ValueID::Enum(enum_id, variant_id, poly_types) => {
-            return check_variant_input_opt(
+            return check_variant_input(
                 ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range,
             );
         }
@@ -1805,7 +1805,7 @@ fn typecheck_variant<'hir, 'ast>(
         }
     };
 
-    check_variant_input_opt(ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range)
+    check_variant_input(ctx, expect, enum_id, variant_id, poly_types, args_list, expr_range)
 }
 
 fn typecheck_struct_init<'hir, 'ast>(
@@ -1863,7 +1863,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     }
 
     //@re-use FieldStatus memory
-    let offset_init = ctx.cache.field_inits.start();
+    let offset = ctx.cache.field_inits.start();
     let mut field_status = Vec::<FieldStatus>::new();
     field_status.resize_with(field_count, || FieldStatus::None);
     let mut init_count: usize = 0;
@@ -1973,45 +1973,50 @@ fn typecheck_struct_init<'hir, 'ast>(
     ctx.scope.infer.end_context(infer);
 
     let expr = if ctx.in_const > 0 {
-        if ctx.emit.did_error(error_count) {
-            ctx.cache.field_inits.pop_view(offset_init);
-            return TypeResult::error();
-        }
-        let const_offset = ctx.cache.const_values.start();
-        let fields = ctx.cache.field_inits.view(offset_init);
-        for field in fields {
-            match field.expr {
-                hir::Expr::Error => {
-                    ctx.cache.field_inits.pop_view(offset_init);
-                    ctx.cache.const_values.pop_view(const_offset);
-                    return TypeResult::error();
-                }
-                hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
-                _ => {
-                    let src = ctx.src(struct_init.input[field.field_id.index()].expr.range);
-                    err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
-                    ctx.cache.field_inits.pop_view(offset_init);
-                    ctx.cache.const_values.pop_view(const_offset);
-                    return TypeResult::error();
-                }
-            }
-        }
-        ctx.cache.field_inits.pop_view(offset_init);
-        let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
-
-        let struct_ = hir::ConstStruct { values, poly_types };
-        let struct_ = hir::ConstValue::Struct { struct_id, struct_: ctx.arena.alloc(struct_) };
-        hir::Expr::Const(struct_, hir::ConstID::dummy())
+        constfold_struct_init(ctx, struct_init.input, offset, struct_id, poly_types)
     } else {
-        let input = ctx.cache.field_inits.take(offset_init, &mut ctx.arena);
+        let input = ctx.cache.field_inits.take(offset, &mut ctx.arena);
         if poly_types.is_empty() {
             hir::Expr::StructInit { struct_id, input }
         } else {
             hir::Expr::StructInitPoly { struct_id, input: ctx.arena.alloc((input, poly_types)) }
         }
     };
-
     TypeResult::new(hir::Type::Struct(struct_id, poly_types), expr)
+}
+
+fn constfold_struct_init<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    input: &[ast::FieldInit],
+    offset: TempOffset<hir::FieldInit<'hir>>,
+    struct_id: hir::StructID,
+    poly_types: &'hir [hir::Type<'hir>],
+) -> hir::Expr<'hir> {
+    let mut valid = true;
+    let const_offset = ctx.cache.const_values.start();
+
+    for field in ctx.cache.field_inits.view(offset) {
+        match field.expr {
+            hir::Expr::Error => valid = false,
+            hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
+            _ => {
+                valid = false;
+                let src = ctx.src(input[field.field_id.index()].expr.range);
+                err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+            }
+        }
+    }
+    ctx.cache.field_inits.pop_view(offset);
+
+    if valid {
+        let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
+        let struct_ = hir::ConstStruct { values, poly_types };
+        let struct_ = hir::ConstValue::Struct { struct_id, struct_: ctx.arena.alloc(struct_) };
+        hir::Expr::Const(struct_, hir::ConstID::dummy())
+    } else {
+        ctx.cache.const_values.pop_view(const_offset);
+        hir::Expr::Error
+    }
 }
 
 fn typecheck_array_init<'hir, 'ast>(
@@ -2034,7 +2039,6 @@ fn typecheck_array_init<'hir, 'ast>(
         if did_error {
             expect = Expectation::ERROR;
         }
-
         // set elem_ty and expect to first non-error type
         if elem_ty.is_none() && !expr_res.ty.is_error() {
             elem_ty = Some(expr_res.ty);
@@ -2047,7 +2051,6 @@ fn typecheck_array_init<'hir, 'ast>(
     if elem_ty.is_none() {
         elem_ty = expect.inner_type();
     }
-
     let elem_ty = match elem_ty {
         Some(elem_ty) => elem_ty,
         None => {
@@ -2060,47 +2063,54 @@ fn typecheck_array_init<'hir, 'ast>(
         }
     };
 
-    let array_expr = if ctx.in_const > 0 {
-        // cannot constfold if any value is error
-        if ctx.emit.did_error(error_count) {
-            ctx.cache.exprs.pop_view(offset);
-            return TypeResult::error();
-        }
-
-        if input.is_empty() {
-            ctx.cache.exprs.pop_view(offset);
-            let array = hir::ConstValue::ArrayEmpty { elem_ty: ctx.arena.alloc(elem_ty) };
-            hir::Expr::Const(array, hir::ConstID::dummy())
-        } else {
-            let const_offset = ctx.cache.const_values.start();
-            let values = ctx.cache.exprs.view(offset);
-            for (idx, value) in values.iter().enumerate() {
-                match value {
-                    hir::Expr::Error => return TypeResult::error(),
-                    hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
-                    _ => {
-                        let src = ctx.src(input[idx].range);
-                        err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
-                        return TypeResult::error();
-                    }
-                }
-            }
-            ctx.cache.exprs.pop_view(offset);
-            let const_values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
-
-            let array = hir::ConstArray { values: const_values };
-            let array = hir::ConstValue::Array { array: ctx.arena.alloc(array) };
-            hir::Expr::Const(array, hir::ConstID::dummy())
-        }
+    let expr = if ctx.in_const > 0 {
+        constfold_array_init(ctx, input, offset, elem_ty)
     } else {
         let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
         let array = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
         hir::Expr::ArrayInit { array }
     };
-
     let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
     let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
-    TypeResult::new(hir::Type::ArrayStatic(array_ty), array_expr)
+    TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
+}
+
+fn constfold_array_init<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    input: &[&ast::Expr],
+    offset: TempOffset<&'hir hir::Expr<'hir>>,
+    elem_ty: hir::Type<'hir>,
+) -> hir::Expr<'hir> {
+    if ctx.cache.exprs.view(offset).is_empty() {
+        let array = hir::ConstValue::ArrayEmpty { elem_ty: ctx.arena.alloc(elem_ty) };
+        return hir::Expr::Const(array, hir::ConstID::dummy());
+    }
+
+    let mut valid = true;
+    let const_offset = ctx.cache.const_values.start();
+
+    for (idx, value) in ctx.cache.exprs.view(offset).iter().enumerate() {
+        match value {
+            hir::Expr::Error => valid = false,
+            hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
+            _ => {
+                valid = false;
+                let src = ctx.src(input[idx].range);
+                err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+            }
+        }
+    }
+    ctx.cache.exprs.pop_view(offset);
+
+    if valid {
+        let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
+        let array = hir::ConstArray { values };
+        let array = hir::ConstValue::Array { array: ctx.arena.alloc(array) };
+        hir::Expr::Const(array, hir::ConstID::dummy())
+    } else {
+        ctx.cache.const_values.pop_view(const_offset);
+        hir::Expr::Error
+    }
 }
 
 fn typecheck_array_repeat<'hir, 'ast>(
@@ -2136,7 +2146,7 @@ fn typecheck_array_repeat<'hir, 'ast>(
 fn typecheck_deref<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     rhs: &ast::Expr<'ast>,
-    expr_range: TextRange,
+    range: TextRange,
 ) -> TypeResult<'hir> {
     let rhs_res = typecheck_expr(ctx, Expectation::None, rhs);
 
@@ -2146,7 +2156,7 @@ fn typecheck_deref<'hir, 'ast>(
             TypeResult::new(*ref_ty, hir::Expr::Deref { rhs: rhs_res.expr, mutt, ref_ty })
         }
         _ => {
-            let src = ctx.src(expr_range);
+            let src = ctx.src(range);
             let ty_fmt = type_format(ctx, rhs_res.ty);
             err::tycheck_cannot_deref_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
             TypeResult::error()
@@ -4398,7 +4408,7 @@ fn check_call_arg_count(
     !wrong_count
 }
 
-fn check_variant_input_opt<'hir, 'ast>(
+fn check_variant_input<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     enum_id: hir::EnumID,
