@@ -1,0 +1,142 @@
+//#prelude
+import core:fmt as _.{print}
+
+//#entry "defer_simple"
+//#expect(no_new_line)
+//21
+//#!
+proc test_defer_simple() void {
+    defer print(1);
+    defer print(2);
+}
+
+//#entry "defer_nested_blocks"
+//#expect(no_new_line)
+//436521
+//#!
+proc test_defer_nested_blocks() void {
+    defer print(1);
+    defer print(2);
+    {
+        defer print(3);
+        defer print(4);
+    }
+    {
+        defer print(5);
+        defer print(6);
+    }
+}
+
+//#entry "defer_break"
+//#expect(no_new_line)
+//4321
+//#!
+proc test_defer_break() void {
+    defer print(1);
+    defer print(2);
+    for {
+        defer print(3);
+        defer print(4);
+        break;
+    }
+}
+
+//#entry "defer_continue"
+//#expect(no_new_line)
+//434321
+//#!
+proc test_defer_continue() void {
+    defer print(1);
+    defer print(2);
+    for _ in 0..=1 {
+        defer print(3);
+        defer print(4);
+        continue;
+    }
+}
+
+//#entry "defer_return"
+//#expect(no_new_line)
+//4321
+//#!
+proc test_defer_return() void {
+    defer print(1);
+    defer print(2);
+    {
+        defer print(3);
+        defer print(4);
+        return;
+    }
+}
+
+//#entry "error_break_in_defer"
+//#expect
+//error: break in loop started outside of defer
+//  │
+//3 │         defer break;
+//  │               ^^^^^
+//  ├─ src/test.rock:3:15
+//  │
+//3 │         defer break;
+//  │         ───── in this defer
+//  └─ src/test.rock:3:9
+//
+//#!
+proc test_error_break_in_defer() void {
+    for {
+        defer break;
+    }
+}
+
+//#entry "error_continue_in_defer"
+//#expect
+//error: continue in loop started outside of defer
+//  │
+//3 │         defer continue;
+//  │               ^^^^^^^^
+//  ├─ src/test.rock:3:15
+//  │
+//3 │         defer continue;
+//  │         ───── in this defer
+//  └─ src/test.rock:3:9
+//
+//#!
+proc test_error_continue_in_defer() void {
+    for {
+        defer continue;
+    }
+}
+
+//#entry "error_return_in_defer"
+//#expect
+//error: cannot return in defer
+//  │
+//2 │     defer return;
+//  │           ^^^^^^
+//  ├─ src/test.rock:2:11
+//  │
+//2 │     defer return;
+//  │     ───── in this defer
+//  └─ src/test.rock:2:5
+//
+//#!
+proc test_error_return_in_defer() void {
+    defer return;
+}
+
+//#entry "error_defer_in_defer"
+//#expect
+//error: defer statements cannot be nested
+//  │
+//2 │     defer defer {}
+//  │           ^^^^^
+//  ├─ src/test.rock:2:11
+//  │
+//2 │     defer defer {}
+//  │     ───── in this defer
+//  └─ src/test.rock:2:5
+//
+//#!
+proc test_error_defer_in_defer() void {
+    defer defer {}
+}
