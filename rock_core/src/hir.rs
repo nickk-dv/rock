@@ -207,6 +207,7 @@ pub enum Type<'hir> {
     Procedure(&'hir ProcType<'hir>),
     ArraySlice(&'hir ArraySlice<'hir>),
     ArrayStatic(&'hir ArrayStatic<'hir>),
+    ArrayEnumerated(&'hir ArrayEnumerated<'hir>),
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
@@ -238,6 +239,12 @@ pub struct ArrayStatic<'hir> {
 pub enum ArrayStaticLen {
     Immediate(u64),
     ConstEval(ConstEvalID),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub struct ArrayEnumerated<'hir> {
+    pub enum_id: EnumID,
+    pub elem_ty: Type<'hir>,
 }
 
 #[derive(Copy, Clone)]

@@ -134,6 +134,9 @@ fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
             }
             true
         }
+        (hir::Type::ArrayEnumerated(array), hir::Type::ArrayEnumerated(array2)) => {
+            array.enum_id == array2.enum_id && type_matches(ctx, array.elem_ty, array2.elem_ty)
+        }
         //prevent arrays with error sizes from erroring
         (hir::Type::ArrayStatic(array), _) => ctx.array_len(array.len).is_err(),
         (_, hir::Type::ArrayStatic(array2)) => ctx.array_len(array2.len).is_err(),
@@ -273,6 +276,11 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 Err(()) => format!("[<unknown>]{}", elem_format.as_str()),
             };
             format.into()
+        }
+        hir::Type::ArrayEnumerated(array) => {
+            let elem_format = type_format(ctx, array.elem_ty);
+            let enum_name = ctx.name(ctx.registry.enum_data(array.enum_id).name.id);
+            format!("[{enum_name}]{}", elem_format.as_str()).into()
         }
     }
 }

@@ -492,6 +492,9 @@ fn add_type_size_deps<'hir>(
             }
             add_type_size_deps(ctx, tree, parent_id, array.elem_ty, &[])?;
         }
+        hir::Type::ArrayEnumerated(array) => {
+            add_type_size_deps(ctx, tree, parent_id, array.elem_ty, &[])?;
+        }
     }
     Ok(())
 }
@@ -555,6 +558,9 @@ fn add_type_usage_deps<'hir>(
             if let hir::ArrayStaticLen::ConstEval(eval_id) = array.len {
                 add_array_len_deps(ctx, tree, parent_id, eval_id)?;
             }
+            add_type_usage_deps(ctx, tree, parent_id, array.elem_ty)?;
+        }
+        hir::Type::ArrayEnumerated(array) => {
             add_type_usage_deps(ctx, tree, parent_id, array.elem_ty)?;
         }
     }

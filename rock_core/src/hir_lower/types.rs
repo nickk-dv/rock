@@ -72,6 +72,11 @@ pub fn substitute<'hir>(
             let array = hir::ArrayStatic { elem_ty, len: array.len };
             hir::Type::ArrayStatic(ctx.arena().alloc(array))
         }
+        hir::Type::ArrayEnumerated(array) => {
+            let elem_ty = substitute(ctx, array.elem_ty, poly_set, proc_set);
+            let array = hir::ArrayEnumerated { enum_id: array.enum_id, elem_ty };
+            hir::Type::ArrayEnumerated(ctx.arena().alloc(array))
+        }
     }
 }
 
@@ -150,6 +155,9 @@ pub fn apply_inference<'hir>(
         (hir::Type::ArrayStatic(array), hir::Type::ArrayStatic(def_array)) => {
             apply_inference(infer, array.elem_ty, def_array.elem_ty)
         }
+        (hir::Type::ArrayEnumerated(array), hir::Type::ArrayEnumerated(def_array)) => {
+            apply_inference(infer, array.elem_ty, def_array.elem_ty)
+        }
         _ => {}
     }
 }
@@ -169,6 +177,7 @@ pub fn has_poly_param(ty: hir::Type) -> bool {
         }
         hir::Type::ArraySlice(slice) => has_poly_param(slice.elem_ty),
         hir::Type::ArrayStatic(array) => has_poly_param(array.elem_ty),
+        hir::Type::ArrayEnumerated(array) => has_poly_param(array.elem_ty),
     }
 }
 
@@ -192,5 +201,6 @@ pub fn has_poly_layout_dep(ty: hir::Type) -> bool {
         | hir::Type::Procedure(_)
         | hir::Type::ArraySlice(_) => false,
         hir::Type::ArrayStatic(array) => has_poly_layout_dep(array.elem_ty),
+        hir::Type::ArrayEnumerated(array) => has_poly_layout_dep(array.elem_ty),
     }
 }

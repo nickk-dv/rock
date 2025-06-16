@@ -265,6 +265,10 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::Type::ArrayStatic(array) => {
                 llvm::array_type(self.ty_impl(array.elem_ty, poly_set), self.array_len(array.len))
             }
+            hir::Type::ArrayEnumerated(array) => {
+                let len = self.hir.enum_data(array.enum_id).variants.len() as u64;
+                llvm::array_type(self.ty_impl(array.elem_ty, poly_set), len)
+            }
         }
     }
 
@@ -711,16 +715,15 @@ fn write_type(cg: &mut Codegen, ty: hir::Type) {
             write_type(cg, slice.elem_ty);
         }
         hir::Type::ArrayStatic(array) => {
-            let len = match array.len {
-                hir::ArrayStaticLen::Immediate(len) => len,
-                hir::ArrayStaticLen::ConstEval(eval_id) => {
-                    match cg.hir.const_eval_values[eval_id.index()] {
-                        hir::ConstValue::Int { val, .. } => val,
-                        _ => unreachable!(),
-                    }
-                }
-            };
+            let len = cg.array_len(array.len);
             let _ = write!(&mut cg.namebuf, "[{}]", len);
+            write_type(cg, array.elem_ty);
+        }
+        hir::Type::ArrayEnumerated(array) => {
+            let data = cg.hir.enum_data(array.enum_id);
+            cg.namebuf.push('[');
+            write_symbol_name(cg, data.name.id, data.origin_id, &[]);
+            cg.namebuf.push(']');
             write_type(cg, array.elem_ty);
         }
     }

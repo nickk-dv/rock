@@ -354,7 +354,11 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
         hir::Type::MultiReference(_, _) => cg.ptr_type(),
         hir::Type::Procedure(_) => cg.ptr_type(),
         hir::Type::ArraySlice(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+        //@pass like struct based on size
         hir::Type::ArrayStatic(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+        hir::Type::ArrayEnumerated(_) => {
+            return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true }
+        }
     };
 
     ParamAbi { pass_ty, by_pointer: false }
@@ -496,6 +500,7 @@ fn codegen_type_info(cg: &mut Codegen) {
     }
 }
 
+//@implement proc_ty, enumerated array
 fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hir::ConstValue<'c> {
     if let Some(type_id) = cg.info.type_ids.get(&ty).copied() {
         return hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id };
@@ -708,6 +713,7 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hi
             let array_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.arrays_id, index };
             const_enum(cg, cg.hir.core.type_info, 13, &[array_ptr])
         }
+        hir::Type::ArrayEnumerated(array) => unimplemented!(),
     };
 
     hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id as u64 }

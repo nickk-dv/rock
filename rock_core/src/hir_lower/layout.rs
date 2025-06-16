@@ -95,9 +95,19 @@ pub fn type_layout<'hir>(
         hir::Type::ArrayStatic(array) => {
             let len = ctx.array_len(array.len)?;
             let elem_layout = type_layout(ctx, array.elem_ty, &[], src)?;
-            let elem_size = elem_layout.size;
 
-            if let Some(total) = elem_size.checked_mul(len) {
+            if let Some(total) = elem_layout.size.checked_mul(len) {
+                Ok(hir::Layout::new(total, elem_layout.align))
+            } else {
+                err::const_size_overflow(ctx.error(), src);
+                Err(())
+            }
+        }
+        hir::Type::ArrayEnumerated(array) => {
+            let len = ctx.enum_data(array.enum_id).variants.len() as u64;
+            let elem_layout = type_layout(ctx, array.elem_ty, &[], src)?;
+
+            if let Some(total) = elem_layout.size.checked_mul(len) {
                 Ok(hir::Layout::new(total, elem_layout.align))
             } else {
                 err::const_size_overflow(ctx.error(), src);
