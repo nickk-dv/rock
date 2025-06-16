@@ -1158,12 +1158,13 @@ impl<'syn> ExprArrayInit<'syn> {
 
 impl<'syn> ArrayInit<'syn> {
     node_find!(expr, Expr);
+    token_find!(t_equals, T![=]);
     node_before_token!(variant, Expr, T![=]);
     node_after_token!(variant_expr, Expr, T![=]);
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {
-    node_before_token!(value, Expr, T![;]);
+    node_before_token!(value, ArrayInit, T![;]);
     node_after_token!(len, Expr, T![;]);
 }
 

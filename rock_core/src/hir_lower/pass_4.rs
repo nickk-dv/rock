@@ -682,7 +682,7 @@ fn add_expr_deps<'ast>(
                 if let Some(variant) = init.variant {
                     add_expr_deps(ctx, tree, parent_id, origin_id, variant)?;
                 }
-                add_expr_deps(ctx, tree, parent_id, origin_id, expr)?;
+                add_expr_deps(ctx, tree, parent_id, origin_id, init.expr)?;
             }
             Ok(())
         }

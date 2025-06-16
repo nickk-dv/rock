@@ -663,7 +663,7 @@ fn expr_kind<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> ast::Ex
         cst::Expr::StructInit(struct_init) => expr_struct_init(ctx, struct_init),
         cst::Expr::ArrayInit(array_init) => expr_array_init(ctx, array_init),
         cst::Expr::ArrayRepeat(array_repeat) => {
-            let value = expr(ctx, array_repeat.value(ctx.tree).unwrap());
+            let value = expr(ctx, array_repeat.value(ctx.tree).unwrap().expr(ctx.tree).unwrap());
             let len = ast::ConstExpr(expr(ctx, array_repeat.len(ctx.tree).unwrap()));
             ast::ExprKind::ArrayRepeat { value, len }
         }
@@ -725,9 +725,9 @@ fn expr_array_init<'ast>(
 ) -> ast::ExprKind<'ast> {
     let offset = ctx.s.array_inits.start();
     for init in array_init.input(ctx.tree) {
-        let init = if let Some(variant) = init.variant(ctx.tree) {
+        let init = if init.t_equals(ctx.tree).is_some() {
             ast::ArrayInit {
-                variant: Some(expr(ctx, variant)),
+                variant: Some(expr(ctx, init.variant(ctx.tree).unwrap())),
                 expr: expr(ctx, init.variant_expr(ctx.tree).unwrap()),
             }
         } else {

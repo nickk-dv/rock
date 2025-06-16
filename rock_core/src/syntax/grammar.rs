@@ -926,11 +926,13 @@ fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
     let mut allow_repeat = true;
 
     while !p.at(T![']']) && !p.at(T![eof]) {
+        let mi = p.start();
         expr(p);
         if p.eat(T![=]) {
             expr(p);
             allow_repeat = false;
         }
+        mi.complete(p, SyntaxKind::ARRAY_INIT);
 
         if allow_repeat && p.eat(T![;]) {
             expr(p);

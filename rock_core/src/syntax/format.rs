@@ -949,8 +949,8 @@ fn expr_array_init<'syn>(fmt: &mut Formatter<'syn, '_>, array_init_cst: cst::Exp
 }
 
 fn array_init<'syn>(fmt: &mut Formatter<'syn, '_>, init: cst::ArrayInit<'syn>) {
-    if let Some(variant) = init.variant(fmt.tree) {
-        expr(fmt, variant);
+    if init.t_equals(fmt.tree).is_some() {
+        expr(fmt, init.variant(fmt.tree).unwrap());
         fmt.space();
         fmt.write('=');
         fmt.space();
@@ -965,7 +965,7 @@ fn expr_array_repeat<'syn>(
     array_repeat: cst::ExprArrayRepeat<'syn>,
 ) {
     fmt.write('[');
-    expr(fmt, array_repeat.value(fmt.tree).unwrap());
+    expr(fmt, array_repeat.value(fmt.tree).unwrap().expr(fmt.tree).unwrap());
     fmt.write(';');
     fmt.space();
     expr(fmt, array_repeat.len(fmt.tree).unwrap());
