@@ -29,6 +29,7 @@ pub struct AstBuildState<'ast> {
     match_arms: TempBuffer<ast::MatchArm<'ast>>,
     pats: TempBuffer<ast::Pat<'ast>>,
     field_inits: TempBuffer<ast::FieldInit<'ast>>,
+    array_inits: TempBuffer<ast::ArrayInit<'ast>>,
     names: TempBuffer<ast::Name>,
     binds: TempBuffer<ast::Binding>,
     segments: TempBuffer<ast::PathSegment<'ast>>,
@@ -52,6 +53,7 @@ impl<'ast> AstBuildState<'ast> {
             match_arms: TempBuffer::new(64),
             pats: TempBuffer::new(16),
             field_inits: TempBuffer::new(32),
+            array_inits: TempBuffer::new(64),
             names: TempBuffer::new(16),
             binds: TempBuffer::new(16),
             segments: TempBuffer::new(16),
@@ -721,12 +723,19 @@ fn expr_array_init<'ast>(
     ctx: &mut AstBuild<'ast, '_>,
     array_init: cst::ExprArrayInit,
 ) -> ast::ExprKind<'ast> {
-    let offset = ctx.s.exprs.start();
-    for expr_cst in array_init.input(ctx.tree) {
-        let expr = expr(ctx, expr_cst);
-        ctx.s.exprs.push(expr);
+    let offset = ctx.s.array_inits.start();
+    for init in array_init.input(ctx.tree) {
+        let init = if let Some(variant) = init.variant(ctx.tree) {
+            ast::ArrayInit {
+                variant: Some(expr(ctx, variant)),
+                expr: expr(ctx, init.variant_expr(ctx.tree).unwrap()),
+            }
+        } else {
+            ast::ArrayInit { variant: None, expr: expr(ctx, init.expr(ctx.tree).unwrap()) }
+        };
+        ctx.s.array_inits.push(init);
     }
-    let input = ctx.s.exprs.take(offset, &mut ctx.arena);
+    let input = ctx.s.array_inits.take(offset, &mut ctx.arena);
     ast::ExprKind::ArrayInit { input }
 }
 

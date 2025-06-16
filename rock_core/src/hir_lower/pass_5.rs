@@ -2023,15 +2023,15 @@ fn typecheck_array_init<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     range: TextRange,
-    input: &[&ast::Expr<'ast>],
+    input: &[ast::ArrayInit<'ast>],
 ) -> TypeResult<'hir> {
     let error_count = ctx.emit.error_count();
     let mut elem_ty = None;
     let mut expect = expect.infer_array_elem();
 
     let offset = ctx.cache.exprs.start();
-    for expr in input.iter().copied() {
-        let expr_res = typecheck_expr(ctx, expect, expr);
+    for init in input.iter().copied() {
+        let expr_res = typecheck_expr(ctx, expect, init.expr);
         ctx.cache.exprs.push(expr_res.expr);
 
         // stop expecting when errored
@@ -2043,7 +2043,7 @@ fn typecheck_array_init<'hir, 'ast>(
         if elem_ty.is_none() && !expr_res.ty.is_error() {
             elem_ty = Some(expr_res.ty);
             if matches!(expect, Expectation::None) && !did_error {
-                expect = Expectation::HasType(expr_res.ty, Some(ctx.src(expr.range)));
+                expect = Expectation::HasType(expr_res.ty, Some(ctx.src(init.expr.range)));
             }
         }
     }
@@ -2077,7 +2077,7 @@ fn typecheck_array_init<'hir, 'ast>(
 
 fn constfold_array_init<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
-    input: &[&ast::Expr],
+    input: &[ast::ArrayInit],
     offset: TempOffset<&'hir hir::Expr<'hir>>,
     elem_ty: hir::Type<'hir>,
 ) -> hir::Expr<'hir> {
@@ -2095,7 +2095,7 @@ fn constfold_array_init<'hir>(
             hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
             _ => {
                 valid = false;
-                let src = ctx.src(input[idx].range);
+                let src = ctx.src(input[idx].expr.range);
                 err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
             }
         }

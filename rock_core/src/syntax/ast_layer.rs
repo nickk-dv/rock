@@ -463,6 +463,7 @@ ast_node_impl!(ExprStructInit, SyntaxKind::EXPR_STRUCT_INIT);
 ast_node_impl!(FieldInitList, SyntaxKind::FIELD_INIT_LIST);
 ast_node_impl!(FieldInit, SyntaxKind::FIELD_INIT);
 ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
+ast_node_impl!(ArrayInit, SyntaxKind::ARRAY_INIT);
 ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
 ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
 ast_node_impl!(ExprAddress, SyntaxKind::EXPR_ADDRESS);
@@ -1152,7 +1153,13 @@ impl<'syn> FieldInit<'syn> {
 }
 
 impl<'syn> ExprArrayInit<'syn> {
-    node_iter!(input, Expr);
+    node_iter!(input, ArrayInit);
+}
+
+impl<'syn> ArrayInit<'syn> {
+    node_find!(expr, Expr);
+    node_before_token!(variant, Expr, T![=]);
+    node_after_token!(variant_expr, Expr, T![=]);
 }
 
 impl<'syn> ExprArrayRepeat<'syn> {

@@ -944,8 +944,20 @@ fn field_init<'syn>(fmt: &mut Formatter<'syn, '_>, field_init: cst::FieldInit<'s
     }
 }
 
-fn expr_array_init<'syn>(fmt: &mut Formatter<'syn, '_>, array_init: cst::ExprArrayInit<'syn>) {
-    flexible_break_node_list(fmt, array_init.input(fmt.tree), expr, '[', ']');
+fn expr_array_init<'syn>(fmt: &mut Formatter<'syn, '_>, array_init_cst: cst::ExprArrayInit<'syn>) {
+    flexible_break_node_list(fmt, array_init_cst.input(fmt.tree), array_init, '[', ']');
+}
+
+fn array_init<'syn>(fmt: &mut Formatter<'syn, '_>, init: cst::ArrayInit<'syn>) {
+    if let Some(variant) = init.variant(fmt.tree) {
+        expr(fmt, variant);
+        fmt.space();
+        fmt.write('=');
+        fmt.space();
+        expr(fmt, init.variant_expr(fmt.tree).unwrap());
+    } else {
+        expr(fmt, init.expr(fmt.tree).unwrap());
+    }
 }
 
 fn expr_array_repeat<'syn>(

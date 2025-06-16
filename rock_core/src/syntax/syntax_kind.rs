@@ -75,6 +75,7 @@ pub enum SyntaxKind {
     FIELD_INIT_LIST,
     FIELD_INIT,
     EXPR_ARRAY_INIT,
+    ARRAY_INIT,
     EXPR_ARRAY_REPEAT,
     EXPR_DEREF,
     EXPR_ADDRESS,

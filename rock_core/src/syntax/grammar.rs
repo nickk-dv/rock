@@ -923,9 +923,16 @@ fn field_init(p: &mut Parser) {
 fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['[']);
+    let mut allow_repeat = true;
+
     while !p.at(T![']']) && !p.at(T![eof]) {
         expr(p);
-        if p.eat(T![;]) {
+        if p.eat(T![=]) {
+            expr(p);
+            allow_repeat = false;
+        }
+
+        if allow_repeat && p.eat(T![;]) {
             expr(p);
             p.expect(T![']']);
             return m.complete(p, SyntaxKind::EXPR_ARRAY_REPEAT);
@@ -933,7 +940,9 @@ fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
         if !p.at(T![']']) {
             p.expect(T![,]);
         }
+        allow_repeat = false;
     }
+
     p.expect(T![']']);
     m.complete(p, SyntaxKind::EXPR_ARRAY_INIT)
 }

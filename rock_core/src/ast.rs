@@ -334,7 +334,7 @@ pub enum ExprKind<'ast> {
     Item        { path: &'ast Path<'ast>, args_list: Option<&'ast ArgumentList<'ast>> },
     Variant     { name: Name, args_list: Option<&'ast ArgumentList<'ast>> },
     StructInit  { struct_init: &'ast StructInit<'ast> },
-    ArrayInit   { input: &'ast [&'ast Expr<'ast>] },
+    ArrayInit   { input: &'ast [ArrayInit<'ast>] },
     ArrayRepeat { value: &'ast Expr<'ast>, len: ConstExpr<'ast> },
     Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
@@ -394,6 +394,12 @@ pub struct StructInit<'ast> {
 #[derive(Copy, Clone)]
 pub struct FieldInit<'ast> {
     pub name: Name,
+    pub expr: &'ast Expr<'ast>,
+}
+
+#[derive(Copy, Clone)]
+pub struct ArrayInit<'ast> {
+    pub variant: Option<&'ast Expr<'ast>>,
     pub expr: &'ast Expr<'ast>,
 }
 
