@@ -524,6 +524,11 @@ impl<'hir> LocalScope<'hir> {
 }
 
 impl PolyScope {
+    pub fn temp_override(&mut self, new: PolyScope) -> PolyScope {
+        let prev = *self;
+        *self = new;
+        prev
+    }
     pub fn find_poly_param<'hir>(
         self,
         name_id: NameID,

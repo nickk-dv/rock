@@ -308,8 +308,12 @@ fn add_variant_tag_deps(
             hir::VariantKind::Constant(eval_id) => {
                 let (eval, origin_id, scope) = *ctx.registry.const_eval(eval_id);
                 let expr = unresolved_or_return!(eval, parent_id);
+
                 let parent_id = add_dep(ctx, tree, parent_id, dep)?;
-                return add_expr_deps(ctx, tree, parent_id, origin_id, expr.0);
+                let prev_scope = ctx.scope.poly.temp_override(scope);
+                let expr_res = add_expr_deps(ctx, tree, parent_id, origin_id, expr.0);
+                ctx.scope.poly = prev_scope;
+                return expr_res;
             }
         };
 
@@ -376,10 +380,17 @@ fn add_const_var_deps(
     let expr = unresolved_or_return!(eval, parent_id);
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::Const(const_id))?;
+    let prev_scope = ctx.scope.poly.temp_override(scope);
     if let Some(const_ty) = const_ty {
-        add_type_usage_deps(ctx, tree, parent_id, const_ty)?;
+        let type_res = add_type_usage_deps(ctx, tree, parent_id, const_ty);
+        if type_res.is_err() {
+            ctx.scope.poly = prev_scope;
+            return type_res;
+        }
     }
-    add_expr_deps(ctx, tree, parent_id, origin_id, expr.0)
+    let expr_res = add_expr_deps(ctx, tree, parent_id, origin_id, expr.0);
+    ctx.scope.poly = prev_scope;
+    expr_res
 }
 
 fn add_global_var_deps(
@@ -398,8 +409,15 @@ fn add_global_var_deps(
     let expr = unresolved_or_return!(eval, parent_id);
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::Global(global_id))?;
-    add_type_usage_deps(ctx, tree, parent_id, global_ty)?;
-    add_expr_deps(ctx, tree, parent_id, origin_id, expr.0)
+    let prev_scope = ctx.scope.poly.temp_override(scope);
+    let type_res = add_type_usage_deps(ctx, tree, parent_id, global_ty);
+    if type_res.is_err() {
+        ctx.scope.poly = prev_scope;
+        return type_res;
+    }
+    let expr_res = add_expr_deps(ctx, tree, parent_id, origin_id, expr.0);
+    ctx.scope.poly = prev_scope;
+    expr_res
 }
 
 fn add_array_len_deps(
@@ -412,7 +430,10 @@ fn add_array_len_deps(
     let expr = unresolved_or_return!(eval, parent_id);
 
     let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::ArrayLen(eval_id))?;
-    add_expr_deps(ctx, tree, parent_id, origin_id, expr.0)
+    let prev_scope = ctx.scope.poly.temp_override(scope);
+    let expr_res = add_expr_deps(ctx, tree, parent_id, origin_id, expr.0);
+    ctx.scope.poly = prev_scope;
+    expr_res
 }
 
 fn add_variant_usage_deps(
