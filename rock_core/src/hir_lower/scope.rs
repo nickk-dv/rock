@@ -23,16 +23,16 @@ pub struct GlobalScope {
     modules: Vec<ModuleScope>,
 }
 
-struct ModuleScope {
+pub struct ModuleScope {
     name_id: NameID,
-    symbols: HashMap<NameID, Symbol>,
+    pub symbols: HashMap<NameID, Symbol>,
 }
 
 #[derive(Copy, Clone)]
 pub enum Symbol {
     Defined(SymbolID),
-    Imported(SymbolID, TextRange),
-    ImportedModule(ModuleID, TextRange),
+    Imported(SymbolID, TextRange, bool),
+    ImportedModule(ModuleID, TextRange, bool),
 }
 
 #[derive(Copy, Clone)]
@@ -178,8 +178,8 @@ impl<'hir> Scope<'hir> {
     fn symbol_src(&self, symbol: Symbol, registry: &Registry<'hir, '_>) -> SourceRange {
         match symbol {
             Symbol::Defined(symbol_id) => symbol_id.src(registry),
-            Symbol::Imported(_, import) => SourceRange::new(self.origin, import),
-            Symbol::ImportedModule(_, import) => SourceRange::new(self.origin, import),
+            Symbol::Imported(_, import, _) => SourceRange::new(self.origin, import),
+            Symbol::ImportedModule(_, import, _) => SourceRange::new(self.origin, import),
         }
     }
 
@@ -224,7 +224,7 @@ impl GlobalScope {
     }
 
     pub fn find_symbol(
-        &self,
+        &mut self,
         origin_id: ModuleID,
         target_id: ModuleID,
         name: ast::Name,
@@ -232,18 +232,18 @@ impl GlobalScope {
         registry: &Registry,
         emit: &mut ErrorWarningBuffer,
     ) -> Result<SymbolOrModule, ()> {
-        let target = self.module(target_id);
+        let target = self.module_mut(target_id);
 
-        match target.symbols.get(&name.id).copied() {
+        match target.symbols.get_mut(&name.id) {
             Some(Symbol::Defined(symbol_id)) => {
                 return match symbol_id.vis(registry) {
-                    hir::Vis::Public => Ok(SymbolOrModule::Symbol(symbol_id)),
+                    hir::Vis::Public => Ok(SymbolOrModule::Symbol(*symbol_id)),
                     hir::Vis::Package => {
                         let origin_package_id = session.module.get(origin_id).origin;
                         let target_package_id = session.module.get(target_id).origin;
 
                         if origin_package_id == target_package_id {
-                            Ok(SymbolOrModule::Symbol(symbol_id))
+                            Ok(SymbolOrModule::Symbol(*symbol_id))
                         } else {
                             let name_src = SourceRange::new(origin_id, name.range);
                             let defined_src = symbol_id.src(registry);
@@ -260,7 +260,7 @@ impl GlobalScope {
                     }
                     hir::Vis::Private => {
                         if origin_id == target_id {
-                            Ok(SymbolOrModule::Symbol(symbol_id))
+                            Ok(SymbolOrModule::Symbol(*symbol_id))
                         } else {
                             let name_src = SourceRange::new(origin_id, name.range);
                             let defined_src = symbol_id.src(registry);
@@ -277,14 +277,16 @@ impl GlobalScope {
                     }
                 };
             }
-            Some(Symbol::Imported(symbol_id, _)) => {
+            Some(Symbol::Imported(symbol_id, _, used)) => {
                 if origin_id == target_id {
-                    return Ok(SymbolOrModule::Symbol(symbol_id));
+                    *used = true;
+                    return Ok(SymbolOrModule::Symbol(*symbol_id));
                 }
             }
-            Some(Symbol::ImportedModule(module_id, _)) => {
+            Some(Symbol::ImportedModule(module_id, _, used)) => {
                 if origin_id == target_id {
-                    return Ok(SymbolOrModule::Module(module_id));
+                    *used = true;
+                    return Ok(SymbolOrModule::Module(*module_id));
                 }
             }
             None => {}
@@ -331,7 +333,7 @@ impl GlobalScope {
     }
 
     #[inline]
-    fn module(&self, module_id: ModuleID) -> &ModuleScope {
+    pub fn module(&self, module_id: ModuleID) -> &ModuleScope {
         &self.modules[module_id.index()]
     }
     #[inline]

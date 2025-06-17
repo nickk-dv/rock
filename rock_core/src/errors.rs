@@ -365,12 +365,7 @@ pub fn scope_struct_field_not_found(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn scope_symbol_unused(
-    emit: &mut impl WarningSink,
-    src: SourceRange,
-    name: &str,
-    kind: &'static str,
-) {
+pub fn scope_symbol_unused(emit: &mut impl WarningSink, src: SourceRange, name: &str, kind: &str) {
     let msg = format!("unused {kind} `{name}`");
     emit.warning(Warning::new(msg, src, None));
 }

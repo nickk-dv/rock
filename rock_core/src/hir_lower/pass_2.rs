@@ -98,7 +98,7 @@ fn import_module(
     ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let origin_id = ctx.scope.origin;
-    let symbol = Symbol::ImportedModule(target_id, alias.range);
+    let symbol = Symbol::ImportedModule(target_id, alias.range, false);
     ctx.scope.global.add_symbol(origin_id, alias.id, symbol);
     Ok(())
 }
@@ -124,9 +124,9 @@ fn import_symbol(
     let symbol = match kind {
         SymbolOrModule::Symbol(symbol_id) => {
             check_path::set_symbol_used_flag(ctx, symbol_id);
-            Symbol::Imported(symbol_id, alias.range)
+            Symbol::Imported(symbol_id, alias.range, false)
         }
-        SymbolOrModule::Module(module_id) => Symbol::ImportedModule(module_id, alias.range),
+        SymbolOrModule::Module(module_id) => Symbol::ImportedModule(module_id, alias.range, false),
     };
     ctx.scope.global.add_symbol(origin_id, alias.id, symbol);
     Ok(())

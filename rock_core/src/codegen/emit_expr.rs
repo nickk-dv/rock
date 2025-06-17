@@ -1049,7 +1049,8 @@ pub fn codegen_call_direct<'c>(
     input: &[&hir::Expr<'c>],
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
-    let data = cg.hir.proc_data(proc_id);
+    let data: &hir::ProcData<'_> = cg.hir.proc_data(proc_id);
+    let data_return_ty = data.return_ty;
     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
         let ret_val = codegen_call_intrinsic(cg, proc_id, input, poly_types);
         return ret_val.map(|value| maybe_alloc_copy(cg, expect, value));
@@ -1060,10 +1061,10 @@ pub fn codegen_call_direct<'c>(
     let mut ret_ptr = None;
 
     if is_external {
-        if emit_mod::win_x64_parameter_type(cg, data.return_ty).by_pointer {
+        if emit_mod::win_x64_parameter_type(cg, data_return_ty).by_pointer {
             let ptr = match expect {
                 Expect::Value(_) | Expect::Pointer(_) => {
-                    let alloc_ty = cg.ty(data.return_ty);
+                    let alloc_ty = cg.ty(data_return_ty);
                     cg.entry_alloca(alloc_ty, "c_call_sret")
                 }
                 Expect::Store(store_ptr) => store_ptr,
@@ -1091,9 +1092,12 @@ pub fn codegen_call_direct<'c>(
                 let copy_ptr = cg.entry_alloca(alloc_ty, "c_call_copy");
                 codegen_expr_store(cg, expr, copy_ptr);
                 copy_ptr.as_val()
-            } else if let hir::Type::Struct(_, _) = param.ty {
-                let struct_ptr = codegen_expr_pointer(cg, expr);
-                cg.build.load(abi.pass_ty, struct_ptr, "c_call_struct_register")
+            } else if let hir::Type::Struct(_, _)
+            | hir::Type::ArrayStatic(_)
+            | hir::Type::ArrayEnumerated(_) = param.ty
+            {
+                let value_ptr = codegen_expr_pointer(cg, expr);
+                cg.build.load(abi.pass_ty, value_ptr, "c_call_register")
             } else {
                 codegen_expr_value(cg, expr)
             }
@@ -1174,9 +1178,12 @@ fn codegen_call_indirect<'c>(
                 let copy_ptr = cg.entry_alloca(alloc_ty, "c_call_copy");
                 codegen_expr_store(cg, expr, copy_ptr);
                 copy_ptr.as_val()
-            } else if let hir::Type::Struct(_, _) = param.ty {
-                let struct_ptr = codegen_expr_pointer(cg, expr);
-                cg.build.load(abi.pass_ty, struct_ptr, "c_call_struct_register")
+            } else if let hir::Type::Struct(_, _)
+            | hir::Type::ArrayStatic(_)
+            | hir::Type::ArrayEnumerated(_) = param.ty
+            {
+                let value_ptr = codegen_expr_pointer(cg, expr);
+                cg.build.load(abi.pass_ty, value_ptr, "c_call_register")
             } else {
                 codegen_expr_value(cg, expr)
             }

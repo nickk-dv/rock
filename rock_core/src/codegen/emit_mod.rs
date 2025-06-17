@@ -3,11 +3,14 @@ use super::emit_expr;
 use super::emit_stmt;
 use super::llvm;
 use crate::ast;
+use crate::error::SourceRange;
 use crate::hir;
+use crate::hir_lower::layout;
 use crate::hir_lower::types;
 use crate::intern::LitID;
-use crate::session::Session;
+use crate::session::{ModuleID, Session};
 use crate::support::AsStr;
+use crate::text::TextRange;
 
 pub fn codegen_module(
     hir: hir::Hir,
@@ -301,7 +304,7 @@ pub struct ParamAbi {
 
 //@empty struct should be {size: 4 align: 1}. handle on hir level? how to avoid #repr_c?
 //@need #repr_c like flagging for enums, disallow enums with fields, only allow i32 tag_ty.
-pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
+pub fn win_x64_parameter_type<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> ParamAbi {
     let pass_ty: llvm::Type = match ty {
         hir::Type::Error | hir::Type::Unknown => unreachable!(),
         hir::Type::Char => cg.char_type(),
@@ -354,14 +357,25 @@ pub fn win_x64_parameter_type(cg: &Codegen, ty: hir::Type) -> ParamAbi {
         hir::Type::MultiReference(_, _) => cg.ptr_type(),
         hir::Type::Procedure(_) => cg.ptr_type(),
         hir::Type::ArraySlice(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
-        //@pass like struct based on size
-        hir::Type::ArrayStatic(_) => return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
-        hir::Type::ArrayEnumerated(_) => {
-            return ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true }
+        hir::Type::ArrayStatic(_) | hir::Type::ArrayEnumerated(_) => {
+            return win_x64_aggregate(cg, ty)
         }
     };
 
     ParamAbi { pass_ty, by_pointer: false }
+}
+
+pub fn win_x64_aggregate<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> ParamAbi {
+    //@no source available
+    let src = SourceRange::new(ModuleID::new(0), TextRange::zero());
+    let layout = layout::type_layout(cg, ty, &[], src).unwrap(); //@unwrap
+    match layout.size {
+        1 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S8), by_pointer: false },
+        2 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S16), by_pointer: false },
+        4 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S32), by_pointer: false },
+        8 => ParamAbi { pass_ty: cg.int_type(hir::IntType::S64), by_pointer: false },
+        _ => ParamAbi { pass_ty: cg.ptr_type(), by_pointer: true },
+    }
 }
 
 fn codegen_type_info(cg: &mut Codegen) {

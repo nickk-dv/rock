@@ -1,5 +1,7 @@
 use super::context::HirCtx;
 use super::pass_5::{self, Expectation};
+use super::scope::Symbol;
+use crate::error::SourceRange;
 use crate::errors as err;
 use crate::hir;
 use crate::session::{manifest::PackageKind, ModuleID, ModuleOrDirectory};
@@ -84,6 +86,35 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
         {
             let name = ctx.name(data.name.id);
             err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "global");
+        }
+    }
+
+    let mut buf = String::with_capacity(64);
+    for module_id in ctx.session.module.ids() {
+        let scope = ctx.scope.global.module(module_id);
+
+        for (import_name, symbol) in scope.symbols.iter() {
+            match symbol {
+                Symbol::Defined(_) => continue,
+                Symbol::Imported(symbol_id, range, was_used) => {
+                    if !*was_used {
+                        buf.clear();
+                        buf.push_str("imported");
+                        buf.push(' ');
+                        buf.push_str(symbol_id.desc());
+                        let name = ctx.name(*import_name);
+                        let src = SourceRange::new(module_id, *range);
+                        err::scope_symbol_unused(&mut ctx.emit, src, name, &buf)
+                    }
+                }
+                Symbol::ImportedModule(_, range, was_used) => {
+                    if !*was_used {
+                        let name = ctx.name(*import_name);
+                        let src = SourceRange::new(module_id, *range);
+                        err::scope_symbol_unused(&mut ctx.emit, src, name, "imported module");
+                    }
+                }
+            }
         }
     }
 }
