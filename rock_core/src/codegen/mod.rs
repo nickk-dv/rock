@@ -14,6 +14,7 @@ use crate::support::os;
 use crate::support::{AsStr, Timer};
 use std::path::PathBuf;
 
+#[derive(Copy, Clone)]
 pub struct BuildOptions {
     pub emit_llvm: bool,
 }

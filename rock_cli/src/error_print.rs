@@ -15,11 +15,12 @@ pub fn print_errors(session: Option<&Session>, error: ErrorBuffer) {
     print_impl(session, &error.collect(), &[])
 }
 
-pub fn print_session_errors(session: &Session) {
+pub fn print_session_errors(session: &Session, warn: bool) {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         print_impl(Some(session), &module.parse_errors.errors, &[]);
-        print_impl(Some(session), &module.errors.errors, &module.errors.warnings);
+        let warnings = if warn { module.errors.warnings.as_slice() } else { &[] };
+        print_impl(Some(session), &module.errors.errors, warnings);
     }
     print_impl(Some(session), &session.errors.errors, &[]);
 }

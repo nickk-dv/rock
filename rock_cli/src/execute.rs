@@ -97,8 +97,8 @@ fn check(data: CommandCheck) -> Result<(), Error> {
     let mut session = session::create_session(config)?;
     session.stats.session_ms = timer.measure_ms();
 
-    if check_impl(&mut session, data).is_err() {
-        error_print::print_session_errors(&session);
+    if check_impl(&mut session, &data).is_err() {
+        error_print::print_session_errors(&session, data.warn);
     }
     Ok(())
 }
@@ -113,8 +113,8 @@ fn build(data: CommandBuild) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_build_lib_package());
     }
-    if build_impl(&mut session, data).is_err() {
-        error_print::print_session_errors(&session);
+    if build_impl(&mut session, &data).is_err() {
+        error_print::print_session_errors(&session, data.warn);
     }
     Ok(())
 }
@@ -129,16 +129,16 @@ fn run(data: CommandRun) -> Result<(), Error> {
     if root_manifest.package.kind == PackageKind::Lib {
         return Err(err::cmd_cannot_run_lib_package());
     }
-    if run_impl(&mut session, data).is_err() {
-        error_print::print_session_errors(&session);
+    if run_impl(&mut session, &data).is_err() {
+        error_print::print_session_errors(&session, data.warn);
     }
     Ok(())
 }
 
-fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
+fn check_impl(session: &mut Session, data: &CommandCheck) -> Result<(), ()> {
     parse_stage(session)?;
     let _ = check_stage(session)?;
-    error_print::print_session_errors(session);
+    error_print::print_session_errors(session, data.warn);
 
     let style = AnsiStyle::new();
     print_stats(&style, data.stats.then_some(&session.stats), false);
@@ -146,11 +146,11 @@ fn check_impl(session: &mut Session, data: CommandCheck) -> Result<(), ()> {
     Ok(())
 }
 
-fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
+fn build_impl(session: &mut Session, data: &CommandBuild) -> Result<(), ()> {
     parse_stage(session)?;
     let hir = check_stage(session)?;
     let _ = codegen::build(hir, session, data.options)?;
-    error_print::print_session_errors(session);
+    error_print::print_session_errors(session, data.warn);
 
     let style = AnsiStyle::new();
     print_stats(&style, data.stats.then_some(&session.stats), true);
@@ -158,18 +158,18 @@ fn build_impl(session: &mut Session, data: CommandBuild) -> Result<(), ()> {
     Ok(())
 }
 
-fn run_impl(session: &mut Session, data: CommandRun) -> Result<(), ()> {
+fn run_impl(session: &mut Session, data: &CommandRun) -> Result<(), ()> {
     parse_stage(session)?;
     let hir = check_stage(session)?;
     let bin_path = codegen::build(hir, session, data.options)?;
-    error_print::print_session_errors(session);
+    error_print::print_session_errors(session, data.warn);
 
     let style = AnsiStyle::new();
     print_stats(&style, data.stats.then_some(&session.stats), true);
     print_build_finished(session, &style);
     print_build_running(session, &style, &bin_path);
 
-    if let Err(error) = codegen::run(bin_path, data.args) {
+    if let Err(error) = codegen::run(bin_path, data.args.clone()) {
         error_print::print_error(Some(session), error);
     }
     Ok(())
@@ -243,7 +243,7 @@ fn fmt() -> Result<(), Error> {
     let mut session = session::format_session(config)?;
 
     if syntax::parse_all_trees(&mut session).is_err() {
-        error_print::print_session_errors(&session);
+        error_print::print_session_errors(&session, true);
         return Ok(());
     }
 
@@ -296,6 +296,7 @@ fn help() {
     {c}-- [args]    {r}Pass command line arguments
 
   {c}check, build, run
+    {c}--warn       {r}Print warnings
     {c}--stats      {r}Print compilation stats\n",
         PackageKind::Lib.full_name(),
         PackageKind::Bin.full_name()

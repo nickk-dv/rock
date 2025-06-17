@@ -23,17 +23,20 @@ pub struct CommandNew {
 }
 
 pub struct CommandCheck {
+    pub warn: bool,
     pub stats: bool,
 }
 
 pub struct CommandBuild {
     pub build: Build,
+    pub warn: bool,
     pub stats: bool,
     pub options: BuildOptions,
 }
 
 pub struct CommandRun {
     pub build: Build,
+    pub warn: bool,
     pub stats: bool,
     pub options: BuildOptions,
     pub args: Vec<String>,
@@ -80,34 +83,37 @@ fn command_new(p: &mut CommandParser) -> Command {
 
 fn command_check(p: &mut CommandParser) -> Command {
     parse_args_none(p);
+    let warn = parse_option_flag(p, false, "warn");
     let stats = parse_option_flag(p, false, "stats");
     parse_trail_args_none(p);
 
-    let data = CommandCheck { stats };
+    let data = CommandCheck { warn, stats };
     Command::Check(data)
 }
 
 fn command_build(p: &mut CommandParser) -> Command {
     parse_args_none(p);
     let build = parse_option_enum(p, Build::Debug);
+    let warn = parse_option_flag(p, false, "warn");
     let stats = parse_option_flag(p, false, "stats");
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     parse_trail_args_none(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandBuild { build, stats, options };
+    let data = CommandBuild { build, warn, stats, options };
     Command::Build(data)
 }
 
 fn command_run(p: &mut CommandParser) -> Command {
     parse_args_none(p);
     let build = parse_option_enum(p, Build::Debug);
+    let warn = parse_option_flag(p, false, "warn");
     let stats = parse_option_flag(p, false, "stats");
     let emit_llvm = parse_option_flag(p, false, "emit-llvm");
     let args = parse_trail_args(p);
 
     let options = BuildOptions { emit_llvm };
-    let data = CommandRun { build, stats, options, args };
+    let data = CommandRun { build, warn, stats, options, args };
     Command::Run(data)
 }
 
