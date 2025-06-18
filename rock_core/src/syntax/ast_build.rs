@@ -727,7 +727,7 @@ fn expr_array_init<'ast>(
     for init in array_init.input(ctx.tree) {
         let init = if init.t_equals(ctx.tree).is_some() {
             ast::ArrayInit {
-                variant: Some(expr(ctx, init.variant(ctx.tree).unwrap())),
+                variant: Some(ast::ConstExpr(expr(ctx, init.variant(ctx.tree).unwrap()))),
                 expr: expr(ctx, init.variant_expr(ctx.tree).unwrap()),
             }
         } else {

@@ -407,7 +407,27 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
         ast::TypeKind::ArrayStatic(array) => {
+            let enum_id = if let ast::ExprKind::Item { path, args_list } = array.len.0.kind {
+                if args_list.is_none() {
+                    //@check no field, no poly, default initialized (0..)
+                    check_path::path_resolve_enum_opt(ctx, path, const_eval_len)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             let elem_ty = type_resolve(ctx, array.elem_ty, const_eval_len);
+
+            if let Some(enum_id) = enum_id {
+                return if elem_ty.is_error() {
+                    hir::Type::Error
+                } else {
+                    let array = hir::ArrayEnumerated { enum_id, elem_ty };
+                    hir::Type::ArrayEnumerated(ctx.arena.alloc(array))
+                };
+            }
 
             let len = if const_eval_len {
                 //@temp hack to immediately resolve some expression

@@ -326,6 +326,21 @@ impl<'hir> Expectation<'hir> {
             Expectation::HasType(expect_ty, expect_src) => match expect_ty {
                 hir::Type::Error => Expectation::ERROR,
                 hir::Type::ArrayStatic(array) => Expectation::HasType(array.elem_ty, *expect_src),
+                hir::Type::ArrayEnumerated(array) => {
+                    Expectation::HasType(array.elem_ty, *expect_src)
+                }
+                _ => Expectation::None,
+            },
+        }
+    }
+    fn infer_array_enum(&self) -> Expectation<'hir> {
+        match self {
+            Expectation::None => Expectation::None,
+            Expectation::HasType(expect_ty, expect_src) => match expect_ty {
+                hir::Type::Error => Expectation::ERROR,
+                hir::Type::ArrayEnumerated(array) => {
+                    Expectation::HasType(hir::Type::Enum(array.enum_id, &[]), *expect_src)
+                }
                 _ => Expectation::None,
             },
         }
@@ -2035,10 +2050,15 @@ fn typecheck_array_init<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let error_count = ctx.emit.error_count();
     let mut elem_ty = None;
+    let mut arr_enum_id = None;
+    let mut expect_enum = expect.infer_array_enum();
     let mut expect = expect.infer_array_elem();
 
     let offset = ctx.cache.exprs.start();
-    for init in input.iter().copied() {
+    for (idx, init) in input.iter().copied().enumerate() {
+        if let Some(variant) = init.variant {
+            check_array_variant(ctx, &mut arr_enum_id, &mut expect_enum, idx, variant);
+        }
         let expr_res = typecheck_expr(ctx, expect, init.expr);
         ctx.cache.exprs.push(expr_res.expr);
 
@@ -2081,6 +2101,37 @@ fn typecheck_array_init<'hir, 'ast>(
     let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
     let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
     TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
+}
+
+fn check_array_variant<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    arr_enum_id: &mut Option<hir::EnumID>,
+    expect_enum: &mut Expectation<'hir>,
+    init_idx: usize,
+    variant: ast::ConstExpr<'ast>,
+) {
+    let (variant_res, variant_ty) = pass_4::resolve_const_expr(ctx, *expect_enum, variant);
+
+    if let hir::Type::Enum(enum_id, _) = variant_ty {
+        if arr_enum_id.is_none() {
+            *arr_enum_id = Some(enum_id);
+        }
+        if matches!(expect_enum, Expectation::None) {
+            *expect_enum = Expectation::HasType(variant_ty, Some(ctx.src(variant.0.range)))
+        }
+    }
+    let Ok(value) = variant_res else {
+        return;
+    };
+    let variant_id = match value {
+        hir::ConstValue::Variant { variant_id, .. } => variant_id,
+        hir::ConstValue::VariantPoly { variant, .. } => variant.variant_id,
+        _ => {
+            let src = ctx.src(variant.0.range);
+            err::tycheck_expected_variant_value(&mut ctx.emit, src);
+            return;
+        }
+    };
 }
 
 fn constfold_array_init<'hir>(
@@ -2493,10 +2544,12 @@ fn check_binary_op<'hir>(
 
     let lhs_ty = match lhs.ty {
         hir::Type::ArrayStatic(array) => array.elem_ty,
+        hir::Type::ArrayEnumerated(array) => array.elem_ty,
         other => other,
     };
     let rhs_ty = match rhs.ty {
         hir::Type::ArrayStatic(array) => array.elem_ty,
+        hir::Type::ArrayEnumerated(array) => array.elem_ty,
         other => other,
     };
 
@@ -2651,13 +2704,17 @@ fn check_binary_op<'hir>(
         },
     };
 
-    let array = if let hir::Type::ArrayStatic(array) = lhs.ty {
-        let array = hir::ArrayBinary {
-            len: ctx.array_len(array.len).unwrap_or(0),
-            elem_ty: array.elem_ty,
-            lhs: lhs.expr,
-            rhs: rhs.expr,
-        };
+    let array_info = match lhs.ty {
+        hir::Type::ArrayStatic(array) => {
+            Some((array.elem_ty, ctx.array_len(array.len).unwrap_or(0)))
+        }
+        hir::Type::ArrayEnumerated(array) => {
+            Some((array.elem_ty, ctx.registry.enum_data(array.enum_id).variants.len() as u64))
+        }
+        _ => None,
+    };
+    let array = if let Some((elem_ty, len)) = array_info {
+        let array = hir::ArrayBinary { len, elem_ty, lhs: lhs.expr, rhs: rhs.expr };
         Some(ctx.arena.alloc(array))
     } else {
         None

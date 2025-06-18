@@ -399,7 +399,7 @@ pub struct FieldInit<'ast> {
 
 #[derive(Copy, Clone)]
 pub struct ArrayInit<'ast> {
-    pub variant: Option<&'ast Expr<'ast>>,
+    pub variant: Option<ConstExpr<'ast>>,
     pub expr: &'ast Expr<'ast>,
 }
 

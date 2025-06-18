@@ -901,6 +901,11 @@ pub fn tycheck_field_init_out_of_order(
     emit.warning(Warning::new(msg, src, None));
 }
 
+pub fn tycheck_expected_variant_value(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("expected enum variant value");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
     let msg = format!("cannot dereference value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
