@@ -70,6 +70,12 @@ pub fn check_enum_directives(
             break;
         }
     }
+    for variant in item.variants {
+        if let ast::VariantKind::Constant(_) = variant.kind {
+            flag_set.set(hir::EnumFlag::WithConstantInit);
+            break;
+        }
+    }
 
     for directive in item.dir_list.map_or([].as_slice(), |l| l.directives) {
         if try_check_error_directive(ctx, directive) {

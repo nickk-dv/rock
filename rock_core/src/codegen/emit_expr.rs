@@ -822,7 +822,9 @@ fn codegen_index<'c>(
 ) -> llvm::Value {
     let target_ptr = match access.kind {
         hir::IndexKind::Multi(_) => codegen_expr_value(cg, target).into_ptr(),
-        hir::IndexKind::Slice(_) | hir::IndexKind::Array(_) => codegen_expr_pointer(cg, target),
+        hir::IndexKind::Slice(_) | hir::IndexKind::Array(_) | hir::IndexKind::ArrayEnum(_) => {
+            codegen_expr_pointer(cg, target)
+        }
     };
     let target_ptr = if access.deref.is_some() {
         cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
@@ -830,7 +832,15 @@ fn codegen_index<'c>(
         target_ptr
     };
 
-    let index_val = codegen_expr_value(cg, access.index);
+    let mut index_val = codegen_expr_value(cg, access.index);
+    if let hir::IndexKind::ArrayEnum(_) = access.kind {
+        index_val = codegen_cast_op(
+            cg,
+            index_val,
+            cg.int_type(hir::IntType::Usize),
+            hir::CastKind::IntU_Extend,
+        );
+    }
 
     let bound = match access.kind {
         hir::IndexKind::Multi(_) => None,
@@ -842,6 +852,10 @@ fn codegen_index<'c>(
         }
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
+            Some(cg.const_usize(len))
+        }
+        hir::IndexKind::ArrayEnum(enum_id) => {
+            let len = cg.hir.enum_data(enum_id).variants.len() as u64;
             Some(cg.const_usize(len))
         }
     };
@@ -884,6 +898,16 @@ fn codegen_index<'c>(
         }
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
+            let array_ty = llvm::array_type(elem_ty, len);
+            cg.build.gep_inbounds(
+                array_ty,
+                target_ptr,
+                &[cg.const_usize(0), index_val],
+                "array_elem_ptr",
+            )
+        }
+        hir::IndexKind::ArrayEnum(enum_id) => {
+            let len = cg.hir.enum_data(enum_id).variants.len() as u64;
             let array_ty = llvm::array_type(elem_ty, len);
             cg.build.gep_inbounds(
                 array_ty,

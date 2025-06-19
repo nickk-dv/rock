@@ -1171,6 +1171,7 @@ enum CollectionKind<'hir> {
     Multi(ast::Mut),
     Slice(&'hir hir::ArraySlice<'hir>),
     Array(&'hir hir::ArrayStatic<'hir>),
+    ArrayEnum(&'hir hir::ArrayEnumerated<'hir>),
 }
 
 fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
@@ -1217,6 +1218,12 @@ fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
             string_ty: None,
             kind: CollectionKind::Array(array),
         })),
+        hir::Type::ArrayEnumerated(array) => Ok(Some(CollectionType {
+            deref,
+            elem_ty: array.elem_ty,
+            string_ty: None,
+            kind: CollectionKind::ArrayEnum(array),
+        })),
         _ => Err(()),
     }
 }
@@ -1228,9 +1235,19 @@ fn typecheck_index<'hir, 'ast>(
     index: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let index_res = typecheck_expr(ctx, Expectation::USIZE, index);
+    let collection_res = type_as_collection(target_res.ty);
+    let index_expect = if let Ok(Some(collection)) = &collection_res {
+        if let CollectionKind::ArrayEnum(array) = collection.kind {
+            Expectation::HasType(hir::Type::Enum(array.enum_id, &[]), None)
+        } else {
+            Expectation::USIZE
+        }
+    } else {
+        Expectation::USIZE
+    };
+    let index_res = typecheck_expr(ctx, index_expect, index);
 
-    let collection = match type_as_collection(target_res.ty) {
+    let collection = match collection_res {
         Ok(None) => return TypeResult::error(),
         Ok(Some(value)) => value,
         Err(()) => {
@@ -1245,6 +1262,7 @@ fn typecheck_index<'hir, 'ast>(
         CollectionKind::Multi(mutt) => hir::IndexKind::Multi(mutt),
         CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
         CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
+        CollectionKind::ArrayEnum(array) => hir::IndexKind::ArrayEnum(array.enum_id),
     };
     let access = hir::IndexAccess {
         deref: collection.deref,
@@ -1305,7 +1323,7 @@ fn typecheck_slice<'hir, 'ast>(
         Ok(None) => return TypeResult::error(),
         Ok(Some(collection)) => match collection.kind {
             CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-            CollectionKind::Multi(_) => {
+            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
                 let src = ctx.src(target.range);
                 let ty_fmt = type_format(ctx, target_res.ty);
                 err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -1329,7 +1347,7 @@ fn typecheck_slice<'hir, 'ast>(
     };
 
     let slice = match collection.kind {
-        CollectionKind::Multi(_) => unreachable!(),
+        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
         CollectionKind::Slice(_) => {
             if let hir::Type::Reference(mutt, ref_ty) = target_res.ty {
                 let deref = hir::Expr::Deref { rhs: target_res.expr, mutt, ref_ty };
@@ -1392,7 +1410,7 @@ fn typecheck_slice<'hir, 'ast>(
     let op_call = hir::Expr::CallDirectPoly { proc_id, input };
 
     let kind = match collection.kind {
-        CollectionKind::Multi(_) => unreachable!(),
+        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
         CollectionKind::Slice(slice) => hir::SliceKind::Slice(slice.mutt),
         CollectionKind::Array(_) => hir::SliceKind::Array,
     };
@@ -2091,6 +2109,18 @@ fn typecheck_array_init<'hir, 'ast>(
         }
     };
 
+    if let Some(enum_id) = arr_enum_id {
+        if !super::pass_3::check_enumerated_array_type(ctx, enum_id, range) {
+            return TypeResult::error();
+        }
+        let missing = input.iter().filter(|init| init.variant.is_none()).count();
+        if missing > 0 {
+            let src = ctx.src(TextRange::new(range.end() - 1.into(), range.end()));
+            err::tycheck_missing_variant_inits(&mut ctx.emit, src, missing);
+            return TypeResult::error();
+        }
+    }
+
     let expr = if ctx.in_const > 0 {
         constfold_array_init(ctx, input, offset, elem_ty)
     } else {
@@ -2098,9 +2128,16 @@ fn typecheck_array_init<'hir, 'ast>(
         let array = ctx.arena.alloc(hir::ArrayInit { elem_ty, input });
         hir::Expr::ArrayInit { array }
     };
-    let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
-    let array_ty = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
-    TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
+
+    let array_ty = if let Some(enum_id) = arr_enum_id {
+        let array = ctx.arena.alloc(hir::ArrayEnumerated { enum_id, elem_ty });
+        hir::Type::ArrayEnumerated(array)
+    } else {
+        let len = hir::ArrayStaticLen::Immediate(input.len() as u64);
+        let array = ctx.arena.alloc(hir::ArrayStatic { len, elem_ty });
+        hir::Type::ArrayStatic(array)
+    };
+    TypeResult::new(array_ty, expr)
 }
 
 fn check_array_variant<'hir, 'ast>(
@@ -2123,15 +2160,27 @@ fn check_array_variant<'hir, 'ast>(
     let Ok(value) = variant_res else {
         return;
     };
-    let variant_id = match value {
-        hir::ConstValue::Variant { variant_id, .. } => variant_id,
-        hir::ConstValue::VariantPoly { variant, .. } => variant.variant_id,
+    let (enum_id, variant_id) = match value {
+        hir::ConstValue::Variant { enum_id, variant_id } => (enum_id, variant_id),
+        hir::ConstValue::VariantPoly { enum_id, variant } => (enum_id, variant.variant_id),
         _ => {
             let src = ctx.src(variant.0.range);
             err::tycheck_expected_variant_value(&mut ctx.emit, src);
             return;
         }
     };
+    if arr_enum_id.unwrap() != enum_id {
+        return;
+    }
+    let data = ctx.registry.enum_data(enum_id);
+    if init_idx >= data.variants.len() {
+        let src = ctx.src(variant.0.range);
+        err::tycheck_unexpected_variant_value(&mut ctx.emit, src);
+    } else if init_idx != variant_id.index() {
+        let src = ctx.src(variant.0.range);
+        let name = ctx.name(data.variant(hir::VariantID::new(init_idx)).name.id);
+        err::tycheck_expected_variant(&mut ctx.emit, src, name);
+    }
 }
 
 fn constfold_array_init<'hir>(
@@ -3377,7 +3426,7 @@ fn typecheck_for<'hir, 'ast>(
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
                     CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-                    CollectionKind::Multi(_) => {
+                    CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
                         let src = ctx.src(header.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
                         err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -3477,7 +3526,7 @@ fn typecheck_for<'hir, 'ast>(
                         field: hir::SliceField::Len,
                     },
                 }),
-                CollectionKind::Multi(_) => unreachable!(),
+                CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
             };
             let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const(
                 hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
@@ -3517,7 +3566,7 @@ fn typecheck_for<'hir, 'ast>(
             let index_kind = match collection.kind {
                 CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
                 CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
-                CollectionKind::Multi(_) => unreachable!(),
+                CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
             };
             let index_access = hir::IndexAccess {
                 //always doing deref since `iter` stores &collection
@@ -4809,6 +4858,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                         constraint.set(AddrConstraint::ImmutSlice)
                     }
                     hir::IndexKind::Array(_) => {}
+                    hir::IndexKind::ArrayEnum(_) => {}
                 }
                 expr = target;
                 continue;

@@ -902,7 +902,31 @@ pub fn tycheck_field_init_out_of_order(
 }
 
 pub fn tycheck_expected_variant_value(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("expected enum variant value");
+    let msg = format!("expected variant initializer");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_unexpected_variant_value(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = format!("unexpected variant initializer");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_expected_variant(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
+    let msg = format!("expected `.{name}` initializer");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_cannot_use_for_enum_array(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    enum_name: &str,
+) {
+    let msg = format!("enum type `{enum_name}` cannot be used with enumerated arrays\nonly default initialized, field-less, non-polymorphic enums are allowed");
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_missing_variant_inits(emit: &mut impl ErrorSink, src: SourceRange, missing: usize) {
+    let msg = format!("missing {missing} variant initializers");
     emit.error(Error::new(msg, src, None));
 }
 

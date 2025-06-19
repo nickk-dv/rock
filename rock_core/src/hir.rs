@@ -442,6 +442,7 @@ pub enum IndexKind {
     Multi(ast::Mut),
     Slice(ast::Mut),
     Array(ArrayStaticLen),
+    ArrayEnum(EnumID),
 }
 
 #[derive(Copy, Clone)]
@@ -692,6 +693,7 @@ crate::enum_as_str! {
     pub enum EnumFlag {
         WasUsed "was used",
         WithFields "with fields",
+        WithConstantInit "with constant initializers",
     }
 }
 crate::enum_as_str! {

@@ -8,6 +8,7 @@ use crate::ast;
 use crate::errors as err;
 use crate::hir;
 use crate::support::BitSet;
+use crate::text::TextRange;
 
 pub fn process_items(ctx: &mut HirCtx) {
     ctx.registry.proc_ids().for_each(|id| process_proc_poly_params(ctx, id));
@@ -421,7 +422,9 @@ pub fn type_resolve<'hir, 'ast>(
             let elem_ty = type_resolve(ctx, array.elem_ty, const_eval_len);
 
             if let Some(enum_id) = enum_id {
-                return if elem_ty.is_error() {
+                return if !check_enumerated_array_type(ctx, enum_id, array.len.0.range) {
+                    hir::Type::Error
+                } else if elem_ty.is_error() {
                     hir::Type::Error
                 } else {
                     let array = hir::ArrayEnumerated { enum_id, elem_ty };
@@ -464,4 +467,21 @@ pub fn type_resolve<'hir, 'ast>(
             }
         }
     }
+}
+
+pub fn check_enumerated_array_type(
+    ctx: &mut HirCtx,
+    enum_id: hir::EnumID,
+    error_range: TextRange,
+) -> bool {
+    let data = ctx.registry.enum_data(enum_id);
+    let valid = data.poly_params.is_none()
+        && !data.flag_set.contains(hir::EnumFlag::WithFields)
+        && !data.flag_set.contains(hir::EnumFlag::WithConstantInit);
+    if !valid {
+        let src = ctx.src(error_range);
+        let name = ctx.name(data.name.id);
+        err::tycheck_cannot_use_for_enum_array(&mut ctx.emit, src, name);
+    }
+    valid
 }
