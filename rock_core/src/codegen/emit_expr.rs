@@ -822,9 +822,10 @@ fn codegen_index<'c>(
 ) -> llvm::Value {
     let target_ptr = match access.kind {
         hir::IndexKind::Multi(_) => codegen_expr_value(cg, target).into_ptr(),
-        hir::IndexKind::Slice(_) | hir::IndexKind::Array(_) | hir::IndexKind::ArrayEnum(_) => {
-            codegen_expr_pointer(cg, target)
-        }
+        hir::IndexKind::Slice(_)
+        | hir::IndexKind::Array(_)
+        | hir::IndexKind::ArrayEnum(_)
+        | hir::IndexKind::ArrayCore => codegen_expr_pointer(cg, target),
     };
     let target_ptr = if access.deref.is_some() {
         cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
@@ -857,6 +858,11 @@ fn codegen_index<'c>(
         hir::IndexKind::ArrayEnum(enum_id) => {
             let len = cg.hir.enum_data(enum_id).variants.len() as u64;
             Some(cg.const_usize(len))
+        }
+        hir::IndexKind::ArrayCore => {
+            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[access.elem_ty])).unwrap();
+            let len_ptr = cg.build.gep_struct(array_ty, target_ptr, 0, "array.len.ptr");
+            Some(cg.build.load(cg.int_type(hir::IntType::Usize), len_ptr, "array.len"))
         }
     };
 
@@ -915,6 +921,12 @@ fn codegen_index<'c>(
                 &[cg.const_usize(0), index_val],
                 "array_elem_ptr",
             )
+        }
+        hir::IndexKind::ArrayCore => {
+            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[access.elem_ty])).unwrap();
+            let data_ptr = cg.build.gep_struct(array_ty, target_ptr, 2, "array.data.ptr");
+            let data = cg.build.load(cg.ptr_type(), data_ptr, "array.data");
+            cg.build.gep_inbounds(elem_ty, data.into_ptr(), &[index_val], "array_elem_ptr")
         }
     };
 

@@ -30,6 +30,7 @@ pub struct CoreItems {
     pub cstring_equals: ProcID,
     pub from_raw_parts: ProcID,
     pub range_bound: Option<EnumID>,
+    pub array: StructID,
     pub any: Option<StructID>,
     pub type_info: EnumID,
     pub int_ty: EnumID,
@@ -443,6 +444,7 @@ pub enum IndexKind {
     Slice(ast::Mut),
     Array(ArrayStaticLen),
     ArrayEnum(EnumID),
+    ArrayCore,
 }
 
 #[derive(Copy, Clone)]

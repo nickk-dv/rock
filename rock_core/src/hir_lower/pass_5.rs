@@ -1172,9 +1172,13 @@ enum CollectionKind<'hir> {
     Slice(&'hir hir::ArraySlice<'hir>),
     Array(&'hir hir::ArrayStatic<'hir>),
     ArrayEnum(&'hir hir::ArrayEnumerated<'hir>),
+    ArrayCore,
 }
 
-fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
+fn type_as_collection<'hir>(
+    ctx: &HirCtx<'hir, '_, '_>,
+    mut ty: hir::Type<'hir>,
+) -> Result<Option<CollectionType<'hir>>, ()> {
     let mut deref = None;
     if let hir::Type::Reference(mutt, ref_ty) = ty {
         ty = *ref_ty;
@@ -1200,6 +1204,18 @@ fn type_as_collection(mut ty: hir::Type) -> Result<Option<CollectionType>, ()> {
             })),
             StringType::Untyped => unreachable!(),
         },
+        hir::Type::Struct(struct_id, poly_types) => {
+            if struct_id == ctx.core.array {
+                Ok(Some(CollectionType {
+                    deref,
+                    elem_ty: poly_types[0],
+                    string_ty: None,
+                    kind: CollectionKind::ArrayCore,
+                }))
+            } else {
+                Err(())
+            }
+        }
         hir::Type::MultiReference(mutt, ref_ty) => Ok(Some(CollectionType {
             deref,
             elem_ty: *ref_ty,
@@ -1235,7 +1251,7 @@ fn typecheck_index<'hir, 'ast>(
     index: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
-    let collection_res = type_as_collection(target_res.ty);
+    let collection_res = type_as_collection(ctx, target_res.ty);
     let index_expect = if let Ok(Some(collection)) = &collection_res {
         if let CollectionKind::ArrayEnum(array) = collection.kind {
             Expectation::HasType(hir::Type::Enum(array.enum_id, &[]), None)
@@ -1263,6 +1279,7 @@ fn typecheck_index<'hir, 'ast>(
         CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
         CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
         CollectionKind::ArrayEnum(array) => hir::IndexKind::ArrayEnum(array.enum_id),
+        CollectionKind::ArrayCore => hir::IndexKind::ArrayCore,
     };
     let access = hir::IndexAccess {
         deref: collection.deref,
@@ -1319,11 +1336,11 @@ fn typecheck_slice<'hir, 'ast>(
     let addr_res = resolve_expr_addressability(ctx, target_res.expr);
     //@check that expression value is addressable
 
-    let collection = match type_as_collection(target_res.ty) {
+    let collection = match type_as_collection(ctx, target_res.ty) {
         Ok(None) => return TypeResult::error(),
         Ok(Some(collection)) => match collection.kind {
             CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
+            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
                 let src = ctx.src(target.range);
                 let ty_fmt = type_format(ctx, target_res.ty);
                 err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -1347,7 +1364,9 @@ fn typecheck_slice<'hir, 'ast>(
     };
 
     let slice = match collection.kind {
-        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
+        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
+            unreachable!()
+        }
         CollectionKind::Slice(_) => {
             if let hir::Type::Reference(mutt, ref_ty) = target_res.ty {
                 let deref = hir::Expr::Deref { rhs: target_res.expr, mutt, ref_ty };
@@ -1410,7 +1429,9 @@ fn typecheck_slice<'hir, 'ast>(
     let op_call = hir::Expr::CallDirectPoly { proc_id, input };
 
     let kind = match collection.kind {
-        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
+        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
+            unreachable!()
+        }
         CollectionKind::Slice(slice) => hir::SliceKind::Slice(slice.mutt),
         CollectionKind::Array(_) => hir::SliceKind::Array,
     };
@@ -3422,11 +3443,13 @@ fn typecheck_for<'hir, 'ast>(
             //@not checking mutability in cases of & or &mut iteration
             //@not checking runtime indexing (constants cannot be indexed at runtime)
             //@dont instantly return here, check the block also!
-            let collection = match type_as_collection(expr_res.ty) {
+            let collection = match type_as_collection(ctx, expr_res.ty) {
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
                     CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-                    CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
+                    CollectionKind::Multi(_)
+                    | CollectionKind::ArrayEnum(_)
+                    | CollectionKind::ArrayCore => {
                         let src = ctx.src(header.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
                         err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -3526,7 +3549,9 @@ fn typecheck_for<'hir, 'ast>(
                         field: hir::SliceField::Len,
                     },
                 }),
-                CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
+                CollectionKind::Multi(_)
+                | CollectionKind::ArrayEnum(_)
+                | CollectionKind::ArrayCore => unreachable!(),
             };
             let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const(
                 hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
@@ -3566,7 +3591,9 @@ fn typecheck_for<'hir, 'ast>(
             let index_kind = match collection.kind {
                 CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
                 CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
-                CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => unreachable!(),
+                CollectionKind::Multi(_)
+                | CollectionKind::ArrayEnum(_)
+                | CollectionKind::ArrayCore => unreachable!(),
             };
             let index_access = hir::IndexAccess {
                 //always doing deref since `iter` stores &collection
@@ -4859,6 +4886,7 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                     }
                     hir::IndexKind::Array(_) => {}
                     hir::IndexKind::ArrayEnum(_) => {}
+                    hir::IndexKind::ArrayCore => {}
                 }
                 expr = target;
                 continue;
