@@ -685,8 +685,7 @@ fn typecheck_if<'hir, 'ast>(
                         ctx.arena.alloc_slice(&[arm_true, arm_false])
                     };
                     let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
-                    let match_ = ctx.arena.alloc(match_);
-                    ctx.arena.alloc(hir::Expr::Match { match_ })
+                    emit_match_expr(ctx, match_)
                 } else {
                     &hir::Expr::Error
                 }
@@ -778,11 +777,101 @@ fn typecheck_match<'hir, 'ast>(
         check_match::match_cov(ctx, kind, &check, error_count);
 
         let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
-        let match_ = ctx.arena.alloc(match_);
-        TypeResult::new_ignore(match_type, hir::Expr::Match { match_ })
+        TypeResult::new_ignore(match_type, *emit_match_expr(ctx, match_))
     } else {
         TypeResult::error()
     }
+}
+
+fn emit_match_expr<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    match_: hir::Match<'hir>,
+) -> &'hir hir::Expr<'hir> {
+    if match_.arms.is_empty() || !matches!(match_.kind, hir::MatchKind::String) {
+        let match_ = ctx.arena.alloc(match_);
+        return ctx.arena.alloc(hir::Expr::Match { match_ });
+    }
+
+    let discard_id = ctx.session.intern_name.intern("_");
+    let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
+    let value_var = hir::Variable {
+        mutt: ast::Mut::Immutable,
+        name: name_dummy,
+        ty: hir::Type::String(hir::StringType::String),
+        was_used: false,
+    };
+    let var_id = ctx.scope.local.add_variable(value_var);
+    let local = hir::Local { var_id, init: hir::LocalInit::Init(match_.on_expr) };
+    let stmt_local = hir::Stmt::Local(ctx.arena.alloc(local));
+    let lhs = ctx.arena.alloc(hir::Expr::Variable { var_id });
+
+    //single string pattern with `_`:
+    if match_.arms.len() == 1 {
+        let stmt_offset = ctx.cache.stmts.start();
+        ctx.cache.stmts.push(stmt_local);
+        let tail = ctx.arena.alloc(hir::Expr::Block { block: match_.arms[0].block });
+        ctx.cache.stmts.push(hir::Stmt::ExprTail(tail));
+        let stmts = ctx.cache.stmts.take(stmt_offset, &mut ctx.arena);
+        return ctx.arena.alloc(hir::Expr::Block { block: hir::Block { stmts } });
+    }
+
+    //multiple string patterns compile to if else chain:
+    let offset = ctx.cache.branches.start();
+    let (last, rest) = match_.arms.split_last().unwrap();
+
+    for arm in rest {
+        match arm.pat {
+            hir::Pat::Lit(value) => {
+                let cond = string_cmp(ctx, lhs, value);
+                let br = hir::Branch { cond, block: arm.block };
+                ctx.cache.branches.push(br);
+            }
+            hir::Pat::Or(pats) => {
+                let mut lhs_or = string_cmp(ctx, lhs, pat_value(&pats[0]));
+                for pat in &pats[1..] {
+                    let rhs_or = string_cmp(ctx, lhs, pat_value(pat));
+                    let op = hir::BinOp::LogicOr(hir::BoolType::Bool);
+                    lhs_or = ctx.arena.alloc(hir::Expr::Binary { op, lhs: lhs_or, rhs: rhs_or });
+                }
+                let br = hir::Branch { cond: lhs_or, block: arm.block };
+                ctx.cache.branches.push(br);
+            }
+            _ => {}
+        }
+    }
+
+    fn string_cmp<'hir>(
+        ctx: &mut HirCtx<'hir, '_, '_>,
+        lhs: &'hir hir::Expr<'hir>,
+        value: hir::ConstValue<'hir>,
+    ) -> &'hir hir::Expr<'hir> {
+        let op =
+            hir::BinOp::Cmp_String(hir::CmpPred::Eq, hir::BoolType::Bool, hir::StringType::String);
+        let bin = hir::Expr::Binary {
+            op,
+            lhs,
+            rhs: ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy())),
+        };
+        ctx.arena.alloc(bin)
+    }
+
+    fn pat_value<'hir>(pat: &hir::Pat<'hir>) -> hir::ConstValue<'hir> {
+        match pat {
+            hir::Pat::Lit(value) => *value,
+            _ => hir::ConstValue::Void, //placeholder
+        }
+    }
+
+    let branches = ctx.cache.branches.take(offset, &mut ctx.arena);
+    let else_block = Some(last.block);
+    let if_ = ctx.arena.alloc(hir::If { branches, else_block });
+    let tail = hir::Stmt::ExprTail(ctx.arena.alloc(hir::Expr::If { if_ }));
+
+    let stmt_offset = ctx.cache.stmts.start();
+    ctx.cache.stmts.push(stmt_local);
+    ctx.cache.stmts.push(tail);
+    let stmts = ctx.cache.stmts.take(stmt_offset, &mut ctx.arena);
+    ctx.arena.alloc(hir::Expr::Block { block: hir::Block { stmts } })
 }
 
 fn typecheck_pat<'hir, 'ast>(
@@ -3891,9 +3980,7 @@ fn typecheck_for<'hir, 'ast>(
             };
 
             let match_ = hir::Match { kind, on_expr: on_res.expr, arms };
-            let match_ = ctx.arena.alloc(match_);
-            let match_ = ctx.arena.alloc(hir::Expr::Match { match_ });
-            let stmt_match = hir::Stmt::ExprSemi(match_);
+            let stmt_match = hir::Stmt::ExprSemi(emit_match_expr(ctx, match_));
             let block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_match]) };
             let block = ctx.arena.alloc(block);
             Some(hir::Stmt::Loop(block))

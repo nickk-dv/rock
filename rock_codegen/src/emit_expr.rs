@@ -609,30 +609,13 @@ fn codegen_if<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, if_: &hir::If<'c
     cg.build.position_at_end(exit_bb);
 }
 
-//@getting enum variant tag is repetative
 fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir::Match<'c>) {
-    #[inline]
-    fn extract_slice_len_if_needed(
-        cg: &mut Codegen,
-        kind: hir::MatchKind,
-        value: llvm::Value,
-    ) -> llvm::Value {
-        if let hir::MatchKind::String = kind {
-            cg.build.extract_value(value, 1, "slice_len")
-        } else {
-            value
-        }
-    }
-
     let mut enum_poly: &'c [hir::Type<'c>] = &[];
     let (on_value, enum_ptr, bind_by_pointer) = match match_.kind {
         hir::MatchKind::Int { .. }
         | hir::MatchKind::Bool { .. }
         | hir::MatchKind::Char
-        | hir::MatchKind::String => {
-            let on_value = codegen_expr_value(cg, match_.on_expr);
-            (on_value, None, false)
-        }
+        | hir::MatchKind::String => (codegen_expr_value(cg, match_.on_expr), None, false),
         hir::MatchKind::Enum { enum_id, ref_mut, poly_types } => {
             let data = cg.hir.enum_data(enum_id);
             let tag_ty = cg.int_type(data.tag_ty.resolved_unwrap());
@@ -672,9 +655,8 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
             hir::Pat::Error => unreachable!(),
             hir::Pat::Wild => wild_bb = Some(arm_bb),
             hir::Pat::Lit(value) => {
-                let pat_value = codegen_const(cg, value);
-                let v = extract_slice_len_if_needed(cg, match_.kind, pat_value);
-                cg.cache.cases.push((v, arm_bb));
+                let value = codegen_const(cg, value);
+                cg.cache.cases.push((value, arm_bb));
             }
             hir::Pat::Variant(enum_id, variant_id, bind_ids) => {
                 let enum_data = cg.hir.enum_data(enum_id);
@@ -721,9 +703,8 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
                         hir::Pat::Error | hir::Pat::Or(_) => unreachable!(),
                         hir::Pat::Wild => wild_bb = Some(arm_bb),
                         hir::Pat::Lit(value) => {
-                            let pat_value = codegen_const(cg, value);
-                            let v = extract_slice_len_if_needed(cg, match_.kind, pat_value);
-                            cg.cache.cases.push((v, arm_bb));
+                            let value = codegen_const(cg, value);
+                            cg.cache.cases.push((value, arm_bb));
                         }
                         hir::Pat::Variant(enum_id, variant_id, _) => {
                             let enum_data = cg.hir.enum_data(enum_id);
@@ -749,7 +730,6 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
     }
 
     cg.build.position_at_end(insert_bb);
-    let on_value = extract_slice_len_if_needed(cg, match_.kind, on_value);
     let else_bb = wild_bb.unwrap_or(exit_bb);
 
     let cases = cg.cache.cases.view(offset);
