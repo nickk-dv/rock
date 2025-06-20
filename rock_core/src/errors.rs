@@ -926,7 +926,8 @@ pub fn tycheck_cannot_use_for_enum_array(
 }
 
 pub fn tycheck_missing_variant_inits(emit: &mut impl ErrorSink, src: SourceRange, missing: usize) {
-    let msg = format!("missing {missing} variant initializers");
+    let plural = if missing == 1 { "" } else { "s" };
+    let msg = format!("missing {missing} variant initializer{plural}");
     emit.error(Error::new(msg, src, None));
 }
 

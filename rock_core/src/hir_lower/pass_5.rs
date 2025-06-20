@@ -2223,10 +2223,12 @@ fn typecheck_array_init<'hir, 'ast>(
         if !super::pass_3::check_enumerated_array_type(ctx, enum_id, range) {
             return TypeResult::error();
         }
-        let missing = input.iter().filter(|init| init.variant.is_none()).count();
+        let init_count = input.iter().filter(|init| init.variant.is_some()).count() as isize;
+        let expected = ctx.registry.enum_data(enum_id).variants.len() as isize;
+        let missing = expected - init_count;
         if missing > 0 {
             let src = ctx.src(TextRange::new(range.end() - 1.into(), range.end()));
-            err::tycheck_missing_variant_inits(&mut ctx.emit, src, missing);
+            err::tycheck_missing_variant_inits(&mut ctx.emit, src, missing as usize);
             return TypeResult::error();
         }
     }
