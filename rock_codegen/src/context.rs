@@ -1,12 +1,12 @@
 use super::llvm;
-use crate::error::ErrorBuffer;
-use crate::hir_lower::layout;
-use crate::hir_lower::types;
-use crate::intern::{LitID, NameID};
-use crate::session::config::TargetTriple;
-use crate::session::{ModuleID, Session};
-use crate::support::{Arena, AsStr, TempBuffer, TempOffset};
-use crate::{ast, hir};
+use rock_core::error::ErrorBuffer;
+use rock_core::hir_lower::layout;
+use rock_core::hir_lower::types;
+use rock_core::intern::{LitID, NameID};
+use rock_core::session::config::TargetTriple;
+use rock_core::session::{ModuleID, Session};
+use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
+use rock_core::{ast, hir};
 use std::collections::HashMap;
 
 pub struct Codegen<'c, 's, 'sref> {
@@ -60,7 +60,7 @@ pub enum Expect {
     Store(llvm::ValuePtr),
 }
 
-crate::define_id!(pub TailValueID);
+rock_core::define_id!(pub TailValueID);
 #[derive(Copy, Clone)]
 pub struct TailValue {
     pub value_ptr: llvm::ValuePtr,
@@ -581,7 +581,7 @@ impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
         self.cache.u64s.take(offset, &mut self.hir.arena)
     }
 
-    fn error(&mut self) -> &mut impl crate::error::ErrorSink {
+    fn error(&mut self) -> &mut impl rock_core::error::ErrorSink {
         &mut self.emit
     }
     fn ptr_size(&self) -> u64 {

@@ -1,4 +1,4 @@
-use rock_core::codegen::BuildOptions;
+use rock_codegen::BuildOptions;
 use rock_core::error::ErrorBuffer;
 use rock_core::errors as err;
 use rock_core::session::config::Build;

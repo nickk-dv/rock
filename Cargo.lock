@@ -163,6 +163,15 @@ checksum = "53a49587ad06b26609c52e423de037e7f57f20d53535d66e08c695f347df952a"
 name = "rock_cli"
 version = "0.0.0"
 dependencies = [
+ "rock_codegen",
+ "rock_core",
+]
+
+[[package]]
+name = "rock_codegen"
+version = "0.0.0"
+dependencies = [
+ "llvm-sys",
  "rock_core",
 ]
 
@@ -171,7 +180,6 @@ name = "rock_core"
 version = "0.0.0"
 dependencies = [
  "basic-toml",
- "llvm-sys",
  "serde",
  "serde_json",
 ]

@@ -3,12 +3,12 @@ use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
 use super::llvm;
-use crate::error::SourceRange;
-use crate::hir::{self, CmpPred};
-use crate::hir_lower::layout;
-use crate::intern::LitID;
-use crate::support::TempOffset;
-use crate::text::TextRange;
+use rock_core::error::SourceRange;
+use rock_core::hir::{self, CmpPred};
+use rock_core::hir_lower::layout;
+use rock_core::intern::LitID;
+use rock_core::support::TempOffset;
+use rock_core::text::TextRange;
 
 pub fn codegen_expr_discard<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
     codegen_expr(cg, expr, Expect::Value(None));

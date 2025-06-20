@@ -2,15 +2,15 @@ use super::context::{self, Codegen, Expect};
 use super::emit_expr;
 use super::emit_stmt;
 use super::llvm;
-use crate::ast;
-use crate::error::SourceRange;
-use crate::hir;
-use crate::hir_lower::layout;
-use crate::hir_lower::types;
-use crate::intern::LitID;
-use crate::session::{ModuleID, Session};
-use crate::support::AsStr;
-use crate::text::TextRange;
+use rock_core::ast;
+use rock_core::error::SourceRange;
+use rock_core::hir;
+use rock_core::hir_lower::layout;
+use rock_core::hir_lower::types;
+use rock_core::intern::LitID;
+use rock_core::session::{ModuleID, Session};
+use rock_core::support::AsStr;
+use rock_core::text::TextRange;
 
 pub fn codegen_module(
     hir: hir::Hir,

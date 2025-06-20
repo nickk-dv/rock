@@ -8,3 +8,4 @@ path = "src/main.rs"
 
 [dependencies]
 rock_core = { path = "../rock_core" }
+rock_codegen = { path = "../rock_codegen" }

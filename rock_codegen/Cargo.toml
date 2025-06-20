@@ -1,0 +1,7 @@
+[package]
+name = "rock_codegen"
+edition = "2021"
+
+[dependencies]
+rock_core = { path = "../rock_core" }
+llvm-sys = { version = "191.0.0", features = ["no-llvm-linking"] }

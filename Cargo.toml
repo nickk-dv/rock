@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "rock_cli",
+    "rock_codegen",
     "rock_core",
     "rock_ls",
     "rock_test",

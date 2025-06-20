@@ -1,7 +1,7 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
-use rock_core::codegen;
+use rock_codegen;
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir;
@@ -149,7 +149,7 @@ fn check_impl(session: &mut Session, data: &CommandCheck) -> Result<(), ()> {
 fn build_impl(session: &mut Session, data: &CommandBuild) -> Result<(), ()> {
     parse_stage(session)?;
     let hir = check_stage(session)?;
-    let _ = codegen::build(hir, session, data.options)?;
+    let _ = rock_codegen::build(hir, session, data.options)?;
     error_print::print_session_errors(session, data.warn);
 
     let style = AnsiStyle::new();
@@ -161,7 +161,7 @@ fn build_impl(session: &mut Session, data: &CommandBuild) -> Result<(), ()> {
 fn run_impl(session: &mut Session, data: &CommandRun) -> Result<(), ()> {
     parse_stage(session)?;
     let hir = check_stage(session)?;
-    let bin_path = codegen::build(hir, session, data.options)?;
+    let bin_path = rock_codegen::build(hir, session, data.options)?;
     error_print::print_session_errors(session, data.warn);
 
     let style = AnsiStyle::new();
@@ -169,7 +169,7 @@ fn run_impl(session: &mut Session, data: &CommandRun) -> Result<(), ()> {
     print_build_finished(session, &style);
     print_build_running(session, &style, &bin_path);
 
-    if let Err(error) = codegen::run(bin_path, data.args.clone()) {
+    if let Err(error) = rock_codegen::run(bin_path, data.args.clone()) {
         error_print::print_error(Some(session), error);
     }
     Ok(())

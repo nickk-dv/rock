@@ -5,13 +5,13 @@ mod emit_stmt;
 #[allow(unsafe_code)]
 mod llvm;
 
-use crate::error::{Error, ErrorSink};
-use crate::errors as err;
-use crate::hir;
-use crate::session::config::{Build, TargetOS};
-use crate::session::Session;
-use crate::support::os;
-use crate::support::{AsStr, Timer};
+use rock_core::error::{Error, ErrorSink};
+use rock_core::errors as err;
+use rock_core::hir;
+use rock_core::session::config::{Build, TargetOS};
+use rock_core::session::Session;
+use rock_core::support::os;
+use rock_core::support::{AsStr, Timer};
 use std::path::PathBuf;
 
 #[derive(Copy, Clone)]

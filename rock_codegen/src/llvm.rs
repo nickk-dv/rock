@@ -1,5 +1,3 @@
-use crate::session::config::{Build, TargetArch, TargetTriple};
-use crate::support::AsStr;
 use llvm_sys as sys;
 use llvm_sys::analysis;
 use llvm_sys::core;
@@ -7,6 +5,8 @@ use llvm_sys::prelude::*;
 use llvm_sys::target as tg;
 use llvm_sys::target_machine as tm;
 use llvm_sys::transforms::pass_builder as pass;
+use rock_core::session::config::{Build, TargetArch, TargetTriple};
+use rock_core::support::AsStr;
 use std::ffi::c_char;
 
 pub struct IRContext {
