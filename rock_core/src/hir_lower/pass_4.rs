@@ -130,7 +130,9 @@ fn mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
                 ctx.registry.struct_data_mut(id).layout = hir::Eval::ResolvedError;
             }
             ConstDependency::Const(id) => {
-                let eval_id = ctx.registry.const_data(id).value;
+                let data = ctx.registry.const_data_mut(id);
+                data.ty = Some(hir::Type::Error);
+                let eval_id = data.value;
                 ctx.registry.const_eval_mut(eval_id).0 = hir::ConstEval::ResolvedError;
             }
             ConstDependency::Global(id) => {

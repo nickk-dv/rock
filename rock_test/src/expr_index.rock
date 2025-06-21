@@ -1,0 +1,128 @@
+//#prelude
+import core:mem;
+import core:array;
+import core:runtime as _.{assert}
+
+STRING: string = "example";
+CSTRING: cstring = "example";
+ARRAY = [1, 2, 3];
+ARRAY_ENUM = [Enum.A = 1, .B = 2, .C = 3];
+
+enum Enum {
+    A,
+    B,
+    C,
+}
+
+//#entry "index_multi_ref"
+proc test_index_multi_ref() void {
+    let values = ARRAY;
+    let ref = values[..].ptr as [&mut]s32;
+    assert(ref[0] == 1);
+    assert(ref[1] == 2);
+    assert(ref[2] == 3);
+}
+
+//#entry "index_cstring"
+proc test_index_cstring() void {
+    let cstr = CSTRING;
+    assert(cstr[0] == 'e');
+    assert(cstr[1] == 'x');
+    assert(cstr[6] == 'e');
+}
+
+//#entry "index_slice"
+proc test_index_slice() void {
+    let values = ARRAY;
+    let slice = values[..];
+    assert(slice[0] == 1);
+    assert(slice[1] == 2);
+    assert(slice[2] == 3);
+}
+
+//#entry "index_string"
+proc test_index_string() void {
+    let str = STRING;
+    assert(str[0] == 'e');
+    assert(str[1] == 'x');
+    assert(str[6] == 'e');
+}
+
+//#entry "index_array"
+proc test_index_array() void {
+    let arr = ARRAY;
+    assert(arr[0] == 1);
+    assert(arr[1] == 2);
+    assert(arr[2] == 3);
+}
+
+//#entry "index_array_enum"
+proc test_index_array_enum() void {
+    let arr = ARRAY_ENUM;
+    assert(arr[.A] == 1);
+    assert(arr[.B] == 2);
+    assert(arr[.C] == 3);
+}
+
+//#entry "index_array_core"
+proc test_index_array_core() void {
+    let mut arr = array.new:(s32)();
+    let values = ARRAY;
+    array.extend(&mut arr, values[..]);
+    assert(arr[0] == 1);
+    assert(arr[1] == 2);
+    assert(arr[2] == 3);
+}
+
+//#entry "index_bounds_slice"
+//#expect(no_endl)
+//thread panicked at src/test.rock:4:18
+//index out of bounds: 3, len: 3
+//#!
+proc test_index_bounds_slice() void {
+    let values = ARRAY;
+    let slice = values[..];
+    let _ = slice[3];
+}
+
+//#entry "index_bounds_string"
+//#expect(no_endl)
+//thread panicked at src/test.rock:3:16
+//index out of bounds: 7, len: 7
+//#!
+proc test_index_bounds_string() void {
+    let str = STRING;
+    let _ = str[7];
+}
+
+//#entry "index_bounds_array"
+//#expect(no_endl)
+//thread panicked at src/test.rock:3:16
+//index out of bounds: 3, len: 3
+//#!
+proc test_index_bounds_array() void {
+    let arr = ARRAY;
+    let _ = arr[3];
+}
+
+//#entry "index_bounds_array_enum"
+//#expect(no_endl)
+//thread panicked at src/test.rock:3:16
+//index out of bounds: 3, len: 3
+//#!
+proc test_index_bounds_array_enum() void {
+    let arr = ARRAY_ENUM;
+    let _ = arr[mem.transmute(3 as u8)];
+}
+
+//#entry "index_bounds_array_core"
+//#expect(no_endl)
+//thread panicked at src/test.rock:5:16
+//index out of bounds: 3, len: 3
+//#!
+proc test_index_bounds_array_core() void {
+    let mut arr = array.new:(s32)();
+    let values = ARRAY;
+    array.extend(&mut arr, values[..]);
+    let _ = arr[3];
+}

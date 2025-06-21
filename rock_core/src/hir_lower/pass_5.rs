@@ -1339,6 +1339,7 @@ fn typecheck_index<'hir, 'ast>(
     target: &ast::Expr<'ast>,
     index: &ast::Expr<'ast>,
 ) -> TypeResult<'hir> {
+    let error_count = ctx.emit.error_count();
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let collection_res = type_as_collection(ctx, target_res.ty);
     let index_expect = if let Ok(Some(collection)) = &collection_res {
@@ -1378,47 +1379,54 @@ fn typecheck_index<'hir, 'ast>(
         offset: target.range.end(),
     };
 
-    if let hir::Expr::Const(target, target_id) = target_res.expr {
-        if let hir::Expr::Const(index, _) = index_res.expr {
-            //@index_res could be invalid const value, either do error count guard or validate.
-            let index = if let hir::IndexKind::ArrayEnum(_) = kind {
-                index.into_enum().1.index() as u64
-            } else {
-                index.into_int_u64()
-            };
+    //@indexing const core Array should not be allowed, current const index check is not enough,
+    // temp ArrayCore guard to prevent constfold from running.
+    if !ctx.emit.did_error(error_count) && !matches!(kind, hir::IndexKind::ArrayCore) {
+        if let hir::Expr::Const(target, target_id) = target_res.expr {
+            if let hir::Expr::Const(index, _) = index_res.expr {
+                let index = if let hir::IndexKind::ArrayEnum(_) = kind {
+                    index.into_enum().1.index() as u64
+                } else {
+                    index.into_int_u64()
+                };
 
-            let array_len = match target {
-                hir::ConstValue::String { val, .. } => {
-                    ctx.session.intern_lit.get(*val).len() as u64
+                let array_len = match target {
+                    hir::ConstValue::String { val, .. } => {
+                        ctx.session.intern_lit.get(*val).len() as u64
+                    }
+                    hir::ConstValue::Array { array } => array.values.len() as u64,
+                    hir::ConstValue::ArrayRepeat { array } => array.len,
+                    hir::ConstValue::ArrayEmpty { .. } => 0,
+                    _ => unreachable!(),
+                };
+                if index >= array_len {
+                    let src = ctx.src(range);
+                    err::const_index_out_of_bounds(&mut ctx.emit, src, index, array_len);
+                    return TypeResult::error();
                 }
-                hir::ConstValue::Array { array } => array.values.len() as u64,
-                hir::ConstValue::ArrayRepeat { array } => array.len,
-                hir::ConstValue::ArrayEmpty { .. } => 0,
-                _ => unreachable!(),
-            };
-            if index >= array_len {
+                let value = match target {
+                    hir::ConstValue::String { val, .. } => {
+                        let byte = ctx.session.intern_lit.get(*val).as_bytes()[index as usize];
+                        hir::ConstValue::Int {
+                            val: byte as u64,
+                            neg: false,
+                            int_ty: hir::IntType::U8,
+                        }
+                    }
+                    hir::ConstValue::Array { array } => array.values[index as usize],
+                    hir::ConstValue::ArrayRepeat { array } => array.value,
+                    _ => unreachable!(),
+                };
+                return TypeResult::new(
+                    collection.elem_ty,
+                    hir::Expr::Const(value, hir::ConstID::dummy()),
+                );
+            } else if *target_id != hir::ConstID::dummy() {
                 let src = ctx.src(range);
-                err::const_index_out_of_bounds(&mut ctx.emit, src, index, array_len);
+                let data = ctx.registry.const_data(*target_id);
+                err::tycheck_index_const(&mut ctx.emit, src, data.src());
                 return TypeResult::error();
             }
-            let value = match target {
-                hir::ConstValue::String { val, .. } => {
-                    let byte = ctx.session.intern_lit.get(*val).as_bytes()[index as usize];
-                    hir::ConstValue::Int { val: byte as u64, neg: false, int_ty: hir::IntType::U8 }
-                }
-                hir::ConstValue::Array { array } => array.values[index as usize],
-                hir::ConstValue::ArrayRepeat { array } => array.value,
-                _ => unreachable!(),
-            };
-            return TypeResult::new(
-                collection.elem_ty,
-                hir::Expr::Const(value, hir::ConstID::dummy()),
-            );
-        } else if *target_id != hir::ConstID::dummy() {
-            let src = ctx.src(range);
-            let data = ctx.registry.const_data(*target_id);
-            err::tycheck_index_const(&mut ctx.emit, src, data.src());
-            return TypeResult::error();
         }
     }
 

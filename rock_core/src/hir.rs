@@ -1124,7 +1124,13 @@ pub fn source_location<'hir>(
     } else {
         &file.path
     };
-    let path_id = session.intern_lit.intern(path.to_str().unwrap_or(""));
+
+    // normalize windows and unix style path separators for tests to be uniform
+    #[cfg(target_os = "windows")]
+    let path_display = path.to_string_lossy().replace('\\', "/");
+    #[cfg(not(target_os = "windows"))]
+    let path_display = path.to_string_lossy();
+    let path_id = session.intern_lit.intern(&path_display);
 
     let location = text::find_text_location(&file.source, offset, &file.line_ranges);
     let line = ConstValue::Int { val: location.line() as u64, neg: false, int_ty: IntType::U32 };
