@@ -1,6 +1,6 @@
 //#prelude
 
-//#entry(no_run) "cannot_ref_slice_field"
+//#entry(check) "cannot_ref_slice_field"
 //#expect
 //error: cannot get & to a slice field
 //  │
@@ -20,7 +20,7 @@ proc test_cannot_ref_slice_field(slice: []u8) void {
     &mut slice.len;
 }
 
-//#entry(no_run) "cannot_ref_temporary"
+//#entry(check) "cannot_ref_temporary"
 //#expect
 //error: cannot get & to a temporary value
 //  │
@@ -159,7 +159,7 @@ proc test_cannot_ref_temporary(v: s32) void {
     &(2 + 4); // expr binary
 }
 
-//#entry(no_run) "cannot_ref_const"
+//#entry(check) "cannot_ref_const"
 //#expect
 //error: cannot get & to a constant, you can use global variable instead
 //  │

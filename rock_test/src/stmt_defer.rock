@@ -2,7 +2,7 @@
 import core:fmt as _.{print}
 
 //#entry "defer_simple"
-//#expect(no_new_line)
+//#expect(no_endl)
 //21
 //#!
 proc test_defer_simple() void {
@@ -11,7 +11,7 @@ proc test_defer_simple() void {
 }
 
 //#entry "defer_nested_blocks"
-//#expect(no_new_line)
+//#expect(no_endl)
 //436521
 //#!
 proc test_defer_nested_blocks() void {
@@ -28,7 +28,7 @@ proc test_defer_nested_blocks() void {
 }
 
 //#entry "defer_break"
-//#expect(no_new_line)
+//#expect(no_endl)
 //4321
 //#!
 proc test_defer_break() void {
@@ -42,7 +42,7 @@ proc test_defer_break() void {
 }
 
 //#entry "defer_continue"
-//#expect(no_new_line)
+//#expect(no_endl)
 //434321
 //#!
 proc test_defer_continue() void {
@@ -56,7 +56,7 @@ proc test_defer_continue() void {
 }
 
 //#entry "defer_return"
-//#expect(no_new_line)
+//#expect(no_endl)
 //4321
 //#!
 proc test_defer_return() void {

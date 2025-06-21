@@ -2,6 +2,25 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+struct RockTestFile {
+    name: String,
+    prelude: String,
+    tests: Vec<RockTest>,
+}
+
+#[derive(Debug)]
+struct RockTest {
+    check: bool,    //use `check` instead of `run`
+    entry: String,  //test name
+    expect: String, //expected output
+    source: String, //test source code
+}
+
+struct RockTestEnv {
+    main_path: PathBuf,
+    test_path: PathBuf,
+}
+
 fn main() {
     let test_src = if fs::exists("./rock_test/src").unwrap() {
         PathBuf::from("./rock_test/src")
@@ -12,26 +31,6 @@ fn main() {
     let test_files = parse_tests();
     let test_env = setup_test_env(test_src);
     run_tests(test_env, test_files);
-}
-
-#[derive(Debug)]
-struct RockTestFile {
-    name: String,
-    prelude: String,
-    tests: Vec<RockTest>,
-}
-
-#[derive(Debug)]
-struct RockTest {
-    no_run: bool,
-    entry: String,
-    expect: String,
-    source: String,
-}
-
-struct RockTestEnv {
-    main_path: PathBuf,
-    test_path: PathBuf,
 }
 
 fn parse_tests() -> Vec<RockTestFile> {
@@ -59,82 +58,72 @@ fn parse_tests() -> Vec<RockTestFile> {
 }
 
 fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String) -> RockTestFile {
+    let mut tests = Vec::with_capacity(32);
     let mut lines = text.lines().peekable();
-    let mut prelude = String::with_capacity(256);
 
-    let prelude_line = lines.next().expect("#prelude tag must exist");
-    assert_eq!(
-        prelude_line,
-        "//#prelude",
-        "test file `{}` expected `//#prelude` tag",
-        path.to_string_lossy()
-    );
-
-    while let Some(line) = lines.peek() {
-        if line.starts_with("//#") {
-            break;
-        }
-        prelude.push_str(line);
-        prelude.push('\n');
-        lines.next();
-    }
-    prelude.pop();
-
-    let mut tests = Vec::with_capacity(16);
+    let prelude = if lines.next_if(|&l| l.starts_with("//#prelude")).is_some() {
+        parse_source_code(&mut lines)
+    } else {
+        "".into()
+    };
 
     while lines.peek().is_some() {
-        let entry_line = lines.next().expect("#entry line tag must exist");
-        assert!(
-            entry_line.starts_with("//#entry"),
-            "test file `{}` expected `//#entry` tag",
-            path.to_string_lossy()
-        );
-        let start_idx = entry_line.find('"').expect("expected entry name opening \"") + 1;
-        let end_idx =
-            entry_line[start_idx..].find('"').expect("expected entry name closing \"") + start_idx;
-        let entry = entry_line[start_idx..end_idx].to_string();
+        let (check, entry) = parse_entry_name(&mut lines);
+        let expect = parse_expect(&mut lines);
+        let source = parse_source_code(&mut lines);
+        let test = RockTest { check, entry, expect, source };
 
-        let expect_line = lines.next().expect("#expect tag must exist");
-        let expect = if expect_line.starts_with("//#expect") {
-            let mut expect = String::with_capacity(128);
-            while let Some(line) = lines.peek() {
-                assert!(line.starts_with("//"));
-                if line.starts_with("//#!") {
-                    lines.next();
-                    break;
-                }
-                expect.push_str(&line[2..]);
-                expect.push('\n');
-                lines.next();
-            }
-            if expect_line == "//#expect(no_new_line)" {
-                expect.pop();
-            }
-            expect
-        } else {
-            panic!("test file `{}` expected `//#expect` tag", path.to_string_lossy())
-        };
-
-        let mut source = String::with_capacity(128);
-        while let Some(line) = lines.peek() {
-            if line.starts_with("//#") {
-                break;
-            }
-            source.push_str(line);
-            source.push('\n');
-            lines.next();
-        }
-
-        let test =
-            RockTest { no_run: entry_line.starts_with("//#entry(no_run)"), entry, expect, source };
         if test_set.contains(&test.entry) {
-            panic!("duplicate test name fould `{}` in `{}`", test.entry, path.to_string_lossy(),)
+            panic!("duplicate test found: `{}` in `{}`", test.entry, path.to_string_lossy(),)
         }
         test_set.insert(test.entry.clone());
         tests.push(test);
     }
 
-    RockTestFile { name: path.file_name().unwrap().to_str().unwrap().to_string(), prelude, tests }
+    let name = path.file_name().unwrap().to_str().unwrap().to_string();
+    RockTestFile { name, prelude, tests }
+}
+
+fn parse_entry_name(lines: &mut std::iter::Peekable<std::str::Lines>) -> (bool, String) {
+    let entry_line = lines.next().expect("expected `#entry \"<test_name>\"`");
+    let start = entry_line.find('"').expect("expected opening \"") + 1;
+    let end = entry_line[start..].find('"').expect("expected closing \"") + start;
+    let entry = entry_line[start..end].to_string();
+    (entry_line.starts_with("//#entry(check)"), entry)
+}
+
+fn parse_expect(lines: &mut std::iter::Peekable<std::str::Lines>) -> String {
+    let Some(expect_line) = lines.next_if(|&l| l.starts_with("//#expect")) else {
+        return "".into();
+    };
+    let mut expect = String::with_capacity(128);
+    while let Some(line) = lines.peek() {
+        if line.starts_with("//#!") {
+            lines.next();
+            break;
+        }
+        assert!(line.starts_with("//"));
+        expect.push_str(&line[2..]);
+        expect.push('\n');
+        lines.next();
+    }
+    if expect_line == "//#expect(no_endl)" {
+        expect.pop();
+    }
+    expect
+}
+
+fn parse_source_code(lines: &mut std::iter::Peekable<std::str::Lines>) -> String {
+    let mut source = String::with_capacity(256);
+    while let Some(line) = lines.peek() {
+        if line.starts_with("//#") {
+            break;
+        }
+        source.push_str(line);
+        source.push('\n');
+        lines.next();
+    }
+    source
 }
 
 fn setup_test_env(test_src: PathBuf) -> RockTestEnv {
@@ -183,7 +172,7 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
         println!("\n{CB}src/{}{R}", test_file.name);
 
         for test in test_file.tests {
-            let main_src = if test.no_run {
+            let main_src = if test.check {
                 format!("import test.{{test_{0}}}\nproc main() void {{}}", test.entry)
             } else {
                 format!("import test.{{test_{0}}}\nproc main() void {{ test_{0}(); }}", test.entry)

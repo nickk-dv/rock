@@ -3,7 +3,7 @@ import core:fmt;
 import core:runtime as _.{assert}
 
 //#entry "expr_if_condition"
-//#expect(no_new_line)
+//#expect(no_endl)
 //x < 100
 //#!
 proc test_expr_if_condition() void {
@@ -14,8 +14,6 @@ proc test_expr_if_condition() void {
 }
 
 //#entry "expr_if_yield_value"
-//#expect
-//#!
 proc test_expr_if_yield_value() void {
     let x = if true {
         1
@@ -51,8 +49,6 @@ proc test_expr_if_yield_value() void {
 }
 
 //#entry "expr_if_yield_nested"
-//#expect
-//#!
 proc test_expr_if_yield_nested() void {
     let cond_a = false;
     let cond_b = true;
@@ -74,7 +70,7 @@ proc test_expr_if_yield_nested() void {
 }
 
 //#entry "expect_pointer_expr_cast"
-//#expect(no_new_line)
+//#expect(no_endl)
 //10
 //#!
 proc test_expect_pointer_expr_cast() void {
@@ -83,7 +79,7 @@ proc test_expect_pointer_expr_cast() void {
 }
 
 //#entry "expect_pointer_expr_unary"
-//#expect(no_new_line)
+//#expect(no_endl)
 //10
 //#!
 proc test_expect_pointer_expr_unary() void {
@@ -92,7 +88,7 @@ proc test_expect_pointer_expr_unary() void {
 }
 
 //#entry "expect_pointer_expr_binary"
-//#expect(no_new_line)
+//#expect(no_endl)
 //10
 //#!
 proc test_expect_pointer_expr_binary() void {

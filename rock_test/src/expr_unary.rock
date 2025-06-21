@@ -2,8 +2,6 @@
 import core:runtime as _.{assert}
 
 //#entry "neg_int"
-//#expect
-//#!
 proc test_neg_int() void {
     let a = 25;
     let b = -12;
@@ -16,8 +14,6 @@ proc test_neg_int() void {
 }
 
 //#entry "neg_float"
-//#expect
-//#!
 proc test_neg_float() void {
     let a = 25.3;
     let b = -12.4;
@@ -30,8 +26,6 @@ proc test_neg_float() void {
 }
 
 //#entry "bit_not_signed"
-//#expect
-//#!
 proc test_bit_not_signed() void {
     let a: s32 = 37;
     let b: s32 = -37;
@@ -44,8 +38,6 @@ proc test_bit_not_signed() void {
 }
 
 //#entry "bit_not_unsigned"
-//#expect
-//#!
 proc test_bit_not_unsigned() void {
     let a: u8 = 0;
     let b: u8 = 123;
@@ -61,8 +53,6 @@ proc test_bit_not_unsigned() void {
 }
 
 //#entry "logic_not"
-//#expect
-//#!
 proc test_logic_not() void {
     let a = true;
     let b = false;
@@ -80,8 +70,6 @@ proc test_logic_not() void {
 }
 
 //#entry "logic_not_bit_pattern"
-//#expect
-//#!
 proc test_logic_not_bit_pattern() void {
     let a32: bool32 = true;
     let b32: bool32 = false;

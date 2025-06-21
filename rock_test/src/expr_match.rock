@@ -2,8 +2,6 @@
 import core:runtime as _.{assert}
 
 //#entry "match_bool_behavior"
-//#expect
-//#!
 proc test_match_bool_behavior() void {
     let b32: bool32 = true;
     let p32 = match b32 {
@@ -57,7 +55,7 @@ proc test_match_bool_behavior() void {
     assert(p7 == 0);
 }
 
-//#entry(no_run) "match_bool_coverage"
+//#entry(check) "match_bool_coverage"
 //#expect
 //error: pattern already covered
 //  │
@@ -199,8 +197,6 @@ proc test_match_bool_exhaust() void {
 }
 
 //#entry "match_string_behavior"
-//#expect
-//#!
 proc test_match_string_behavior() void {
     let p0 = match "rock" {
         _ -> 0,
@@ -239,7 +235,7 @@ proc test_match_string_behavior() void {
     assert(len == 3);
 }
 
-//#entry(no_run) "match_string_coverage"
+//#entry(check) "match_string_coverage"
 //#expect
 //error: pattern already covered
 //  │
@@ -307,7 +303,7 @@ proc test_match_string_coverage() void {
     }
 }
 
-//#entry(no_run) "match_string_exhaust"
+//#entry(check) "match_string_exhaust"
 //#expect
 //error: patterns not covered:
 //- `_`

@@ -2,8 +2,6 @@
 import core:runtime as _.{assert}
 
 //#entry "add_int"
-//#expect
-//#!
 proc test_add_int() void {
     let a = 10;
     let b = -24;
@@ -13,8 +11,6 @@ proc test_add_int() void {
 }
 
 //#entry "add_float"
-//#expect
-//#!
 proc test_add_float() void {
     let a = 10.0;
     let b = -24.0;
@@ -24,8 +20,6 @@ proc test_add_float() void {
 }
 
 //#entry "sub_int"
-//#expect
-//#!
 proc test_sub_int() void {
     let a = 10;
     let b = -24;
@@ -35,8 +29,6 @@ proc test_sub_int() void {
 }
 
 //#entry "sub_float"
-//#expect
-//#!
 proc test_sub_float() void {
     let a = 10.0;
     let b = -24.0;
@@ -46,8 +38,6 @@ proc test_sub_float() void {
 }
 
 //#entry "mul_int"
-//#expect
-//#!
 proc test_mul_int() void {
     let a = 10;
     let b = -24;
@@ -57,8 +47,6 @@ proc test_mul_int() void {
 }
 
 //#entry "mul_float"
-//#expect
-//#!
 proc test_mul_float() void {
     let a = 10.0;
     let b = -24.0;
@@ -68,8 +56,6 @@ proc test_mul_float() void {
 }
 
 //#entry "div_int_signed"
-//#expect
-//#!
 proc test_div_int_signed() void {
     let a = 100;
     let b = -5;
@@ -79,8 +65,6 @@ proc test_div_int_signed() void {
 }
 
 //#entry "div_int_unsigned"
-//#expect
-//#!
 proc test_div_int_unsigned() void {
     let a: u8 = 0xFF;
     let b: u8 = 10;
@@ -90,8 +74,6 @@ proc test_div_int_unsigned() void {
 }
 
 //#entry "div_float"
-//#expect
-//#!
 proc test_div_float() void {
     let a = 100.0;
     let b = -5.0;
@@ -101,8 +83,6 @@ proc test_div_float() void {
 }
 
 //#entry "bit_and_const"
-//#expect
-//#!
 proc test_bit_and_const() void {
     assert(0 & 0b10101010 == 0);
     assert(175 & 0b10101010 == 170);
@@ -110,8 +90,6 @@ proc test_bit_and_const() void {
 }
 
 //#entry "bit_and_signed"
-//#expect
-//#!
 proc test_bit_and_signed() void {
     let a: u8 = 0;
     let b: u8 = 175;
@@ -124,8 +102,6 @@ proc test_bit_and_signed() void {
 }
 
 //#entry "bit_and_unsigned"
-//#expect
-//#!
 proc test_bit_and_unsigned() void {
     let a: s8 = 0;
     let b: s8 = 56;
@@ -138,8 +114,6 @@ proc test_bit_and_unsigned() void {
 }
 
 //#entry "bit_or_const"
-//#expect
-//#!
 proc test_bit_or_const() void {
     assert(0 | 0b10101010 == 170);
     assert(175 | 0b10101010 == 175);
@@ -147,8 +121,6 @@ proc test_bit_or_const() void {
 }
 
 //#entry "bit_or_signed"
-//#expect
-//#!
 proc test_bit_or_signed() void {
     let a: u8 = 0;
     let b: u8 = 175;
@@ -161,8 +133,6 @@ proc test_bit_or_signed() void {
 }
 
 //#entry "bit_or_unsigned"
-//#expect
-//#!
 proc test_bit_or_unsigned() void {
     let a: s8 = 0;
     let b: s8 = 56;
@@ -175,8 +145,6 @@ proc test_bit_or_unsigned() void {
 }
 
 //#entry "bit_xor_const"
-//#expect
-//#!
 proc test_bit_xor_const() void {
     assert(0 ^ 0b10101010 == 170);
     assert(175 ^ 0b10101010 == 5);
@@ -184,8 +152,6 @@ proc test_bit_xor_const() void {
 }
 
 //#entry "bit_xor_signed"
-//#expect
-//#!
 proc test_bit_xor_signed() void {
     let a: u8 = 0;
     let b: u8 = 175;
@@ -198,8 +164,6 @@ proc test_bit_xor_signed() void {
 }
 
 //#entry "bit_xor_unsigned"
-//#expect
-//#!
 proc test_bit_xor_unsigned() void {
     let a: s8 = 0;
     let b: s8 = 56;
@@ -212,8 +176,6 @@ proc test_bit_xor_unsigned() void {
 }
 
 //#entry "char_eq"
-//#expect
-//#!
 proc test_char_eq() void {
     let a = 'a';
     let b = 'b';
@@ -228,8 +190,6 @@ proc test_char_eq() void {
 }
 
 //#entry "char_not_eq"
-//#expect
-//#!
 proc test_char_not_eq() void {
     let a = 'a';
     let b = 'b';
@@ -244,8 +204,6 @@ proc test_char_not_eq() void {
 }
 
 //#entry "rawptr_eq"
-//#expect
-//#!
 proc test_rawptr_eq() void {
     let a = null;
     let b = &a as rawptr;
@@ -258,8 +216,6 @@ proc test_rawptr_eq() void {
 }
 
 //#entry "rawptr_not_eq"
-//#expect
-//#!
 proc test_rawptr_not_eq() void {
     let a = null;
     let b = &a as rawptr;
@@ -272,8 +228,6 @@ proc test_rawptr_not_eq() void {
 }
 
 //#entry "bool_eq"
-//#expect
-//#!
 proc test_bool_eq() void {
     let a: bool = true;
     let b: bool = false;
@@ -294,8 +248,6 @@ proc test_bool_eq() void {
 }
 
 //#entry "bool_not_eq"
-//#expect
-//#!
 proc test_bool_not_eq() void {
     let a: bool = true;
     let b: bool = false;
@@ -316,8 +268,6 @@ proc test_bool_not_eq() void {
 }
 
 //#entry "string_eq"
-//#expect
-//#!
 proc test_string_eq() void {
     let a: string = "one";
     let b: string = "two";
@@ -338,8 +288,6 @@ proc test_string_eq() void {
 }
 
 //#entry "string_not_eq"
-//#expect
-//#!
 proc test_string_not_eq() void {
     let a: string = "one";
     let b: string = "two";
@@ -360,8 +308,6 @@ proc test_string_not_eq() void {
 }
 
 //#entry "enum_eq"
-//#expect
-//#!
 enum EnumEq s32 {
     A = 0,
     B = 10,
@@ -387,8 +333,6 @@ proc test_enum_eq() void {
 }
 
 //#entry "enum_not_eq"
-//#expect
-//#!
 enum EnumNotEq s32 {
     A = 0,
     B = 10,
@@ -414,8 +358,6 @@ proc test_enum_not_eq() void {
 }
 
 //#entry "int_eq"
-//#expect
-//#!
 proc test_int_eq() void {
     let zero = 0;
     let pos = 10;
@@ -435,8 +377,6 @@ proc test_int_eq() void {
 }
 
 //#entry "int_not_eq"
-//#expect
-//#!
 proc test_int_not_eq() void {
     let zero = 0;
     let pos = 10;
@@ -456,8 +396,6 @@ proc test_int_not_eq() void {
 }
 
 //#entry "int_less"
-//#expect
-//#!
 proc test_int_less() void {
     let zero = 0;
     let pos = 10;
@@ -477,8 +415,6 @@ proc test_int_less() void {
 }
 
 //#entry "int_less_eq"
-//#expect
-//#!
 proc test_int_less_eq() void {
     let zero = 0;
     let pos = 10;
@@ -498,8 +434,6 @@ proc test_int_less_eq() void {
 }
 
 //#entry "int_greater"
-//#expect
-//#!
 proc test_int_greater() void {
     let zero = 0;
     let pos = 10;
@@ -519,8 +453,6 @@ proc test_int_greater() void {
 }
 
 //#entry "int_greater_eq"
-//#expect
-//#!
 proc test_int_greater_eq() void {
     let zero = 0;
     let pos = 10;
@@ -540,8 +472,6 @@ proc test_int_greater_eq() void {
 }
 
 //#entry "float_eq"
-//#expect
-//#!
 proc test_float_eq() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -561,8 +491,6 @@ proc test_float_eq() void {
 }
 
 //#entry "float_not_eq"
-//#expect
-//#!
 proc test_float_not_eq() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -582,8 +510,6 @@ proc test_float_not_eq() void {
 }
 
 //#entry "float_less"
-//#expect
-//#!
 proc test_float_less() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -603,8 +529,6 @@ proc test_float_less() void {
 }
 
 //#entry "float_less_eq"
-//#expect
-//#!
 proc test_float_less_eq() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -624,8 +548,6 @@ proc test_float_less_eq() void {
 }
 
 //#entry "float_greater"
-//#expect
-//#!
 proc test_float_greater() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -645,8 +567,6 @@ proc test_float_greater() void {
 }
 
 //#entry "float_greater_eq"
-//#expect
-//#!
 proc test_float_greater_eq() void {
     let zero = 0.0;
     let pos = 10.2;
@@ -666,8 +586,6 @@ proc test_float_greater_eq() void {
 }
 
 //#entry "logic_and"
-//#expect
-//#!
 proc test_logic_and() void {
     let a: bool = true;
     let b: bool = false;
@@ -691,8 +609,6 @@ proc test_logic_and() void {
 }
 
 //#entry "logic_or"
-//#expect
-//#!
 proc test_logic_or() void {
     let a: bool = true;
     let b: bool = false;
