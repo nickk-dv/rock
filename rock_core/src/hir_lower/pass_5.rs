@@ -1380,8 +1380,17 @@ fn typecheck_index<'hir, 'ast>(
 
     if let hir::Expr::Const(target, target_id) = target_res.expr {
         if let hir::Expr::Const(index, _) = index_res.expr {
-            let index = index.into_int_u64();
+            //@index_res could be invalid const value, either do error count guard or validate.
+            let index = if let hir::IndexKind::ArrayEnum(_) = kind {
+                index.into_enum().1.index() as u64
+            } else {
+                index.into_int_u64()
+            };
+
             let array_len = match target {
+                hir::ConstValue::String { val, .. } => {
+                    ctx.session.intern_lit.get(*val).len() as u64
+                }
                 hir::ConstValue::Array { array } => array.values.len() as u64,
                 hir::ConstValue::ArrayRepeat { array } => array.len,
                 hir::ConstValue::ArrayEmpty { .. } => 0,
@@ -1393,6 +1402,10 @@ fn typecheck_index<'hir, 'ast>(
                 return TypeResult::error();
             }
             let value = match target {
+                hir::ConstValue::String { val, .. } => {
+                    let byte = ctx.session.intern_lit.get(*val).as_bytes()[index as usize];
+                    hir::ConstValue::Int { val: byte as u64, neg: false, int_ty: hir::IntType::U8 }
+                }
                 hir::ConstValue::Array { array } => array.values[index as usize],
                 hir::ConstValue::ArrayRepeat { array } => array.value,
                 _ => unreachable!(),
