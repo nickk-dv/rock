@@ -23,6 +23,15 @@ proc test_index_multi_ref() void {
     assert(ref[2] == 3);
 }
 
+//#entry "index_slice"
+proc test_index_slice() void {
+    let values = ARRAY;
+    let slice = values[..];
+    assert(slice[0] == 1);
+    assert(slice[1] == 2);
+    assert(slice[2] == 3);
+}
+
 //#entry "index_cstring"
 proc test_index_cstring() void {
     let cstr = CSTRING;
@@ -31,13 +40,11 @@ proc test_index_cstring() void {
     assert(cstr[6] == 'e');
 }
 
-//#entry "index_slice"
-proc test_index_slice() void {
-    let values = ARRAY;
-    let slice = values[..];
-    assert(slice[0] == 1);
-    assert(slice[1] == 2);
-    assert(slice[2] == 3);
+//#entry "index_const_cstring"
+proc test_index_const_cstring() void {
+    assert(CSTRING[0] == 'e');
+    assert(CSTRING[1] == 'x');
+    assert(CSTRING[6] == 'e');
 }
 
 //#entry "index_string"
@@ -48,6 +55,13 @@ proc test_index_string() void {
     assert(str[6] == 'e');
 }
 
+//#entry "index_const_string"
+proc test_index_const_string() void {
+    assert(STRING[0] == 'e');
+    assert(STRING[1] == 'x');
+    assert(STRING[6] == 'e');
+}
+
 //#entry "index_array"
 proc test_index_array() void {
     let arr = ARRAY;
@@ -56,12 +70,26 @@ proc test_index_array() void {
     assert(arr[2] == 3);
 }
 
+//#entry "index_const_array"
+proc test_index_const_array() void {
+    assert(ARRAY[0] == 1);
+    assert(ARRAY[1] == 2);
+    assert(ARRAY[2] == 3);
+}
+
 //#entry "index_array_enum"
 proc test_index_array_enum() void {
     let arr = ARRAY_ENUM;
     assert(arr[.A] == 1);
     assert(arr[.B] == 2);
     assert(arr[.C] == 3);
+}
+
+//#entry "index_const_array_enum"
+proc test_index_const_array_enum() void {
+    assert(ARRAY_ENUM[.A] == 1);
+    assert(ARRAY_ENUM[.B] == 2);
+    assert(ARRAY_ENUM[.C] == 3);
 }
 
 //#entry "index_array_core"
@@ -74,55 +102,137 @@ proc test_index_array_core() void {
     assert(arr[2] == 3);
 }
 
-//#entry "index_bounds_slice"
+//#entry "bounds_check_slice"
 //#expect(no_endl)
 //thread panicked at src/test.rock:4:18
 //index out of bounds: 3, len: 3
 //#!
-proc test_index_bounds_slice() void {
+proc test_bounds_check_slice() void {
     let values = ARRAY;
     let slice = values[..];
     let _ = slice[3];
 }
 
-//#entry "index_bounds_string"
+//#entry "bounds_check_string"
 //#expect(no_endl)
 //thread panicked at src/test.rock:3:16
 //index out of bounds: 7, len: 7
 //#!
-proc test_index_bounds_string() void {
+proc test_bounds_check_string() void {
     let str = STRING;
     let _ = str[7];
 }
 
-//#entry "index_bounds_array"
+//#entry "bounds_check_array"
 //#expect(no_endl)
 //thread panicked at src/test.rock:3:16
 //index out of bounds: 3, len: 3
 //#!
-proc test_index_bounds_array() void {
+proc test_bounds_check_array() void {
     let arr = ARRAY;
     let _ = arr[3];
 }
 
-//#entry "index_bounds_array_enum"
+//#entry "bounds_check_array_enum"
 //#expect(no_endl)
 //thread panicked at src/test.rock:3:16
 //index out of bounds: 3, len: 3
 //#!
-proc test_index_bounds_array_enum() void {
+proc test_bounds_check_array_enum() void {
     let arr = ARRAY_ENUM;
     let _ = arr[mem.transmute(3 as u8)];
 }
 
-//#entry "index_bounds_array_core"
+//#entry "bounds_check_array_core"
 //#expect(no_endl)
 //thread panicked at src/test.rock:5:16
 //index out of bounds: 3, len: 3
 //#!
-proc test_index_bounds_array_core() void {
+proc test_bounds_check_array_core() void {
     let mut arr = array.new:(s32)();
     let values = ARRAY;
     array.extend(&mut arr, values[..]);
     let _ = arr[3];
+}
+
+//#entry(check) "bounds_check_const"
+//#expect
+//error: index out of bounds
+//value `7` is outside `0..<7` range
+//  │
+//2 │     let _ = CSTRING[7];
+//  │             ^^^^^^^^^^
+//  └─ src/test.rock:2:13
+//
+//error: index out of bounds
+//value `7` is outside `0..<7` range
+//  │
+//3 │     let _ = STRING[7];
+//  │             ^^^^^^^^^
+//  └─ src/test.rock:3:13
+//
+//error: index out of bounds
+//value `3` is outside `0..<3` range
+//  │
+//4 │     let _ = ARRAY[3];
+//  │             ^^^^^^^^
+//  └─ src/test.rock:4:13
+//
+//#!
+proc test_bounds_check_const() void {
+    let _ = CSTRING[7];
+    let _ = STRING[7];
+    let _ = ARRAY[3];
+}
+
+//#entry(check) "index_const_with_runtime_index"
+//#expect
+//error: cannot index a constant with non-constant value, you can use global variable instead
+//   │
+//4  │     CSTRING[idx];
+//   │     ^^^^^^^^^^^^
+//   ├─ src/test.rock:4:5
+//   │
+//14 │ CSTRING: cstring = "example";
+//   │ ─────── constant defined here
+//   └─ src/test.rock:14:1
+//
+//error: cannot index a constant with non-constant value, you can use global variable instead
+//   │
+//5  │     STRING[idx];
+//   │     ^^^^^^^^^^^
+//   ├─ src/test.rock:5:5
+//   │
+//13 │ STRING: string = "example";
+//   │ ────── constant defined here
+//   └─ src/test.rock:13:1
+//
+//error: cannot index a constant with non-constant value, you can use global variable instead
+//   │
+//6  │     ARRAY[idx];
+//   │     ^^^^^^^^^^
+//   ├─ src/test.rock:6:5
+//   │
+//15 │ ARRAY = [1, 2, 3];
+//   │ ───── constant defined here
+//   └─ src/test.rock:15:1
+//
+//error: cannot index a constant with non-constant value, you can use global variable instead
+//   │
+//7  │     ARRAY_ENUM[enum_idx];
+//   │     ^^^^^^^^^^^^^^^^^^^^
+//   ├─ src/test.rock:7:5
+//   │
+//16 │ ARRAY_ENUM = [Enum.A = 1, .B = 2, .C = 3];
+//   │ ────────── constant defined here
+//   └─ src/test.rock:16:1
+//
+//#!
+proc test_index_const_with_runtime_index() void {
+    let idx: usize = 0;
+    let enum_idx = Enum.A;
+    CSTRING[idx];
+    STRING[idx];
+    ARRAY[idx];
+    ARRAY_ENUM[enum_idx];
 }

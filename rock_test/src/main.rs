@@ -168,6 +168,7 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
     let mut passed_count = 0;
     let mut trailing_endl = true;
 
+    let timer = std::time::Instant::now();
     for test_file in test_files {
         println!("\n{CB}src/{}{R}", test_file.name);
 
@@ -216,10 +217,12 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
             }
         }
     }
+    let runtime = timer.elapsed().as_secs_f64();
 
     if trailing_endl {
         println!();
     }
     let color = if passed_count == total_count { GB } else { RB };
-    println!("{color}tests passed:{R} [{passed_count}/{total_count}]\n",);
+    println!("{color}test runtime:{R} {runtime:.2} sec");
+    println!("{color}tests passed:{R} [{passed_count}/{total_count}]\n");
 }
