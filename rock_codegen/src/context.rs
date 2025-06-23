@@ -179,7 +179,9 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         layout
     }
 
+    //@fragile api that is only valid for `with_field` enums, regular variants dont have `variant_layout` entry.
     pub fn variant_layout(&mut self, key: hir::VariantKey<'c>) -> hir::StructLayout<'c> {
+        assert!(self.hir.enum_data(key.0).flag_set.contains(hir::EnumFlag::WithFields));
         types::expect_concrete(key.2);
         if let Some(layout) = self.hir.variant_layout.get(&key) {
             return *layout;

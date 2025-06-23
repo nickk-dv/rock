@@ -562,18 +562,21 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hi
             for (idx, variant) in data.variants.iter().enumerate() {
                 let variant_id = hir::VariantID::new(idx);
                 let variant_name = cg.session.intern_name.get(variant.name.id);
-                let variant_layout = cg.variant_layout((id, variant_id, poly_types));
 
                 let offset_field = cg.cache.const_values.start();
-                for (field_idx, field) in variant.fields.iter().enumerate() {
-                    let field_ty = context::substitute_type(cg, field.ty, poly_types);
+                if !variant.fields.is_empty() {
+                    let variant_layout = cg.variant_layout((id, variant_id, poly_types));
+                    for (field_idx, field) in variant.fields.iter().enumerate() {
+                        let field_ty = context::substitute_type(cg, field.ty, poly_types);
 
-                    let values = [
-                        register_type_info(cg, field_ty),
-                        const_usize(variant_layout.field_offset[field_idx + 1]),
-                    ];
-                    let field_info = const_struct(cg, cg.hir.core.type_info_variant_field, &values);
-                    cg.cache.const_values.push(field_info);
+                        let values = [
+                            register_type_info(cg, field_ty),
+                            const_usize(variant_layout.field_offset[field_idx + 1]),
+                        ];
+                        let field_info =
+                            const_struct(cg, cg.hir.core.type_info_variant_field, &values);
+                        cg.cache.const_values.push(field_info);
+                    }
                 }
 
                 let slice_index = cg.info.variant_fields.len();
@@ -727,7 +730,16 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hi
             let array_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.arrays_id, index };
             const_enum(cg, cg.hir.core.type_info, 13, &[array_ptr])
         }
-        hir::Type::ArrayEnumerated(array) => unimplemented!(),
+        hir::Type::ArrayEnumerated(array) => {
+            let array_len = cg.hir.enum_data(array.enum_id).variants.len() as u64;
+            let values = [const_usize(array_len), register_type_info(cg, array.elem_ty)];
+            let info = const_struct(cg, cg.hir.core.type_info_array_static, &values);
+
+            let index = cg.info.arrays.len() as u64;
+            cg.info.arrays.push(info);
+            let array_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.arrays_id, index };
+            const_enum(cg, cg.hir.core.type_info, 13, &[array_ptr])
+        }
     };
 
     hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id as u64 }
