@@ -780,8 +780,11 @@ fn match_arm_list<'ast>(
 
 fn match_arm<'ast>(ctx: &mut AstBuild<'ast, '_>, arm: cst::MatchArm) -> ast::MatchArm<'ast> {
     let pat = pat(ctx, arm.pat(ctx.tree).unwrap());
-    let expr = expr(ctx, arm.expr(ctx.tree).unwrap());
-    ast::MatchArm { pat, expr }
+    let stmt = stmt(ctx, arm.stmt(ctx.tree).unwrap());
+    let range = stmt.range;
+    let block = ast::Block { stmts: ctx.arena.alloc_slice(&[stmt]), range: range };
+    let expr = ast::Expr { kind: ast::ExprKind::Block { block: ctx.arena.alloc(block) }, range };
+    ast::MatchArm { pat, expr: ctx.arena.alloc(expr) }
 }
 
 fn expr_slice<'ast>(ctx: &mut AstBuild<'ast, '_>, slice: cst::ExprSlice) -> ast::ExprKind<'ast> {

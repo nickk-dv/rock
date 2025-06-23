@@ -840,7 +840,8 @@ fn codegen_index<'c>(
             Some(cg.const_usize(len))
         }
         hir::IndexKind::ArrayCore => {
-            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[access.elem_ty])).unwrap();
+            let elem_concrete = context::substitute_type(cg, access.elem_ty, &[]);
+            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[elem_concrete])).unwrap();
             let len_ptr = cg.build.gep_struct(array_ty, target_ptr, 0, "array.len.ptr");
             Some(cg.build.load(cg.int_type(hir::IntType::Usize), len_ptr, "array.len"))
         }
@@ -903,7 +904,8 @@ fn codegen_index<'c>(
             )
         }
         hir::IndexKind::ArrayCore => {
-            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[access.elem_ty])).unwrap();
+            let elem_concrete = context::substitute_type(cg, access.elem_ty, &[]);
+            let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[elem_concrete])).unwrap();
             let data_ptr = cg.build.gep_struct(array_ty, target_ptr, 2, "array.data.ptr");
             let data = cg.build.load(cg.ptr_type(), data_ptr, "array.data");
             cg.build.gep_inbounds(elem_ty, data.into_ptr(), &[index_val], "array_elem_ptr")

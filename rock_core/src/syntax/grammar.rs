@@ -500,7 +500,7 @@ fn block(p: &mut Parser) -> MarkerClosed {
     let m = p.start();
     p.bump(T!['{']);
     while !p.at(T!['}']) && !p.at(T![eof]) {
-        stmt(p);
+        stmt(p, true);
     }
     p.expect(T!['}']);
     m.complete(p, SyntaxKind::BLOCK)
@@ -514,40 +514,46 @@ fn block_expect(p: &mut Parser) {
     }
 }
 
-fn stmt(p: &mut Parser) {
+fn stmt(p: &mut Parser, semi: bool) {
     match p.peek() {
-        T![break] => stmt_break(p),
-        T![continue] => stmt_continue(p),
-        T![return] => stmt_return(p),
+        T![break] => stmt_break(p, semi),
+        T![continue] => stmt_continue(p, semi),
+        T![return] => stmt_return(p, semi),
         T![defer] => stmt_defer(p),
         T![for] => stmt_for(p),
-        T![let] => stmt_local(p),
-        T![#] => stmt_with_directive(p),
-        _ => stmt_assign_or_expr_semi(p),
+        T![let] => stmt_local(p, semi),
+        T![#] => stmt_with_directive(p, semi),
+        _ => stmt_assign_or_expr_semi(p, semi),
     }
 }
 
-fn stmt_break(p: &mut Parser) {
+fn stmt_break(p: &mut Parser, semi: bool) {
     let m = p.start();
     p.bump(T![break]);
-    p.expect(T![;]);
+    if semi {
+        p.expect(T![;]);
+    }
     m.complete(p, SyntaxKind::STMT_BREAK);
 }
 
-fn stmt_continue(p: &mut Parser) {
+fn stmt_continue(p: &mut Parser, semi: bool) {
     let m = p.start();
     p.bump(T![continue]);
-    p.expect(T![;]);
+    if semi {
+        p.expect(T![;]);
+    }
     m.complete(p, SyntaxKind::STMT_CONTINUE);
 }
 
-fn stmt_return(p: &mut Parser) {
+fn stmt_return(p: &mut Parser, semi: bool) {
     let m = p.start();
     p.bump(T![return]);
-    if !p.at(T![;]) {
+    if p.at_set(FIRST_EXPR) {
         expr(p);
     }
-    p.expect(T![;]);
+    if semi {
+        p.expect(T![;]);
+    }
     m.complete(p, SyntaxKind::STMT_RETURN);
 }
 
@@ -558,7 +564,7 @@ fn stmt_defer(p: &mut Parser) {
         block(p);
         p.eat(T![;]);
     } else {
-        stmt(p);
+        stmt(p, true);
     }
     m.complete(p, SyntaxKind::STMT_DEFER);
 }
@@ -638,7 +644,7 @@ fn for_bind(p: &mut Parser) {
     m.complete(p, SyntaxKind::FOR_BIND);
 }
 
-fn stmt_local(p: &mut Parser) {
+fn stmt_local(p: &mut Parser, semi: bool) {
     let m = p.start();
     p.bump(T![let]);
     bind(p);
@@ -649,33 +655,38 @@ fn stmt_local(p: &mut Parser) {
     if !p.eat(T![zeroed]) && !p.eat(T![undefined]) {
         expr(p);
     }
-    p.expect(T![;]);
+    if semi {
+        p.expect(T![;]);
+    }
     m.complete(p, SyntaxKind::STMT_LOCAL);
 }
 
-fn stmt_with_directive(p: &mut Parser) {
+fn stmt_with_directive(p: &mut Parser, semi: bool) {
     let mc = directive_list(p);
     let m = p.start_before(mc);
-    stmt(p);
+    stmt(p, semi);
     m.complete(p, SyntaxKind::STMT_WITH_DIRECTIVE);
 }
 
-fn stmt_assign_or_expr_semi(p: &mut Parser) {
+fn stmt_assign_or_expr_semi(p: &mut Parser, semi: bool) {
     let m = p.start();
     expr(p);
 
     if p.peek().as_assign_op().is_some() {
         p.bump(p.peek());
         expr(p);
-        p.expect(T![;]);
+        if semi {
+            p.expect(T![;]);
+        }
         m.complete(p, SyntaxKind::STMT_ASSIGN);
-    } else if p.at(T!['}']) {
+    } else if p.at(T!['}']) || !semi {
         m.complete(p, SyntaxKind::STMT_EXPR_TAIL);
-    } else if p.at_prev(T!['}']) {
-        p.eat(T![;]);
-        m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
     } else {
-        p.expect(T![;]);
+        if p.at_prev(T!['}']) {
+            p.eat(T![;]);
+        } else {
+            p.expect(T![;]);
+        }
         m.complete(p, SyntaxKind::STMT_EXPR_SEMI);
     }
 }
@@ -852,7 +863,7 @@ fn match_arm(p: &mut Parser) {
     let m = p.start();
     pat(p);
     p.expect(T![->]);
-    expr(p);
+    stmt(p, false);
     m.complete(p, SyntaxKind::MATCH_ARM);
 }
 
@@ -1210,6 +1221,8 @@ const FIRST_VARIANT: TokenSet = TokenSet::new(&[T![#], T![ident]]);
 const FIRST_VARIANT_FIELD: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![ident]]));
 const FIRST_FIELD: TokenSet = TokenSet::new(&[T![#], T![ident]]);
 const FIRST_BIND: TokenSet = TokenSet::new(&[T![mut], T![ident], T![_]]);
+const FIRST_PROC_TYPE_PARAM: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![ident], T![#]]));
+
 #[rustfmt::skip]
 const FIRST_TYPE: TokenSet = TokenSet::new(&[
     T![char], T![void], T![never], T![rawptr],
@@ -1218,7 +1231,15 @@ const FIRST_TYPE: TokenSet = TokenSet::new(&[
     T![f32], T![f64], T![bool], T![bool16], T![bool32], T![bool64],
     T![string], T![cstring], T![ident], T![&], T![proc], T!['['],
 ]);
-const FIRST_PROC_TYPE_PARAM: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![ident], T![#]]));
+
+#[rustfmt::skip]
+const FIRST_EXPR: TokenSet = TokenSet::new(&[
+    T![~], T![!], T![-], T!['('],
+    T![void], T![null], T![true], T![false],
+    T![int_lit], T![float_lit], T![char_lit], T![string_lit],
+    T![if], T!['{'], T![match], T![ident],
+    T![.], T!['['], T![*], T![&],
+]);
 
 //==================== RECOVER SETS ====================
 

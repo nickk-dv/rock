@@ -1093,7 +1093,7 @@ impl<'syn> MatchArmList<'syn> {
 
 impl<'syn> MatchArm<'syn> {
     node_find!(pat, Pat);
-    node_find!(expr, Expr);
+    node_find!(stmt, Stmt);
 }
 
 impl<'syn> ExprField<'syn> {

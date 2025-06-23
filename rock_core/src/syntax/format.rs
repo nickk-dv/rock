@@ -522,7 +522,7 @@ fn block<'syn>(fmt: &mut Formatter<'syn, '_>, block: cst::Block<'syn>, carry: bo
     fmt.write('}');
 }
 
-fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
+fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool, semi: bool) {
     if tab {
         match stmt {
             cst::Stmt::WithDirective(_) => {}
@@ -536,21 +536,29 @@ fn stmt<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::Stmt<'syn>, tab: bool) {
         cst::Stmt::Defer(stmt) => stmt_defer(fmt, stmt),
         cst::Stmt::For(stmt) => stmt_for(fmt, stmt),
         cst::Stmt::Local(stmt) => stmt_local(fmt, stmt),
-        cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt, true),
+        cst::Stmt::Assign(stmt) => stmt_assign(fmt, stmt),
         cst::Stmt::ExprSemi(stmt) => stmt_expr_semi(fmt, stmt),
         cst::Stmt::ExprTail(stmt) => stmt_expr_tail(fmt, stmt),
-        cst::Stmt::WithDirective(stmt) => stmt_with_directive(fmt, stmt),
+        cst::Stmt::WithDirective(stmt) => stmt_with_directive(fmt, stmt, semi),
+    }
+    if semi {
+        match stmt {
+            cst::Stmt::Break(_)
+            | cst::Stmt::Continue(_)
+            | cst::Stmt::Return(_)
+            | cst::Stmt::Local(_)
+            | cst::Stmt::Assign(_) => fmt.write(';'),
+            _ => {}
+        }
     }
 }
 
 fn stmt_break(fmt: &mut Formatter) {
     fmt.write_str("break");
-    fmt.write(';');
 }
 
 fn stmt_continue(fmt: &mut Formatter) {
     fmt.write_str("continue");
-    fmt.write(';');
 }
 
 fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>) {
@@ -559,7 +567,6 @@ fn stmt_return<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtReturn<'syn>)
         fmt.space();
         expr(fmt, expr_cst);
     }
-    fmt.write(';');
 }
 
 fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) {
@@ -569,7 +576,7 @@ fn stmt_defer<'syn>(fmt: &mut Formatter<'syn, '_>, defer: cst::StmtDefer<'syn>) 
     if let Some(block_cst) = defer.block(fmt.tree) {
         block(fmt, block_cst, false);
     } else {
-        stmt(fmt, defer.stmt(fmt.tree).unwrap(), false);
+        stmt(fmt, defer.stmt(fmt.tree).unwrap(), false, true);
     }
 }
 
@@ -678,10 +685,9 @@ fn stmt_local<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtLocal<'syn>) {
     } else {
         expr(fmt, stmt.init(fmt.tree).unwrap());
     }
-    fmt.write(';');
 }
 
-fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>, semi: bool) {
+fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>) {
     expr(fmt, stmt.lhs(fmt.tree).unwrap());
     fmt.space();
 
@@ -696,9 +702,6 @@ fn stmt_assign<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtAssign<'syn>,
 
     fmt.space();
     expr(fmt, stmt.rhs(fmt.tree).unwrap());
-    if semi {
-        fmt.write(';');
-    }
 }
 
 fn stmt_expr_semi<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprSemi<'syn>) {
@@ -715,9 +718,10 @@ fn stmt_expr_tail<'syn>(fmt: &mut Formatter<'syn, '_>, stmt: cst::StmtExprTail<'
 fn stmt_with_directive<'syn>(
     fmt: &mut Formatter<'syn, '_>,
     stmt_dir: cst::StmtWithDirective<'syn>,
+    semi: bool,
 ) {
     directive_list(fmt, stmt_dir.dir_list(fmt.tree).unwrap(), true);
-    stmt(fmt, stmt_dir.stmt(fmt.tree).unwrap(), true);
+    stmt(fmt, stmt_dir.stmt(fmt.tree).unwrap(), true, semi);
 }
 
 //==================== EXPR ====================
@@ -822,7 +826,7 @@ fn match_arm<'syn>(fmt: &mut Formatter<'syn, '_>, match_arm: cst::MatchArm<'syn>
     fmt.space();
     fmt.write_str("->");
     fmt.space();
-    expr(fmt, match_arm.expr(fmt.tree).unwrap());
+    stmt(fmt, match_arm.stmt(fmt.tree).unwrap(), false, false);
     fmt.write(',');
 }
 
@@ -1701,7 +1705,7 @@ impl<'syn> InterleaveFormat<'syn> for cst::Field<'syn> {
 }
 impl<'syn> InterleaveFormat<'syn> for cst::Stmt<'syn> {
     fn interleaved_format(fmt: &mut Formatter<'syn, '_>, node: Self) {
-        stmt(fmt, node, true);
+        stmt(fmt, node, true, true);
     }
 }
 impl<'syn> InterleaveFormat<'syn> for cst::Expr<'syn> {
