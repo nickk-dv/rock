@@ -1,0 +1,68 @@
+//#prelude
+import core:atomic.{Ordering}
+
+//#entry(check) "intrinsic_validate_load"
+//#expect
+//error: #intrinsic `load` requires `order` argument to be constant
+//  │
+//4 │     let _ = atomic.load(&v, order);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:4:13
+//
+//error: #intrinsic `load` argument `order` cannot be `Ordering.Release`
+//  │
+//8 │     let _ = atomic.load(&v, .Release);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:8:13
+//
+//error: #intrinsic `load` argument `order` cannot be `Ordering.AcqRel`
+//  │
+//9 │     let _ = atomic.load(&v, .AcqRel);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:9:13
+//
+//#!
+proc test_intrinsic_validate_load() void {
+    let v: u8 = 0;
+    let order = Ordering.Relaxed;
+    let _ = atomic.load(&v, order);
+
+    let _ = atomic.load(&v, .Relaxed);
+    let _ = atomic.load(&v, .Acquire);
+    let _ = atomic.load(&v, .Release);
+    let _ = atomic.load(&v, .AcqRel);
+    let _ = atomic.load(&v, .SeqCst);
+}
+
+//#entry(check) "intrinsic_validate_store"
+//#expect
+//error: #intrinsic `store` requires `order` argument to be constant
+//  │
+//4 │     let _ = atomic.store(&mut v, 0, order);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:4:13
+//
+//error: #intrinsic `store` argument `order` cannot be `Ordering.Acquire`
+//  │
+//7 │     let _ = atomic.store(&mut v, 0, .Acquire);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:7:13
+//
+//error: #intrinsic `store` argument `order` cannot be `Ordering.AcqRel`
+//  │
+//9 │     let _ = atomic.store(&mut v, 0, .AcqRel);
+//  │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//  └─ src/test.rock:9:13
+//
+//#!
+proc test_intrinsic_validate_store() void {
+    let mut v: u8 = 0;
+    let order = Ordering.Relaxed;
+    let _ = atomic.store(&mut v, 0, order);
+
+    let _ = atomic.store(&mut v, 0, .Relaxed);
+    let _ = atomic.store(&mut v, 0, .Acquire);
+    let _ = atomic.store(&mut v, 0, .Release);
+    let _ = atomic.store(&mut v, 0, .AcqRel);
+    let _ = atomic.store(&mut v, 0, .SeqCst);
+}

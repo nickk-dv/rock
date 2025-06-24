@@ -4441,7 +4441,7 @@ fn check_call_direct<'hir, 'ast>(
 
     let data = ctx.registry.proc_data(proc_id);
     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
-        if let Some(result) = check_call_intrinsic(ctx, proc_id, poly_types, range) {
+        if let Some(result) = check_call_intrinsic(ctx, proc_id, poly_types, input, range) {
             return result;
         }
     }
@@ -4548,6 +4548,7 @@ fn check_call_intrinsic<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     proc_id: hir::ProcID,
     poly_types: &'hir [hir::Type<'hir>],
+    input: &'hir [&'hir hir::Expr<'hir>],
     range: TextRange,
 ) -> Option<TypeResult<'hir>> {
     let data = ctx.registry.proc_data(proc_id);
@@ -4625,8 +4626,54 @@ fn check_call_intrinsic<'hir>(
             Some(TypeResult::error())
         }
         "from_raw_parts" => None,
-        "load" => None,
-        "store" => None,
+        "load" => {
+            let Some(ordering) = input.get(1).copied() else {
+                return None;
+            };
+            let hir::Expr::Const(value, _) = ordering else {
+                err::tycheck_intrinsic_require_const(&mut ctx.emit, src, "load", "order");
+                return None;
+            };
+            if let hir::ConstValue::Variant { enum_id, variant_id } = *value {
+                if let 2 | 3 = variant_id.raw() {
+                    let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
+                    let name = ctx.name(variant.name.id);
+                    err::tycheck_intrinsic_invalid_enum(
+                        &mut ctx.emit,
+                        src,
+                        "load",
+                        "order",
+                        "Ordering",
+                        name,
+                    );
+                }
+            }
+            None
+        }
+        "store" => {
+            let Some(ordering) = input.get(2).copied() else {
+                return None;
+            };
+            let hir::Expr::Const(value, _) = ordering else {
+                err::tycheck_intrinsic_require_const(&mut ctx.emit, src, "store", "order");
+                return None;
+            };
+            if let hir::ConstValue::Variant { enum_id, variant_id } = *value {
+                if let 1 | 3 = variant_id.raw() {
+                    let variant = ctx.registry.enum_data(enum_id).variant(variant_id);
+                    let name = ctx.name(variant.name.id);
+                    err::tycheck_intrinsic_invalid_enum(
+                        &mut ctx.emit,
+                        src,
+                        "store",
+                        "order",
+                        "Ordering",
+                        name,
+                    );
+                }
+            }
+            None
+        }
         "modify" => None,
         "compare_exchange" => None,
         "compare_exchange_weak" => None,
