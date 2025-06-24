@@ -30,7 +30,32 @@ pub fn check_proc_directives(
             continue;
         }
         let new_flag = match directive.kind {
-            DirectiveKind::Inline => hir::ProcFlag::Inline,
+            DirectiveKind::InlineNever => {
+                if flag_set.contains(hir::ProcFlag::InlineAlways) {
+                    let src = ctx.src(directive.range);
+                    err::flag_proc_conflict(
+                        &mut ctx.emit,
+                        src,
+                        hir::ProcFlag::InlineNever.as_str(),
+                        hir::ProcFlag::InlineAlways.as_str(),
+                    );
+                    continue;
+                }
+                hir::ProcFlag::InlineNever
+            }
+            DirectiveKind::InlineAlways => {
+                if flag_set.contains(hir::ProcFlag::InlineNever) {
+                    let src = ctx.src(directive.range);
+                    err::flag_proc_conflict(
+                        &mut ctx.emit,
+                        src,
+                        hir::ProcFlag::InlineAlways.as_str(),
+                        hir::ProcFlag::InlineNever.as_str(),
+                    );
+                    continue;
+                }
+                hir::ProcFlag::InlineAlways
+            }
             DirectiveKind::Intrinsic => {
                 let module = ctx.session.module.get(ctx.scope.origin);
                 if module.origin == session::CORE_PACKAGE_ID {
@@ -48,7 +73,12 @@ pub fn check_proc_directives(
                 continue;
             }
         };
-        flag_set.set(new_flag);
+        if flag_set.contains(new_flag) {
+            let src = ctx.src(directive.range);
+            err::directive_duplicate(&mut ctx.emit, src, directive.kind.as_str());
+        } else {
+            flag_set.set(new_flag);
+        }
     }
 
     if item.block.is_none() && !flag_set.contains(hir::ProcFlag::Intrinsic) {

@@ -427,8 +427,13 @@ pub fn directive_param_must_be_last(emit: &mut impl ErrorSink, src: SourceRange,
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn flag_proc_conflict(emit: &mut impl ErrorSink, src: SourceRange, new: &str, old: &str) {
+    let msg = format!("`{new}` procedures cannot be `{old}`");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn flag_proc_intrinsic_non_core(emit: &mut impl ErrorSink, proc_src: SourceRange) {
-    let msg = "`intrinsic` procedures can only be defined in core library";
+    let msg = "`intrinsic` procedures cannot be defined outside the core library";
     emit.error(Error::new(msg, proc_src, None));
 }
 

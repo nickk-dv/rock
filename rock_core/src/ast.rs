@@ -160,7 +160,8 @@ pub struct DirectiveParam {
 pub enum DirectiveKind<'ast> {
     Error(Name),
     CCall,
-    Inline,
+    InlineNever,
+    InlineAlways,
     Intrinsic,
     Variadic,
     CVariadic,
@@ -607,7 +608,8 @@ impl DirectiveKind<'_> {
         match self {
             DirectiveKind::Error(_) => "<error>",
             DirectiveKind::CCall => "c_call",
-            DirectiveKind::Inline => "inline",
+            DirectiveKind::InlineNever => "inline_never",
+            DirectiveKind::InlineAlways => "inline_always",
             DirectiveKind::Intrinsic => "intrinsic",
             DirectiveKind::Variadic => "variadic",
             DirectiveKind::CVariadic => "c_variadic",

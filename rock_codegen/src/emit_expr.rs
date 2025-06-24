@@ -1239,6 +1239,12 @@ pub fn codegen_call_intrinsic<'c>(
     input: &[&hir::Expr<'c>],
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
+    const RELAXED: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingMonotonic;
+    const ACQUIRE: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingAcquire;
+    const RELEASE: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingRelease;
+    const ACQREL: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingAcquireRelease;
+    const SEQCST: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent;
+
     let data = cg.hir.proc_data(proc_id);
     let name = cg.session.intern_name.get(data.name.id);
 
@@ -1309,24 +1315,70 @@ pub fn codegen_call_intrinsic<'c>(
             None
         }
         "modify" => unimplemented!("atomic modify"),
-        "compare_exchange" | "compare_exchange_weak" => {
-            let dst = codegen_expr_value(cg, input[0]).into_ptr();
-            let expect = codegen_expr_value(cg, input[1]);
-            let new = codegen_expr_value(cg, input[2]);
-            let success = const_expr_ordering(input[3]);
-            let failure = const_expr_ordering(input[4]);
-
-            let inst = cg.build.atomic_cmp_xchg(dst, expect, new, success, failure);
-            if name == "compare_exchange_weak" {
-                cg.build.set_weak(inst, true);
-            }
-            //@wrap in Result, use existing api
-            let _ = cg.build.extract_value(inst, 0, "stored_val");
-            let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
-            Some(exchange_ok)
+        "compare_exchange_relaxed_relaxed" => codegen_cmpxchg(cg, input, RELAXED, RELAXED, false),
+        "compare_exchange_relaxed_relaxed_weak" => {
+            codegen_cmpxchg(cg, input, RELAXED, RELAXED, true)
         }
+        "compare_exchange_relaxed_acquire" => codegen_cmpxchg(cg, input, RELAXED, ACQUIRE, false),
+        "compare_exchange_relaxed_acquire_weak" => {
+            codegen_cmpxchg(cg, input, RELAXED, ACQUIRE, true)
+        }
+        "compare_exchange_relaxed_seqcst" => codegen_cmpxchg(cg, input, RELAXED, SEQCST, false),
+        "compare_exchange_relaxed_seqcst_weak" => codegen_cmpxchg(cg, input, RELAXED, SEQCST, true),
+        "compare_exchange_acquire_relaxed" => codegen_cmpxchg(cg, input, ACQUIRE, RELAXED, false),
+        "compare_exchange_acquire_relaxed_weak" => {
+            codegen_cmpxchg(cg, input, ACQUIRE, RELAXED, true)
+        }
+        "compare_exchange_acquire_acquire" => codegen_cmpxchg(cg, input, ACQUIRE, ACQUIRE, false),
+        "compare_exchange_acquire_acquire_weak" => {
+            codegen_cmpxchg(cg, input, ACQUIRE, ACQUIRE, true)
+        }
+        "compare_exchange_acquire_seqcst" => codegen_cmpxchg(cg, input, ACQUIRE, SEQCST, false),
+        "compare_exchange_acquire_seqcst_weak" => codegen_cmpxchg(cg, input, ACQUIRE, SEQCST, true),
+        "compare_exchange_release_relaxed" => codegen_cmpxchg(cg, input, RELEASE, RELAXED, false),
+        "compare_exchange_release_relaxed_weak" => {
+            codegen_cmpxchg(cg, input, RELEASE, RELAXED, true)
+        }
+        "compare_exchange_release_acquire" => codegen_cmpxchg(cg, input, RELEASE, ACQUIRE, false),
+        "compare_exchange_release_acquire_weak" => {
+            codegen_cmpxchg(cg, input, RELEASE, ACQUIRE, true)
+        }
+        "compare_exchange_release_seqcst" => codegen_cmpxchg(cg, input, RELEASE, SEQCST, false),
+        "compare_exchange_release_seqcst_weak" => codegen_cmpxchg(cg, input, RELEASE, SEQCST, true),
+        "compare_exchange_acqrel_relaxed" => codegen_cmpxchg(cg, input, ACQREL, RELAXED, false),
+        "compare_exchange_acqrel_relaxed_weak" => codegen_cmpxchg(cg, input, ACQREL, RELAXED, true),
+        "compare_exchange_acqrel_acquire" => codegen_cmpxchg(cg, input, ACQREL, ACQUIRE, false),
+        "compare_exchange_acqrel_acquire_weak" => codegen_cmpxchg(cg, input, ACQREL, ACQUIRE, true),
+        "compare_exchange_acqrel_seqcst" => codegen_cmpxchg(cg, input, ACQREL, SEQCST, false),
+        "compare_exchange_acqrel_seqcst_weak" => codegen_cmpxchg(cg, input, ACQREL, SEQCST, true),
+        "compare_exchange_seqcst_relaxed" => codegen_cmpxchg(cg, input, SEQCST, RELAXED, false),
+        "compare_exchange_seqcst_relaxed_weak" => codegen_cmpxchg(cg, input, SEQCST, RELAXED, true),
+        "compare_exchange_seqcst_acquire" => codegen_cmpxchg(cg, input, SEQCST, ACQUIRE, false),
+        "compare_exchange_seqcst_acquire_weak" => codegen_cmpxchg(cg, input, SEQCST, ACQUIRE, true),
+        "compare_exchange_seqcst_seqcst" => codegen_cmpxchg(cg, input, SEQCST, SEQCST, false),
+        "compare_exchange_seqcst_seqcst_weak" => codegen_cmpxchg(cg, input, SEQCST, SEQCST, true),
         _ => unreachable!(),
     }
+}
+
+fn codegen_cmpxchg<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    input: &[&hir::Expr<'c>],
+    success: llvm::Ordering,
+    failure: llvm::Ordering,
+    weak: bool,
+) -> Option<llvm::Value> {
+    let dst = codegen_expr_value(cg, input[0]).into_ptr();
+    let expect = codegen_expr_value(cg, input[1]);
+    let new = codegen_expr_value(cg, input[2]);
+
+    let inst = cg.build.atomic_cmp_xchg(dst, expect, new, success, failure);
+    if weak {
+        cg.build.set_weak(inst, true);
+    }
+    //@extract value, store in named struct
+    let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
+    Some(exchange_ok)
 }
 
 fn codegen_from_raw_parts(cg: &mut Codegen, ptr: llvm::Value, len: llvm::Value) -> llvm::Value {
@@ -1344,15 +1396,15 @@ fn is_numeric(kind: llvm::TypeKind) -> bool {
     )
 }
 
-fn const_expr_ordering(expr: &hir::Expr) -> llvm::AtomicOrdering {
+fn const_expr_ordering(expr: &hir::Expr) -> llvm::Ordering {
     let hir::Expr::Const(value, _) = *expr else { unreachable!() };
     let hir::ConstValue::Variant { variant_id, .. } = value else { unreachable!() };
     match variant_id.raw() {
-        0 => llvm::AtomicOrdering::LLVMAtomicOrderingMonotonic,
-        1 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquire,
-        2 => llvm::AtomicOrdering::LLVMAtomicOrderingRelease,
-        3 => llvm::AtomicOrdering::LLVMAtomicOrderingAcquireRelease,
-        4 => llvm::AtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent,
+        0 => llvm::Ordering::LLVMAtomicOrderingMonotonic,
+        1 => llvm::Ordering::LLVMAtomicOrderingAcquire,
+        2 => llvm::Ordering::LLVMAtomicOrderingRelease,
+        3 => llvm::Ordering::LLVMAtomicOrderingAcquireRelease,
+        4 => llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent,
         _ => unreachable!(),
     }
 }

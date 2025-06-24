@@ -680,7 +680,8 @@ crate::enum_as_str! {
     #[derive(Copy, Clone, Hash, Eq,  Debug, PartialEq)]
     pub enum ProcFlag {
         // directives
-        Inline "inline",
+        InlineNever "inline_never",
+        InlineAlways "inline_always",
         Intrinsic "intrinsic",
         // compile-time flags
         WasUsed "was used",

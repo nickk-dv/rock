@@ -1939,7 +1939,8 @@ pub fn check_item_procedure<'hir, 'ast>(
     ctx.scope.infer.end_context(infer);
 
     //clear unrelated flags
-    proc_ty.flag_set.clear(hir::ProcFlag::Inline);
+    proc_ty.flag_set.clear(hir::ProcFlag::InlineNever);
+    proc_ty.flag_set.clear(hir::ProcFlag::InlineAlways);
     proc_ty.flag_set.clear(hir::ProcFlag::WasUsed);
     proc_ty.flag_set.clear(hir::ProcFlag::EntryPoint);
 
@@ -4674,10 +4675,7 @@ fn check_call_intrinsic<'hir>(
             }
             None
         }
-        "modify" => None,
-        "compare_exchange" => None,
-        "compare_exchange_weak" => None,
-        _ => unreachable!(),
+        _ => None,
     }
 }
 

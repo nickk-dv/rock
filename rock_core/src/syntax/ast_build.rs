@@ -341,7 +341,8 @@ fn directive<'ast>(
             let name = name(ctx, dir.name(ctx.tree).unwrap());
             match ctx.intern.get(name.id) {
                 "c_call" => ast::DirectiveKind::CCall,
-                "inline" => ast::DirectiveKind::Inline,
+                "inline_never" => ast::DirectiveKind::InlineNever,
+                "inline_always" => ast::DirectiveKind::InlineAlways,
                 "intrinsic" => ast::DirectiveKind::Intrinsic,
                 "variadic" => ast::DirectiveKind::Variadic,
                 "c_variadic" => ast::DirectiveKind::CVariadic,
