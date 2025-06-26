@@ -623,7 +623,7 @@ fn compile_project(server: &mut ServerContext) {
     use std::time::Instant;
 
     let session = &mut server.session;
-    session.errors.errors.clear();
+    session.errors.clear();
     for module_id in session.module.ids() {
         session.module.get_mut(module_id).errors.clear();
     }

@@ -783,7 +783,7 @@ fn match_arm<'ast>(ctx: &mut AstBuild<'ast, '_>, arm: cst::MatchArm) -> ast::Mat
     let pat = pat(ctx, arm.pat(ctx.tree).unwrap());
     let stmt = stmt(ctx, arm.stmt(ctx.tree).unwrap());
     let range = stmt.range;
-    let block = ast::Block { stmts: ctx.arena.alloc_slice(&[stmt]), range: range };
+    let block = ast::Block { stmts: ctx.arena.alloc_slice(&[stmt]), range };
     let expr = ast::Expr { kind: ast::ExprKind::Block { block: ctx.arena.alloc(block) }, range };
     ast::MatchArm { pat, expr: ctx.arena.alloc(expr) }
 }

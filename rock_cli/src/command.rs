@@ -73,8 +73,8 @@ pub fn parse() -> Result<Command, ErrorBuffer> {
 
 fn command_new(p: &mut CommandParser) -> Command {
     let name = parse_args_single(p, "name");
-    let kind = parse_option_enum(p, PackageKind::Bin);
-    let no_git = parse_option_flag(p, false, "no-git");
+    let kind = parse_option_enum_flag(p, PackageKind::Lib, PackageKind::Bin);
+    let no_git = parse_option_flag(p, "no-git");
     parse_trail_args_none(p);
 
     let data = CommandNew { name, kind, no_git };
@@ -83,8 +83,8 @@ fn command_new(p: &mut CommandParser) -> Command {
 
 fn command_check(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let warn = parse_option_flag(p, false, "warn");
-    let stats = parse_option_flag(p, false, "stats");
+    let warn = parse_option_flag(p, "warn");
+    let stats = parse_option_flag(p, "stats");
     parse_trail_args_none(p);
 
     let data = CommandCheck { warn, stats };
@@ -93,10 +93,10 @@ fn command_check(p: &mut CommandParser) -> Command {
 
 fn command_build(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let build = parse_option_enum(p, Build::Debug);
-    let warn = parse_option_flag(p, false, "warn");
-    let stats = parse_option_flag(p, false, "stats");
-    let emit_llvm = parse_option_flag(p, false, "emit-llvm");
+    let build = parse_option_enum_flag(p, Build::Release, Build::Debug);
+    let warn = parse_option_flag(p, "warn");
+    let stats = parse_option_flag(p, "stats");
+    let emit_llvm = parse_option_flag(p, "emit-llvm");
     parse_trail_args_none(p);
 
     let options = BuildOptions { emit_llvm };
@@ -106,10 +106,10 @@ fn command_build(p: &mut CommandParser) -> Command {
 
 fn command_run(p: &mut CommandParser) -> Command {
     parse_args_none(p);
-    let build = parse_option_enum(p, Build::Debug);
-    let warn = parse_option_flag(p, false, "warn");
-    let stats = parse_option_flag(p, false, "stats");
-    let emit_llvm = parse_option_flag(p, false, "emit-llvm");
+    let build = parse_option_enum_flag(p, Build::Release, Build::Debug);
+    let warn = parse_option_flag(p, "warn");
+    let stats = parse_option_flag(p, "stats");
+    let emit_llvm = parse_option_flag(p, "emit-llvm");
     let args = parse_trail_args(p);
 
     let options = BuildOptions { emit_llvm };
@@ -237,7 +237,19 @@ fn parse_args_single(p: &mut CommandParser, name: &str) -> String {
     }
 }
 
-fn parse_option_no_args(p: &mut CommandParser, opt: &'static str) -> bool {
+fn parse_option_flag(p: &mut CommandParser, name: &str) -> bool {
+    parse_option_no_args(p, name)
+}
+
+fn parse_option_enum_flag<T: Copy + AsStr>(p: &mut CommandParser, value: T, default: T) -> T {
+    if parse_option_no_args(p, value.as_str()) {
+        value
+    } else {
+        default
+    }
+}
+
+fn parse_option_no_args(p: &mut CommandParser, opt: &str) -> bool {
     if let Some(args) = p.format.options.remove(opt) {
         if !args.is_empty() {
             err::cmd_option_expect_no_args(&mut p.err, opt);
@@ -248,45 +260,12 @@ fn parse_option_no_args(p: &mut CommandParser, opt: &'static str) -> bool {
     }
 }
 
-fn parse_option_flag(p: &mut CommandParser, default: bool, name: &'static str) -> bool {
-    if parse_option_no_args(p, name) {
-        true
-    } else {
-        default
-    }
-}
-
-fn parse_option_enum<T: Copy + AsStr>(p: &mut CommandParser, default: T) -> T {
-    let mut selected = None;
-    let mut variants = T::ALL.iter().copied();
-
-    for value in variants.by_ref() {
-        if parse_option_no_args(p, value.as_str()) {
-            selected = Some(value);
-            break;
-        }
-    }
-
-    if let Some(selected) = selected {
-        for other in variants {
-            if parse_option_no_args(p, other.as_str()) {
-                let opt = selected.as_str();
-                let other = other.as_str();
-                err::cmd_option_conflict(&mut p.err, opt, other);
-            }
-        }
-        selected
-    } else {
-        default
-    }
+fn parse_trail_args(p: &mut CommandParser) -> Vec<String> {
+    p.format.trail_args.clone()
 }
 
 fn parse_trail_args_none(p: &mut CommandParser) {
     if !p.format.trail_args.is_empty() {
         err::cmd_expect_no_trail_args(&mut p.err, &p.format.cmd);
     }
-}
-
-fn parse_trail_args(p: &mut CommandParser) -> Vec<String> {
-    p.format.trail_args.clone()
 }

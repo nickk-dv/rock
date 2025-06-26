@@ -671,7 +671,7 @@ pub fn const_dependency_cycle(
 }
 
 pub fn const_int_div_by_zero(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("integer division by zero");
+    let msg = "integer division by zero";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -687,7 +687,7 @@ pub fn const_int_overflow(
 }
 
 pub fn const_size_overflow(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("constant size overflow when computing type layout");
+    let msg = "constant size overflow when computing type layout";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -907,12 +907,12 @@ pub fn tycheck_field_init_out_of_order(
 }
 
 pub fn tycheck_expected_variant_value(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("expected variant initializer");
+    let msg = "expected variant initializer";
     emit.error(Error::new(msg, src, None));
 }
 
 pub fn tycheck_unexpected_variant_value(emit: &mut impl ErrorSink, src: SourceRange) {
-    let msg = format!("unexpected variant initializer");
+    let msg = "unexpected variant initializer";
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1055,7 +1055,7 @@ pub fn tycheck_intrinsic_proc_ptr(
     src: SourceRange,
     proc_src: SourceRange,
 ) {
-    let msg = format!("cannot take a pointer to an #intrinsic procedure");
+    let msg = "cannot take a pointer to an #intrinsic procedure";
     let info = Info::new("procedure defined here", proc_src);
     emit.error(Error::new(msg, src, info));
 }

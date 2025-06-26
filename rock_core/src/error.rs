@@ -150,8 +150,6 @@ impl From<String> for StringOrStr {
     }
 }
 
-//==================== COLLECTION BUFFERS ====================
-
 #[derive(Default)]
 pub struct ErrorBuffer {
     pub errors: Vec<Error>,
@@ -169,103 +167,34 @@ pub struct ErrorWarningBuffer {
 }
 
 impl ErrorBuffer {
+    pub fn collect(self) -> Vec<Error> {
+        self.errors
+    }
+    pub fn clear(&mut self) {
+        self.errors.clear();
+    }
+    pub fn join_e(&mut self, err: ErrorBuffer) {
+        let errors = err.collect();
+        self.errors.extend(errors);
+    }
     pub fn result<T>(self, value: T) -> Result<T, ErrorBuffer> {
         if self.errors.is_empty() {
-            let _ = self.collect();
             Ok(value)
         } else {
             Err(self)
         }
     }
-
-    pub fn collect(mut self) -> Vec<Error> {
-        std::mem::take(&mut self.errors)
-    }
-
-    pub fn join_e(&mut self, err: ErrorBuffer) {
-        let errors = err.collect();
-        self.errors.extend(errors);
-    }
-}
-
-impl WarningBuffer {
-    pub fn collect(mut self) -> Vec<Warning> {
-        std::mem::take(&mut self.warnings)
-    }
-
-    pub fn join_w(&mut self, warn: WarningBuffer) {
-        let warnings = warn.collect();
-        self.warnings.extend(warnings);
-    }
 }
 
 impl ErrorWarningBuffer {
-    pub fn result<T>(self, value: T) -> Result<(T, WarningBuffer), ErrorWarningBuffer> {
-        if self.errors.is_empty() {
-            let (_, warnings) = self.collect();
-            let mut warn = WarningBuffer::default();
-            warn.warnings = warnings;
-            Ok((value, warn))
-        } else {
-            Err(self)
-        }
+    pub fn collect(self) -> (Vec<Error>, Vec<Warning>) {
+        (self.errors, self.warnings)
     }
-
-    pub fn collect(mut self) -> (Vec<Error>, Vec<Warning>) {
-        let errors = std::mem::take(&mut self.errors);
-        let warnings = std::mem::take(&mut self.warnings);
-        (errors, warnings)
-    }
-
     pub fn clear(&mut self) {
         self.errors.clear();
         self.warnings.clear();
     }
-
-    pub fn join_e(&mut self, err: ErrorBuffer) {
-        let errors = err.collect();
-        self.errors.extend(errors);
-    }
-    pub fn join_w(&mut self, warn: WarningBuffer) {
-        let warnings = warn.collect();
-        self.warnings.extend(warnings);
-    }
-    pub fn join_ew(&mut self, errw: ErrorWarningBuffer) {
-        let (errors, warnings) = errw.collect();
-        self.errors.extend(errors);
-        self.warnings.extend(warnings);
-    }
-
-    pub fn replace_e(&mut self, err: ErrorBuffer) {
-        self.errors = err.collect();
-    }
 }
-
-impl From<Error> for ErrorBuffer {
-    fn from(error: Error) -> ErrorBuffer {
-        let mut err = ErrorBuffer::default();
-        err.error(error);
-        err
-    }
-}
-
-impl From<Error> for ErrorWarningBuffer {
-    fn from(error: Error) -> ErrorWarningBuffer {
-        let mut errw = ErrorWarningBuffer::default();
-        errw.error(error);
-        errw
-    }
-}
-
-impl From<ErrorBuffer> for ErrorWarningBuffer {
-    fn from(err: ErrorBuffer) -> ErrorWarningBuffer {
-        let mut errw = ErrorWarningBuffer::default();
-        errw.errors = err.collect();
-        errw
-    }
-}
-
-//==================== COLLECTION TRAITS ====================
 
 pub trait ErrorSink {
     fn error(&mut self, error: Error);

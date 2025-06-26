@@ -21,14 +21,8 @@ pub fn command(command: Command) -> Result<(), Error> {
         Command::Build(data) => build(data),
         Command::Run(data) => run(data),
         Command::Fmt => fmt(),
-        Command::Help => {
-            help();
-            Ok(())
-        }
-        Command::Version => {
-            version();
-            Ok(())
-        }
+        Command::Help => Ok(help()),
+        Command::Version => Ok(version()),
     }
 }
 
@@ -87,7 +81,7 @@ pub fn new(data: CommandNew) -> Result<(), Error> {
     let style = AnsiStyle::new();
     let g = style.out.green_bold;
     let r = style.out.reset;
-    println!("  {g}Created{r} {} `{}` package\n", data.kind.full_name(), data.name,);
+    println!("  {g}Created{r} {} `{}` package\n", data.kind.full_name(), data.name);
     Ok(())
 }
 
@@ -284,11 +278,9 @@ fn help() {
 {g}Options:
   {c}new
     {c}--lib        {r}Create {} package
-    {c}--bin        {r}Create {} package
-    {c}--no-git     {r}Create package without git repo
+    {c}--no-git     {r}Create without git repository
 
   {c}build, run
-    {c}--debug      {r}Build in debug mode
     {c}--release    {r}Build in release mode
     {c}--emit-llvm  {r}Save llvm module to file
 
@@ -299,7 +291,6 @@ fn help() {
     {c}--warn       {r}Print warnings
     {c}--stats      {r}Print compilation stats\n",
         PackageKind::Lib.full_name(),
-        PackageKind::Bin.full_name()
     );
 }
 

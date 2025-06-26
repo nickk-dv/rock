@@ -1948,7 +1948,7 @@ pub fn check_item_procedure<'hir, 'ast>(
     let proc_ty = hir::Type::Procedure(ctx.arena.alloc(proc_ty));
     let proc_value = hir::ConstValue::Procedure { proc_id, poly_types };
     let proc_expr = hir::Expr::Const(proc_value, hir::ConstID::dummy());
-    return TypeResult::new(proc_ty, proc_expr);
+    TypeResult::new(proc_ty, proc_expr)
 }
 
 fn typecheck_variant<'hir, 'ast>(
