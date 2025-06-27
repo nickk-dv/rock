@@ -85,7 +85,9 @@ impl<'src> Parser<'src> {
 
     pub fn expect(&mut self, token: Token) {
         if !self.eat(token) {
-            self.error(format!("expected `{}`", token.as_str()));
+            if self.errors.errors.is_empty() {
+                self.error(format!("expected `{}`", token.as_str()));
+            }
         }
     }
 
@@ -119,10 +121,12 @@ impl<'src> Parser<'src> {
     }
 
     pub fn error(&mut self, msg: impl Into<StringOrStr>) {
-        let cursor = if self.at(Token::Eof) { self.cursor.dec() } else { self.cursor };
-        let range = self.tokens.token_range(cursor);
-        let src = SourceRange::new(self.module_id, range);
-        self.errors.error(Error::new(msg, src, None));
+        if self.errors.errors.is_empty() {
+            let cursor = if self.at(Token::Eof) { self.cursor.dec() } else { self.cursor };
+            let range = self.tokens.token_range(cursor);
+            let src = SourceRange::new(self.module_id, range);
+            self.errors.error(Error::new(msg, src, None));
+        }
     }
 
     pub fn bump_sync(&mut self, token_set: TokenSet) {
