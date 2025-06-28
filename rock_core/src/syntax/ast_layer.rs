@@ -1,25 +1,24 @@
 use super::syntax_kind::SyntaxKind;
-use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
+use super::syntax_tree::{Node, NodeContentIter, NodeOrToken, SyntaxTree};
 use super::token::{Token, TokenID, T};
 use crate::ast;
 use crate::text::TextRange;
 use std::marker::PhantomData;
 
 pub trait AstNode<'syn>: Copy + Clone + Sized {
-    fn cast(node: &'syn Node<'syn>) -> Option<Self>;
+    fn cast(node: &'syn Node) -> Option<Self>;
     fn range(self) -> TextRange;
 }
 
 #[derive(Clone)]
 pub struct AstNodeIterator<'syn, T: AstNode<'syn>> {
-    tree: &'syn SyntaxTree<'syn>,
-    iter: std::slice::Iter<'syn, NodeOrToken>,
+    iter: NodeContentIter<'syn>,
     phantom: PhantomData<T>,
 }
 
 impl<'syn, T: AstNode<'syn>> AstNodeIterator<'syn, T> {
-    fn new(tree: &'syn SyntaxTree<'syn>, node: &'syn Node<'syn>) -> AstNodeIterator<'syn, T> {
-        AstNodeIterator { tree, iter: node.content.iter(), phantom: PhantomData }
+    fn new(tree: &'syn SyntaxTree, node: &'syn Node) -> AstNodeIterator<'syn, T> {
+        AstNodeIterator { iter: tree.content(node), phantom: PhantomData }
     }
 }
 
@@ -28,9 +27,9 @@ impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            match self.iter.next().copied() {
+            match self.iter.next() {
                 Some(NodeOrToken::Node(node_id)) => {
-                    let node = self.tree.node(node_id);
+                    let node = self.iter.tree.node(node_id);
                     if let Some(cst_node) = T::cast(node) {
                         return Some(cst_node);
                     }
@@ -43,16 +42,16 @@ impl<'syn, T: AstNode<'syn>> Iterator for AstNodeIterator<'syn, T> {
     }
 }
 
-impl<'syn> SyntaxTree<'syn> {
-    pub fn source_file(&'syn self) -> SourceFile<'syn> {
+impl SyntaxTree {
+    pub fn source_file(&self) -> SourceFile {
         let root = self.root();
         SourceFile::cast(root).unwrap()
     }
 }
 
-impl<'syn> Node<'syn> {
-    fn node_find<T: AstNode<'syn>>(&self, tree: &'syn SyntaxTree<'syn>) -> Option<T> {
-        for not in self.content.iter().copied() {
+impl Node {
+    fn node_find<'syn, T: AstNode<'syn>>(&self, tree: &'syn SyntaxTree) -> Option<T> {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     let node = tree.node(id);
@@ -67,13 +66,13 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn node_after_token<T: AstNode<'syn>>(
+    fn node_after_token<'syn, T: AstNode<'syn>>(
         &self,
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         after: Token,
     ) -> Option<T> {
         let mut found = false;
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     if !found {
@@ -97,16 +96,16 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn node_after_token_predicate<T: AstNode<'syn>, F, P>(
+    fn node_after_token_predicate<'syn, T: AstNode<'syn>, F, P>(
         &self,
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         predicate: F,
     ) -> Option<T>
     where
         F: Fn(Token) -> Option<P>,
     {
         let mut found = false;
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     if !found {
@@ -130,12 +129,12 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn node_before_token<T: AstNode<'syn>>(
+    fn node_before_token<'syn, T: AstNode<'syn>>(
         &self,
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         before: Token,
     ) -> Option<T> {
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     let node = tree.node(id);
@@ -155,15 +154,15 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn node_before_token_predicate<T: AstNode<'syn>, F, P>(
+    fn node_before_token_predicate<'syn, T: AstNode<'syn>, F, P>(
         &self,
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         predicate: F,
     ) -> Option<T>
     where
         F: Fn(Token) -> Option<P>,
     {
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     let node = tree.node(id);
@@ -183,14 +182,14 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn node_between_tokens<T: AstNode<'syn>>(
+    fn node_between_tokens<'syn, T: AstNode<'syn>>(
         &self,
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         after: Token,
         before: Token,
     ) -> Option<T> {
         let mut found_start = false;
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             match not {
                 NodeOrToken::Node(id) => {
                     if !found_start {
@@ -216,8 +215,8 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn token_find(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TextRange> {
-        for not in self.content.iter().copied() {
+    fn token_find(&self, tree: &SyntaxTree, find: Token) -> Option<TextRange> {
+        for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
                 let (token, range) = tree.tokens().token_and_range(id);
                 if token == find {
@@ -228,8 +227,8 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn token_find_rev(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TextRange> {
-        for not in self.content.iter().rev().copied() {
+    fn token_find_rev(&self, tree: &SyntaxTree, find: Token) -> Option<TextRange> {
+        for not in tree.content(self).rev() {
             if let NodeOrToken::Token(id) = not {
                 let (token, range) = tree.tokens().token_and_range(id);
                 if token == find {
@@ -240,15 +239,11 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn token_find_predicate<T, F>(
-        &self,
-        tree: &'syn SyntaxTree<'syn>,
-        predicate: F,
-    ) -> Option<(T, TextRange)>
+    fn token_find_predicate<T, F>(&self, tree: &SyntaxTree, predicate: F) -> Option<(T, TextRange)>
     where
         F: Fn(Token) -> Option<T>,
     {
-        for not in self.content.iter().copied() {
+        for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
                 let (token, range) = tree.tokens().token_and_range(id);
                 if let Some(value) = predicate(token) {
@@ -259,8 +254,8 @@ impl<'syn> Node<'syn> {
         None
     }
 
-    fn token_find_id(&self, tree: &'syn SyntaxTree<'syn>, find: Token) -> Option<TokenID> {
-        for not in self.content.iter().copied() {
+    fn token_find_id(&self, tree: &SyntaxTree, find: Token) -> Option<TokenID> {
+        for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
                 let token = tree.tokens().token(id);
                 if token == find {
@@ -277,10 +272,10 @@ impl<'syn> Node<'syn> {
 macro_rules! ast_node_impl {
     ($name:ident, $kind_pat:pat) => {
         #[derive(Copy, Clone)]
-        pub struct $name<'syn>(pub &'syn Node<'syn>);
+        pub struct $name<'syn>(pub &'syn Node);
 
         impl<'syn> AstNode<'syn> for $name<'syn> {
-            fn cast(node: &'syn Node<'syn>) -> Option<Self>
+            fn cast(node: &'syn Node) -> Option<Self>
             where
                 Self: Sized,
             {
@@ -300,10 +295,7 @@ macro_rules! ast_node_impl {
 
 macro_rules! node_iter {
     ($fn_name:ident, $node_ty:ident) => {
-        pub fn $fn_name(
-            &self,
-            tree: &'syn SyntaxTree<'syn>,
-        ) -> AstNodeIterator<'syn, $node_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> AstNodeIterator<'syn, $node_ty<'syn>> {
             AstNodeIterator::new(tree, self.0)
         }
     };
@@ -311,7 +303,7 @@ macro_rules! node_iter {
 
 macro_rules! node_find {
     ($fn_name:ident, $find_ty:ident) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_find(tree)
         }
     };
@@ -319,7 +311,7 @@ macro_rules! node_find {
 
 macro_rules! node_after_token {
     ($fn_name:ident, $find_ty:ident, $token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_after_token(tree, $token)
         }
     };
@@ -327,7 +319,7 @@ macro_rules! node_after_token {
 
 macro_rules! node_after_token_predicate {
     ($fn_name:ident, $find_ty:ident, $predicate:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_after_token_predicate(tree, $predicate)
         }
     };
@@ -335,7 +327,7 @@ macro_rules! node_after_token_predicate {
 
 macro_rules! node_before_token {
     ($fn_name:ident, $find_ty:ident, $token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_before_token(tree, $token)
         }
     };
@@ -343,7 +335,7 @@ macro_rules! node_before_token {
 
 macro_rules! node_before_token_predicate {
     ($fn_name:ident, $find_ty:ident, $predicate:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_before_token_predicate(tree, $predicate)
         }
     };
@@ -351,7 +343,7 @@ macro_rules! node_before_token_predicate {
 
 macro_rules! node_between_tokens {
     ($fn_name:ident, $find_ty:ident, $after:expr, $before:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<$find_ty<'syn>> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<$find_ty<'syn>> {
             self.0.node_between_tokens(tree, $after, $before)
         }
     };
@@ -359,7 +351,7 @@ macro_rules! node_between_tokens {
 
 macro_rules! token_find {
     ($fn_name:ident, $find_token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TextRange> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<TextRange> {
             self.0.token_find(tree, $find_token)
         }
     };
@@ -367,7 +359,7 @@ macro_rules! token_find {
 
 macro_rules! token_find_rev {
     ($fn_name:ident, $find_token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TextRange> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<TextRange> {
             self.0.token_find_rev(tree, $find_token)
         }
     };
@@ -375,7 +367,7 @@ macro_rules! token_find_rev {
 
 macro_rules! token_find_predicate {
     ($fn_name:ident, $predicate:expr, $pred_ty:ty) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<($pred_ty, TextRange)> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<($pred_ty, TextRange)> {
             self.0.token_find_predicate(tree, $predicate)
         }
     };
@@ -383,7 +375,7 @@ macro_rules! token_find_predicate {
 
 macro_rules! token_find_id {
     ($fn_name:ident, $find_token:expr) => {
-        pub fn $fn_name(&self, tree: &'syn SyntaxTree<'syn>) -> Option<TokenID> {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<TokenID> {
             self.0.token_find_id(tree, $find_token)
         }
     };
@@ -505,7 +497,7 @@ pub enum Item<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Item<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Item<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Item<'syn>> {
         match node.kind {
             SyntaxKind::PROC_ITEM => Some(Item::Proc(ProcItem(node))),
             SyntaxKind::ENUM_ITEM => Some(Item::Enum(EnumItem(node))),
@@ -537,7 +529,7 @@ pub enum Directive<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Directive<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Directive<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Directive<'syn>> {
         match node.kind {
             SyntaxKind::DIRECTIVE_SIMPLE => Some(Directive::Simple(DirectiveSimple(node))),
             SyntaxKind::DIRECTIVE_WITH_PARAMS => {
@@ -566,7 +558,7 @@ pub enum Type<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Type<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Type<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Type<'syn>> {
         match node.kind {
             SyntaxKind::TYPE_BASIC => Some(Type::Basic(TypeBasic(node))),
             SyntaxKind::TYPE_CUSTOM => Some(Type::Custom(TypeCustom(node))),
@@ -608,7 +600,7 @@ pub enum Stmt<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Stmt<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Stmt<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Stmt<'syn>> {
         match node.kind {
             SyntaxKind::STMT_BREAK => Some(Stmt::Break(StmtBreak(node))),
             SyntaxKind::STMT_CONTINUE => Some(Stmt::Continue(StmtContinue(node))),
@@ -663,7 +655,7 @@ pub enum Expr<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Expr<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Expr<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Expr<'syn>> {
         match node.kind {
             SyntaxKind::EXPR_PAREN => Some(Expr::Paren(ExprParen(node))),
             SyntaxKind::EXPR_IF => Some(Expr::If(ExprIf(node))),
@@ -718,7 +710,7 @@ pub enum Branch<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Branch<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Branch<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Branch<'syn>> {
         match node.kind {
             SyntaxKind::BRANCH_COND => Some(Branch::Cond(BranchCond(node))),
             SyntaxKind::BRANCH_PAT => Some(Branch::Pat(BranchPat(node))),
@@ -743,7 +735,7 @@ pub enum Pat<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Pat<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Pat<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Pat<'syn>> {
         match node.kind {
             SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
             SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
@@ -776,7 +768,7 @@ pub enum Lit<'syn> {
 }
 
 impl<'syn> AstNode<'syn> for Lit<'syn> {
-    fn cast(node: &'syn Node<'syn>) -> Option<Lit<'syn>> {
+    fn cast(node: &'syn Node) -> Option<Lit<'syn>> {
         match node.kind {
             SyntaxKind::LIT_VOID => Some(Lit::Void(LitVoid(node))),
             SyntaxKind::LIT_NULL => Some(Lit::Null(LitNull(node))),
@@ -974,9 +966,9 @@ impl<'syn> Block<'syn> {
     node_iter!(stmts, Stmt);
 }
 
-impl<'syn> StmtBreak<'syn> {}
+impl StmtBreak<'_> {}
 
-impl<'syn> StmtContinue<'syn> {}
+impl StmtContinue<'_> {}
 
 impl<'syn> StmtReturn<'syn> {
     node_find!(expr, Expr);
@@ -1190,7 +1182,7 @@ impl<'syn> ExprBinary<'syn> {
 
 //==================== PAT ====================
 
-impl<'syn> PatWild<'syn> {}
+impl PatWild<'_> {}
 
 impl<'syn> PatLit<'syn> {
     token_find_predicate!(un_op, Token::as_un_op, ast::UnOp);
@@ -1211,9 +1203,9 @@ impl<'syn> PatOr<'syn> {
     node_iter!(pats, Pat);
 }
 
-impl<'syn> LitVoid<'syn> {}
+impl LitVoid<'_> {}
 
-impl<'syn> LitNull<'syn> {}
+impl LitNull<'_> {}
 
 impl<'syn> LitBool<'syn> {
     token_find_predicate!(value, Token::as_bool, bool);

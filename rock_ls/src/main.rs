@@ -296,7 +296,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
     let file = server.session.vfs.file(module.file_id);
     if update == SymbolUpdate::All {
         data.symbols.clear();
-        data.symbols.reserve(tree.root().content.len());
+        data.symbols.reserve(tree.root().content_len as usize); //content_len includes non-nodes aswell
         data.symbols_version = module.tree_version;
     }
 
@@ -304,7 +304,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
     for item in root.items(tree) {
         match item {
             cst::Item::Proc(item) if update != SymbolUpdate::Imports => {
-                if let Some(name) = item.name(&tree) {
+                if let Some(name) = item.name(tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
                         .symbols
@@ -312,7 +312,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Enum(item) if update != SymbolUpdate::Imports => {
-                if let Some(name) = item.name(&tree) {
+                if let Some(name) = item.name(tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
                         .symbols
@@ -320,7 +320,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Struct(item) if update != SymbolUpdate::Imports => {
-                if let Some(name) = item.name(&tree) {
+                if let Some(name) = item.name(tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
                         .symbols
@@ -328,7 +328,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Const(item) if update != SymbolUpdate::Imports => {
-                if let Some(name) = item.name(&tree) {
+                if let Some(name) = item.name(tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
                         .symbols
@@ -336,7 +336,7 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Global(item) if update != SymbolUpdate::Imports => {
-                if let Some(name) = item.name(&tree) {
+                if let Some(name) = item.name(tree) {
                     let id = name_id(name, tree, file, &mut server.session.intern_name);
                     server.modules[module_id.index()]
                         .symbols
@@ -344,14 +344,14 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Import(item) if update != SymbolUpdate::Defined => {
-                let module_name = if let Some(rename) = item.rename(&tree) {
+                let module_name = if let Some(rename) = item.rename(tree) {
                     if rename.t_discard(tree).is_some() {
                         continue;
                     }
                     rename
                         .alias(tree)
                         .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
-                } else if let Some(path) = item.import_path(&tree) {
+                } else if let Some(path) = item.import_path(tree) {
                     path.names(tree)
                         .last()
                         .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
@@ -589,8 +589,8 @@ fn node_chain(tree: &SyntaxTree, offset: TextOffset) -> Vec<NodeID> {
         let target = tree.node(node_id);
         target_id = None;
 
-        for not in target.content {
-            if let NodeOrToken::Node(node_id) = *not {
+        for not in tree.content(target) {
+            if let NodeOrToken::Node(node_id) = not {
                 if tree.node(node_id).range.contains_inclusive(offset) {
                     chain.push(node_id);
                     target_id = Some(node_id);
@@ -820,13 +820,13 @@ struct SemanticTokenBuilder<'s_ref, 's> {
     prev_range: Option<TextRange>,
     params_in_scope: Vec<NameID>,
     semantic_tokens: Vec<lsp::SemanticToken>,
-    tree: &'s_ref SyntaxTree<'s>,
+    tree: &'s_ref SyntaxTree,
     file: &'s_ref session::FileData,
     modules: &'s_ref [ModuleData],
     intern_name: &'s_ref mut InternPool<'s, NameID>,
 }
 
-impl<'s_ref, 's> SemanticTokenBuilder<'s_ref, 's> {
+impl SemanticTokenBuilder<'_, '_> {
     fn name_id(&mut self, name: cst::Name) -> NameID {
         let range = name.ident(self.tree).unwrap();
         let text = &self.file.source[range.as_usize()];
@@ -892,8 +892,8 @@ fn semantic_visit_node(
         }
     }
 
-    for not in node.content {
-        match *not {
+    for not in b.tree.content(node) {
+        match not {
             NodeOrToken::Node(node_id) => {
                 let node = b.tree.node(node_id);
 

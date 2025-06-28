@@ -7,7 +7,7 @@ use crate::text::TextRange;
 
 struct AstBuild<'s, 'sref> {
     arena: Arena<'s>,
-    tree: &'sref SyntaxTree<'s>,
+    tree: &'sref SyntaxTree,
     source: &'sref str,
     intern: &'sref mut InternPool<'s, NameID>,
     s: &'sref mut AstBuildState<'s>,
@@ -62,7 +62,7 @@ impl<'ast> AstBuildState<'ast> {
 }
 
 pub fn ast<'s, 'sref>(
-    tree: &'sref SyntaxTree<'s>,
+    tree: &'sref SyntaxTree,
     source: &'sref str,
     intern: &'sref mut InternPool<'s, NameID>,
     s: &'sref mut AstBuildState<'s>,

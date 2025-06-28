@@ -174,8 +174,8 @@ impl IRTarget {
             tm::LLVMCreateTargetMachine(
                 target,
                 ctriple.as_ptr(),
-                "\0".as_ptr() as *const c_char,
-                "\0".as_ptr() as *const c_char,
+                c"".as_ptr(),
+                c"".as_ptr(),
                 opt_level,
                 tm::LLVMRelocMode::LLVMRelocDefault,
                 tm::LLVMCodeModel::LLVMCodeModelDefault,

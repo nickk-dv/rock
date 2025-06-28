@@ -313,8 +313,8 @@ pub mod os {
             .canonicalize()
             .map_err(|io_error| err::os_canonicalize(io_error.to_string(), path))?;
         let s = path.as_os_str().to_string_lossy();
-        if s.starts_with(r"\\?\") {
-            Ok(PathBuf::from(&s[4..]))
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            Ok(PathBuf::from(stripped))
         } else {
             Ok(path)
         }

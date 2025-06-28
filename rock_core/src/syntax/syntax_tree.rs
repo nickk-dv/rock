@@ -4,22 +4,27 @@ use super::token::{TokenID, TokenList, Trivia, TriviaID};
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::session::ModuleID;
-use crate::support::{Arena, TempBuffer, TempOffset};
+use crate::support::{TempBuffer, TempOffset};
 use crate::text::TextRange;
 
-pub struct SyntaxTree<'syn> {
-    #[allow(unused)]
-    arena: Arena<'syn>,
-    nodes: Vec<Node<'syn>>,
+pub struct SyntaxTree {
+    nodes: Vec<Node>,
     tokens: TokenList,
+    content: Vec<NodeOrTokenID>,
     complete: bool,
 }
 
 crate::define_id!(pub NodeID);
-pub struct Node<'syn> {
+pub struct Node {
     pub kind: SyntaxKind,
     pub range: TextRange,
-    pub content: &'syn [NodeOrToken],
+    pub content_idx: u32,
+    pub content_len: u32,
+}
+
+#[derive(Copy, Clone)]
+struct NodeOrTokenID {
+    mask: u32,
 }
 
 #[derive(Copy, Clone)]
@@ -29,14 +34,21 @@ pub enum NodeOrToken {
     Trivia(TriviaID),
 }
 
-impl<'syn> SyntaxTree<'syn> {
-    pub fn root(&self) -> &Node<'syn> {
+#[derive(Clone)]
+pub struct NodeContentIter<'syn> {
+    pub tree: &'syn SyntaxTree,
+    pos: u32,
+    end: u32,
+}
+
+impl SyntaxTree {
+    pub fn root(&self) -> &Node {
         &self.nodes[0]
     }
-    pub fn node(&self, id: NodeID) -> &Node<'syn> {
+    pub fn node(&self, id: NodeID) -> &Node {
         &self.nodes[id.index()]
     }
-    pub fn nodes(&self) -> &[Node<'syn>] {
+    pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
     pub fn tokens(&self) -> &TokenList {
@@ -44,6 +56,58 @@ impl<'syn> SyntaxTree<'syn> {
     }
     pub fn complete(&self) -> bool {
         self.complete
+    }
+    pub fn content<'syn>(&'syn self, node: &Node) -> NodeContentIter<'syn> {
+        NodeContentIter {
+            tree: self,
+            pos: node.content_idx,
+            end: node.content_idx + node.content_len,
+        }
+    }
+}
+
+impl NodeOrTokenID {
+    fn encode_node(id: NodeID) -> NodeOrTokenID {
+        NodeOrTokenID { mask: id.raw() }
+    }
+    fn encode_token(id: TokenID) -> NodeOrTokenID {
+        NodeOrTokenID { mask: id.raw() | (1 << 30) }
+    }
+    fn encode_trivia(id: TriviaID) -> NodeOrTokenID {
+        NodeOrTokenID { mask: id.raw() | (2 << 30) }
+    }
+    fn decode(self) -> NodeOrToken {
+        let kind = (self.mask >> 30) & 0b11;
+        let id = self.mask & 0b11111_11111_11111_11111_11111_11111;
+        match kind {
+            0 => NodeOrToken::Node(NodeID(id)),
+            1 => NodeOrToken::Token(TokenID::new(id as usize)),
+            _ => NodeOrToken::Trivia(TriviaID::new(id as usize)),
+        }
+    }
+}
+
+impl Iterator for NodeContentIter<'_> {
+    type Item = NodeOrToken;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos == self.end {
+            return None;
+        }
+        let not_id = self.tree.content[self.pos as usize];
+        self.pos += 1;
+        Some(not_id.decode())
+    }
+}
+
+impl DoubleEndedIterator for NodeContentIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.pos == self.end {
+            return None;
+        }
+        self.end -= 1;
+        let not_id = self.tree.content[self.end as usize];
+        Some(not_id.decode())
     }
 }
 
@@ -59,7 +123,7 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
         }
         let _ = writeln!(buffer, "{:?} {:?}", node.kind, node.range);
 
-        for not in node.content.iter().copied() {
+        for not in tree.content(node) {
             match not {
                 NodeOrToken::Node(id) => {
                     let node = tree.node(id);
@@ -86,17 +150,17 @@ pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
     }
 }
 
-struct SyntaxTreeBuild<'syn, 'src> {
+struct SyntaxTreeBuild<'src> {
     source: &'src str,
     tokens: TokenList,
     events: Vec<Event>,
     module_id: ModuleID,
     errors: ErrorBuffer,
 
-    arena: Arena<'syn>,
-    nodes: Vec<Node<'syn>>,
-    content: TempBuffer<NodeOrToken>,
-    node_stack: Vec<(TempOffset<NodeOrToken>, NodeID)>,
+    nodes: Vec<Node>,
+    content: TempBuffer<NodeOrTokenID>,
+    content_vec: Vec<NodeOrTokenID>,
+    node_stack: Vec<(TempOffset<NodeOrTokenID>, NodeID)>,
     parent_stack: Vec<SyntaxKind>,
     curr_token: TokenID,
     curr_trivia: TriviaID,
@@ -121,14 +185,15 @@ struct InnerTrivia(usize);
 #[derive(Copy, Clone)]
 struct OutherTrivia(usize);
 
-pub fn tree_build<'syn>(
+pub fn tree_build(
     source: &str,
     tokens: TokenList,
     events: Vec<Event>,
     module_id: ModuleID,
     complete: bool,
-) -> (SyntaxTree<'syn>, ErrorBuffer) {
+) -> (SyntaxTree, ErrorBuffer) {
     let node_count = events.iter().filter(|&e| matches!(e, Event::StartNode { .. })).count();
+    let content_count = node_count + tokens.token_count() + tokens.trivia_count();
 
     let mut build = SyntaxTreeBuild {
         source,
@@ -136,9 +201,9 @@ pub fn tree_build<'syn>(
         events,
         module_id,
         errors: ErrorBuffer::default(),
-        arena: Arena::new(),
         nodes: Vec::with_capacity(node_count),
         content: TempBuffer::new(128),
+        content_vec: Vec::with_capacity(content_count),
         node_stack: Vec::with_capacity(32),
         parent_stack: Vec::with_capacity(32),
         curr_token: TokenID::new(0),
@@ -148,9 +213,9 @@ pub fn tree_build<'syn>(
     tree_build_impl(&mut build);
 
     let tree = SyntaxTree {
-        arena: build.arena,
         nodes: build.nodes,
         tokens: build.tokens,
+        content: build.content_vec,
         complete: complete && build.errors.error_count() == 0,
     };
     (tree, build.errors)
@@ -161,7 +226,12 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
     // SOURCE_FILE StartNode:
     {
-        let node = Node { kind: SyntaxKind::SOURCE_FILE, range: TextRange::zero(), content: &[] };
+        let node = Node {
+            kind: SyntaxKind::SOURCE_FILE,
+            range: TextRange::zero(),
+            content_idx: 0,
+            content_len: 0,
+        };
         let node_id = NodeID::new(b.nodes.len());
         let offset = b.content.start();
 
@@ -195,10 +265,17 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
                 eat_n_outher_trivias(b, node_trivia.n_outher);
 
                 while let Some(kind) = b.parent_stack.pop() {
-                    let start = node_or_token_range(b, b.content.view_all().last().copied()).end();
-                    let node = Node { kind, range: TextRange::new(start, start), content: &[] };
+                    let start =
+                        node_or_token_range(b, b.content.view_all().last().map(|id| id.decode()))
+                            .end();
+                    let node = Node {
+                        kind,
+                        range: TextRange::new(start, start),
+                        content_idx: 0,
+                        content_len: 0,
+                    };
                     let node_id = NodeID::new(b.nodes.len());
-                    b.content.push(NodeOrToken::Node(node_id));
+                    b.content.push(NodeOrTokenID::encode_node(node_id));
                     let offset = b.content.start();
 
                     b.nodes.push(node);
@@ -212,16 +289,22 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
             }
             Event::EndNode => {
                 let (offset, node_id) = b.node_stack.pop().unwrap();
-                let end = node_or_token_range(b, b.content.view_all().last().copied()).end();
+                let end =
+                    node_or_token_range(b, b.content.view_all().last().map(|id| id.decode())).end();
                 let node = &mut b.nodes[node_id.index()];
-                node.content = b.content.take(offset, &mut b.arena);
                 node.range = TextRange::new(node.range.start(), end);
+
+                let view = b.content.view(offset);
+                node.content_idx = b.content_vec.len() as u32;
+                node.content_len = view.len() as u32;
+                b.content_vec.extend_from_slice(view);
+                b.content.pop_view(offset);
             }
             Event::Token => {
                 let token_trivia = attached_token_trivia(b);
                 eat_n_outher_trivias(b, token_trivia.n_outher);
 
-                b.content.push(NodeOrToken::Token(b.curr_token));
+                b.content.push(NodeOrTokenID::encode_token(b.curr_token));
                 b.curr_token = b.curr_token.inc();
             }
             Event::Ignore => {}
@@ -234,10 +317,15 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
         eat_n_outher_trivias(b, OutherTrivia(n_remaining));
 
         let (offset, node_id) = b.node_stack.pop().unwrap();
-        let end = node_or_token_range(b, b.content.view_all().last().copied()).end();
+        let end = node_or_token_range(b, b.content.view_all().last().map(|id| id.decode())).end();
         let node = &mut b.nodes[node_id.index()];
-        node.content = b.content.take(offset, &mut b.arena);
         node.range = TextRange::new(node.range.start(), end);
+
+        let view = b.content.view(offset);
+        node.content_idx = b.content_vec.len() as u32;
+        node.content_len = view.len() as u32;
+        b.content_vec.extend_from_slice(view);
+        b.content.pop_view(offset);
     }
 
     assert!(b.content.is_empty()); // all content has been taken
@@ -384,7 +472,7 @@ fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
-        b.content.push(NodeOrToken::Trivia(id));
+        b.content.push(NodeOrTokenID::encode_trivia(id));
     }
 }
 
@@ -395,7 +483,7 @@ fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
-        b.content.push(NodeOrToken::Trivia(id));
+        b.content.push(NodeOrTokenID::encode_trivia(id));
 
         let (trivia, range) = b.tokens.trivia_and_range(id);
         match trivia {

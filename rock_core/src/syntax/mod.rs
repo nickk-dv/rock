@@ -83,11 +83,11 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn parse_tree<'syn>(
+pub fn parse_tree(
     source: &str,
     module_id: ModuleID,
     intern_lit: &mut InternPool<'_, LitID>,
-) -> (SyntaxTree<'syn>, ErrorBuffer) {
+) -> (SyntaxTree, ErrorBuffer) {
     let (tokens, lex_errors) = lexer::lex(source, module_id, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id, source);
@@ -102,11 +102,11 @@ pub fn parse_tree<'syn>(
     (tree, parse_errors)
 }
 
-pub fn parse_tree_complete<'syn>(
+pub fn parse_tree_complete(
     source: &str,
     module_id: ModuleID,
     intern_lit: &mut InternPool<'_, LitID>,
-) -> Result<SyntaxTree<'syn>, ErrorBuffer> {
+) -> Result<SyntaxTree, ErrorBuffer> {
     let (tokens, mut lex_errors) = lexer::lex(source, module_id, intern_lit);
 
     let mut parser = Parser::new(tokens, module_id, source);

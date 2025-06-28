@@ -8,7 +8,7 @@ use crate::text::TextRange;
 
 #[must_use]
 pub fn format<'syn>(
-    tree: &'syn SyntaxTree<'syn>,
+    tree: &'syn SyntaxTree,
     source: &'syn str,
     line_ranges: &'syn [TextRange],
     cache: &mut FormatterCache,
@@ -1160,7 +1160,7 @@ fn polymorph_params<'syn>(fmt: &mut Formatter<'syn, '_>, poly_params: cst::Polym
 }
 
 struct Formatter<'syn, 'cache> {
-    tree: &'syn SyntaxTree<'syn>,
+    tree: &'syn SyntaxTree,
     source: &'syn str,
     line_ranges: &'syn [TextRange],
     cache: &'cache mut FormatterCache,
@@ -1197,7 +1197,7 @@ enum FormatEvent {
 
 impl<'syn, 'cache> Formatter<'syn, 'cache> {
     fn new(
-        tree: &'syn SyntaxTree<'syn>,
+        tree: &'syn SyntaxTree,
         source: &'syn str,
         line_ranges: &'syn [TextRange],
         cache: &'cache mut FormatterCache,
@@ -1377,8 +1377,8 @@ fn emit_format_buffer(fmt: &mut Formatter) -> String {
 }
 
 fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
-    for not in node.content {
-        match *not {
+    for not in fmt.tree.content(node) {
+        match not {
             NodeOrToken::Node(_) => return false,
             NodeOrToken::Token(_) => {}
             NodeOrToken::Trivia(trivia_id) => {
@@ -1394,8 +1394,8 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
 }
 
 fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
-    for not in node.content {
-        match *not {
+    for not in fmt.tree.content(node) {
+        match not {
             NodeOrToken::Node(node_id) => {
                 let node = fmt.tree.node(node_id);
                 if halt.contains(node.kind) {
@@ -1521,13 +1521,13 @@ fn flexible_break_node_list<'syn, N: AstNode<'syn>>(
 
 fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
     fmt: &mut Formatter<'syn, '_>,
-    node_list: &Node<'syn>,
+    node_list: &Node,
 ) {
     let mut first = true; // prevent first \n insertion
     let mut new_line = false; // prevent last \n insertion
     let comments_offset = fmt.cache.comments.len();
 
-    let mut not_iter = node_list.content.iter().copied().peekable();
+    let mut not_iter = fmt.tree.content(node_list).peekable();
     while let Some(not) = not_iter.next() {
         match not {
             NodeOrToken::Token(_) => {}

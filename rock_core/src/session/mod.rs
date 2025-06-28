@@ -50,7 +50,7 @@ pub struct Module<'s> {
     pub origin: PackageID,
     pub name_id: NameID,
     pub file_id: FileID,
-    tree: Option<SyntaxTree<'s>>,
+    tree: Option<SyntaxTree>,
     pub tree_version: u32,
     ast: Option<Ast<'s>>,
     pub ast_version: u32,
@@ -81,7 +81,7 @@ pub struct BuildStats {
 
 pub const CORE_PACKAGE_ID: PackageID = PackageID(0);
 
-impl<'s> Session<'s> {
+impl Session<'_> {
     pub fn result(&self) -> Result<(), ()> {
         if self.errors.did_error(0) {
             return Err(());
@@ -152,7 +152,7 @@ impl<'s> Modules<'s> {
 
 impl<'s> Module<'s> {
     #[inline]
-    pub fn tree_expect(&self) -> &SyntaxTree<'s> {
+    pub fn tree_expect(&self) -> &SyntaxTree {
         self.tree.as_ref().unwrap()
     }
     #[inline]
@@ -164,7 +164,7 @@ impl<'s> Module<'s> {
         self.ast = Some(ast);
     }
     #[inline]
-    pub fn set_tree<'syn: 's>(&mut self, tree: SyntaxTree<'syn>) {
+    pub fn set_tree(&mut self, tree: SyntaxTree) {
         self.tree = Some(tree);
     }
 }
