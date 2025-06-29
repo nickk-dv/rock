@@ -516,7 +516,6 @@ fn codegen_type_info(cg: &mut Codegen) {
     }
 }
 
-//@implement proc_ty, enumerated array
 fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hir::ConstValue<'c> {
     if let Some(type_id) = cg.info.type_ids.get(&ty).copied() {
         return hir::ConstValue::GlobalIndex { global_id: cg.info.types_id, index: type_id };
@@ -709,7 +708,7 @@ fn register_type_info<'c>(cg: &mut Codegen<'c, '_, '_>, ty: hir::Type<'c>) -> hi
             let ref_ptr = hir::ConstValue::GlobalIndex { global_id: cg.info.references_id, index };
             const_enum(cg, cg.hir.core.type_info, 10, &[ref_ptr])
         }
-        hir::Type::Procedure(proc_ty) => unimplemented!(),
+        hir::Type::Procedure(_) => const_enum(cg, cg.hir.core.type_info, 11, &[]),
         hir::Type::ArraySlice(slice) => {
             let values = [
                 const_bool(slice.mutt == ast::Mut::Mutable),

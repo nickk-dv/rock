@@ -709,7 +709,28 @@ fn write_type(cg: &mut Codegen, ty: hir::Type) {
             cg.namebuf.push(']');
             write_type(cg, *ref_ty);
         }
-        hir::Type::Procedure(proc_ty) => cg.namebuf.push_str("<proc_ty>"), //@todo
+        hir::Type::Procedure(proc_ty) => {
+            cg.namebuf.push_str("proc");
+            if proc_ty.flag_set.contains(hir::ProcFlag::External) {
+                cg.namebuf.push_str(" #c_call");
+            }
+            cg.namebuf.push('(');
+            for (idx, param) in proc_ty.params.iter().enumerate() {
+                match param.kind {
+                    hir::ParamKind::Normal => write_type(cg, param.ty),
+                    hir::ParamKind::Variadic => cg.namebuf.push_str("#variadic"),
+                    hir::ParamKind::CallerLocation => cg.namebuf.push_str("#caller_location"),
+                }
+                if proc_ty.params.len() != idx + 1 {
+                    cg.namebuf.push_str(", ");
+                }
+            }
+            if proc_ty.flag_set.contains(hir::ProcFlag::CVariadic) {
+                cg.namebuf.push_str(" #c_variadic");
+            }
+            cg.namebuf.push_str(") ");
+            write_type(cg, proc_ty.return_ty);
+        }
         hir::Type::ArraySlice(slice) => {
             cg.namebuf.push('[');
             if slice.mutt == ast::Mut::Mutable {
