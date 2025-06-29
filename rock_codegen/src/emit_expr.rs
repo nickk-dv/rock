@@ -1246,9 +1246,7 @@ pub fn codegen_call_intrinsic<'c>(
     const SEQCST: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent;
 
     let data = cg.hir.proc_data(proc_id);
-    let name = cg.session.intern_name.get(data.name.id);
-
-    match name {
+    match cg.session.intern_name.get(data.name.id) {
         "size_of" => {
             let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
             let src = SourceRange::new(origin, TextRange::zero());
@@ -1296,72 +1294,86 @@ pub fn codegen_call_intrinsic<'c>(
             let len = codegen_expr_value(cg, input[1]);
             Some(codegen_from_raw_parts(cg, ptr, len))
         }
-        "load" => {
-            let ptr_ty = cg.ty(poly_types[0]);
-            let dst = codegen_expr_value(cg, input[0]).into_ptr();
-            let order = const_expr_ordering(input[1]);
+        "load_relaxed" => atomic_load(cg, input, poly_types, RELAXED),
+        "load_acquire" => atomic_load(cg, input, poly_types, ACQUIRE),
+        "load_seqcst" => atomic_load(cg, input, poly_types, SEQCST),
 
-            let inst = cg.build.load(ptr_ty, dst, "atomic_load");
-            cg.build.set_ordering(inst.as_inst(), order);
-            Some(inst)
-        }
-        "store" => {
-            let dst = codegen_expr_value(cg, input[0]).into_ptr();
-            let value = codegen_expr_value(cg, input[1]);
-            let order = const_expr_ordering(input[2]);
+        "store_relaxed" => atomic_store(cg, input, RELAXED),
+        "store_release" => atomic_store(cg, input, RELEASE),
+        "store_seqcst" => atomic_store(cg, input, SEQCST),
 
-            let inst = cg.build.store(value, dst);
-            cg.build.set_ordering(inst, order);
-            None
-        }
-        "modify" => unimplemented!("atomic modify"),
-        "compare_exchange_relaxed_relaxed" => codegen_cmpxchg(cg, input, RELAXED, RELAXED, false),
-        "compare_exchange_relaxed_relaxed_weak" => {
-            codegen_cmpxchg(cg, input, RELAXED, RELAXED, true)
-        }
-        "compare_exchange_relaxed_acquire" => codegen_cmpxchg(cg, input, RELAXED, ACQUIRE, false),
-        "compare_exchange_relaxed_acquire_weak" => {
-            codegen_cmpxchg(cg, input, RELAXED, ACQUIRE, true)
-        }
-        "compare_exchange_relaxed_seqcst" => codegen_cmpxchg(cg, input, RELAXED, SEQCST, false),
-        "compare_exchange_relaxed_seqcst_weak" => codegen_cmpxchg(cg, input, RELAXED, SEQCST, true),
-        "compare_exchange_acquire_relaxed" => codegen_cmpxchg(cg, input, ACQUIRE, RELAXED, false),
-        "compare_exchange_acquire_relaxed_weak" => {
-            codegen_cmpxchg(cg, input, ACQUIRE, RELAXED, true)
-        }
-        "compare_exchange_acquire_acquire" => codegen_cmpxchg(cg, input, ACQUIRE, ACQUIRE, false),
-        "compare_exchange_acquire_acquire_weak" => {
-            codegen_cmpxchg(cg, input, ACQUIRE, ACQUIRE, true)
-        }
-        "compare_exchange_acquire_seqcst" => codegen_cmpxchg(cg, input, ACQUIRE, SEQCST, false),
-        "compare_exchange_acquire_seqcst_weak" => codegen_cmpxchg(cg, input, ACQUIRE, SEQCST, true),
-        "compare_exchange_release_relaxed" => codegen_cmpxchg(cg, input, RELEASE, RELAXED, false),
-        "compare_exchange_release_relaxed_weak" => {
-            codegen_cmpxchg(cg, input, RELEASE, RELAXED, true)
-        }
-        "compare_exchange_release_acquire" => codegen_cmpxchg(cg, input, RELEASE, ACQUIRE, false),
-        "compare_exchange_release_acquire_weak" => {
-            codegen_cmpxchg(cg, input, RELEASE, ACQUIRE, true)
-        }
-        "compare_exchange_release_seqcst" => codegen_cmpxchg(cg, input, RELEASE, SEQCST, false),
-        "compare_exchange_release_seqcst_weak" => codegen_cmpxchg(cg, input, RELEASE, SEQCST, true),
-        "compare_exchange_acqrel_relaxed" => codegen_cmpxchg(cg, input, ACQREL, RELAXED, false),
-        "compare_exchange_acqrel_relaxed_weak" => codegen_cmpxchg(cg, input, ACQREL, RELAXED, true),
-        "compare_exchange_acqrel_acquire" => codegen_cmpxchg(cg, input, ACQREL, ACQUIRE, false),
-        "compare_exchange_acqrel_acquire_weak" => codegen_cmpxchg(cg, input, ACQREL, ACQUIRE, true),
-        "compare_exchange_acqrel_seqcst" => codegen_cmpxchg(cg, input, ACQREL, SEQCST, false),
-        "compare_exchange_acqrel_seqcst_weak" => codegen_cmpxchg(cg, input, ACQREL, SEQCST, true),
-        "compare_exchange_seqcst_relaxed" => codegen_cmpxchg(cg, input, SEQCST, RELAXED, false),
-        "compare_exchange_seqcst_relaxed_weak" => codegen_cmpxchg(cg, input, SEQCST, RELAXED, true),
-        "compare_exchange_seqcst_acquire" => codegen_cmpxchg(cg, input, SEQCST, ACQUIRE, false),
-        "compare_exchange_seqcst_acquire_weak" => codegen_cmpxchg(cg, input, SEQCST, ACQUIRE, true),
-        "compare_exchange_seqcst_seqcst" => codegen_cmpxchg(cg, input, SEQCST, SEQCST, false),
-        "compare_exchange_seqcst_seqcst_weak" => codegen_cmpxchg(cg, input, SEQCST, SEQCST, true),
+        "compare_exchange_relaxed_relaxed" => cmpxchg(cg, input, RELAXED, RELAXED, false),
+        "compare_exchange_relaxed_acquire" => cmpxchg(cg, input, RELAXED, ACQUIRE, false),
+        "compare_exchange_relaxed_seqcst" => cmpxchg(cg, input, RELAXED, SEQCST, false),
+        "compare_exchange_relaxed_relaxed_weak" => cmpxchg(cg, input, RELAXED, RELAXED, true),
+        "compare_exchange_relaxed_acquire_weak" => cmpxchg(cg, input, RELAXED, ACQUIRE, true),
+        "compare_exchange_relaxed_seqcst_weak" => cmpxchg(cg, input, RELAXED, SEQCST, true),
+
+        "compare_exchange_acquire_relaxed" => cmpxchg(cg, input, ACQUIRE, RELAXED, false),
+        "compare_exchange_acquire_acquire" => cmpxchg(cg, input, ACQUIRE, ACQUIRE, false),
+        "compare_exchange_acquire_seqcst" => cmpxchg(cg, input, ACQUIRE, SEQCST, false),
+        "compare_exchange_acquire_relaxed_weak" => cmpxchg(cg, input, ACQUIRE, RELAXED, true),
+        "compare_exchange_acquire_acquire_weak" => cmpxchg(cg, input, ACQUIRE, ACQUIRE, true),
+        "compare_exchange_acquire_seqcst_weak" => cmpxchg(cg, input, ACQUIRE, SEQCST, true),
+
+        "compare_exchange_release_relaxed" => cmpxchg(cg, input, RELEASE, RELAXED, false),
+        "compare_exchange_release_acquire" => cmpxchg(cg, input, RELEASE, ACQUIRE, false),
+        "compare_exchange_release_seqcst" => cmpxchg(cg, input, RELEASE, SEQCST, false),
+        "compare_exchange_release_relaxed_weak" => cmpxchg(cg, input, RELEASE, RELAXED, true),
+        "compare_exchange_release_acquire_weak" => cmpxchg(cg, input, RELEASE, ACQUIRE, true),
+        "compare_exchange_release_seqcst_weak" => cmpxchg(cg, input, RELEASE, SEQCST, true),
+
+        "compare_exchange_acqrel_relaxed" => cmpxchg(cg, input, ACQREL, RELAXED, false),
+        "compare_exchange_acqrel_acquire" => cmpxchg(cg, input, ACQREL, ACQUIRE, false),
+        "compare_exchange_acqrel_seqcst" => cmpxchg(cg, input, ACQREL, SEQCST, false),
+        "compare_exchange_acqrel_relaxed_weak" => cmpxchg(cg, input, ACQREL, RELAXED, true),
+        "compare_exchange_acqrel_acquire_weak" => cmpxchg(cg, input, ACQREL, ACQUIRE, true),
+        "compare_exchange_acqrel_seqcst_weak" => cmpxchg(cg, input, ACQREL, SEQCST, true),
+
+        "compare_exchange_seqcst_relaxed" => cmpxchg(cg, input, SEQCST, RELAXED, false),
+        "compare_exchange_seqcst_acquire" => cmpxchg(cg, input, SEQCST, ACQUIRE, false),
+        "compare_exchange_seqcst_seqcst" => cmpxchg(cg, input, SEQCST, SEQCST, false),
+        "compare_exchange_seqcst_relaxed_weak" => cmpxchg(cg, input, SEQCST, RELAXED, true),
+        "compare_exchange_seqcst_acquire_weak" => cmpxchg(cg, input, SEQCST, ACQUIRE, true),
+        "compare_exchange_seqcst_seqcst_weak" => cmpxchg(cg, input, SEQCST, SEQCST, true),
         _ => unreachable!(),
     }
 }
 
-fn codegen_cmpxchg<'c>(
+fn codegen_from_raw_parts(cg: &mut Codegen, ptr: llvm::Value, len: llvm::Value) -> llvm::Value {
+    let undef = llvm::undef(cg.slice_type().as_ty());
+    let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
+    cg.build.insert_value(first, len, 1, "raw_parts.ptr_len")
+}
+
+fn atomic_load<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    input: &[&hir::Expr<'c>],
+    poly_types: &'c [hir::Type<'c>],
+    order: llvm::Ordering,
+) -> Option<llvm::Value> {
+    let ptr_ty = cg.ty(poly_types[0]);
+    let src = codegen_expr_value(cg, input[0]).into_ptr();
+
+    let inst = cg.build.load(ptr_ty, src, "atomic_load");
+    cg.build.set_ordering(inst.as_inst(), order);
+    Some(inst)
+}
+
+fn atomic_store<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    input: &[&hir::Expr<'c>],
+    order: llvm::Ordering,
+) -> Option<llvm::Value> {
+    let dst = codegen_expr_value(cg, input[0]).into_ptr();
+    let value = codegen_expr_value(cg, input[1]);
+
+    let inst = cg.build.store(value, dst);
+    cg.build.set_ordering(inst, order);
+    None
+}
+
+fn cmpxchg<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     input: &[&hir::Expr<'c>],
     success: llvm::Ordering,
@@ -1381,12 +1393,6 @@ fn codegen_cmpxchg<'c>(
     Some(exchange_ok)
 }
 
-fn codegen_from_raw_parts(cg: &mut Codegen, ptr: llvm::Value, len: llvm::Value) -> llvm::Value {
-    let undef = llvm::undef(cg.slice_type().as_ty());
-    let first = cg.build.insert_value(undef, ptr, 0, "raw_parts.ptr");
-    cg.build.insert_value(first, len, 1, "raw_parts.ptr_len")
-}
-
 fn is_numeric(kind: llvm::TypeKind) -> bool {
     matches!(
         kind,
@@ -1394,19 +1400,6 @@ fn is_numeric(kind: llvm::TypeKind) -> bool {
             | llvm::TypeKind::LLVMFloatTypeKind
             | llvm::TypeKind::LLVMDoubleTypeKind
     )
-}
-
-fn const_expr_ordering(expr: &hir::Expr) -> llvm::Ordering {
-    let hir::Expr::Const(value, _) = *expr else { unreachable!() };
-    let hir::ConstValue::Variant { variant_id, .. } = value else { unreachable!() };
-    match variant_id.raw() {
-        0 => llvm::Ordering::LLVMAtomicOrderingMonotonic,
-        1 => llvm::Ordering::LLVMAtomicOrderingAcquire,
-        2 => llvm::Ordering::LLVMAtomicOrderingRelease,
-        3 => llvm::Ordering::LLVMAtomicOrderingAcquireRelease,
-        4 => llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent,
-        _ => unreachable!(),
-    }
 }
 
 fn codegen_variadic_arg<'c>(

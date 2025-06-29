@@ -1060,30 +1060,6 @@ pub fn tycheck_intrinsic_proc_ptr(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn tycheck_intrinsic_require_const(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    proc_name: &str,
-    param_name: &str,
-) {
-    let msg = format!("#intrinsic `{proc_name}` requires `{param_name}` argument to be constant");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_intrinsic_invalid_enum(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    proc_name: &str,
-    param_name: &str,
-    enum_name: &str,
-    variant_name: &str,
-) {
-    let msg = format!(
-        "#intrinsic `{proc_name}` argument `{param_name}` cannot be `{enum_name}.{variant_name}`"
-    );
-    emit.error(Error::new(msg, src, None));
-}
-
 pub fn tycheck_cannot_call_value_of_type(emit: &mut impl ErrorSink, src: SourceRange, ty: &str) {
     let msg = format!("cannot call value of type `{ty}`");
     emit.error(Error::new(msg, src, None));
