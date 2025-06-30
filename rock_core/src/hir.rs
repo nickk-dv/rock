@@ -971,6 +971,16 @@ impl<'hir> ConstValue<'hir> {
     }
 }
 
+impl Vis {
+    pub fn stronger(self, other: Vis) -> bool {
+        match self {
+            Vis::Public => false,
+            Vis::Package => matches!(other, Vis::Public),
+            Vis::Private => matches!(other, Vis::Public | Vis::Package),
+        }
+    }
+}
+
 impl<U, R> Eval<U, R>
 where
     U: Copy + Clone,

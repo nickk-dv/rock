@@ -181,6 +181,51 @@ pub fn check_param_directive<'hir>(
     }
 }
 
+pub fn check_field_directives(
+    ctx: &mut HirCtx,
+    dir_list: Option<&ast::DirectiveList>,
+    struct_vis: hir::Vis,
+) -> (ConfigState, hir::Vis) {
+    let mut config = ConfigState(true);
+    let mut vis = struct_vis;
+
+    let directives = if let Some(dir_list) = dir_list {
+        dir_list.directives
+    } else {
+        return (config, vis);
+    };
+
+    for directive in directives {
+        if try_check_error_directive(ctx, directive) {
+            continue;
+        }
+        if try_check_config_directive(ctx, &mut config, directive) {
+            continue;
+        }
+        let scope_vis = match directive.kind {
+            DirectiveKind::ScopePublic => hir::Vis::Public,
+            DirectiveKind::ScopePackage => hir::Vis::Package,
+            DirectiveKind::ScopePrivate => hir::Vis::Private,
+            _ => {
+                let src = ctx.src(directive.range);
+                let name = directive.kind.as_str();
+                err::directive_cannot_apply(&mut ctx.emit, src, name, "fields");
+                continue;
+            }
+        };
+        if scope_vis == vis {
+            let src = ctx.src(directive.range);
+            err::directive_scope_vis_redundant(&mut ctx.emit, src, None, scope_vis.as_str());
+        } else if !scope_vis.stronger(struct_vis) {
+            let src = ctx.src(directive.range);
+            err::directive_field_vis_not_stronger(&mut ctx.emit, src, struct_vis.as_str());
+        } else {
+            vis = scope_vis;
+        }
+    }
+    (config, vis)
+}
+
 pub fn check_proc_ty_directive(
     ctx: &mut HirCtx,
     directive: &ast::Directive,

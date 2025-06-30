@@ -422,6 +422,15 @@ pub fn directive_scope_vis_redundant(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn directive_field_vis_not_stronger(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    struct_vis: &str,
+) {
+    let msg = format!("field visibility must be stronger than struct's `{struct_vis}` visibility");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn directive_param_must_be_last(emit: &mut impl ErrorSink, src: SourceRange, dir_name: &str) {
     let msg = format!("`#{dir_name}` parameter must be last");
     emit.error(Error::new(msg, src, None));

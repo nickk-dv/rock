@@ -235,9 +235,9 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
     let item = ctx.registry.struct_item(id);
     let struct_vis = ctx.registry.struct_data(id).vis;
 
-    //@process visibility directives, allow stronger vis only
     for field in item.fields.iter() {
-        let config = check_directive::check_expect_config(ctx, field.dir_list, "fields");
+        let (config, vis) =
+            check_directive::check_field_directives(ctx, field.dir_list, struct_vis);
         if config.disabled() {
             continue;
         }
@@ -252,7 +252,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
         }
 
         let field = hir::Field {
-            vis: struct_vis,
+            vis,
             name: field.name,
             ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,
