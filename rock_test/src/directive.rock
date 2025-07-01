@@ -1,0 +1,75 @@
+//#entry(check) "directive_scope_field_public"
+//#expect
+//error: scope visibility is already `public`, remove this directive
+//  │
+//2 │     #scope_public
+//  │     ^^^^^^^^^^^^^
+//  └─ src/test.rock:2:5
+//
+//#!
+struct Example {
+    #scope_public
+    pub: s32,
+    #scope_package
+    package: s32,
+    #scope_private
+    private: s32,
+}
+
+//#entry(check) "directive_scope_field_package"
+//#expect
+//error: field visibility must be stronger than struct's `package` visibility
+//  │
+//3 │     #scope_public
+//  │     ^^^^^^^^^^^^^
+//  └─ src/test.rock:3:5
+//
+//error: scope visibility is already `package`, remove this directive
+//  │
+//5 │     #scope_package
+//  │     ^^^^^^^^^^^^^^
+//  └─ src/test.rock:5:5
+//
+//#!
+#scope_package
+struct Example2 {
+    #scope_public
+    pub: s32,
+    #scope_package
+    package: s32,
+    #scope_private
+    private: s32,
+}
+#scope_public
+
+//#entry(check) "directive_scope_field_private"
+//#expect
+//error: field visibility must be stronger than struct's `private` visibility
+//  │
+//3 │     #scope_public
+//  │     ^^^^^^^^^^^^^
+//  └─ src/test.rock:3:5
+//
+//error: field visibility must be stronger than struct's `private` visibility
+//  │
+//5 │     #scope_package
+//  │     ^^^^^^^^^^^^^^
+//  └─ src/test.rock:5:5
+//
+//error: scope visibility is already `private`, remove this directive
+//  │
+//7 │     #scope_private
+//  │     ^^^^^^^^^^^^^^
+//  └─ src/test.rock:7:5
+//
+//#!
+#scope_private
+struct Example3 {
+    #scope_public
+    pub: s32,
+    #scope_package
+    package: s32,
+    #scope_private
+    private: s32,
+}
+#scope_public
