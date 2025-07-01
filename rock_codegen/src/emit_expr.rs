@@ -1245,7 +1245,9 @@ pub fn codegen_call_intrinsic<'c>(
     const ACQREL: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingAcquireRelease;
     const SEQCST: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent;
 
+    let ty = if let Some(ty) = poly_types.get(0) { *ty } else { hir::Type::Error };
     let data = cg.hir.proc_data(proc_id);
+
     match cg.session.intern_name.get(data.name.id) {
         "size_of" => {
             let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
@@ -1302,40 +1304,82 @@ pub fn codegen_call_intrinsic<'c>(
         "store_release" => atomic_store(cg, input, RELEASE),
         "store_seqcst" => atomic_store(cg, input, SEQCST),
 
-        "compare_exchange_relaxed_relaxed" => cmpxchg(cg, input, RELAXED, RELAXED, false),
-        "compare_exchange_relaxed_acquire" => cmpxchg(cg, input, RELAXED, ACQUIRE, false),
-        "compare_exchange_relaxed_seqcst" => cmpxchg(cg, input, RELAXED, SEQCST, false),
-        "compare_exchange_relaxed_relaxed_weak" => cmpxchg(cg, input, RELAXED, RELAXED, true),
-        "compare_exchange_relaxed_acquire_weak" => cmpxchg(cg, input, RELAXED, ACQUIRE, true),
-        "compare_exchange_relaxed_seqcst_weak" => cmpxchg(cg, input, RELAXED, SEQCST, true),
+        "add_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAdd, RELAXED),
+        "add_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAdd, ACQUIRE),
+        "add_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAdd, RELEASE),
+        "add_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAdd, ACQREL),
+        "add_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAdd, SEQCST),
 
-        "compare_exchange_acquire_relaxed" => cmpxchg(cg, input, ACQUIRE, RELAXED, false),
-        "compare_exchange_acquire_acquire" => cmpxchg(cg, input, ACQUIRE, ACQUIRE, false),
-        "compare_exchange_acquire_seqcst" => cmpxchg(cg, input, ACQUIRE, SEQCST, false),
-        "compare_exchange_acquire_relaxed_weak" => cmpxchg(cg, input, ACQUIRE, RELAXED, true),
-        "compare_exchange_acquire_acquire_weak" => cmpxchg(cg, input, ACQUIRE, ACQUIRE, true),
-        "compare_exchange_acquire_seqcst_weak" => cmpxchg(cg, input, ACQUIRE, SEQCST, true),
+        "sub_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpSub, RELAXED),
+        "sub_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpSub, ACQUIRE),
+        "sub_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpSub, RELEASE),
+        "sub_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpSub, ACQREL),
+        "sub_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpSub, SEQCST),
 
-        "compare_exchange_release_relaxed" => cmpxchg(cg, input, RELEASE, RELAXED, false),
-        "compare_exchange_release_acquire" => cmpxchg(cg, input, RELEASE, ACQUIRE, false),
-        "compare_exchange_release_seqcst" => cmpxchg(cg, input, RELEASE, SEQCST, false),
-        "compare_exchange_release_relaxed_weak" => cmpxchg(cg, input, RELEASE, RELAXED, true),
-        "compare_exchange_release_acquire_weak" => cmpxchg(cg, input, RELEASE, ACQUIRE, true),
-        "compare_exchange_release_seqcst_weak" => cmpxchg(cg, input, RELEASE, SEQCST, true),
+        "and_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAnd, RELAXED),
+        "and_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAnd, ACQUIRE),
+        "and_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAnd, RELEASE),
+        "and_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAnd, ACQREL),
+        "and_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpAnd, SEQCST),
 
-        "compare_exchange_acqrel_relaxed" => cmpxchg(cg, input, ACQREL, RELAXED, false),
-        "compare_exchange_acqrel_acquire" => cmpxchg(cg, input, ACQREL, ACQUIRE, false),
-        "compare_exchange_acqrel_seqcst" => cmpxchg(cg, input, ACQREL, SEQCST, false),
-        "compare_exchange_acqrel_relaxed_weak" => cmpxchg(cg, input, ACQREL, RELAXED, true),
-        "compare_exchange_acqrel_acquire_weak" => cmpxchg(cg, input, ACQREL, ACQUIRE, true),
-        "compare_exchange_acqrel_seqcst_weak" => cmpxchg(cg, input, ACQREL, SEQCST, true),
+        "nand_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpNand, RELAXED),
+        "nand_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpNand, ACQUIRE),
+        "nand_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpNand, RELEASE),
+        "nand_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpNand, ACQREL),
+        "nand_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpNand, SEQCST),
 
-        "compare_exchange_seqcst_relaxed" => cmpxchg(cg, input, SEQCST, RELAXED, false),
-        "compare_exchange_seqcst_acquire" => cmpxchg(cg, input, SEQCST, ACQUIRE, false),
-        "compare_exchange_seqcst_seqcst" => cmpxchg(cg, input, SEQCST, SEQCST, false),
-        "compare_exchange_seqcst_relaxed_weak" => cmpxchg(cg, input, SEQCST, RELAXED, true),
-        "compare_exchange_seqcst_acquire_weak" => cmpxchg(cg, input, SEQCST, ACQUIRE, true),
-        "compare_exchange_seqcst_seqcst_weak" => cmpxchg(cg, input, SEQCST, SEQCST, true),
+        "or_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpOr, RELAXED),
+        "or_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpOr, ACQUIRE),
+        "or_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpOr, RELEASE),
+        "or_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpOr, ACQREL),
+        "or_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpOr, SEQCST),
+
+        "xor_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXor, RELAXED),
+        "xor_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXor, ACQUIRE),
+        "xor_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXor, RELEASE),
+        "xor_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXor, ACQREL),
+        "xor_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXor, SEQCST),
+
+        "exchange_relaxed" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXchg, RELAXED),
+        "exchange_acquire" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXchg, ACQUIRE),
+        "exchange_release" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXchg, RELEASE),
+        "exchange_acqrel" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXchg, ACQREL),
+        "exchange_seqcst" => rmw(cg, input, llvm::RMWBinOp::LLVMAtomicRMWBinOpXchg, SEQCST),
+
+        "compare_exchange_relaxed_relaxed" => cmpxchg(cg, input, ty, RELAXED, RELAXED, false),
+        "compare_exchange_relaxed_acquire" => cmpxchg(cg, input, ty, RELAXED, ACQUIRE, false),
+        "compare_exchange_relaxed_seqcst" => cmpxchg(cg, input, ty, RELAXED, SEQCST, false),
+        "compare_exchange_relaxed_relaxed_weak" => cmpxchg(cg, input, ty, RELAXED, RELAXED, true),
+        "compare_exchange_relaxed_acquire_weak" => cmpxchg(cg, input, ty, RELAXED, ACQUIRE, true),
+        "compare_exchange_relaxed_seqcst_weak" => cmpxchg(cg, input, ty, RELAXED, SEQCST, true),
+
+        "compare_exchange_acquire_relaxed" => cmpxchg(cg, input, ty, ACQUIRE, RELAXED, false),
+        "compare_exchange_acquire_acquire" => cmpxchg(cg, input, ty, ACQUIRE, ACQUIRE, false),
+        "compare_exchange_acquire_seqcst" => cmpxchg(cg, input, ty, ACQUIRE, SEQCST, false),
+        "compare_exchange_acquire_relaxed_weak" => cmpxchg(cg, input, ty, ACQUIRE, RELAXED, true),
+        "compare_exchange_acquire_acquire_weak" => cmpxchg(cg, input, ty, ACQUIRE, ACQUIRE, true),
+        "compare_exchange_acquire_seqcst_weak" => cmpxchg(cg, input, ty, ACQUIRE, SEQCST, true),
+
+        "compare_exchange_release_relaxed" => cmpxchg(cg, input, ty, RELEASE, RELAXED, false),
+        "compare_exchange_release_acquire" => cmpxchg(cg, input, ty, RELEASE, ACQUIRE, false),
+        "compare_exchange_release_seqcst" => cmpxchg(cg, input, ty, RELEASE, SEQCST, false),
+        "compare_exchange_release_relaxed_weak" => cmpxchg(cg, input, ty, RELEASE, RELAXED, true),
+        "compare_exchange_release_acquire_weak" => cmpxchg(cg, input, ty, RELEASE, ACQUIRE, true),
+        "compare_exchange_release_seqcst_weak" => cmpxchg(cg, input, ty, RELEASE, SEQCST, true),
+
+        "compare_exchange_acqrel_relaxed" => cmpxchg(cg, input, ty, ACQREL, RELAXED, false),
+        "compare_exchange_acqrel_acquire" => cmpxchg(cg, input, ty, ACQREL, ACQUIRE, false),
+        "compare_exchange_acqrel_seqcst" => cmpxchg(cg, input, ty, ACQREL, SEQCST, false),
+        "compare_exchange_acqrel_relaxed_weak" => cmpxchg(cg, input, ty, ACQREL, RELAXED, true),
+        "compare_exchange_acqrel_acquire_weak" => cmpxchg(cg, input, ty, ACQREL, ACQUIRE, true),
+        "compare_exchange_acqrel_seqcst_weak" => cmpxchg(cg, input, ty, ACQREL, SEQCST, true),
+
+        "compare_exchange_seqcst_relaxed" => cmpxchg(cg, input, ty, SEQCST, RELAXED, false),
+        "compare_exchange_seqcst_acquire" => cmpxchg(cg, input, ty, SEQCST, ACQUIRE, false),
+        "compare_exchange_seqcst_seqcst" => cmpxchg(cg, input, ty, SEQCST, SEQCST, false),
+        "compare_exchange_seqcst_relaxed_weak" => cmpxchg(cg, input, ty, SEQCST, RELAXED, true),
+        "compare_exchange_seqcst_acquire_weak" => cmpxchg(cg, input, ty, SEQCST, ACQUIRE, true),
+        "compare_exchange_seqcst_seqcst_weak" => cmpxchg(cg, input, ty, SEQCST, SEQCST, true),
         _ => unreachable!(),
     }
 }
@@ -1373,9 +1417,21 @@ fn atomic_store<'c>(
     None
 }
 
+fn rmw<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    input: &[&hir::Expr<'c>],
+    op: llvm::RMWBinOp,
+    order: llvm::Ordering,
+) -> Option<llvm::Value> {
+    let dst = codegen_expr_value(cg, input[0]).into_ptr();
+    let rhs = codegen_expr_value(cg, input[1]);
+    Some(cg.build.atomic_rmw(op, dst, rhs, order))
+}
+
 fn cmpxchg<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     input: &[&hir::Expr<'c>],
+    ty: hir::Type<'c>,
     success: llvm::Ordering,
     failure: llvm::Ordering,
     weak: bool,
@@ -1388,9 +1444,17 @@ fn cmpxchg<'c>(
     if weak {
         cg.build.set_weak(inst, true);
     }
-    //@extract value, store in named struct
-    let exchange_ok = cg.build.extract_value(inst, 1, "exchange_ok");
-    Some(exchange_ok)
+    let value = cg.build.extract_value(inst, 0, "xchg_value");
+    let ok = cg.build.extract_value(inst, 1, "xchg_ok");
+
+    //@hack, bad
+    let poly = cg.hir.arena.alloc_slice(&[ty]);
+    let struct_ty = cg.ty(hir::Type::Struct(cg.hir.core.exchange_res, poly));
+
+    let undef = llvm::undef(struct_ty);
+    let with_value = cg.build.insert_value(undef, value, 0, "xchg_value");
+    let with_value_ok = cg.build.insert_value(with_value, ok, 1, "xchg_value_ok");
+    Some(with_value_ok)
 }
 
 fn is_numeric(kind: llvm::TypeKind) -> bool {

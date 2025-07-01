@@ -56,6 +56,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
     ctx.core.type_info_array_static = scope::find_core_struct(ctx, "type", "TypeInfo_ArrayStatic");
 
     ctx.core.source_loc = scope::find_core_struct_opt(ctx, "runtime", "SourceLocation");
+    ctx.core.exchange_res = scope::find_core_struct(ctx, "atomic", "ExchangeResult");
 }
 
 fn add_proc_item<'ast>(

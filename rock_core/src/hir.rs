@@ -47,6 +47,7 @@ pub struct CoreItems {
     pub type_info_array_slice: StructID,
     pub type_info_array_static: StructID,
     pub source_loc: Option<StructID>,
+    pub exchange_res: StructID,
 }
 
 pub struct ProcData<'hir> {

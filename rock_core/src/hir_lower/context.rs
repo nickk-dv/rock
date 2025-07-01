@@ -72,6 +72,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             type_info_array_slice: hir::StructID::dummy(),
             type_info_array_static: hir::StructID::dummy(),
             source_loc: None,
+            exchange_res: hir::StructID::dummy(),
         };
 
         let cache = Cache {
