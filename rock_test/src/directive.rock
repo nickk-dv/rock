@@ -73,3 +73,144 @@ struct Example3 {
     private: s32,
 }
 #scope_public
+
+//#entry(check) "directive_error_unknown"
+//#expect
+//error: directive `#unknown` is unknown
+//  │
+//1 │ #unknown
+//  │ ^^^^^^^^
+//  └─ src/test.rock:1:1
+//
+//#!
+#unknown
+proc directive_unknown() void {}
+
+//#entry(check) "directive_error_duplicate"
+//#expect
+//error: duplicate directive `#inline_never`
+//  │
+//2 │ #inline_never
+//  │ ^^^^^^^^^^^^^
+//  └─ src/test.rock:2:1
+//
+//#!
+#inline_never
+#inline_never
+proc directive_duplicate() void {}
+
+//#entry(check) "directive_error_param_unknown"
+//#expect
+//error: directive parameter `unknown` is unknown
+//  │
+//1 │ #config(unknown = "")
+//  │         ^^^^^^^
+//  └─ src/test.rock:1:9
+//
+//#!
+#config(unknown = "")
+proc directive_param_unknown() void {}
+
+//#entry(check) "directive_error_param_value_unknown"
+//#expect
+//error: directive parameter value `` for `target_os` is unknown
+//  │
+//1 │ #config(target_os = "")
+//  │                     ^^
+//  └─ src/test.rock:1:21
+//
+//#!
+#config(target_os = "")
+proc directive_param_value_unknown() void {}
+
+//#entry(check) "directive_cannot_apply"
+//#expect
+//error: directive `#variadic` cannot be applied to procedures
+//  │
+//1 │ #variadic
+//  │ ^^^^^^^^^
+//  └─ src/test.rock:1:1
+//
+//#!
+#variadic
+proc directive_cannot_apply() void {}
+
+//#entry(check) "directive_error_param_must_be_last"
+//#expect
+//error: `#variadic` parameter must be last
+//  │
+//1 │ proc param_must_be_last(args: #variadic, other: s32) void {}
+//  │                               ^^^^^^^^^
+//  └─ src/test.rock:1:31
+//
+//#!
+proc param_must_be_last(args: #variadic, other: s32) void {}
+
+//#entry(check) "directive_error_proc_flag_conflict"
+//#expect
+//error: `inline_always` procedures cannot be `inline_never`
+//  │
+//2 │ #inline_always
+//  │ ^^^^^^^^^^^^^^
+//  └─ src/test.rock:2:1
+//
+//error: `inline_never` procedures cannot be `inline_always`
+//  │
+//5 │ #inline_never
+//  │ ^^^^^^^^^^^^^
+//  └─ src/test.rock:5:1
+//
+//#!
+#inline_never
+#inline_always
+proc proc_flag_conflict_inline_always() void;
+#inline_always
+#inline_never
+proc proc_flag_conflict_inline_never() void;
+
+//#entry(check) "directive_error_intrinsic_non_core"
+//#expect
+//error: `intrinsic` procedures cannot be defined outside the core library
+//  │
+//1 │ #intrinsic
+//  │ ^^^^^^^^^^
+//  └─ src/test.rock:1:1
+//
+//#!
+#intrinsic
+proc intrinsic_non_core() void;
+
+//#entry(check) "directive_error_variadic_external"
+//#expect
+//error: `variadic` procedures cannot be `external`
+//did you mean to use #c_variadic instead?
+//  │
+//1 │ proc variadic_external(args: #variadic) void;
+//  │                              ^^^^^^^^^
+//  └─ src/test.rock:1:30
+//
+//#!
+proc variadic_external(args: #variadic) void;
+
+//#entry(check) "directive_error_c_variadic_not_external"
+//#expect
+//error: `c_variadic` procedures must be `external`
+//did you mean to use #variadic instead?
+//  │
+//1 │ proc c_variadic_not_external(args: #c_variadic) void {}
+//  │                                    ^^^^^^^^^^^
+//  └─ src/test.rock:1:36
+//
+//#!
+proc c_variadic_not_external(args: #c_variadic) void {}
+
+//#entry(check) "directive_error_c_variadic_zero_params"
+//#expect
+//error: `c_variadic` procedures must have at least one parameter
+//  │
+//1 │ proc c_variadic_zero_params(args: #c_variadic) void;
+//  │                                   ^^^^^^^^^^^
+//  └─ src/test.rock:1:35
+//
+//#!
+proc c_variadic_zero_params(args: #c_variadic) void;
