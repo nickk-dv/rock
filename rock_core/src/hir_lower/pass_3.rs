@@ -57,14 +57,18 @@ fn process_proc_data(ctx: &mut HirCtx, id: hir::ProcID) {
     ctx.cache.proc_params.clear();
 
     let item = ctx.registry.proc_item(id);
-    let mut flag_set = ctx.registry.proc_data(id).flag_set;
+    let data = ctx.registry.proc_data(id);
+    let mut flag_set = data.flag_set;
     let param_count = item.params.len();
+    let skip_global_check = data.flag_set.contains(hir::ProcFlag::External)
+        || data.flag_set.contains(hir::ProcFlag::Intrinsic);
 
     for (param_idx, param) in item.params.iter().enumerate() {
-        if ctx
-            .scope
-            .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
-            .is_err()
+        if !skip_global_check
+            && ctx
+                .scope
+                .check_already_defined_global(param.name, ctx.session, &ctx.registry, &mut ctx.emit)
+                .is_err()
         {
             continue;
         }

@@ -4607,8 +4607,6 @@ fn check_call_intrinsic<'hir>(
 
             let (subject, from_val, into_val) = if from_layout.size != into_layout.size {
                 ("size", from_layout.size, into_layout.size)
-            } else if from_layout.align != into_layout.align {
-                ("alignment", from_layout.align, into_layout.align)
             } else {
                 return None;
             };
