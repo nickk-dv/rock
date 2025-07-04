@@ -1497,7 +1497,7 @@ fn codegen_struct_init<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     struct_id: hir::StructID,
-    input: &[hir::FieldInit<'c>],
+    input: &[&'c hir::Expr<'c>],
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let struct_ty = cg.ty(hir::Type::Struct(struct_id, poly_types)).as_st();
@@ -1506,10 +1506,9 @@ fn codegen_struct_init<'c>(
         Expect::Store(ptr_val) => ptr_val,
     };
 
-    for field_init in input {
-        let idx = field_init.field_id.raw();
-        let field_ptr = cg.build.gep_struct(struct_ty, struct_ptr, idx, "field_ptr");
-        codegen_expr_store(cg, field_init.expr, field_ptr);
+    for (idx, expr) in input.iter().copied().enumerate() {
+        let field_ptr = cg.build.gep_struct(struct_ty, struct_ptr, idx as u32, "field_ptr");
+        codegen_expr_store(cg, expr, field_ptr);
     }
 
     match expect {

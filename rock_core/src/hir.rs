@@ -309,8 +309,8 @@ pub enum Expr<'hir> {
     CallDirectPoly { proc_id: ProcID, input: &'hir (&'hir [&'hir Expr<'hir>], &'hir [Type<'hir>]) },
     CallIndirect { target: &'hir Expr<'hir>, indirect: &'hir CallIndirect<'hir> },
     VariadicArg  { arg: &'hir VariadicArg<'hir> },
-    StructInit   { struct_id: StructID, input: &'hir [FieldInit<'hir>] },
-    StructInitPoly { struct_id: StructID, input: &'hir (&'hir [FieldInit<'hir>], &'hir [Type<'hir>]) },
+    StructInit   { struct_id: StructID, input: &'hir [&'hir Expr<'hir>] },
+    StructInitPoly { struct_id: StructID, input: &'hir (&'hir [&'hir Expr<'hir>], &'hir [Type<'hir>]) },
     ArrayInit    { array: &'hir ArrayInit<'hir> },
     ArrayRepeat  { array: &'hir ArrayRepeat<'hir> },
     Deref        { rhs: &'hir Expr<'hir>,  mutt: ast::Mut, ref_ty: &'hir Type<'hir> },
@@ -504,12 +504,6 @@ pub struct CallIndirect<'hir> {
 pub struct VariadicArg<'hir> {
     pub exprs: &'hir [&'hir Expr<'hir>],
     pub types: &'hir [Type<'hir>],
-}
-
-#[derive(Copy, Clone)]
-pub struct FieldInit<'hir> {
-    pub field_id: FieldID,
-    pub expr: &'hir Expr<'hir>,
 }
 
 #[derive(Copy, Clone)]

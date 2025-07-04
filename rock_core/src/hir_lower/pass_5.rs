@@ -2036,7 +2036,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     }
 
     //@re-use FieldStatus memory
-    let offset = ctx.cache.field_inits.start();
+    let offset = ctx.cache.exprs.start();
     let mut field_status = Vec::<FieldStatus>::new();
     field_status.resize_with(field_count, || FieldStatus::None);
     let mut init_count: usize = 0;
@@ -2075,8 +2075,7 @@ fn typecheck_struct_init<'hir, 'ast>(
             let field_name = ctx.name(input.name.id);
             err::tycheck_field_already_initialized(&mut ctx.emit, src, prev_src, field_name);
         } else {
-            let field_init = hir::FieldInit { field_id, expr: input_res.expr };
-            ctx.cache.field_inits.push(field_init);
+            ctx.cache.exprs.push(input_res.expr);
             field_status[field_id.index()] = FieldStatus::Init(input.name.range);
             init_count += 1;
         }
@@ -2148,7 +2147,7 @@ fn typecheck_struct_init<'hir, 'ast>(
     let expr = if ctx.in_const > 0 {
         constfold_struct_init(ctx, struct_init.input, offset, struct_id, poly_types)
     } else {
-        let input = ctx.cache.field_inits.take(offset, &mut ctx.arena);
+        let input = ctx.cache.exprs.take(offset, &mut ctx.arena);
         if poly_types.is_empty() {
             hir::Expr::StructInit { struct_id, input }
         } else {
@@ -2161,25 +2160,25 @@ fn typecheck_struct_init<'hir, 'ast>(
 fn constfold_struct_init<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     input: &[ast::FieldInit],
-    offset: TempOffset<hir::FieldInit<'hir>>,
+    offset: TempOffset<&'hir hir::Expr<'hir>>,
     struct_id: hir::StructID,
     poly_types: &'hir [hir::Type<'hir>],
 ) -> hir::Expr<'hir> {
     let mut valid = true;
     let const_offset = ctx.cache.const_values.start();
 
-    for field in ctx.cache.field_inits.view(offset) {
-        match field.expr {
+    for (idx, &field) in ctx.cache.exprs.view(offset).iter().enumerate() {
+        match field {
             hir::Expr::Error => valid = false,
             hir::Expr::Const(value, _) => ctx.cache.const_values.push(*value),
             _ => {
                 valid = false;
-                let src = ctx.src(input[field.field_id.index()].expr.range);
+                let src = ctx.src(input[idx].expr.range);
                 err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
             }
         }
     }
-    ctx.cache.field_inits.pop_view(offset);
+    ctx.cache.exprs.pop_view(offset);
 
     if valid {
         let values = ctx.cache.const_values.take(const_offset, &mut ctx.arena);
@@ -4442,7 +4441,7 @@ fn check_call_direct<'hir, 'ast>(
 
     let data = ctx.registry.proc_data(proc_id);
     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
-        if let Some(result) = check_call_intrinsic(ctx, proc_id, poly_types, input, range) {
+        if let Some(result) = check_call_intrinsic(ctx, proc_id, poly_types, range) {
             return result;
         }
     }
@@ -4549,7 +4548,6 @@ fn check_call_intrinsic<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     proc_id: hir::ProcID,
     poly_types: &'hir [hir::Type<'hir>],
-    input: &'hir [&'hir hir::Expr<'hir>],
     range: TextRange,
 ) -> Option<TypeResult<'hir>> {
     let data = ctx.registry.proc_data(proc_id);
