@@ -44,7 +44,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         if !ctx.scope.local.params_was_used[idx] {
             let src = ctx.src(param.name.range);
             let name = ctx.name(param.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, src, name, "parameter");
+            err::scope_unused_symbol(&mut ctx.emit, src, name, "parameter");
         }
     }
     let discard_id = ctx.session.intern_name.intern("_");
@@ -52,7 +52,7 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
         if !var.was_used && var.name.id != discard_id {
             let src = ctx.src(var.name.range);
             let name = ctx.name(var.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, src, name, "variable");
+            err::scope_unused_symbol(&mut ctx.emit, src, name, "variable");
         }
     }
 }

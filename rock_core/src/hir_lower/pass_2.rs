@@ -94,7 +94,7 @@ fn import_module(
     target_id: ModuleID,
     module_name: ast::Name,
 ) -> Result<(), ()> {
-    let alias = check_symbol_rename(ctx, module_name, import.rename, false)?;
+    let alias = check_symbol_rename(ctx, module_name, import.rename)?;
     ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let origin_id = ctx.scope.origin;
@@ -119,7 +119,7 @@ fn import_symbol(
         &mut ctx.emit,
     )?;
 
-    let alias = check_symbol_rename(ctx, symbol.name, symbol.rename, true)?;
+    let alias = check_symbol_rename(ctx, symbol.name, symbol.rename)?;
     ctx.scope.check_already_defined_global(alias, ctx.session, &ctx.registry, &mut ctx.emit)?;
 
     let symbol = match kind {
@@ -137,7 +137,6 @@ fn check_symbol_rename(
     ctx: &mut HirCtx,
     name: ast::Name,
     rename: ast::SymbolRename,
-    on_symbol: bool,
 ) -> Result<ast::Name, ()> {
     match rename {
         ast::SymbolRename::None => Ok(name),
@@ -149,12 +148,6 @@ fn check_symbol_rename(
             }
             Ok(alias)
         }
-        ast::SymbolRename::Discard(range) => {
-            if on_symbol {
-                let src = ctx.src(range);
-                err::import_name_discard_redundant(&mut ctx.emit, src);
-            }
-            Err(())
-        }
+        ast::SymbolRename::Discard(_) => Err(()),
     }
 }

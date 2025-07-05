@@ -45,7 +45,7 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
             && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "procedure");
+            err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "procedure");
         }
     }
 
@@ -55,7 +55,7 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
             && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "enum");
+            err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "enum");
         }
     }
 
@@ -65,7 +65,7 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
             && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "struct");
+            err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "struct");
         }
     }
 
@@ -75,7 +75,7 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
             && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "const");
+            err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "const");
         }
     }
 
@@ -85,7 +85,7 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
             && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
-            err::scope_symbol_unused(&mut ctx.emit, data.src(), name, "global");
+            err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "global");
         }
     }
 
@@ -104,14 +104,14 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
                         buf.push_str(symbol_id.desc());
                         let name = ctx.name(*import_name);
                         let src = SourceRange::new(module_id, *range);
-                        err::scope_symbol_unused(&mut ctx.emit, src, name, &buf)
+                        err::scope_unused_symbol(&mut ctx.emit, src, name, &buf)
                     }
                 }
                 Symbol::ImportedModule(_, range, was_used) => {
                     if !*was_used {
                         let name = ctx.name(*import_name);
                         let src = SourceRange::new(module_id, *range);
-                        err::scope_symbol_unused(&mut ctx.emit, src, name, "imported module");
+                        err::scope_unused_symbol(&mut ctx.emit, src, name, "imported module");
                     }
                 }
             }

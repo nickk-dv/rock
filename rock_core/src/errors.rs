@@ -1,6 +1,24 @@
 use crate::error::{Error, ErrorSink, Info, SourceRange, Warning, WarningSink};
 use std::path::PathBuf;
 
+//==================== WARNINGS ====================
+
+pub fn scope_unused_symbol(emit: &mut impl WarningSink, src: SourceRange, name: &str, kind: &str) {
+    let msg = format!("unused {kind} `{name}`");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, expr_kind: &'static str) {
+    let msg = format!("unused {expr_kind}");
+    emit.warning(Warning::new(msg, src, None));
+}
+
+pub fn tycheck_unreachable_stmt(emit: &mut impl WarningSink, src: SourceRange, after: SourceRange) {
+    let msg = "unreachable statement";
+    let info = Info::new("all statements after this are unreachable", after);
+    emit.warning(Warning::new(msg, src, info));
+}
+
 //==================== OPERATING SYSTEM ====================
 
 pub fn os_current_exe_path(io_error: String) -> Error {
@@ -365,11 +383,6 @@ pub fn scope_struct_field_not_found(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn scope_symbol_unused(emit: &mut impl WarningSink, src: SourceRange, name: &str, kind: &str) {
-    let msg = format!("unused {kind} `{name}`");
-    emit.warning(Warning::new(msg, src, None));
-}
-
 //==================== CHECK DIRECTIVE & FLAG ====================
 
 pub fn directive_unknown(emit: &mut impl ErrorSink, src: SourceRange, name: &str) {
@@ -505,18 +518,13 @@ pub fn import_expected_mod_found_dir(emit: &mut impl ErrorSink, src: SourceRange
 }
 
 pub fn import_module_into_itself(emit: &mut impl ErrorSink, src: SourceRange, mod_name: &str) {
-    let msg = format!("importing module `{mod_name}` into itself is not allowed");
+    let msg = format!("cannot import module `{mod_name}` into itself");
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn import_name_alias_redundant(emit: &mut impl WarningSink, src: SourceRange, alias: &str) {
+pub fn import_name_alias_redundant(emit: &mut impl ErrorSink, src: SourceRange, alias: &str) {
     let msg = format!("name alias `{alias}` is redundant, remove it");
-    emit.warning(Warning::new(msg, src, None));
-}
-
-pub fn import_name_discard_redundant(emit: &mut impl WarningSink, src: SourceRange) {
-    let msg = "name discard `_` is redundant, remove it";
-    emit.warning(Warning::new(msg, src, None));
+    emit.error(Error::new(msg, src, None));
 }
 
 //==================== CHECK ITEM ====================
@@ -950,12 +958,6 @@ pub fn tycheck_cannot_deref_on_ty(emit: &mut impl ErrorSink, src: SourceRange, t
     emit.error(Error::new(msg, src, None));
 }
 
-pub fn tycheck_unreachable_stmt(emit: &mut impl WarningSink, src: SourceRange, after: SourceRange) {
-    let msg = "unreachable statement";
-    let info = Info::new("all statements after this are unreachable", after);
-    emit.warning(Warning::new(msg, src, info));
-}
-
 pub fn tycheck_break_outside_loop(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "break outside of loop";
     emit.error(Error::new(msg, src, None));
@@ -1026,13 +1028,6 @@ pub fn tycheck_for_range_type_mismatch(
 pub fn tycheck_cannot_infer_local_type(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot infer local variable type";
     emit.error(Error::new(msg, src, None));
-}
-
-//==================== TYPECHECK UNUSED ====================
-
-pub fn tycheck_unused_expr(emit: &mut impl WarningSink, src: SourceRange, expr_kind: &'static str) {
-    let msg = format!("unused {expr_kind}");
-    emit.warning(Warning::new(msg, src, None));
 }
 
 //==================== TYPECHECK INFER ====================
