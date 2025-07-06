@@ -267,15 +267,14 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
 
 fn update_syntax_tree(session: &mut Session, module_id: ModuleID) {
     let module = session.module.get_mut(module_id);
-    let file = session.vfs.file(module.file_id);
-    if module.tree_version == file.version {
+    if module.tree_version == module.file_version {
         return;
     }
-
-    let (tree, errors) = syntax::parse_tree(&file.source, module_id, &mut session.intern_lit);
-    module.set_tree(tree);
+    let (tree, errors) =
+        syntax::parse_tree(&module.file.source, module_id, &mut session.intern_lit);
+    module.tree = Some(tree);
     module.parse_errors = errors;
-    module.tree_version = file.version;
+    module.tree_version = module.file_version;
 }
 
 #[derive(PartialEq)]
@@ -292,8 +291,9 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
         return;
     }
 
-    let tree = module.tree_expect();
-    let file = server.session.vfs.file(module.file_id);
+    let tree = module.tree.as_ref().unwrap();
+    let file = &module.file;
+
     if update == SymbolUpdate::All {
         data.symbols.clear();
         data.symbols.reserve(tree.root().content_len as usize); //content_len includes non-nodes aswell
@@ -414,8 +414,8 @@ fn resolve_import_module(
     import: cst::ImportItem,
 ) -> Option<ModuleID> {
     let module = session.module.get(origin_id);
-    let tree = module.tree_expect();
-    let file = session.vfs.file(module.file_id);
+    let tree = module.tree.as_ref().unwrap();
+    let file = &module.file;
     let path = import.import_path(tree)?;
 
     let mut package_id = module.origin;
@@ -481,12 +481,12 @@ fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
     update_syntax_tree(session, module_id);
 
     let module = session.module.get(module_id);
-    let tree = module.tree_expect();
+    let tree = module.tree.as_ref().unwrap();
     if !tree.complete() {
         return send_response(server.conn, id, serde_json::Value::Null);
     }
 
-    let file = session.vfs.file(module.file_id);
+    let file = &module.file;
     let formatted = rock_core::syntax::format::format(
         tree,
         &file.source,
@@ -527,8 +527,7 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
 
     let mut hints = Vec::with_capacity(64);
     let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id);
-    let tree = module.tree_expect();
+    let tree = module.tree.as_ref().unwrap();
 
     for node in tree.nodes() {
         let Some(local) = cst::StmtLocal::cast(node) else {
@@ -542,7 +541,7 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
         };
 
         hints.push(lsp::InlayHint {
-            position: text_ops::offset_utf8_to_position_utf16(file, bind.0.range.end()),
+            position: text_ops::offset_utf8_to_position_utf16(&module.file, bind.0.range.end()),
             label: lsp::InlayHintLabel::String(": <unknown>".to_string()),
             kind: Some(lsp::InlayHintKind::TYPE),
             text_edits: None,
@@ -572,11 +571,8 @@ fn handle_goto_definition(
     update_module_symbols(server, module_id, SymbolUpdate::All);
 
     let module = server.session.module.get(module_id);
-    let file = server.session.vfs.file(module.file_id);
-    let tree = module.tree_expect();
-
-    let offset = text_ops::position_utf16_to_offset_utf8(file, pos);
-    let chain = node_chain(tree, offset);
+    let offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
+    let chain = node_chain(module.tree.as_ref().unwrap(), offset);
     let data = &server.modules[module_id.index()];
     send_response(server.conn, id, serde_json::Value::Null)
 }
@@ -613,9 +609,8 @@ fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: Path
     update_syntax_tree(session, module_id);
 
     let module = session.module.get(module_id);
-    let file = session.vfs.file(module.file_id);
-    let tree = module.tree_expect();
-    let tree_display = syntax::syntax_tree::tree_display(tree, &file.source);
+    let tree = module.tree.as_ref().unwrap();
+    let tree_display = syntax::syntax_tree::tree_display(tree, &module.file.source);
     send_response(server.conn, id, tree_display);
 }
 
@@ -625,7 +620,7 @@ fn compile_project(server: &mut ServerContext) {
     let session = &mut server.session;
     session.errors.clear();
     for module_id in session.module.ids() {
-        session.module.get_mut(module_id).errors.clear();
+        session.module.get_mut(module_id).check_errors.clear();
     }
 
     let mut timer = Instant::now();
@@ -642,11 +637,11 @@ fn compile_project(server: &mut ServerContext) {
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id);
+        let file = &module.file;
 
         let capacity = module.parse_errors.errors.len()
-            + module.errors.errors.len()
-            + module.errors.warnings.len();
+            + module.check_errors.errors.len()
+            + module.check_errors.warnings.len();
         let mut diagnostics = Vec::with_capacity(capacity);
 
         for error in &module.parse_errors.errors {
@@ -654,12 +649,12 @@ fn compile_project(server: &mut ServerContext) {
                 diagnostics.push(d);
             }
         }
-        for error in &module.errors.errors {
+        for error in &module.check_errors.errors {
             if let Some(d) = create_diagnostic(session, error.diagnostic(), Severity::Error) {
                 diagnostics.push(d);
             }
         }
-        for warning in &module.errors.warnings {
+        for warning in &module.check_errors.warnings {
             if let Some(d) = create_diagnostic(session, warning.diagnostic(), Severity::Warning) {
                 diagnostics.push(d);
             }
@@ -704,11 +699,11 @@ fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocument
     );
     let session = &mut server.session;
     let module = match module_id_from_path(session, &path) {
-        Some(module_id) => session.module.get(module_id),
+        Some(module_id) => session.module.get_mut(module_id),
         None => return,
     };
-    let file = session.vfs.file_mut(module.file_id);
-    file.version += 1;
+    let file = &mut module.file;
+    module.file_version += 1;
 
     for change in p.content_changes {
         if let Some(range) = change.range {
@@ -730,14 +725,7 @@ use rock_core::text::{self, TextOffset, TextRange};
 use std::path::PathBuf;
 
 fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
-    if let Some(file_id) = session.vfs.path_to_file_id(path) {
-        for module_id in session.module.ids() {
-            if session.module.get(module_id).file_id == file_id {
-                return Some(module_id);
-            }
-        }
-    }
-    None
+    session.module.path_to_id(path)
 }
 
 fn create_diagnostic(
@@ -796,14 +784,12 @@ fn create_diagnostic(
 
 fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
     let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id);
-    &file.path
+    &module.file.path
 }
 
 fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
     let module = session.module.get(source.module_id());
-    let file = session.vfs.file(module.file_id);
-    text_ops::range_utf8_to_range_utf16(file, source.range())
+    text_ops::range_utf8_to_range_utf16(&module.file, source.range())
 }
 
 fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {
@@ -852,8 +838,7 @@ enum SymbolKind {
 
 fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::SemanticToken> {
     let module = server.session.module.get(module_id);
-    let tree = module.tree_expect();
-    let file = server.session.vfs.file(module.file_id);
+    let tree = module.tree.as_ref().unwrap();
     let modules = server.modules.as_slice();
     let intern_name = &mut server.session.intern_name;
 
@@ -864,7 +849,7 @@ fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::
         params_in_scope: Vec::with_capacity(16),
         semantic_tokens: Vec::with_capacity(tree.tokens().token_count().next_power_of_two() / 2),
         tree,
-        file,
+        file: &module.file,
         modules,
         intern_name,
     };

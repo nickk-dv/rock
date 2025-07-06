@@ -198,7 +198,7 @@ impl GlobalScope {
 
         for module_id in session.module.ids() {
             let module = session.module.get(module_id);
-            let ast = module.ast_expect();
+            let ast = module.ast.as_ref().unwrap();
 
             let mut symbol_count = 0;
             for item in ast.items {

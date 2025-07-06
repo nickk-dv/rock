@@ -194,7 +194,7 @@ impl<'hir, 'ast> Registry<'hir, 'ast> {
 
         for module_id in session.module.ids() {
             let module = session.module.get(module_id);
-            let ast = module.ast_expect();
+            let ast = module.ast.as_ref().unwrap();
 
             for item in ast.items {
                 match item {

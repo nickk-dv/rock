@@ -10,7 +10,7 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
     for module_id in ctx.session.module.ids() {
         ctx.scope.origin = module_id;
         let module = ctx.session.module.get(module_id);
-        let items = module.ast_expect().items;
+        let items = module.ast.as_ref().unwrap().items;
         let mut scope_vis = hir::Vis::Public;
         let mut prev_scope: Option<&ast::Directive> = None;
 

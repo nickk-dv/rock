@@ -1,24 +1,22 @@
 pub mod config;
 mod graph;
 pub mod manifest;
-pub mod vfs;
 
 use crate::ast::Ast;
 use crate::error::{
     DiagnosticData, Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer, Warning, WarningSink,
 };
-use crate::errors as err;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::support::os;
 use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::syntax_tree::SyntaxTree;
+use crate::text::TextRange;
+use crate::{errors as err, text};
 use manifest::{Dependency, Manifest, PackageKind};
-use std::path::PathBuf;
-pub use vfs::FileData;
-use vfs::{FileID, Vfs};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub struct Session<'s> {
-    pub vfs: Vfs,
     pub curr_exe_dir: PathBuf,
     pub curr_work_dir: PathBuf,
     pub intern_lit: InternPool<'s, LitID>,
@@ -34,6 +32,7 @@ pub struct Session<'s> {
 
 pub struct Modules<'s> {
     modules: Vec<Module<'s>>,
+    paths: HashMap<PathBuf, ModuleID>,
 }
 
 crate::define_id!(pub PackageID);
@@ -49,13 +48,22 @@ crate::define_id!(pub ModuleID);
 pub struct Module<'s> {
     pub origin: PackageID,
     pub name_id: NameID,
-    pub file_id: FileID,
-    tree: Option<SyntaxTree>,
-    pub tree_version: u32,
-    ast: Option<Ast<'s>>,
+
+    pub file_version: u32,
     pub ast_version: u32,
+    pub tree_version: u32,
+    pub file: FileData,
+    pub tree: Option<SyntaxTree>,
+    pub ast: Option<Ast<'s>>,
+
     pub parse_errors: ErrorBuffer,
-    pub errors: ErrorWarningBuffer,
+    pub check_errors: ErrorWarningBuffer,
+}
+
+pub struct FileData {
+    pub path: PathBuf,
+    pub source: String,
+    pub line_ranges: Vec<TextRange>,
 }
 
 pub struct Directory {
@@ -90,7 +98,7 @@ impl Session<'_> {
             if module.parse_errors.did_error(0) {
                 return Err(());
             }
-            if module.errors.did_error(0) {
+            if module.check_errors.did_error(0) {
                 return Err(());
             }
         }
@@ -107,7 +115,7 @@ impl Session<'_> {
                 DiagnosticData::Context { main, .. } => main.src().module_id(),
                 DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
             };
-            self.module.get_mut(origin).errors.error(e);
+            self.module.get_mut(origin).check_errors.error(e);
         }
         for w in warnings {
             let origin = match w.diagnostic().data() {
@@ -115,16 +123,15 @@ impl Session<'_> {
                 DiagnosticData::Context { main, .. } => main.src().module_id(),
                 DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
             };
-            self.module.get_mut(origin).errors.warning(w);
+            self.module.get_mut(origin).check_errors.warning(w);
         }
     }
 }
 
 impl<'s> Modules<'s> {
-    fn new(cap: usize) -> Modules<'s> {
-        Modules { modules: Vec::with_capacity(cap) }
+    fn new(capacity: usize) -> Modules<'s> {
+        Modules { modules: Vec::with_capacity(capacity), paths: HashMap::with_capacity(capacity) }
     }
-
     #[inline]
     pub fn ids(&self) -> impl Iterator<Item = ModuleID> {
         (0..(self.modules.len() as u32)).map(ModuleID)
@@ -141,31 +148,15 @@ impl<'s> Modules<'s> {
     pub fn get_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
         &mut self.modules[module_id.index()]
     }
-
+    #[must_use]
+    pub fn path_to_id<P: AsRef<Path>>(&self, p: P) -> Option<ModuleID> {
+        self.paths.get(p.as_ref()).copied()
+    }
     #[must_use]
     fn add(&mut self, module: Module<'s>) -> ModuleID {
         let module_id = ModuleID(self.modules.len() as u32);
         self.modules.push(module);
         module_id
-    }
-}
-
-impl<'s> Module<'s> {
-    #[inline]
-    pub fn tree_expect(&self) -> &SyntaxTree {
-        self.tree.as_ref().unwrap()
-    }
-    #[inline]
-    pub fn ast_expect(&self) -> &Ast<'s> {
-        self.ast.as_ref().unwrap()
-    }
-    #[inline]
-    pub fn set_ast<'ast: 's>(&mut self, ast: Ast<'ast>) {
-        self.ast = Some(ast);
-    }
-    #[inline]
-    pub fn set_tree(&mut self, tree: SyntaxTree) {
-        self.tree = Some(tree);
     }
 }
 
@@ -206,7 +197,6 @@ impl BuildStats {
 
 fn default_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
     Ok(Session {
-        vfs: Vfs::new(64),
         curr_exe_dir: os::current_exe_path()?,
         curr_work_dir: os::dir_get_current_working()?,
         intern_lit: InternPool::new(512),
@@ -345,23 +335,24 @@ fn process_module(
     path: &PathBuf,
     origin: PackageID,
 ) -> Result<ModuleID, Error> {
-    let filename = os::filename(path)?;
-    let name_id = session.intern_name.intern(filename);
+    let name = os::filename(path)?;
+    let name_id = session.intern_name.intern(name);
 
     let source = os::file_read_with_sentinel(path)?;
-    let file_id = session.vfs.open(path, source);
+    let mut line_ranges = Vec::with_capacity(source.lines().count());
+    text::find_line_ranges(&mut line_ranges, &source);
 
     let module = Module {
         origin,
         name_id,
-        file_id,
-        tree: None,
+        file_version: 1,
         tree_version: 0,
-        ast: None,
         ast_version: 0,
+        file: FileData { source, path: path.clone(), line_ranges },
+        tree: None,
+        ast: None,
         parse_errors: ErrorBuffer::default(),
-        errors: ErrorWarningBuffer::default(),
+        check_errors: ErrorWarningBuffer::default(),
     };
-    let module_id = session.module.add(module);
-    Ok(module_id)
+    Ok(session.module.add(module))
 }

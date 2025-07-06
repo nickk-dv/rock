@@ -21,11 +21,11 @@ pub fn parse_all(session: &mut Session) -> Result<(), ()> {
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let tree = module.tree_expect();
-        let source = session.vfs.file(module.file_id).source.as_str();
+        let tree = module.tree.as_ref().unwrap();
+        let source = module.file.source.as_str();
 
         let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
-        session.module.get_mut(module_id).set_ast(ast);
+        session.module.get_mut(module_id).ast = Some(ast);
     }
     Ok(())
 }
@@ -33,16 +33,15 @@ pub fn parse_all(session: &mut Session) -> Result<(), ()> {
 pub fn parse_all_trees(session: &mut Session) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id);
-
-        let tree_result = parse_tree_complete(&file.source, module_id, &mut session.intern_lit);
+        let tree_result =
+            parse_tree_complete(&module.file.source, module_id, &mut session.intern_lit);
         let module = session.module.get_mut(module_id);
 
         match tree_result {
             Ok(tree) => {
-                session.stats.line_count += file.line_ranges.len() as u32;
+                session.stats.line_count += module.file.line_ranges.len() as u32;
                 session.stats.token_count += tree.tokens().token_count() as u32;
-                module.set_tree(tree);
+                module.tree = Some(tree);
             }
             Err(errors) => module.parse_errors = errors,
         }
@@ -53,32 +52,30 @@ pub fn parse_all_trees(session: &mut Session) -> Result<(), ()> {
 pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id);
-        if module.tree_version == file.version {
+        if module.tree_version == module.file_version {
             continue;
         }
-        let (tree, errors) = parse_tree(&file.source, module_id, &mut session.intern_lit);
+        let (tree, errors) = parse_tree(&module.file.source, module_id, &mut session.intern_lit);
 
         let module = session.module.get_mut(module_id);
-        module.set_tree(tree);
-        module.tree_version = file.version;
+        module.tree = Some(tree);
+        module.tree_version = module.file_version;
         module.parse_errors = errors;
     }
     session.result()?;
 
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id);
-        if module.ast_version == file.version {
+        if module.ast_version == module.file_version {
             continue;
         }
-        let tree = module.tree_expect();
-        let source = file.source.as_str();
+        let tree = module.tree.as_ref().unwrap();
+        let source = module.file.source.as_str();
         let ast = ast_build::ast(tree, source, &mut session.intern_name, &mut session.ast_state);
 
         let module = session.module.get_mut(module_id);
-        module.set_ast(ast);
-        module.ast_version = file.version;
+        module.ast = Some(ast);
+        module.ast_version = module.file_version;
     }
     Ok(())
 }

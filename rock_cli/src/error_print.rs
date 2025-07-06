@@ -19,8 +19,8 @@ pub fn print_session_errors(session: &Session, warn: bool) {
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
         print_impl(Some(session), &module.parse_errors.errors, &[]);
-        let warnings = if warn { module.errors.warnings.as_slice() } else { &[] };
-        print_impl(Some(session), &module.errors.errors, warnings);
+        let warnings = if warn { module.check_errors.warnings.as_slice() } else { &[] };
+        print_impl(Some(session), &module.check_errors.errors, warnings);
     }
     print_impl(Some(session), &session.errors.errors, &[]);
 }
@@ -82,16 +82,20 @@ impl<'src> ContextFmt<'src> {
         severity: Severity,
     ) -> ContextFmt<'src> {
         let module = session.module.get(context.src().module_id());
-        let file = session.vfs.file(module.file_id);
-        let path = file.path.strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| &file.path);
+        let source = module.file.source.as_str();
+        let path = module
+            .file
+            .path
+            .strip_prefix(&session.curr_work_dir)
+            .unwrap_or_else(|_| &module.file.path);
 
         let range = context.src().range();
-        let location = text::find_text_location(&file.source, range.start(), &file.line_ranges);
+        let location = text::find_text_location(source, range.start(), &module.file.line_ranges);
         let line_num = location.line().to_string();
-        let line_range = file.line_ranges[location.line_index()];
+        let line_range = module.file.line_ranges[location.line_index()];
 
         ContextFmt {
-            source: &file.source,
+            source,
             path,
             message: context.msg(),
             range,

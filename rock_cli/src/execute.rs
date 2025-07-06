@@ -244,11 +244,11 @@ fn fmt() -> Result<(), Error> {
     let mut cache = format::FormatterCache::new();
     for module_id in session.module.ids() {
         let module = session.module.get(module_id);
-        let file = session.vfs.file(module.file_id);
-        let tree = module.tree_expect();
-        let formatted = format::format(tree, &file.source, &file.line_ranges, &mut cache);
+        let tree = module.tree.as_ref().unwrap();
+        let formatted =
+            format::format(tree, &module.file.source, &module.file.line_ranges, &mut cache);
 
-        if let Err(error) = os::file_create(&file.path, &formatted) {
+        if let Err(error) = os::file_create(&module.file.path, &formatted) {
             error_print::print_error(Some(&session), error);
         }
     }
