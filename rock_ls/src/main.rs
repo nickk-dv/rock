@@ -8,9 +8,8 @@ use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{InternPool, NameID};
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
-use rock_core::syntax::syntax_kind::SyntaxKind;
-use rock_core::syntax::syntax_tree::{Node, NodeID, NodeOrToken, SyntaxTree};
 use rock_core::syntax::token::{SemanticToken, Token, Trivia};
+use rock_core::syntax::tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree};
 use std::collections::HashMap;
 
 #[macro_export]
@@ -482,7 +481,7 @@ fn handle_format(server: &mut ServerContext, id: RequestId, path: PathBuf) {
 
     let module = session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
-    if !tree.complete() {
+    if !tree.complete {
         return send_response(server.conn, id, serde_json::Value::Null);
     }
 
@@ -525,6 +524,8 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
 
     update_syntax_tree(session, module_id);
 
+    //@rework search & scoping, use previous Hir type info.
+    /*
     let mut hints = Vec::with_capacity(64);
     let module = session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
@@ -551,8 +552,10 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
             data: None,
         });
     }
-
     send_response(server.conn, id, hints)
+    */
+
+    send_response(server.conn, id, serde_json::Value::Null)
 }
 
 fn handle_goto_definition(
@@ -610,7 +613,7 @@ fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: Path
 
     let module = session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
-    let tree_display = syntax::syntax_tree::tree_display(tree, &module.file.source);
+    let tree_display = syntax::tree::tree_display(tree, &module.file.source);
     send_response(server.conn, id, tree_display);
 }
 
@@ -847,7 +850,7 @@ fn semantic_tokens(server: &mut ServerContext, module_id: ModuleID) -> Vec<lsp::
         curr_line: 0,
         prev_range: None,
         params_in_scope: Vec::with_capacity(16),
-        semantic_tokens: Vec::with_capacity(tree.tokens().token_count().next_power_of_two() / 2),
+        semantic_tokens: Vec::with_capacity(tree.tokens.token_count().next_power_of_two() / 2),
         tree,
         file: &module.file,
         modules,
@@ -928,13 +931,13 @@ fn semantic_visit_node(
                 semantic_visit_node(b, node, ident_style);
             }
             NodeOrToken::Token(token_id) => {
-                let (token, range) = b.tree.tokens().token_and_range(token_id);
+                let (token, range) = b.tree.tokens.token_and_range(token_id);
                 if let Some(semantic) = semantic_token_style(token, node.kind, ident_style) {
                     semantic_token_add(b, semantic, range);
                 }
             }
             NodeOrToken::Trivia(id) => {
-                let (trivia, range) = b.tree.tokens().trivia_and_range(id);
+                let (trivia, range) = b.tree.tokens.trivia_and_range(id);
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {

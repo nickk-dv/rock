@@ -1,5 +1,4 @@
 use super::parser::Event;
-use super::syntax_kind::SyntaxKind;
 use super::token::{TokenID, TokenList, Trivia, TriviaID};
 use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
 use crate::errors as err;
@@ -9,9 +8,9 @@ use crate::text::TextRange;
 
 pub struct SyntaxTree {
     nodes: Vec<Node>,
-    tokens: TokenList,
     content: Vec<NodeOrTokenID>,
-    complete: bool,
+    pub tokens: TokenList,
+    pub complete: bool,
 }
 
 crate::define_id!(pub NodeID);
@@ -41,21 +40,125 @@ pub struct NodeContentIter<'syn> {
     end: u32,
 }
 
+#[allow(non_camel_case_types)]
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum SyntaxKind {
+    ERROR,
+    TOMBSTONE,
+    SOURCE_FILE,
+
+    PROC_ITEM,
+    PARAM_LIST,
+    PARAM,
+    ENUM_ITEM,
+    VARIANT_LIST,
+    VARIANT,
+    VARIANT_FIELD_LIST,
+    VARIANT_FIELD,
+    STRUCT_ITEM,
+    FIELD_LIST,
+    FIELD,
+    CONST_ITEM,
+    GLOBAL_ITEM,
+    IMPORT_ITEM,
+    IMPORT_PATH,
+    IMPORT_SYMBOL_LIST,
+    IMPORT_SYMBOL,
+    IMPORT_SYMBOL_RENAME,
+
+    DIRECTIVE_LIST,
+    DIRECTIVE_SIMPLE,
+    DIRECTIVE_WITH_PARAMS,
+    DIRECTIVE_PARAM_LIST,
+    DIRECTIVE_PARAM,
+
+    TYPE_BASIC,
+    TYPE_CUSTOM,
+    TYPE_REFERENCE,
+    TYPE_MULTI_REFERENCE,
+    TYPE_PROCEDURE,
+    PROC_TYPE_PARAM_LIST,
+    PROC_TYPE_PARAM,
+    TYPE_ARRAY_SLICE,
+    TYPE_ARRAY_STATIC,
+
+    BLOCK,
+    STMT_BREAK,
+    STMT_CONTINUE,
+    STMT_RETURN,
+    STMT_DEFER,
+    STMT_FOR,
+    FOR_BIND,
+    FOR_HEADER_COND,
+    FOR_HEADER_ELEM,
+    FOR_HEADER_RANGE,
+    FOR_HEADER_PAT,
+    STMT_LOCAL,
+    STMT_ASSIGN,
+    STMT_EXPR_SEMI,
+    STMT_EXPR_TAIL,
+    STMT_WITH_DIRECTIVE,
+
+    EXPR_PAREN,
+    EXPR_IF,
+    BRANCH_COND,
+    BRANCH_PAT,
+    EXPR_MATCH,
+    MATCH_ARM_LIST,
+    MATCH_ARM,
+    EXPR_FIELD,
+    EXPR_INDEX,
+    EXPR_SLICE,
+    EXPR_CALL,
+    EXPR_CAST,
+    EXPR_ITEM,
+    EXPR_VARIANT,
+    EXPR_STRUCT_INIT,
+    FIELD_INIT_LIST,
+    FIELD_INIT,
+    EXPR_ARRAY_INIT,
+    ARRAY_INIT,
+    EXPR_ARRAY_REPEAT,
+    EXPR_DEREF,
+    EXPR_ADDRESS,
+    EXPR_UNARY,
+    EXPR_BINARY,
+
+    PAT_WILD,
+    PAT_LIT,
+    PAT_ITEM,
+    PAT_VARIANT,
+    PAT_OR,
+
+    LIT_VOID,
+    LIT_NULL,
+    LIT_BOOL,
+    LIT_INT,
+    LIT_FLOAT,
+    LIT_CHAR,
+    LIT_STRING,
+
+    NAME,
+    BIND,
+    BIND_LIST,
+    ARGS_LIST,
+    PATH,
+    PATH_SEGMENT,
+    POLYMORPH_ARGS,
+    POLYMORPH_PARAMS,
+}
+
+#[derive(Clone, Copy)]
+pub struct SyntaxSet {
+    mask: u128,
+}
+
 impl SyntaxTree {
     pub fn root(&self) -> &Node {
         &self.nodes[0]
     }
     pub fn node(&self, id: NodeID) -> &Node {
         &self.nodes[id.index()]
-    }
-    pub fn nodes(&self) -> &[Node] {
-        &self.nodes
-    }
-    pub fn tokens(&self) -> &TokenList {
-        &self.tokens
-    }
-    pub fn complete(&self) -> bool {
-        self.complete
     }
     pub fn content<'syn>(&'syn self, node: &Node) -> NodeContentIter<'syn> {
         NodeContentIter {
@@ -78,7 +181,7 @@ impl NodeOrTokenID {
     }
     fn decode(self) -> NodeOrToken {
         let kind = (self.mask >> 30) & 0b11;
-        let id = self.mask & 0b11111_11111_11111_11111_11111_11111;
+        let id = self.mask & 0x3FFFFFFF;
         match kind {
             0 => NodeOrToken::Node(NodeID(id)),
             1 => NodeOrToken::Token(TokenID::new(id as usize)),
@@ -111,40 +214,61 @@ impl DoubleEndedIterator for NodeContentIter<'_> {
     }
 }
 
-pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
-    let mut buffer = String::with_capacity(source.len() * 8);
-    print_node(&mut buffer, tree, source, tree.root(), 0);
-    return buffer;
-
-    fn print_node(buffer: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
-        use std::fmt::Write;
-        for _ in 0..depth {
-            buffer.push_str("  ");
+impl SyntaxSet {
+    pub const fn new(syntax: &[SyntaxKind]) -> SyntaxSet {
+        let mut mask = 0u128;
+        let mut i = 0;
+        while i < syntax.len() {
+            mask |= 1u128 << syntax[i] as u8;
+            i += 1;
         }
-        let _ = writeln!(buffer, "{:?} {:?}", node.kind, node.range);
+        SyntaxSet { mask }
+    }
+    pub const fn empty() -> SyntaxSet {
+        SyntaxSet { mask: 0 }
+    }
+    pub const fn combine(self, other: SyntaxSet) -> SyntaxSet {
+        SyntaxSet { mask: self.mask | other.mask }
+    }
+    pub const fn contains(&self, syntax: SyntaxKind) -> bool {
+        self.mask & (1u128 << syntax as u8) != 0
+    }
+}
 
-        for not in tree.content(node) {
-            match not {
-                NodeOrToken::Node(id) => {
-                    let node = tree.node(id);
-                    print_node(buffer, tree, source, node, depth + 1);
+pub fn tree_display(tree: &SyntaxTree, source: &str) -> String {
+    let mut buf = String::with_capacity(source.len() * 8);
+    node_display(&mut buf, tree, source, tree.root(), 0);
+    buf
+}
+
+fn node_display(buf: &mut String, tree: &SyntaxTree, source: &str, node: &Node, depth: u32) {
+    use std::fmt::Write;
+    for _ in 0..depth {
+        buf.push_str("  ");
+    }
+    let _ = writeln!(buf, "{:?} {:?}", node.kind, node.range);
+
+    for not in tree.content(node) {
+        match not {
+            NodeOrToken::Node(id) => {
+                let node = tree.node(id);
+                node_display(buf, tree, source, node, depth + 1);
+            }
+            NodeOrToken::Token(id) => {
+                for _ in 0..=depth {
+                    buf.push_str("  ");
                 }
-                NodeOrToken::Token(id) => {
-                    for _ in 0..=depth {
-                        buffer.push_str("  ");
-                    }
-                    let range = tree.tokens.token_range(id);
-                    let text = &source[range.as_usize()];
-                    let _ = writeln!(buffer, "{range:?} {text:?}");
+                let range = tree.tokens.token_range(id);
+                let text = &source[range.as_usize()];
+                let _ = writeln!(buf, "{range:?} {text:?}");
+            }
+            NodeOrToken::Trivia(id) => {
+                for _ in 0..=depth {
+                    buf.push_str("  ");
                 }
-                NodeOrToken::Trivia(id) => {
-                    for _ in 0..=depth {
-                        buffer.push_str("  ");
-                    }
-                    let range = tree.tokens().trivia_range(id);
-                    let text = &source[range.as_usize()];
-                    let _ = writeln!(buffer, "{range:?} {text:?}");
-                }
+                let range = tree.tokens.trivia_range(id);
+                let text = &source[range.as_usize()];
+                let _ = writeln!(buf, "{range:?} {text:?}");
             }
         }
     }

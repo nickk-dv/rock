@@ -1,6 +1,5 @@
-use super::syntax_kind::SyntaxKind;
-use super::syntax_tree::{Node, NodeContentIter, NodeOrToken, SyntaxTree};
 use super::token::{Token, TokenID, T};
+use super::tree::{Node, NodeContentIter, NodeOrToken, SyntaxKind, SyntaxTree};
 use crate::ast;
 use crate::text::TextRange;
 use std::marker::PhantomData;
@@ -87,7 +86,7 @@ impl Node {
                     if found {
                         continue;
                     }
-                    let token = tree.tokens().token(id);
+                    let token = tree.tokens.token(id);
                     found = token == after;
                 }
                 NodeOrToken::Trivia(_) => {}
@@ -120,7 +119,7 @@ impl Node {
                     if found {
                         continue;
                     }
-                    let token = tree.tokens().token(id);
+                    let token = tree.tokens.token(id);
                     found = predicate(token).is_some();
                 }
                 NodeOrToken::Trivia(_) => {}
@@ -143,7 +142,7 @@ impl Node {
                     }
                 }
                 NodeOrToken::Token(id) => {
-                    let token = tree.tokens().token(id);
+                    let token = tree.tokens.token(id);
                     if token == before {
                         return None;
                     }
@@ -171,7 +170,7 @@ impl Node {
                     }
                 }
                 NodeOrToken::Token(id) => {
-                    let token = tree.tokens().token(id);
+                    let token = tree.tokens.token(id);
                     if predicate(token).is_some() {
                         return None;
                     }
@@ -201,7 +200,7 @@ impl Node {
                     }
                 }
                 NodeOrToken::Token(id) => {
-                    let token = tree.tokens().token(id);
+                    let token = tree.tokens.token(id);
                     if !found_start && token == after {
                         found_start = true;
                     }
@@ -218,7 +217,7 @@ impl Node {
     fn token_find(&self, tree: &SyntaxTree, find: Token) -> Option<TextRange> {
         for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
-                let (token, range) = tree.tokens().token_and_range(id);
+                let (token, range) = tree.tokens.token_and_range(id);
                 if token == find {
                     return Some(range);
                 }
@@ -230,7 +229,7 @@ impl Node {
     fn token_find_rev(&self, tree: &SyntaxTree, find: Token) -> Option<TextRange> {
         for not in tree.content(self).rev() {
             if let NodeOrToken::Token(id) = not {
-                let (token, range) = tree.tokens().token_and_range(id);
+                let (token, range) = tree.tokens.token_and_range(id);
                 if token == find {
                     return Some(range);
                 }
@@ -245,7 +244,7 @@ impl Node {
     {
         for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
-                let (token, range) = tree.tokens().token_and_range(id);
+                let (token, range) = tree.tokens.token_and_range(id);
                 if let Some(value) = predicate(token) {
                     return Some((value, range));
                 }
@@ -257,7 +256,7 @@ impl Node {
     fn token_find_id(&self, tree: &SyntaxTree, find: Token) -> Option<TokenID> {
         for not in tree.content(self) {
             if let NodeOrToken::Token(id) = not {
-                let token = tree.tokens().token(id);
+                let token = tree.tokens.token(id);
                 if token == find {
                     return Some(id);
                 }

@@ -9,7 +9,7 @@ use crate::error::{
 use crate::intern::{InternPool, LitID, NameID};
 use crate::support::os;
 use crate::syntax::ast_build::AstBuildState;
-use crate::syntax::syntax_tree::SyntaxTree;
+use crate::syntax::tree::SyntaxTree;
 use crate::text::TextRange;
 use crate::{errors as err, text};
 use manifest::{Dependency, Manifest, PackageKind};
@@ -253,7 +253,7 @@ fn process_package(
     }
 
     let package_id = session.graph.next_id();
-    let src = process_directory(session, &src_dir, package_id)?;
+    let src = process_directory(session, src_dir, package_id)?;
     if format {
         return Ok(package_id);
     }
@@ -300,28 +300,28 @@ fn process_package(
 
 fn process_directory(
     session: &mut Session,
-    path: &PathBuf,
+    path: PathBuf,
     origin: PackageID,
 ) -> Result<Directory, Error> {
-    let filename = os::filename(path)?;
+    let filename = os::filename(&path)?;
     let name_id = session.intern_name.intern(filename);
 
     let mut modules = Vec::new();
     let mut sub_dirs = Vec::new();
 
-    let read_dir = os::dir_read(path)?;
+    let read_dir = os::dir_read(&path)?;
     for entry_result in read_dir {
-        let entry = os::dir_entry_read(path, entry_result)?;
+        let entry = os::dir_entry_read(&path, entry_result)?;
         let entry_path = entry.path();
 
         if let Ok(metadata) = std::fs::metadata(&entry_path) {
             if metadata.is_file() {
                 if os::file_extension(&entry_path) == Some("rock") {
-                    let module_id = process_module(session, &entry_path, origin)?;
+                    let module_id = process_module(session, entry_path, origin)?;
                     modules.push(module_id);
                 }
             } else if metadata.is_dir() {
-                let sub_dir = process_directory(session, &entry_path, origin)?;
+                let sub_dir = process_directory(session, entry_path, origin)?;
                 sub_dirs.push(sub_dir);
             }
         }
@@ -332,13 +332,13 @@ fn process_directory(
 
 fn process_module(
     session: &mut Session,
-    path: &PathBuf,
+    path: PathBuf,
     origin: PackageID,
 ) -> Result<ModuleID, Error> {
-    let name = os::filename(path)?;
+    let name = os::filename(&path)?;
     let name_id = session.intern_name.intern(name);
 
-    let source = os::file_read_with_sentinel(path)?;
+    let source = os::file_read_with_sentinel(&path)?;
     let mut line_ranges = Vec::with_capacity(source.lines().count());
     text::find_line_ranges(&mut line_ranges, &source);
 
@@ -354,5 +354,8 @@ fn process_module(
         parse_errors: ErrorBuffer::default(),
         check_errors: ErrorWarningBuffer::default(),
     };
-    Ok(session.module.add(module))
+
+    let module_id = session.module.add(module);
+    session.module.paths.insert(path, module_id);
+    Ok(module_id)
 }

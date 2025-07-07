@@ -1,6 +1,6 @@
 use super::parser::{Marker, MarkerClosed, Parser};
-use super::syntax_kind::SyntaxKind;
 use super::token::{Token, TokenSet, T};
+use super::tree::SyntaxKind;
 
 pub fn source_file(p: &mut Parser) {
     let m = p.start();

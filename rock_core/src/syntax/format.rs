@@ -1,7 +1,6 @@
 use super::ast_layer::{self as cst, AstNode, AstNodeIterator};
-use super::syntax_kind::{SyntaxKind, SyntaxSet};
-use super::syntax_tree::{Node, NodeOrToken, SyntaxTree};
 use super::token::Trivia;
+use super::tree::{Node, NodeOrToken, SyntaxKind, SyntaxSet, SyntaxTree};
 use crate::ast;
 use crate::support::AsStr;
 use crate::text::TextRange;
@@ -1382,7 +1381,7 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
             NodeOrToken::Node(_) => return false,
             NodeOrToken::Token(_) => {}
             NodeOrToken::Trivia(trivia_id) => {
-                let trivia = fmt.tree.tokens().trivia(trivia_id);
+                let trivia = fmt.tree.tokens.trivia(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => return false,
@@ -1404,7 +1403,7 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
                 trivia_lift(fmt, node, halt);
             }
             NodeOrToken::Trivia(trivia_id) => {
-                let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                let (trivia, range) = fmt.tree.tokens.trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
                     Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
@@ -1550,7 +1549,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
                         }
                         NodeOrToken::Node(_) => break,
                         NodeOrToken::Trivia(trivia_id) => {
-                            let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                            let (trivia, range) = fmt.tree.tokens.trivia_and_range(trivia_id);
                             match trivia {
                                 Trivia::Whitespace => {
                                     let whitespace = &fmt.source[range.as_usize()];
@@ -1590,7 +1589,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
                 fmt.new_line();
             }
             NodeOrToken::Trivia(trivia_id) => {
-                let (trivia, range) = fmt.tree.tokens().trivia_and_range(trivia_id);
+                let (trivia, range) = fmt.tree.tokens.trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {
                         if first {

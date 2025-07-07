@@ -1,5 +1,5 @@
 use super::ast_layer::{self as cst, AstNode};
-use super::syntax_tree::SyntaxTree;
+use super::tree::SyntaxTree;
 use crate::ast;
 use crate::intern::{InternPool, LitID, NameID};
 use crate::support::{Arena, TempBuffer};
@@ -862,17 +862,17 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
         }
         cst::Lit::Int(lit) => {
             let token_id = lit.t_int_lit_id(ctx.tree).unwrap();
-            let val = ctx.tree.tokens().int(token_id);
+            let val = ctx.tree.tokens.int(token_id);
             ast::Lit::Int(val)
         }
         cst::Lit::Float(lit) => {
             let token_id = lit.t_float_lit_id(ctx.tree).unwrap();
-            let val = ctx.tree.tokens().float(token_id);
+            let val = ctx.tree.tokens.float(token_id);
             ast::Lit::Float(val)
         }
         cst::Lit::Char(lit) => {
             let token_id = lit.t_char_lit_id(ctx.tree).unwrap();
-            let val = ctx.tree.tokens().char(token_id);
+            let val = ctx.tree.tokens.char(token_id);
             ast::Lit::Char(val)
         }
         cst::Lit::String(lit) => ast::Lit::String(string_lit(ctx, lit)),
@@ -881,7 +881,7 @@ fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {
 
 fn string_lit(ctx: &mut AstBuild, lit: cst::LitString) -> LitID {
     let token_id = lit.t_string_lit_id(ctx.tree).unwrap();
-    ctx.tree.tokens().string(token_id)
+    ctx.tree.tokens.string(token_id)
 }
 
 //==================== COMMON ====================

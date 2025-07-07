@@ -1,5 +1,5 @@
-use super::syntax_kind::SyntaxKind;
 use super::token::{Token, TokenID, TokenList, TokenSet};
+use super::tree::SyntaxKind;
 use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
 use crate::session::ModuleID;
 use std::cell::Cell;

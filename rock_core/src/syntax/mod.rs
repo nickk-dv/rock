@@ -5,16 +5,15 @@ mod grammar;
 #[allow(unsafe_code)]
 mod lexer;
 mod parser;
-pub mod syntax_kind;
-pub mod syntax_tree;
 #[allow(unsafe_code)]
 pub mod token;
+pub mod tree;
 
 use crate::error::{ErrorBuffer, ErrorSink};
 use crate::intern::{InternPool, LitID};
 use crate::session::{ModuleID, Session};
 use parser::Parser;
-use syntax_tree::SyntaxTree;
+use tree::SyntaxTree;
 
 pub fn parse_all(session: &mut Session) -> Result<(), ()> {
     parse_all_trees(session)?;
@@ -40,7 +39,7 @@ pub fn parse_all_trees(session: &mut Session) -> Result<(), ()> {
         match tree_result {
             Ok(tree) => {
                 session.stats.line_count += module.file.line_ranges.len() as u32;
-                session.stats.token_count += tree.tokens().token_count() as u32;
+                session.stats.token_count += tree.tokens.token_count() as u32;
                 module.tree = Some(tree);
             }
             Err(errors) => module.parse_errors = errors,
@@ -92,7 +91,7 @@ pub fn parse_tree(
     let (tokens, events, mut parse_errors) = parser.finish();
 
     let complete = (lex_errors.error_count() + parse_errors.error_count()) == 0;
-    let (tree, tree_errors) = syntax_tree::tree_build(source, tokens, events, module_id, complete);
+    let (tree, tree_errors) = tree::tree_build(source, tokens, events, module_id, complete);
 
     parse_errors.join_e(lex_errors);
     parse_errors.join_e(tree_errors);
@@ -116,7 +115,7 @@ pub fn parse_tree_complete(
 
     if lex_errors.error_count() == 0 {
         let _ = lex_errors.collect();
-        let (tree, tree_errors) = syntax_tree::tree_build(source, tokens, events, module_id, true);
+        let (tree, tree_errors) = tree::tree_build(source, tokens, events, module_id, true);
 
         if tree_errors.error_count() == 0 {
             let _ = tree_errors.collect();
