@@ -1101,7 +1101,7 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => FieldResult::error(),
-        hir::Type::String(StringType::String) => {
+        hir::Type::String(StringType::String | StringType::Untyped) => {
             let field_name = ctx.name(name.id);
             match field_name {
                 "len" => {
