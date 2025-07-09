@@ -1148,6 +1148,14 @@ fn check_field_from_type<'hir>(
             }
             None => FieldResult::error(),
         },
+        hir::Type::ArrayEnumerated(array) => match check_field_from_array_enum(ctx, name, array) {
+            Some(len) => {
+                let kind = FieldKind::ArrayStatic { len };
+                let field_ty = hir::Type::Int(IntType::Usize);
+                FieldResult::new(deref, kind, field_ty)
+            }
+            None => FieldResult::error(),
+        },
         _ => {
             let src = ctx.src(name.range);
             let field_name = ctx.name(name.id);
@@ -1189,6 +1197,25 @@ fn check_field_from_array<'hir>(
                 }
             };
             Some(len)
+        }
+        _ => {
+            let src = ctx.src(name.range);
+            err::tycheck_field_not_found_array(&mut ctx.emit, src, field_name);
+            None
+        }
+    }
+}
+
+fn check_field_from_array_enum<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    name: ast::Name,
+    array: &hir::ArrayEnumerated,
+) -> Option<hir::ConstValue<'hir>> {
+    let field_name = ctx.name(name.id);
+    match field_name {
+        "len" => {
+            let val = ctx.registry.enum_data(array.enum_id).variants.len() as u64;
+            Some(hir::ConstValue::Int { val, neg: false, int_ty: IntType::Usize })
         }
         _ => {
             let src = ctx.src(name.range);

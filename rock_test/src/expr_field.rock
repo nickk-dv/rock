@@ -1,11 +1,30 @@
 //#prelude
 import core:runtime.{assert}
 
-//#entry "field_struct"
-CONST_STRUCT = Example.{ x: 1, y: 2, inner: .{ z: 3, w: 4 } };
+STRING = "example";
+EMPTY: [0]s32 = [];
+ARRAY = [1, 2, 3];
+ARRAY_ENUM = [Enum.A = 1, .B = 2, .C = 3];
+STRUCT = Struct.{ x: 1, y: 2, inner: .{ z: 3, w: 4 } };
 
+enum Enum {
+    A,
+    B,
+    C,
+}
+struct Struct {
+    x: s32,
+    y: s32,
+    inner: Inner,
+}
+struct Inner {
+    z: s32,
+    w: s32,
+}
+
+//#entry "field_struct"
 proc test_field_struct() void {
-    let value = CONST_STRUCT;
+    let value = STRUCT;
     assert(value.x == 1);
     assert(value.y == 2);
     assert(value.inner.z == 3);
@@ -19,27 +38,15 @@ proc test_field_struct() void {
     assert(ref.inner.w == 4);
 
     //constant
-    assert(CONST_STRUCT.x == 1);
-    assert(CONST_STRUCT.y == 2);
-    assert(CONST_STRUCT.inner.z == 3);
-    assert(CONST_STRUCT.inner.w == 4);
-}
-
-struct Example {
-    x: s32,
-    y: s32,
-    inner: Inner,
-}
-struct Inner {
-    z: s32,
-    w: s32,
+    assert(STRUCT.x == 1);
+    assert(STRUCT.y == 2);
+    assert(STRUCT.inner.z == 3);
+    assert(STRUCT.inner.w == 4);
 }
 
 //#entry "field_string"
-CONST_STRING = "example";
-
 proc test_field_string() void {
-    let value = CONST_STRING;
+    let value = STRING;
     assert(value.len == 7);
 
     //single auto-deref
@@ -47,7 +54,7 @@ proc test_field_string() void {
     assert(ref.len == 7);
 
     //constant
-    assert(CONST_STRING.len == 7);
+    assert(STRING.len == 7);
 }
 
 //#entry "field_slice"
@@ -69,12 +76,9 @@ proc test_field_slice() void {
 }
 
 //#entry "field_array"
-CONST_EMPTY: [0]s32 = [];
-CONST_ARRAY = [1, 2, 3];
-
 proc test_field_array() void {
-    let empty: [0]s32 = [];
-    let array = [1, 2, 3];
+    let empty: [0]s32 = EMPTY;
+    let array = ARRAY;
     assert(empty.len == 0);
     assert(array.len == 3);
 
@@ -85,6 +89,19 @@ proc test_field_array() void {
     assert(array_ref.len == 3);
 
     //constant
-    assert(CONST_EMPTY.len == 0);
-    assert(CONST_ARRAY.len == 3);
+    assert(EMPTY.len == 0);
+    assert(ARRAY.len == 3);
+}
+
+//#entry "field_array_enum"
+proc test_field_array_enum() void {
+    let array = ARRAY_ENUM;
+    assert(array.len == 3);
+
+    //single auto-deref
+    let array_ref = &array;
+    assert(array_ref.len == 3);
+
+    //constant
+    assert(ARRAY_ENUM.len == 3);
 }
