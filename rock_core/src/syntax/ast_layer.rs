@@ -674,7 +674,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
             SyntaxKind::EXPR_BINARY => Some(Expr::Binary(ExprBinary(node))),
-            _ => Lit::cast(node).map(|lit| Expr::Lit(lit)),
+            _ => Lit::cast(node).map(Expr::Lit),
         }
     }
     fn range(self) -> TextRange {

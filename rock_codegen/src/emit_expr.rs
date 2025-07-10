@@ -121,10 +121,10 @@ fn codegen_expr<'c>(
             None
         }
         hir::Expr::StructField { target, access } => {
-            Some(codegen_struct_field(cg, expect, target, &access))
+            Some(codegen_struct_field(cg, expect, target, access))
         }
         hir::Expr::SliceField { target, access } => {
-            Some(codegen_slice_field(cg, expect, target, &access))
+            Some(codegen_slice_field(cg, expect, target, access))
         }
         hir::Expr::Index { target, access } => Some(codegen_index(cg, expect, target, access)),
         hir::Expr::Slice { access, .. } => codegen_expr(cg, &access.op_call, expect),
@@ -288,7 +288,7 @@ fn write_const<'c>(
         }
         hir::ConstValue::Procedure { proc_id, poly_types } => {
             let poly_types = poly_types
-                .map(|p| context::substitute_types(cg, *p, cg.proc.poly_types))
+                .map(|p| context::substitute_types(cg, p, cg.proc.poly_types))
                 .unwrap_or(&[]);
             let proc_ptr = emit_mod::codegen_function(cg, proc_id, poly_types).0.as_val();
             writer.write_ptr_or_undef(cg, proc_ptr);
@@ -400,22 +400,22 @@ fn write_const_int(cg: &mut Codegen, val: u64, neg: bool, int_ty: hir::IntType) 
     let bytes = match int_ty {
         hir::IntType::S8 => &(val as i8 * sign as i8).to_le_bytes()[..],
         hir::IntType::S16 => &(val as i16 * sign as i16).to_le_bytes()[..],
-        hir::IntType::S32 => &(val as i32 * sign as i32).to_le_bytes()[..],
+        hir::IntType::S32 => &(val as i32 * sign).to_le_bytes()[..],
         hir::IntType::S64 => &(val as i64 * sign as i64).to_le_bytes()[..],
         hir::IntType::U8 => &(val as u8).to_le_bytes()[..],
         hir::IntType::U16 => &(val as u16).to_le_bytes()[..],
         hir::IntType::U32 => &(val as u32).to_le_bytes()[..],
-        hir::IntType::U64 => &(val as u64).to_le_bytes()[..],
+        hir::IntType::U64 => &val.to_le_bytes()[..],
         hir::IntType::Ssize => {
             if ptr_size == 8 {
                 &(val as i64 * sign as i64).to_le_bytes()[..]
             } else {
-                &(val as i32 * sign as i32).to_le_bytes()[..]
+                &(val as i32 * sign).to_le_bytes()[..]
             }
         }
         hir::IntType::Usize => {
             if ptr_size == 8 {
-                &(val as u64).to_le_bytes()[..]
+                &val.to_le_bytes()[..]
             } else {
                 &(val as u32).to_le_bytes()[..]
             }
@@ -443,7 +443,7 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
         hir::ConstValue::String { val, string_ty } => codegen_const_string(cg, val, string_ty),
         hir::ConstValue::Procedure { proc_id, poly_types } => {
             let poly_types = poly_types
-                .map(|p| context::substitute_types(cg, *p, cg.proc.poly_types))
+                .map(|p| context::substitute_types(cg, p, cg.proc.poly_types))
                 .unwrap_or(&[]);
             emit_mod::codegen_function(cg, proc_id, poly_types).0.as_val()
         }
@@ -622,7 +622,7 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
             let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
 
             if let Some(poly_types) = poly_types {
-                enum_poly = context::substitute_types(cg, *poly_types, cg.proc.poly_types);
+                enum_poly = context::substitute_types(cg, poly_types, cg.proc.poly_types);
             }
 
             if with_fields {
@@ -771,7 +771,7 @@ fn codegen_slice_field<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expect: Expect,
     target: &hir::Expr<'c>,
-    access: &hir::SliceFieldAccess,
+    access: hir::SliceFieldAccess,
 ) -> llvm::Value {
     let target_ptr = codegen_expr_pointer(cg, target);
     let target_ptr = if access.deref.is_some() {
@@ -865,7 +865,7 @@ fn codegen_index<'c>(
         let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
         let struct_ = hir::ConstStruct { values, poly_types: &[] };
         let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
-        let value = hir::ConstValue::Struct { struct_id, struct_: &struct_ };
+        let value = hir::ConstValue::Struct { struct_id, struct_ };
         let loc = codegen_expr_value(cg, &hir::Expr::Const(value, hir::ConstID::dummy()));
 
         let (fn_val, fn_ty) = emit_mod::codegen_function(cg, cg.hir.core.index_out_of_bounds, &[]);
@@ -929,8 +929,8 @@ fn codegen_cast<'c>(
     codegen_cast_op(cg, val, into, kind)
 }
 
-fn codegen_cast_op<'c>(
-    cg: &mut Codegen<'c, '_, '_>,
+fn codegen_cast_op(
+    cg: &mut Codegen,
     val: llvm::Value,
     into: llvm::Type,
     kind: hir::CastKind,
@@ -1078,18 +1078,16 @@ pub fn codegen_call_direct<'c>(
     let offset = cg.cache.values.start();
     let mut ret_ptr = None;
 
-    if is_external {
-        if emit_mod::win_x64_parameter_type(cg, data_return_ty).by_pointer {
-            let ptr = match expect {
-                Expect::Value(_) | Expect::Pointer(_) => {
-                    let alloc_ty = cg.ty(data_return_ty);
-                    cg.entry_alloca(alloc_ty, "c_call_sret")
-                }
-                Expect::Store(store_ptr) => store_ptr,
-            };
-            ret_ptr = Some(ptr);
-            cg.cache.values.push(ptr.as_val());
-        }
+    if is_external && emit_mod::win_x64_parameter_type(cg, data_return_ty).by_pointer {
+        let ptr = match expect {
+            Expect::Value(_) | Expect::Pointer(_) => {
+                let alloc_ty = cg.ty(data_return_ty);
+                cg.entry_alloca(alloc_ty, "c_call_sret")
+            }
+            Expect::Store(store_ptr) => store_ptr,
+        };
+        ret_ptr = Some(ptr);
+        cg.cache.values.push(ptr.as_val());
     }
 
     for (idx, expr) in input.iter().copied().enumerate() {
@@ -1165,18 +1163,16 @@ fn codegen_call_indirect<'c>(
     let offset = cg.cache.values.start();
     let mut ret_ptr = None;
 
-    if is_external {
-        if emit_mod::win_x64_parameter_type(cg, proc_ty.return_ty).by_pointer {
-            let ptr = match expect {
-                Expect::Value(_) | Expect::Pointer(_) => {
-                    let alloc_ty = cg.ty(proc_ty.return_ty);
-                    cg.entry_alloca(alloc_ty, "c_call_sret")
-                }
-                Expect::Store(store_ptr) => store_ptr,
-            };
-            ret_ptr = Some(ptr);
-            cg.cache.values.push(ptr.as_val());
-        }
+    if is_external && emit_mod::win_x64_parameter_type(cg, proc_ty.return_ty).by_pointer {
+        let ptr = match expect {
+            Expect::Value(_) | Expect::Pointer(_) => {
+                let alloc_ty = cg.ty(proc_ty.return_ty);
+                cg.entry_alloca(alloc_ty, "c_call_sret")
+            }
+            Expect::Store(store_ptr) => store_ptr,
+        };
+        ret_ptr = Some(ptr);
+        cg.cache.values.push(ptr.as_val());
     }
 
     for (idx, expr) in indirect.input.iter().copied().enumerate() {

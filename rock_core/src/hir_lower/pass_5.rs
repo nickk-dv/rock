@@ -238,7 +238,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             if proc_ty.flag_set.contains(hir::ProcFlag::External) {
                 format.push_str(" #c_call");
             }
-            format.push_str("(");
+            format.push('(');
             for (idx, param) in proc_ty.params.iter().enumerate() {
                 match param.kind {
                     hir::ParamKind::Normal => {
