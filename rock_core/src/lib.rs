@@ -6,6 +6,7 @@ pub mod errors;
 pub mod hir;
 pub mod hir_lower;
 pub mod intern;
+pub mod ir;
 pub mod session;
 pub mod support;
 pub mod syntax;
