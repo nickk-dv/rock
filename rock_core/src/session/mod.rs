@@ -13,7 +13,7 @@ use crate::syntax::tree::SyntaxTree;
 use crate::text::TextRange;
 use crate::{errors as err, text};
 use manifest::{Dependency, Manifest, PackageKind};
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::path::{Path, PathBuf};
 
 pub struct Session<'s> {
@@ -32,7 +32,7 @@ pub struct Session<'s> {
 
 pub struct Modules<'s> {
     modules: Vec<Module<'s>>,
-    paths: HashMap<PathBuf, ModuleID>,
+    paths: FxHashMap<PathBuf, ModuleID>,
 }
 
 crate::define_id!(pub PackageID);
@@ -130,7 +130,10 @@ impl Session<'_> {
 
 impl<'s> Modules<'s> {
     fn new(capacity: usize) -> Modules<'s> {
-        Modules { modules: Vec::with_capacity(capacity), paths: HashMap::with_capacity(capacity) }
+        Modules {
+            modules: Vec::with_capacity(capacity),
+            paths: FxHashMap::with_capacity_and_hasher(capacity, FxBuildHasher),
+        }
     }
     #[inline]
     pub fn ids(&self) -> impl Iterator<Item = ModuleID> {

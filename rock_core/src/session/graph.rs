@@ -2,17 +2,20 @@ use crate::error::Error;
 use crate::errors as err;
 use crate::intern::{InternPool, NameID};
 use crate::session::{Package, PackageID};
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::path::PathBuf;
 
 pub struct PackageGraph {
-    unique: HashMap<PathBuf, PackageID>,
-    packages: HashMap<PackageID, Package>,
+    unique: FxHashMap<PathBuf, PackageID>,
+    packages: FxHashMap<PackageID, Package>,
 }
 
 impl PackageGraph {
     pub(super) fn new(cap: usize) -> PackageGraph {
-        PackageGraph { unique: HashMap::with_capacity(cap), packages: HashMap::with_capacity(cap) }
+        PackageGraph {
+            unique: FxHashMap::with_capacity_and_hasher(cap, FxBuildHasher),
+            packages: FxHashMap::with_capacity_and_hasher(cap, FxBuildHasher),
+        }
     }
 
     #[inline]
@@ -28,7 +31,7 @@ impl PackageGraph {
         self.packages.len()
     }
     #[inline]
-    pub fn all_packages(&self) -> &HashMap<PackageID, Package> {
+    pub fn all_packages(&self) -> &FxHashMap<PackageID, Package> {
         &self.packages
     }
 

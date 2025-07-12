@@ -173,6 +173,7 @@ version = "0.0.0"
 dependencies = [
  "llvm-sys",
  "rock_core",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -180,6 +181,7 @@ name = "rock_core"
 version = "0.0.0"
 dependencies = [
  "basic-toml",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -191,6 +193,7 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "rock_core",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]
@@ -198,6 +201,12 @@ dependencies = [
 [[package]]
 name = "rock_test"
 version = "0.0.0"
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
 
 [[package]]
 name = "ryu"

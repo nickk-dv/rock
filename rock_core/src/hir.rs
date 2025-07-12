@@ -5,7 +5,7 @@ use crate::session::config::TargetPtrWidth;
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::{self, TextOffset, TextRange};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub struct Hir<'hir> {
     pub arena: Arena<'hir>,
@@ -16,9 +16,9 @@ pub struct Hir<'hir> {
     pub const_eval_values: Vec<ConstValue<'hir>>,
     pub variant_eval_values: Vec<ConstValue<'hir>>,
     pub entry_point: Option<ProcID>,
-    pub enum_layout: HashMap<EnumKey<'hir>, Layout>,
-    pub struct_layout: HashMap<StructKey<'hir>, StructLayout<'hir>>,
-    pub variant_layout: HashMap<VariantKey<'hir>, StructLayout<'hir>>,
+    pub enum_layout: FxHashMap<EnumKey<'hir>, Layout>,
+    pub struct_layout: FxHashMap<StructKey<'hir>, StructLayout<'hir>>,
+    pub variant_layout: FxHashMap<VariantKey<'hir>, StructLayout<'hir>>,
     pub core: CoreItems,
 }
 

@@ -10,7 +10,7 @@ use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::token::{SemanticToken, Token, Trivia};
 use rock_core::syntax::tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 #[macro_export]
 macro_rules! server_error {
@@ -204,7 +204,7 @@ struct ServerContext<'s> {
 
 struct ModuleData {
     symbols_version: u32,
-    symbols: HashMap<NameID, Symbol>,
+    symbols: FxHashMap<NameID, Symbol>,
 }
 
 fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
@@ -223,7 +223,7 @@ fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
 
     let mut modules = Vec::with_capacity(session.module.count());
     for _ in session.module.ids() {
-        let data = ModuleData { symbols_version: 0, symbols: HashMap::new() };
+        let data = ModuleData { symbols_version: 0, symbols: FxHashMap::default() };
         modules.push(data);
     }
 

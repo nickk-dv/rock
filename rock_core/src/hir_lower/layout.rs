@@ -3,7 +3,7 @@ use crate::error::{ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::hir;
 use crate::support::{TempBuffer, TempOffset};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub trait LayoutContext<'hir>: super::types::SubstituteContext<'hir> {
     fn u8s(&mut self) -> &mut TempBuffer<u8>;
@@ -17,15 +17,17 @@ pub trait LayoutContext<'hir>: super::types::SubstituteContext<'hir> {
     fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir>;
     fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir>;
 
-    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout>;
-    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
-    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
+    fn enum_layout(&self) -> &FxHashMap<hir::EnumKey<'hir>, hir::Layout>;
+    fn struct_layout(&self) -> &FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
+    fn variant_layout(&self) -> &FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
 
-    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout>;
-    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
+    fn enum_layout_mut(&mut self) -> &mut FxHashMap<hir::EnumKey<'hir>, hir::Layout>;
+    fn struct_layout_mut(
+        &mut self,
+    ) -> &mut FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>;
     fn variant_layout_mut(
         &mut self,
-    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
+    ) -> &mut FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>;
 }
 
 pub fn type_layout<'hir>(

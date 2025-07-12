@@ -7,7 +7,7 @@ use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, TempOffset};
 use crate::text::TextRange;
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 pub struct HirCtx<'hir, 's, 'sref> {
     pub arena: Arena<'hir>,
@@ -15,15 +15,15 @@ pub struct HirCtx<'hir, 's, 'sref> {
     pub in_const: u32,
     pub scope: Scope<'hir>,
     pub registry: Registry<'hir, 's>,
-    pub enum_tag_set: HashMap<i128, hir::VariantID>,
+    pub enum_tag_set: FxHashMap<i128, hir::VariantID>,
     pub session: &'sref mut Session<'s>,
     pub pat: PatCov,
     pub core: hir::CoreItems,
     pub cache: Cache<'hir>,
     pub entry_point: Option<hir::ProcID>,
-    pub enum_layout: HashMap<hir::EnumKey<'hir>, hir::Layout>,
-    pub struct_layout: HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>,
-    pub variant_layout: HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>,
+    pub enum_layout: FxHashMap<hir::EnumKey<'hir>, hir::Layout>,
+    pub struct_layout: FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>>,
+    pub variant_layout: FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>>,
 }
 
 pub struct Cache<'hir> {
@@ -98,15 +98,15 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             in_const: 0,
             scope: Scope::new(session),
             registry: Registry::new(session),
-            enum_tag_set: HashMap::with_capacity(128),
+            enum_tag_set: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
             session,
             pat: PatCov::new(),
             core,
             cache,
             entry_point: None,
-            enum_layout: HashMap::with_capacity(128),
-            struct_layout: HashMap::with_capacity(128),
-            variant_layout: HashMap::with_capacity(128),
+            enum_layout: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
+            struct_layout: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
+            variant_layout: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
         }
     }
 
@@ -461,25 +461,27 @@ impl<'hir> super::layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
         self.registry.struct_data(id)
     }
 
-    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout> {
+    fn enum_layout(&self) -> &FxHashMap<hir::EnumKey<'hir>, hir::Layout> {
         &self.enum_layout
     }
-    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+    fn struct_layout(&self) -> &FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
         &self.struct_layout
     }
-    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+    fn variant_layout(&self) -> &FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
         &self.variant_layout
     }
 
-    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout> {
+    fn enum_layout_mut(&mut self) -> &mut FxHashMap<hir::EnumKey<'hir>, hir::Layout> {
         &mut self.enum_layout
     }
-    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+    fn struct_layout_mut(
+        &mut self,
+    ) -> &mut FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
         &mut self.struct_layout
     }
     fn variant_layout_mut(
         &mut self,
-    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+    ) -> &mut FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
         &mut self.variant_layout
     }
 }

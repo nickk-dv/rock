@@ -7,7 +7,7 @@ use rock_core::session::config::TargetTriple;
 use rock_core::session::{ModuleID, Session};
 use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
 use rock_core::{ast, hir};
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 pub struct Codegen<'c, 's, 'sref> {
     pub proc: ProcCodegen<'c>,
@@ -16,13 +16,13 @@ pub struct Codegen<'c, 's, 'sref> {
     pub module: llvm::IRModule,
     pub build: llvm::IRBuilder,
     pub procs: Vec<(llvm::ValueFn, llvm::TypeFn)>,
-    pub procs_poly: HashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
+    pub procs_poly: FxHashMap<hir::ProcKey<'c>, (llvm::ValueFn, llvm::TypeFn)>,
     pub enums: Vec<llvm::TypeStruct>,
-    pub enums_poly: HashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
+    pub enums_poly: FxHashMap<hir::EnumKey<'c>, llvm::TypeStruct>,
     pub structs: Vec<llvm::TypeStruct>,
-    pub structs_poly: HashMap<hir::StructKey<'c>, llvm::TypeStruct>,
+    pub structs_poly: FxHashMap<hir::StructKey<'c>, llvm::TypeStruct>,
     pub globals: Vec<llvm::ValueGlobal>,
-    pub strings: HashMap<LitID, llvm::ValueGlobal>,
+    pub strings: FxHashMap<LitID, llvm::ValueGlobal>,
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
     pub namebuf: String,
@@ -97,7 +97,7 @@ pub struct CodegenCache<'c> {
 
 pub struct CodegenTypeInfo<'c> {
     pub var_args: Vec<(llvm::Value, &'c [hir::Type<'c>])>,
-    pub type_ids: HashMap<hir::Type<'c>, u64>,
+    pub type_ids: FxHashMap<hir::Type<'c>, u64>,
     pub types: Vec<hir::ConstValue<'c>>,
     pub enums: Vec<hir::ConstValue<'c>>,
     pub structs: Vec<hir::ConstValue<'c>>,
@@ -142,13 +142,25 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             module,
             build,
             procs: Vec::with_capacity(hir.procs.len()),
-            procs_poly: HashMap::with_capacity((hir.procs.len() / 4).next_power_of_two()),
+            procs_poly: FxHashMap::with_capacity_and_hasher(
+                (hir.procs.len() / 4).next_power_of_two(),
+                FxBuildHasher,
+            ),
             enums: Vec::with_capacity(hir.enums.len()),
-            enums_poly: HashMap::with_capacity((hir.enums.len() / 8).next_power_of_two()),
+            enums_poly: FxHashMap::with_capacity_and_hasher(
+                (hir.enums.len() / 8).next_power_of_two(),
+                FxBuildHasher,
+            ),
             structs: Vec::with_capacity(hir.structs.len()),
-            structs_poly: HashMap::with_capacity((hir.structs.len() / 8).next_power_of_two()),
+            structs_poly: FxHashMap::with_capacity_and_hasher(
+                (hir.structs.len() / 8).next_power_of_two(),
+                FxBuildHasher,
+            ),
             globals: Vec::with_capacity(hir.globals.len()),
-            strings: HashMap::with_capacity(session.intern_lit.get_all().len()),
+            strings: FxHashMap::with_capacity_and_hasher(
+                session.intern_lit.get_all().len(),
+                FxBuildHasher,
+            ),
             hir,
             session,
             namebuf: String::with_capacity(256),
@@ -523,7 +535,7 @@ impl<'c> CodegenTypeInfo<'c> {
     fn new() -> CodegenTypeInfo<'c> {
         CodegenTypeInfo {
             var_args: Vec::with_capacity(256),
-            type_ids: HashMap::with_capacity(256),
+            type_ids: FxHashMap::with_capacity_and_hasher(256, FxBuildHasher),
             types: Vec::with_capacity(256),
             enums: Vec::with_capacity(64),
             structs: Vec::with_capacity(64),
@@ -601,25 +613,27 @@ impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
         self.hir.struct_data(id)
     }
 
-    fn enum_layout(&self) -> &HashMap<hir::EnumKey<'hir>, hir::Layout> {
+    fn enum_layout(&self) -> &FxHashMap<hir::EnumKey<'hir>, hir::Layout> {
         &self.hir.enum_layout
     }
-    fn struct_layout(&self) -> &HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+    fn struct_layout(&self) -> &FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
         &self.hir.struct_layout
     }
-    fn variant_layout(&self) -> &HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+    fn variant_layout(&self) -> &FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
         &self.hir.variant_layout
     }
 
-    fn enum_layout_mut(&mut self) -> &mut HashMap<hir::EnumKey<'hir>, hir::Layout> {
+    fn enum_layout_mut(&mut self) -> &mut FxHashMap<hir::EnumKey<'hir>, hir::Layout> {
         &mut self.hir.enum_layout
     }
-    fn struct_layout_mut(&mut self) -> &mut HashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
+    fn struct_layout_mut(
+        &mut self,
+    ) -> &mut FxHashMap<hir::StructKey<'hir>, hir::StructLayout<'hir>> {
         &mut self.hir.struct_layout
     }
     fn variant_layout_mut(
         &mut self,
-    ) -> &mut HashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
+    ) -> &mut FxHashMap<hir::VariantKey<'hir>, hir::StructLayout<'hir>> {
         &mut self.hir.variant_layout
     }
 }

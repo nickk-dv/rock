@@ -6,7 +6,7 @@ use crate::errors as err;
 use crate::hir;
 use crate::intern::LitID;
 use crate::text::TextRange;
-use std::collections::HashSet;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::fmt::Write;
 
 pub fn match_kind<'hir>(
@@ -325,7 +325,7 @@ struct PatCovString {
 
 struct PatCovEnum {
     wild_covered: bool,
-    covered: HashSet<hir::VariantID>,
+    covered: FxHashSet<hir::VariantID>,
     not_covered: Vec<hir::VariantID>,
 }
 
@@ -462,7 +462,7 @@ impl PatCovEnum {
     fn new() -> PatCovEnum {
         PatCovEnum {
             wild_covered: false,
-            covered: HashSet::with_capacity(32),
+            covered: FxHashSet::with_capacity_and_hasher(32, FxBuildHasher),
             not_covered: Vec::with_capacity(32),
         }
     }

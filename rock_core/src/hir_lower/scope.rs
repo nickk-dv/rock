@@ -7,7 +7,7 @@ use crate::hir;
 use crate::intern::NameID;
 use crate::session::{self, ModuleID, Session};
 use crate::text::TextRange;
-use std::collections::HashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 pub struct Scope<'hir> {
     pub origin: ModuleID,
@@ -25,7 +25,7 @@ pub struct GlobalScope {
 
 pub struct ModuleScope {
     name_id: NameID,
-    pub symbols: HashMap<NameID, Symbol>,
+    pub symbols: FxHashMap<NameID, Symbol>,
 }
 
 #[derive(Copy, Clone)]
@@ -210,7 +210,7 @@ impl GlobalScope {
 
             modules.push(ModuleScope {
                 name_id: module.name_id,
-                symbols: HashMap::with_capacity(symbol_count),
+                symbols: FxHashMap::with_capacity_and_hasher(symbol_count, FxBuildHasher),
             });
         }
 
