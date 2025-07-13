@@ -4923,8 +4923,16 @@ enum AddrConstraint {
 impl AddrConstraint {
     #[inline]
     fn set(&mut self, new: AddrConstraint) {
-        if matches!(self, AddrConstraint::None) {
-            *self = new;
+        match self {
+            AddrConstraint::None => *self = new,
+            AddrConstraint::AllowMut => {
+                if !matches!(new, AddrConstraint::None | AddrConstraint::AllowMut) {
+                    *self = new;
+                }
+            }
+            AddrConstraint::ImmutRef => {}
+            AddrConstraint::ImmutMulti => {}
+            AddrConstraint::ImmutSlice => {}
         }
     }
 }

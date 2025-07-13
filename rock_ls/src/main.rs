@@ -984,7 +984,7 @@ fn semantic_visit_path(b: &mut SemanticTokenBuilder, path: cst::Path, parent: Sy
                     let style = if let Some(symbol) = data.symbols.get(&name_id).copied() {
                         if same_origin {
                             let kind = match symbol {
-                                Symbol::Module(_) => unreachable!(),
+                                Symbol::Module(_) => SymbolKind::Struct, //default to type
                                 Symbol::Defined(kind) => kind,
                                 Symbol::Imported(_, kind) => kind,
                             };
@@ -1054,7 +1054,7 @@ fn semantic_visit_import_symbols(b: &mut SemanticTokenBuilder, symbols: cst::Imp
         let id = b.name_id(name);
         let style = if let Some(symbol) = data.symbols.get(&id).copied() {
             let kind = match symbol {
-                Symbol::Module(_) => unreachable!(),
+                Symbol::Module(_) => SymbolKind::Struct, //default to type
                 Symbol::Defined(kind) => kind,
                 Symbol::Imported(_, kind) => kind,
             };
