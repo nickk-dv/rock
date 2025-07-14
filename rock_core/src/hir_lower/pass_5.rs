@@ -1470,8 +1470,6 @@ fn typecheck_slice<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let expect = expect.infer_slicing_array_type(ctx, target);
     let target_res = typecheck_expr(ctx, expect, target);
-    let addr_res = resolve_expr_addressability(ctx, target_res.expr);
-    //@check that expression value is addressable
 
     let collection = match type_as_collection(ctx, target_res.ty) {
         Ok(None) => return TypeResult::error(),
@@ -1490,14 +1488,6 @@ fn typecheck_slice<'hir, 'ast>(
             err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
             return TypeResult::error();
         }
-    };
-
-    //@always allowing mutable access for now, fix!
-    let return_ty = if let Some(string_ty) = collection.string_ty {
-        hir::Type::String(string_ty)
-    } else {
-        let slice = hir::ArraySlice { mutt: ast::Mut::Mutable, elem_ty: collection.elem_ty };
-        hir::Type::ArraySlice(ctx.arena.alloc(slice))
     };
 
     let slice = match collection.kind {
@@ -1529,6 +1519,16 @@ fn typecheck_slice<'hir, 'ast>(
             let input = ctx.arena.alloc((input, poly_types));
             ctx.arena.alloc(hir::Expr::CallDirectPoly { proc_id, input })
         }
+    };
+
+    let addr_res = resolve_expr_addressability(ctx, target_res.expr);
+    let slice_mutt = check_slice_addressability(ctx, addr_res, &collection, expr_range);
+
+    let return_ty = if let Some(string_ty) = collection.string_ty {
+        hir::Type::String(string_ty)
+    } else {
+        let slice = hir::ArraySlice { mutt: slice_mutt, elem_ty: collection.elem_ty };
+        hir::Type::ArraySlice(ctx.arena.alloc(slice))
     };
 
     // return the full slice in case of `[..]`
@@ -4905,9 +4905,8 @@ struct AddrResult {
 
 enum AddrBase {
     Unknown,
-    SliceField,
     Temporary,
-    TemporaryImmut,
+    SliceField,
     Constant(SourceRange),
     Variable(ast::Mut, SourceRange),
 }
@@ -4943,40 +4942,16 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
 
     loop {
         let base = match *expr {
-            // addr_base: simple
             hir::Expr::Error => AddrBase::Unknown,
-            hir::Expr::Const(value, const_id) => {
+            hir::Expr::Const(_, const_id) => {
                 if const_id != hir::ConstID::dummy() {
                     let data = ctx.registry.const_data(const_id);
                     AddrBase::Constant(data.src())
                 } else {
-                    match value {
-                        hir::ConstValue::Variant { .. }
-                        | hir::ConstValue::Struct { .. }
-                        | hir::ConstValue::Array { .. }
-                        | hir::ConstValue::ArrayRepeat { .. }
-                        | hir::ConstValue::ArrayEmpty { .. } => AddrBase::TemporaryImmut,
-                        _ => AddrBase::Temporary,
-                    }
+                    AddrBase::Temporary
                 }
             }
-            hir::Expr::If { .. } => AddrBase::Temporary,
-            hir::Expr::Block { .. } => AddrBase::Temporary,
-            hir::Expr::Match { .. } => AddrBase::Temporary,
             hir::Expr::SliceField { .. } => AddrBase::SliceField,
-            hir::Expr::Cast { .. } => AddrBase::Temporary,
-            hir::Expr::Variant { .. } => AddrBase::TemporaryImmut,
-            hir::Expr::CallDirect { .. } => AddrBase::Temporary,
-            hir::Expr::CallDirectPoly { .. } => AddrBase::Temporary,
-            hir::Expr::CallIndirect { .. } => AddrBase::Temporary,
-            hir::Expr::VariadicArg { .. } => AddrBase::Unknown,
-            hir::Expr::StructInit { .. } => AddrBase::TemporaryImmut,
-            hir::Expr::StructInitPoly { .. } => AddrBase::TemporaryImmut,
-            hir::Expr::ArrayInit { .. } => AddrBase::TemporaryImmut,
-            hir::Expr::ArrayRepeat { .. } => AddrBase::TemporaryImmut,
-            hir::Expr::Address { .. } => AddrBase::Temporary,
-            hir::Expr::Unary { .. } => AddrBase::Temporary,
-            hir::Expr::Binary { .. } | hir::Expr::ArrayBinary { .. } => AddrBase::Temporary,
             // addr_base: variable
             hir::Expr::ParamVar { param_id } => {
                 let param = ctx.scope.local.param(param_id);
@@ -5054,9 +5029,50 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = rhs;
                 continue;
             }
+            _ => AddrBase::Temporary,
         };
 
         return AddrResult { base, constraint };
+    }
+}
+
+fn check_slice_addressability(
+    ctx: &mut HirCtx,
+    mut addr_res: AddrResult,
+    collection: &CollectionType,
+    expr_range: TextRange,
+) -> ast::Mut {
+    let src = ctx.src(expr_range);
+    let action = "slice";
+
+    if let Some(deref) = collection.deref {
+        match deref {
+            ast::Mut::Mutable => addr_res.constraint.set(AddrConstraint::AllowMut),
+            ast::Mut::Immutable => addr_res.constraint.set(AddrConstraint::ImmutRef),
+        }
+    }
+    if let CollectionKind::Slice(slice) = collection.kind {
+        match slice.mutt {
+            ast::Mut::Mutable => addr_res.constraint.set(AddrConstraint::AllowMut),
+            ast::Mut::Immutable => addr_res.constraint.set(AddrConstraint::ImmutSlice),
+        }
+    }
+
+    if let AddrBase::Constant(const_src) = addr_res.base {
+        err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
+    }
+    match addr_res.constraint {
+        AddrConstraint::None => {
+            if let AddrBase::Variable(var_mutt, _) = addr_res.base {
+                var_mutt
+            } else {
+                ast::Mut::Mutable
+            }
+        }
+        AddrConstraint::AllowMut => ast::Mut::Mutable,
+        AddrConstraint::ImmutRef | AddrConstraint::ImmutMulti | AddrConstraint::ImmutSlice => {
+            ast::Mut::Immutable
+        }
     }
 }
 
@@ -5068,40 +5084,29 @@ fn check_address_addressability(
 ) {
     let src = ctx.src(expr_range);
     let action = match mutt {
-        ast::Mut::Mutable => "get &mut",
-        ast::Mut::Immutable => "get &",
+        ast::Mut::Mutable => "get &mut to",
+        ast::Mut::Immutable => "get & to",
     };
 
     match addr_res.base {
         AddrBase::Unknown => {}
         AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
-        AddrBase::Temporary => err::tycheck_addr(&mut ctx.emit, src, action, "temporary value"),
-        AddrBase::TemporaryImmut => {}
+        AddrBase::Temporary => {
+            if mutt == ast::Mut::Mutable {
+                check_address_mut_constraint(ctx, addr_res, src, action)
+            }
+        }
         AddrBase::Constant(const_src) => {
-            err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
+            err::tycheck_addr_const(&mut ctx.emit, src, const_src, action)
         }
         AddrBase::Variable(var_mutt, var_src) => {
-            if mutt == ast::Mut::Immutable {
-                return;
-            }
-            match addr_res.constraint {
-                AddrConstraint::None => {
+            if mutt == ast::Mut::Mutable {
+                if let AddrConstraint::None = addr_res.constraint {
                     if var_mutt == ast::Mut::Immutable {
                         err::tycheck_addr_variable(&mut ctx.emit, src, var_src, action);
                     }
-                }
-                AddrConstraint::AllowMut => {}
-                AddrConstraint::ImmutRef => {
-                    let subject = "value behind an immutable reference";
-                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
-                }
-                AddrConstraint::ImmutMulti => {
-                    let subject = "value behind an immutable multi-reference";
-                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
-                }
-                AddrConstraint::ImmutSlice => {
-                    let subject = "value behind an immutable slice";
-                    err::tycheck_addr(&mut ctx.emit, src, action, subject);
+                } else {
+                    check_address_mut_constraint(ctx, addr_res, src, action);
                 }
             }
         }
@@ -5110,36 +5115,47 @@ fn check_address_addressability(
 
 fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_range: TextRange) {
     let src = ctx.src(expr_range);
-    let action = "assign";
+    let action = "assign to";
 
     match addr_res.base {
         AddrBase::Unknown => {}
         AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
-        AddrBase::Temporary | AddrBase::TemporaryImmut => {
-            err::tycheck_addr(&mut ctx.emit, src, action, "temporary value")
-        }
+        AddrBase::Temporary => err::tycheck_addr(&mut ctx.emit, src, action, "temporary value"),
         AddrBase::Constant(const_src) => {
             err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
         }
-        AddrBase::Variable(var_mutt, var_src) => match addr_res.constraint {
-            AddrConstraint::None => {
+        AddrBase::Variable(var_mutt, var_src) => {
+            if let AddrConstraint::None = addr_res.constraint {
                 if var_mutt == ast::Mut::Immutable {
                     err::tycheck_addr_variable(&mut ctx.emit, src, var_src, action);
                 }
+            } else {
+                check_address_mut_constraint(ctx, addr_res, src, action);
             }
-            AddrConstraint::AllowMut => {}
-            AddrConstraint::ImmutRef => {
-                let subject = "value behind an immutable reference";
-                err::tycheck_addr(&mut ctx.emit, src, action, subject);
-            }
-            AddrConstraint::ImmutMulti => {
-                let subject = "value behind an immutable multi-reference";
-                err::tycheck_addr(&mut ctx.emit, src, action, subject);
-            }
-            AddrConstraint::ImmutSlice => {
-                let subject = "value behind an immutable slice";
-                err::tycheck_addr(&mut ctx.emit, src, action, subject);
-            }
-        },
+        }
+    }
+}
+
+fn check_address_mut_constraint(
+    ctx: &mut HirCtx,
+    addr_res: &AddrResult,
+    src: SourceRange,
+    action: &'static str,
+) {
+    match addr_res.constraint {
+        AddrConstraint::None => {}
+        AddrConstraint::AllowMut => {}
+        AddrConstraint::ImmutRef => {
+            let subject = "value behind an immutable reference";
+            err::tycheck_addr(&mut ctx.emit, src, action, subject);
+        }
+        AddrConstraint::ImmutMulti => {
+            let subject = "value behind an immutable multi-reference";
+            err::tycheck_addr(&mut ctx.emit, src, action, subject);
+        }
+        AddrConstraint::ImmutSlice => {
+            let subject = "value behind an immutable slice";
+            err::tycheck_addr(&mut ctx.emit, src, action, subject);
+        }
     }
 }

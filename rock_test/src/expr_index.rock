@@ -17,7 +17,7 @@ enum Enum {
 //#entry "index_multi_ref"
 proc test_index_multi_ref() void {
     let values = ARRAY;
-    let ref = values[..].ptr as [&mut]s32;
+    let ref = values[..].ptr as [&]s32;
     assert(ref[0] == 1);
     assert(ref[1] == 2);
     assert(ref[2] == 3);

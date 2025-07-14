@@ -1172,7 +1172,7 @@ pub fn tycheck_addr(
     action: &'static str,
     subject: &'static str,
 ) {
-    let msg = format!("cannot {action} to a {subject}");
+    let msg = format!("cannot {action} a {subject}");
     emit.error(Error::new(msg, src, None));
 }
 
@@ -1182,7 +1182,7 @@ pub fn tycheck_addr_const(
     const_src: SourceRange,
     action: &'static str,
 ) {
-    let msg = format!("cannot {action} to a constant, you can use global variable instead");
+    let msg = format!("cannot {action} a constant, you can use global variable instead");
     let info = Info::new("constant defined here", const_src);
     emit.error(Error::new(msg, src, info));
 }
@@ -1200,7 +1200,7 @@ pub fn tycheck_addr_variable(
     var_src: SourceRange,
     action: &'static str,
 ) {
-    let msg = format!("cannot {action} to an immutable variable");
+    let msg = format!("cannot {action} an immutable variable");
     let info = Info::new("variable defined here", var_src);
     emit.error(Error::new(msg, src, info));
 }

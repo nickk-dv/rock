@@ -1,6 +1,24 @@
 //#prelude
 
-//#entry(check) "cannot_ref_slice_field"
+//#entry(check) "address_ref_const"
+//#expect
+//error: cannot get & to a constant, you can use global variable instead
+//  │
+//3 │     &CONSTANT;
+//  │     ^^^^^^^^^
+//  ├─ src/test.rock:3:5
+//  │
+//1 │ CONSTANT: s32 = 10;
+//  │ ──────── constant defined here
+//  └─ src/test.rock:1:1
+//
+//#!
+CONSTANT: s32 = 10;
+proc test_address_const() void {
+    &CONSTANT;
+}
+
+//#entry(check) "address_slice_field"
 //#expect
 //error: cannot get & to a slice field
 //  │
@@ -15,164 +33,7 @@
 //  └─ src/test.rock:3:5
 //
 //#!
-proc test_cannot_ref_slice_field(slice: []u8) void {
+proc test_address_slice_field(slice: []u8) void {
     &slice.ptr;
     &mut slice.len;
-}
-
-//#entry(check) "cannot_ref_temporary"
-//#expect
-//error: cannot get & to a temporary value
-//  │
-//2 │     &void; // const void
-//  │     ^^^^^
-//  └─ src/test.rock:2:5
-//
-//error: cannot get & to a temporary value
-//  │
-//3 │     &null; // const null
-//  │     ^^^^^
-//  └─ src/test.rock:3:5
-//
-//error: cannot get & to a temporary value
-//  │
-//4 │     &true; // const bool
-//  │     ^^^^^
-//  └─ src/test.rock:4:5
-//
-//error: cannot get & to a temporary value
-//  │
-//5 │     &10; // const int
-//  │     ^^^
-//  └─ src/test.rock:5:5
-//
-//error: cannot get & to a temporary value
-//  │
-//6 │     &10.0; // const float
-//  │     ^^^^^
-//  └─ src/test.rock:6:5
-//
-//error: cannot get & to a temporary value
-//  │
-//7 │     &'c'; // const char
-//  │     ^^^^
-//  └─ src/test.rock:7:5
-//
-//error: cannot get & to a temporary value
-//  │
-//8 │     &"string"; // const string
-//  │     ^^^^^^^^^
-//  └─ src/test.rock:8:5
-//
-//error: cannot get & to a temporary value
-//  │
-//9 │     &test_cannot_ref_temporary; // const proc
-//  │     ^^^^^^^^^^^^^^^^^^^^^^^^^^
-//  └─ src/test.rock:9:5
-//
-//error: cannot get & to a temporary value
-//   │
-//12 │     &if true {
-//   │     ^^^^^^^^^^
-//   └─ src/test.rock:12:5
-//
-//error: cannot get & to a temporary value
-//   │
-//18 │     &{
-//   │     ^^
-//   └─ src/test.rock:18:5
-//
-//error: cannot get & to a temporary value
-//   │
-//22 │     &match 0 {
-//   │     ^^^^^^^^^^
-//   └─ src/test.rock:22:5
-//
-//error: cannot get & to a temporary value
-//   │
-//26 │     &(20 as u64); // expr cast
-//   │     ^^^^^^^^^^^^
-//   └─ src/test.rock:26:5
-//
-//error: cannot get & to a temporary value
-//   │
-//27 │     &test_cannot_ref_temporary(0); // expr call direct
-//   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-//   └─ src/test.rock:27:5
-//
-//error: cannot get & to a temporary value
-//   │
-//29 │     &proc_ptr(0); // expr call indirect
-//   │     ^^^^^^^^^^^^
-//   └─ src/test.rock:29:5
-//
-//error: cannot get & to a temporary value
-//   │
-//30 │     & &v; // expr address
-//   │     ^^^^
-//   └─ src/test.rock:30:5
-//
-//error: cannot get & to a temporary value
-//   │
-//31 │     &-10; // expr unary
-//   │     ^^^^
-//   └─ src/test.rock:31:5
-//
-//error: cannot get & to a temporary value
-//   │
-//32 │     &(2 + 4); // expr binary
-//   │     ^^^^^^^^
-//   └─ src/test.rock:32:5
-//
-//#!
-proc test_cannot_ref_temporary(v: s32) void {
-    &void; // const void
-    &null; // const null
-    &true; // const bool
-    &10; // const int
-    &10.0; // const float
-    &'c'; // const char
-    &"string"; // const string
-    &test_cannot_ref_temporary; // const proc
-
-    // expr if
-    &if true {
-        10
-    } else {
-        20
-    };
-    // expr block
-    &{
-        10
-    };
-    // expr match
-    &match 0 {
-        _ -> 10,
-    };
-
-    &(20 as u64); // expr cast
-    &test_cannot_ref_temporary(0); // expr call direct
-    let proc_ptr = test_cannot_ref_temporary;
-    &proc_ptr(0); // expr call indirect
-    & &v; // expr address
-    &-10; // expr unary
-    &(2 + 4); // expr binary
-}
-
-//#entry(check) "cannot_ref_const"
-//#expect
-//error: cannot get & to a constant, you can use global variable instead
-//  │
-//3 │     &CONSTANT;
-//  │     ^^^^^^^^^
-//  ├─ src/test.rock:3:5
-//  │
-//1 │ CONSTANT: s32 = 10;
-//  │ ──────── constant defined here
-//  └─ src/test.rock:1:1
-//
-//#!
-CONSTANT: s32 = 10;
-proc test_cannot_ref_const() void {
-    &CONSTANT;
 }
