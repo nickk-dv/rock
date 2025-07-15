@@ -3562,21 +3562,6 @@ fn typecheck_for<'hir, 'ast>(
             Some(hir::Stmt::Loop(block))
         }
         ast::ForHeader::Elem(header) => {
-            let value_already_defined = match header.value {
-                Some(name) => ctx
-                    .scope
-                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
-                    .is_err(),
-                _ => false,
-            };
-            let index_already_defined = match header.index {
-                Some(name) => ctx
-                    .scope
-                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
-                    .is_err(),
-                _ => false,
-            };
-
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
 
             //@not checking mutability in cases of & or &mut iteration
@@ -3626,10 +3611,26 @@ fn typecheck_for<'hir, 'ast>(
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
+
+            let value_already_defined = match header.value {
+                Some(name) => ctx
+                    .scope
+                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
+                    .is_err(),
+                _ => false,
+            };
             let value_id = if value_already_defined {
                 hir::VariableID::dummy()
             } else {
                 ctx.scope.local.add_variable(value_var)
+            };
+
+            let index_already_defined = match header.index {
+                Some(name) => ctx
+                    .scope
+                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
+                    .is_err(),
+                _ => false,
             };
             let index_id = if index_already_defined {
                 hir::VariableID::dummy()
@@ -3802,21 +3803,6 @@ fn typecheck_for<'hir, 'ast>(
             Some(overall_block)
         }
         ast::ForHeader::Range(header) => {
-            let value_already_defined = match header.value {
-                Some(name) => ctx
-                    .scope
-                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
-                    .is_err(),
-                _ => false,
-            };
-            let index_already_defined = match header.index {
-                Some(name) => ctx
-                    .scope
-                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
-                    .is_err(),
-                _ => false,
-            };
-
             if let Some(start) = header.ref_start {
                 let src = ctx.src(TextRange::new(start, start + 1.into()));
                 err::tycheck_for_range_ref(&mut ctx.emit, src);
@@ -3896,10 +3882,25 @@ fn typecheck_for<'hir, 'ast>(
             };
 
             ctx.scope.local.start_block(BlockStatus::None);
+
+            let value_already_defined = match header.value {
+                Some(name) => ctx
+                    .scope
+                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
+                    .is_err(),
+                _ => false,
+            };
             let start_id = if value_already_defined {
                 hir::VariableID::dummy()
             } else {
                 ctx.scope.local.add_variable(start_var)
+            };
+            let index_already_defined = match header.index {
+                Some(name) => ctx
+                    .scope
+                    .check_already_defined(name, ctx.session, &ctx.registry, &mut ctx.emit)
+                    .is_err(),
+                _ => false,
             };
             let index_id = if index_already_defined {
                 hir::VariableID::dummy()
