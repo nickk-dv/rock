@@ -567,6 +567,7 @@ fn typecheck_expr_impl<'hir, 'ast>(
         ast::ExprKind::ArrayRepeat { value, len } => {
             typecheck_array_repeat(ctx, expect, value, len)
         }
+        ast::ExprKind::Try { expr: target } => typecheck_try(ctx, target, expr.range),
         ast::ExprKind::Deref { rhs } => typecheck_deref(ctx, rhs, expr.range),
         ast::ExprKind::Address { mutt, rhs } => {
             typecheck_address(ctx, expect, mutt, rhs, expr.range)
@@ -2409,6 +2410,151 @@ fn typecheck_array_repeat<'hir, 'ast>(
     let array_ty = hir::ArrayStatic { len, elem_ty: value_res.ty };
     let array_ty = ctx.arena.alloc(array_ty);
     TypeResult::new(hir::Type::ArrayStatic(array_ty), expr)
+}
+
+//@fix errors, fix edge cases, when new ir is ready.
+fn typecheck_try<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expr: &ast::Expr<'ast>,
+    range: TextRange,
+) -> TypeResult<'hir> {
+    let return_type = ctx.scope.local.return_expect.inner_type().unwrap();
+    let mut try_enum_id;
+    let mut ret_enum_poly;
+
+    let try_expect = match return_type {
+        hir::Type::Error => return TypeResult::error(),
+        hir::Type::Enum(enum_id, poly) => {
+            if enum_id == ctx.core.result {
+                try_enum_id = enum_id;
+                ret_enum_poly = poly;
+                match ctx.scope.local.return_expect {
+                    Expectation::None => unreachable!(),
+                    Expectation::HasType(_, ret_src) => {
+                        let expect_poly = ctx.arena.alloc_slice(&[hir::Type::Unknown, poly[1]]);
+                        Expectation::HasType(hir::Type::Enum(ctx.core.result, expect_poly), ret_src)
+                    }
+                }
+            } else if enum_id == ctx.core.option {
+                try_enum_id = enum_id;
+                ret_enum_poly = poly;
+                match ctx.scope.local.return_expect {
+                    Expectation::None => unreachable!(),
+                    Expectation::HasType(_, ret_src) => {
+                        let expect_poly = ctx.arena.alloc_slice(&[hir::Type::Unknown]);
+                        Expectation::HasType(hir::Type::Enum(ctx.core.option, expect_poly), ret_src)
+                    }
+                }
+            } else {
+                let src = ctx.src(range);
+                err::tycheck_type_mismatch(
+                    &mut ctx.emit,
+                    src,
+                    None,
+                    "try: Result",
+                    "something else",
+                );
+                return TypeResult::error();
+            }
+        }
+        _ => {
+            let src = ctx.src(range);
+            err::tycheck_type_mismatch(&mut ctx.emit, src, None, "try: Result", "something else");
+            return TypeResult::error();
+        }
+    };
+
+    let expr_res = typecheck_expr(ctx, try_expect, expr);
+    let ok_ty = match expr_res.ty {
+        hir::Type::Enum(enum_id, poly) => {
+            if enum_id == ctx.core.option || enum_id == ctx.core.result {
+                poly.first().copied().unwrap_or(hir::Type::Error)
+            } else {
+                hir::Type::Error
+            }
+        }
+        _ => hir::Type::Error,
+    };
+
+    let ok_arm = {
+        let ok_var = hir::Variable {
+            mutt: ast::Mut::Immutable,
+            name: ast::Name { id: ctx.session.intern_name.intern("_"), range },
+            ty: ok_ty,
+            was_used: true,
+        };
+        let ok_id = ctx.scope.local.add_variable(ok_var);
+        let binds = ctx.arena.alloc_slice(&[ok_id]);
+        let pat = if try_enum_id == ctx.core.result {
+            hir::Pat::Variant(try_enum_id, hir::VariantID::new(0), binds)
+        } else {
+            hir::Pat::Variant(try_enum_id, hir::VariantID::new(1), binds)
+        };
+
+        let ok_expr = ctx.arena.alloc(hir::Expr::Variable { var_id: ok_id });
+        let stmts = ctx.arena.alloc_slice(&[hir::Stmt::ExprTail(ok_expr)]);
+
+        hir::MatchArm { pat, block: hir::Block { stmts } }
+    };
+
+    let err_arm = {
+        let (pat, ret_expr) = if try_enum_id == ctx.core.result {
+            let var = hir::Variable {
+                mutt: ast::Mut::Immutable,
+                name: ast::Name { id: ctx.session.intern_name.intern("_"), range },
+                ty: ret_enum_poly[1],
+                was_used: true,
+            };
+            let var_id = ctx.scope.local.add_variable(var);
+            let binds = ctx.arena.alloc_slice(&[var_id]);
+
+            let var_expr = ctx.arena.alloc(hir::Expr::Variable { var_id });
+            let inputs = ctx.arena.alloc_slice(&[var_expr]);
+            let input = ctx.arena.alloc((inputs, ret_enum_poly));
+            let variant = hir::Expr::Variant {
+                enum_id: try_enum_id,
+                variant_id: hir::VariantID::new(1),
+                input,
+            };
+            let pat = hir::Pat::Variant(try_enum_id, hir::VariantID::new(1), binds);
+            (pat, ctx.arena.alloc(variant))
+        } else {
+            let input = ctx.arena.alloc((&([][..]), ret_enum_poly));
+            let variant = hir::Expr::Variant {
+                enum_id: try_enum_id,
+                variant_id: hir::VariantID::new(0),
+                input,
+            };
+            let pat = hir::Pat::Variant(try_enum_id, hir::VariantID::new(0), &[]);
+            (pat, ctx.arena.alloc(variant))
+        };
+
+        let offset = ctx.cache.stmts.start();
+        for block in ctx.scope.local.defer_blocks_all().iter().copied().rev() {
+            let block_expr = ctx.arena.alloc(hir::Expr::Block { block });
+            ctx.cache.stmts.push(hir::Stmt::ExprSemi(block_expr));
+        }
+        ctx.cache.stmts.push(hir::Stmt::Return(Some(ret_expr)));
+        let stmts = ctx.cache.stmts.take(offset, &mut ctx.arena);
+
+        hir::MatchArm { pat, block: hir::Block { stmts } }
+    };
+
+    let poly_types = match expr_res.ty {
+        hir::Type::Enum(_, poly) => poly,
+        _ => &[],
+    };
+    let match_ = hir::Match {
+        kind: hir::MatchKind::Enum {
+            enum_id: try_enum_id,
+            ref_mut: None,
+            poly_types: Some(ctx.arena.alloc(poly_types)),
+        },
+        on_expr: expr_res.expr,
+        arms: ctx.arena.alloc_slice(&[ok_arm, err_arm]),
+    };
+    let match_ = ctx.arena.alloc(match_);
+    TypeResult::new(ok_ty, hir::Expr::Match { match_ })
 }
 
 fn typecheck_deref<'hir, 'ast>(

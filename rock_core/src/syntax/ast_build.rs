@@ -668,6 +668,10 @@ fn expr_kind<'ast>(ctx: &mut AstBuild<'ast, '_>, expr_cst: cst::Expr) -> ast::Ex
             let len = ast::ConstExpr(expr(ctx, array_repeat.len(ctx.tree).unwrap()));
             ast::ExprKind::ArrayRepeat { value, len }
         }
+        cst::Expr::Try(try_) => {
+            let expr = expr(ctx, try_.expr(ctx.tree).unwrap());
+            ast::ExprKind::Try { expr }
+        }
         cst::Expr::Deref(deref) => {
             let rhs = expr(ctx, deref.expr(ctx.tree).unwrap());
             ast::ExprKind::Deref { rhs }

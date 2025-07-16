@@ -337,6 +337,7 @@ pub enum ExprKind<'ast> {
     StructInit  { struct_init: &'ast StructInit<'ast> },
     ArrayInit   { input: &'ast [ArrayInit<'ast>] },
     ArrayRepeat { value: &'ast Expr<'ast>, len: ConstExpr<'ast> },
+    Try         { expr: &'ast Expr<'ast> },
     Deref       { rhs: &'ast Expr<'ast> },
     Address     { mutt: Mut, rhs: &'ast Expr<'ast> },
     Unary       { op: UnOp, op_range: TextRange, rhs: &'ast Expr<'ast> },

@@ -1,0 +1,24 @@
+//#prelude
+import core:option.{Option}
+import core:result.{Result}
+import core:runtime.{assert, unreachable}
+
+//#entry "try_option"
+proc test_try_option() Option(u64) {
+    let opt: Option(u8) = .Some(25);
+    let val: u8 = opt.?;
+    assert(val == 25);
+
+    let _: f32 = Option:(f32).None.?;
+    unreachable();
+}
+
+//#entry "try_result"
+proc test_try_result() Result(u64, string) {
+    let res: Result(u8, string) = .Ok(25);
+    let val: u8 = res.?;
+    assert(val == 25);
+
+    let _: f32 = Result:(f32, string).Err("error").?;
+    unreachable();
+}

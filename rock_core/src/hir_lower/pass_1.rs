@@ -37,6 +37,8 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
     ctx.core.from_raw_parts = scope::find_core_proc(ctx, "mem", "from_raw_parts");
     ctx.core.range_bound = scope::find_core_enum_opt(ctx, "ops", "RangeBound");
     ctx.core.array = scope::find_core_struct(ctx, "array", "Array");
+    ctx.core.option = scope::find_core_enum(ctx, "option", "Option");
+    ctx.core.result = scope::find_core_enum(ctx, "result", "Result");
 
     ctx.core.any = scope::find_core_struct_opt(ctx, "type", "Any");
     ctx.core.type_info = scope::find_core_enum(ctx, "type", "TypeInfo");

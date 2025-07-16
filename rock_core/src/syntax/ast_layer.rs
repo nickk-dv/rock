@@ -456,6 +456,7 @@ ast_node_impl!(FieldInit, SyntaxKind::FIELD_INIT);
 ast_node_impl!(ExprArrayInit, SyntaxKind::EXPR_ARRAY_INIT);
 ast_node_impl!(ArrayInit, SyntaxKind::ARRAY_INIT);
 ast_node_impl!(ExprArrayRepeat, SyntaxKind::EXPR_ARRAY_REPEAT);
+ast_node_impl!(ExprTry, SyntaxKind::EXPR_TRY);
 ast_node_impl!(ExprDeref, SyntaxKind::EXPR_DEREF);
 ast_node_impl!(ExprAddress, SyntaxKind::EXPR_ADDRESS);
 ast_node_impl!(ExprUnary, SyntaxKind::EXPR_UNARY);
@@ -647,6 +648,7 @@ pub enum Expr<'syn> {
     StructInit(ExprStructInit<'syn>),
     ArrayInit(ExprArrayInit<'syn>),
     ArrayRepeat(ExprArrayRepeat<'syn>),
+    Try(ExprTry<'syn>),
     Deref(ExprDeref<'syn>),
     Address(ExprAddress<'syn>),
     Unary(ExprUnary<'syn>),
@@ -670,6 +672,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             SyntaxKind::EXPR_STRUCT_INIT => Some(Expr::StructInit(ExprStructInit(node))),
             SyntaxKind::EXPR_ARRAY_INIT => Some(Expr::ArrayInit(ExprArrayInit(node))),
             SyntaxKind::EXPR_ARRAY_REPEAT => Some(Expr::ArrayRepeat(ExprArrayRepeat(node))),
+            SyntaxKind::EXPR_TRY => Some(Expr::Try(ExprTry(node))),
             SyntaxKind::EXPR_DEREF => Some(Expr::Deref(ExprDeref(node))),
             SyntaxKind::EXPR_ADDRESS => Some(Expr::Address(ExprAddress(node))),
             SyntaxKind::EXPR_UNARY => Some(Expr::Unary(ExprUnary(node))),
@@ -694,6 +697,7 @@ impl<'syn> AstNode<'syn> for Expr<'syn> {
             Expr::StructInit(expr) => expr.0.range,
             Expr::ArrayInit(expr) => expr.0.range,
             Expr::ArrayRepeat(expr) => expr.0.range,
+            Expr::Try(expr) => expr.0.range,
             Expr::Deref(expr) => expr.0.range,
             Expr::Address(expr) => expr.0.range,
             Expr::Unary(expr) => expr.0.range,
@@ -1157,6 +1161,10 @@ impl<'syn> ArrayInit<'syn> {
 impl<'syn> ExprArrayRepeat<'syn> {
     node_before_token!(value, ArrayInit, T![;]);
     node_after_token!(len, Expr, T![;]);
+}
+
+impl<'syn> ExprTry<'syn> {
+    node_find!(expr, Expr);
 }
 
 impl<'syn> ExprDeref<'syn> {

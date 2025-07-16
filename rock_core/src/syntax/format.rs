@@ -742,6 +742,7 @@ fn expr<'syn>(fmt: &mut Formatter<'syn, '_>, expr: cst::Expr<'syn>) {
         cst::Expr::StructInit(expr) => expr_struct_init(fmt, expr),
         cst::Expr::ArrayInit(expr) => expr_array_init(fmt, expr),
         cst::Expr::ArrayRepeat(expr) => expr_array_repeat(fmt, expr),
+        cst::Expr::Try(expr) => expr_try(fmt, expr),
         cst::Expr::Deref(expr) => expr_deref(fmt, expr),
         cst::Expr::Address(expr) => expr_address(fmt, expr),
         cst::Expr::Unary(expr) => expr_unary(fmt, expr),
@@ -975,9 +976,16 @@ fn expr_array_repeat<'syn>(
     fmt.write(']');
 }
 
+fn expr_try<'syn>(fmt: &mut Formatter<'syn, '_>, try_: cst::ExprTry<'syn>) {
+    expr(fmt, try_.expr(fmt.tree).unwrap());
+    fmt.write('.');
+    fmt.write('?');
+}
+
 fn expr_deref<'syn>(fmt: &mut Formatter<'syn, '_>, deref: cst::ExprDeref<'syn>) {
-    fmt.write('*');
     expr(fmt, deref.expr(fmt.tree).unwrap());
+    fmt.write('.');
+    fmt.write('*');
 }
 
 fn expr_address<'syn>(fmt: &mut Formatter<'syn, '_>, address: cst::ExprAddress<'syn>) {

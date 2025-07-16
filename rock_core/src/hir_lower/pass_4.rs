@@ -699,6 +699,7 @@ fn add_expr_deps<'ast>(
             add_expr_deps(ctx, tree, parent_id, origin_id, len.0)?;
             Ok(())
         }
+        ast::ExprKind::Try { .. } => Err("try"),
         ast::ExprKind::Deref { .. } => Err("dereference"),
         ast::ExprKind::Address { .. } => Err("address"),
         ast::ExprKind::Unary { rhs, .. } => {

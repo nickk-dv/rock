@@ -119,6 +119,7 @@ pub enum SyntaxKind {
     EXPR_ARRAY_INIT,
     ARRAY_INIT,
     EXPR_ARRAY_REPEAT,
+    EXPR_TRY,
     EXPR_DEREF,
     EXPR_ADDRESS,
     EXPR_UNARY,

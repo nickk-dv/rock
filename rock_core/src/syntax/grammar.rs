@@ -751,7 +751,6 @@ fn primary_expr(p: &mut Parser) -> MarkerClosed {
         T![ident] => expr_item_or_struct_init(p),
         T![.] => expr_variant_or_struct_init(p),
         T!['['] => expr_array_init_or_repeat(p),
-        T![*] => expr_deref(p),
         T![&] => expr_address(p),
         _ => p.error_recover("expected expression", TokenSet::empty()),
     };
@@ -765,8 +764,14 @@ fn tail_expr(p: &mut Parser, mut mc: MarkerClosed) -> MarkerClosed {
             T![.] => {
                 let m = p.start_before(mc);
                 p.bump(T![.]);
-                name(p);
-                mc = m.complete(p, SyntaxKind::EXPR_FIELD);
+                if p.eat(T![?]) {
+                    mc = m.complete(p, SyntaxKind::EXPR_TRY);
+                } else if p.eat(T![*]) {
+                    mc = m.complete(p, SyntaxKind::EXPR_DEREF);
+                } else {
+                    name(p);
+                    mc = m.complete(p, SyntaxKind::EXPR_FIELD);
+                }
             }
             T!['['] => {
                 let m = p.start_before(mc);
@@ -877,6 +882,18 @@ fn expr_item_or_struct_init(p: &mut Parser) -> MarkerClosed {
             mp.complete(p, SyntaxKind::PATH);
             field_init_list(p);
             return m.complete(p, SyntaxKind::EXPR_STRUCT_INIT);
+        } else if p.at(T![?]) {
+            mp.complete(p, SyntaxKind::PATH);
+            let mc = m.complete(p, SyntaxKind::EXPR_ITEM);
+            let md = p.start_before(mc);
+            p.bump(T![?]);
+            return md.complete(p, SyntaxKind::EXPR_TRY);
+        } else if p.at(T![*]) {
+            mp.complete(p, SyntaxKind::PATH);
+            let mc = m.complete(p, SyntaxKind::EXPR_ITEM);
+            let md = p.start_before(mc);
+            p.bump(T![*]);
+            return md.complete(p, SyntaxKind::EXPR_DEREF);
         }
         path_segment_expr(p);
     }
@@ -958,13 +975,6 @@ fn expr_array_init_or_repeat(p: &mut Parser) -> MarkerClosed {
 
     p.expect(T![']']);
     m.complete(p, SyntaxKind::EXPR_ARRAY_INIT)
-}
-
-fn expr_deref(p: &mut Parser) -> MarkerClosed {
-    let m = p.start();
-    p.bump(T![*]);
-    primary_expr(p);
-    m.complete(p, SyntaxKind::EXPR_DEREF)
 }
 
 fn expr_address(p: &mut Parser) -> MarkerClosed {
@@ -1238,7 +1248,7 @@ const FIRST_EXPR: TokenSet = TokenSet::new(&[
     T![void], T![null], T![true], T![false],
     T![int_lit], T![float_lit], T![char_lit], T![string_lit],
     T![if], T!['{'], T![match], T![ident],
-    T![.], T!['['], T![*], T![&],
+    T![.], T!['['], T![&],
 ]);
 
 //==================== RECOVER SETS ====================
