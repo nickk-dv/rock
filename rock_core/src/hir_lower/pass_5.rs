@@ -3564,8 +3564,6 @@ fn typecheck_for<'hir, 'ast>(
         ast::ForHeader::Elem(header) => {
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
 
-            //@not checking mutability in cases of & or &mut iteration
-            //@not checking runtime indexing (constants cannot be indexed at runtime)
             //@dont instantly return here, check the block also!
             let collection = match type_as_collection(ctx, expr_res.ty) {
                 Ok(None) => return None,
@@ -3587,6 +3585,15 @@ fn typecheck_for<'hir, 'ast>(
                     return None;
                 }
             };
+
+            let addr_res = resolve_expr_addressability(ctx, expr_res.expr);
+            check_for_elem_addressability(
+                ctx,
+                header.ref_mut,
+                addr_res,
+                &collection,
+                header.expr.range,
+            );
 
             let value_ty = if let Some(mutt) = header.ref_mut {
                 let ref_ty = ctx.arena.alloc(collection.elem_ty);
@@ -5112,6 +5119,37 @@ fn check_address_addressability(
             }
         }
     }
+}
+
+fn check_for_elem_addressability(
+    ctx: &mut HirCtx,
+    ref_mut: Option<ast::Mut>,
+    mut addr_res: AddrResult,
+    collection: &CollectionType,
+    expr_range: TextRange,
+) {
+    if let AddrBase::Constant(const_src) = addr_res.base {
+        let src = ctx.src(expr_range);
+        err::tycheck_addr_const(&mut ctx.emit, src, const_src, "iterate on");
+        return;
+    }
+    let mutt = match ref_mut {
+        Some(mutt) => mutt,
+        None => return,
+    };
+    if let Some(deref) = collection.deref {
+        match deref {
+            ast::Mut::Mutable => addr_res.constraint.set(AddrConstraint::AllowMut),
+            ast::Mut::Immutable => addr_res.constraint.set(AddrConstraint::ImmutRef),
+        }
+    }
+    if let CollectionKind::Slice(slice) = collection.kind {
+        match slice.mutt {
+            ast::Mut::Mutable => addr_res.constraint.set(AddrConstraint::AllowMut),
+            ast::Mut::Immutable => addr_res.constraint.set(AddrConstraint::ImmutSlice),
+        }
+    }
+    check_address_addressability(ctx, mutt, &addr_res, expr_range);
 }
 
 fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_range: TextRange) {
