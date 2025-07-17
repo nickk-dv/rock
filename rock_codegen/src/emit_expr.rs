@@ -673,6 +673,9 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
                     let layout = cg.variant_layout((enum_id, variant_id, enum_poly));
 
                     for (field_idx, var_id) in bind_ids.iter().copied().enumerate() {
+                        if var_id == hir::VariableID::dummy() {
+                            continue; //discarded binding
+                        }
                         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
                         let bind_var = proc_data.variable(var_id);
 

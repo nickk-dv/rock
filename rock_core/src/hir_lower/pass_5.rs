@@ -5012,7 +5012,10 @@ fn check_variant_bind_list<'hir>(
     for (idx, bind) in bind_list.binds.iter().enumerate() {
         let (mutt, name) = match *bind {
             ast::Binding::Named(mutt, name) => (mutt, name),
-            ast::Binding::Discard(_) => continue,
+            ast::Binding::Discard(_) => {
+                ctx.cache.var_ids.push(hir::VariableID::dummy());
+                continue; //discarded binding
+            }
         };
 
         let mut ty = hir::Type::Error;
