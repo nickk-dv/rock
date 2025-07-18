@@ -74,14 +74,15 @@ fn codegen_assign<'c>(cg: &mut Codegen<'c, '_, '_>, assign: &hir::Assign<'c>) {
         hir::AssignOp::Bin(op, array) => {
             if let Some(array) = array {
                 let rhs_ptr = emit_expr::codegen_expr_pointer(cg, assign.rhs);
-                emit_expr::codegen_array_binary_op(
+                let bin_val = emit_expr::codegen_array_binary_op(
                     cg,
-                    Expect::Store(lhs_ptr),
+                    Expect::Value(None),
                     op,
                     array,
                     lhs_ptr,
                     rhs_ptr,
                 );
+                cg.build.store(bin_val.unwrap(), lhs_ptr);
             } else {
                 let lhs_ty = cg.ty(assign.lhs_ty);
                 let lhs_val = cg.build.load(lhs_ty, lhs_ptr, "load_val");

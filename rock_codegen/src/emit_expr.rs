@@ -1036,15 +1036,12 @@ fn codegen_variant<'c>(
     let enum_ty = cg.ty(hir::Type::Enum(enum_id, poly_types)).as_st();
     let layout = cg.variant_layout((enum_id, variant_id, poly_types));
 
-    let enum_ptr = match expect {
-        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(enum_ty.as_ty(), "enum_init"),
-        Expect::Store(ptr_val) => ptr_val,
-    };
+    let enum_ptr = cg.entry_alloca(enum_ty.as_ty(), "enum_init");
+    let array_ptr = cg.build.gep_struct(enum_ty, enum_ptr, 0, "enum_bytes_ptr");
     cg.build.store(tag, enum_ptr);
 
     for (idx, expr) in input.iter().copied().enumerate() {
         let offset = cg.const_usize(layout.field_offset[idx + 1]);
-        let array_ptr = cg.build.gep_struct(enum_ty, enum_ptr, 0, "enum_bytes_ptr");
         let field_ptr = cg.build.gep_inbounds(
             enum_ty.field_ty(0),
             array_ptr,
@@ -1055,9 +1052,10 @@ fn codegen_variant<'c>(
     }
 
     match expect {
-        Expect::Value(_) => Some(cg.build.load(enum_ty.as_ty(), enum_ptr, "enum_value")),
+        Expect::Value(_) | Expect::Store(_) => {
+            Some(cg.build.load(enum_ty.as_ty(), enum_ptr, "enum_value"))
+        }
         Expect::Pointer(_) => Some(enum_ptr.as_val()),
-        Expect::Store(_) => None,
     }
 }
 
@@ -1500,10 +1498,7 @@ fn codegen_struct_init<'c>(
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
     let struct_ty = cg.ty(hir::Type::Struct(struct_id, poly_types)).as_st();
-    let struct_ptr = match expect {
-        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(struct_ty.as_ty(), "struct_init"),
-        Expect::Store(ptr_val) => ptr_val,
-    };
+    let struct_ptr = cg.entry_alloca(struct_ty.as_ty(), "struct_init");
 
     for (idx, expr) in input.iter().copied().enumerate() {
         let field_ptr = cg.build.gep_struct(struct_ty, struct_ptr, idx as u32, "field_ptr");
@@ -1511,9 +1506,10 @@ fn codegen_struct_init<'c>(
     }
 
     match expect {
-        Expect::Value(_) => Some(cg.build.load(struct_ty.as_ty(), struct_ptr, "struct_val")),
+        Expect::Value(_) | Expect::Store(_) => {
+            Some(cg.build.load(struct_ty.as_ty(), struct_ptr, "struct_val"))
+        }
         Expect::Pointer(_) => Some(struct_ptr.as_val()),
-        Expect::Store(_) => None,
     }
 }
 
@@ -1524,10 +1520,7 @@ fn codegen_array_init<'c>(
 ) -> Option<llvm::Value> {
     let elem_ty = cg.ty(array.elem_ty);
     let array_ty = llvm::array_type(elem_ty, array.input.len() as u64);
-    let array_ptr = match expect {
-        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(array_ty, "array_init"),
-        Expect::Store(ptr_val) => ptr_val,
-    };
+    let array_ptr = cg.entry_alloca(array_ty, "array_init");
 
     let mut indices = [cg.const_usize(0), cg.const_usize(0)];
     for (idx, expr) in array.input.iter().copied().enumerate() {
@@ -1537,9 +1530,10 @@ fn codegen_array_init<'c>(
     }
 
     match expect {
-        Expect::Value(_) => Some(cg.build.load(array_ty, array_ptr, "array_val")),
+        Expect::Value(_) | Expect::Store(_) => {
+            Some(cg.build.load(array_ty, array_ptr, "array_val"))
+        }
         Expect::Pointer(_) => Some(array_ptr.as_val()),
-        Expect::Store(_) => None,
     }
 }
 
@@ -1677,10 +1671,7 @@ pub fn codegen_array_binary_op<'c>(
 ) -> Option<llvm::Value> {
     let elem_ty = cg.ty(array.elem_ty);
     let array_ty = llvm::array_type(elem_ty, array.len);
-    let array_ptr = match expect {
-        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(array_ty, "array_binary"),
-        Expect::Store(ptr_val) => ptr_val,
-    };
+    let array_ptr = cg.entry_alloca(array_ty, "array_binary");
 
     let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
     cg.build.store(cg.const_usize(0), count_ptr);
@@ -1717,9 +1708,10 @@ pub fn codegen_array_binary_op<'c>(
     cg.build.position_at_end(exit_bb);
 
     match expect {
-        Expect::Value(_) => Some(cg.build.load(array_ty, array_ptr, "array_val")),
+        Expect::Value(_) | Expect::Store(_) => {
+            Some(cg.build.load(array_ty, array_ptr, "array_val"))
+        }
         Expect::Pointer(_) => Some(array_ptr.as_val()),
-        Expect::Store(_) => None,
     }
 }
 

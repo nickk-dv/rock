@@ -1,0 +1,89 @@
+//#prelude
+import core:fmt;
+import core:option.{Option}
+import core:result.{Result}
+import core:runtime.{assert}
+
+//#entry "print_enum_simple"
+//#expect(no_endl)
+//Enum.A Enum.B Enum.C
+//#!
+proc test_print_enum_simple() void {
+    fmt.print(Enum.A, ' ', Enum.B, ' ', Enum.C);
+}
+enum Enum {
+    A,
+    B,
+    C,
+}
+
+//#entry "print_enum_fields"
+//#expect(no_endl)
+//EnumData.E
+//EnumData.A(-420, true)
+//EnumData.B(false, 54, -250407)
+//EnumData.C(690, "testing", true)
+//#!
+proc test_print_enum_fields() void {
+    let e = EnumData.E;
+    let a = EnumData.A(-420, true);
+    let b = EnumData.B(false, 54, -250407);
+    let c = EnumData.C(690, "testing", true);
+    fmt.print(e, '\n', a, '\n', b, '\n', c);
+}
+enum EnumData s16 {
+    E = -32,
+    A(s64, bool16),
+    B(bool, u16, s32),
+    C(u32, string, bool),
+}
+
+//#entry "print_enum_option"
+//#expect(no_endl)
+//Option.None
+//Option.Some(32459)
+//#!
+proc test_print_enum_option() void {
+    let none: Option(u64) = .None;
+    let some: Option(u64) = .Some(32_459);
+    fmt.print(none, '\n', some);
+}
+
+//#entry "print_enum_result"
+//#expect(no_endl)
+//Result.Ok(32459)
+//Result.Err("problem")
+//#!
+proc test_print_enum_result() void {
+    let ok: Result(u64, string) = .Ok(32_459);
+    let err: Result(u64, string) = .Err("problem");
+    fmt.print(ok, '\n', err);
+}
+
+//#entry "self_referential_array_init"
+proc test_self_referential_array_init() void {
+    let mut x = [10, 20];
+    x = [x[1], x[0]];
+    assert(x[0] == 20);
+    assert(x[1] == 10);
+}
+
+//#entry "self_referential_array_binary"
+proc test_self_referential_array_binary() void {
+    let mut x = [10, 20];
+    x += [x[0], x[0]];
+    assert(x[0] == 20);
+    assert(x[1] == 30);
+}
+
+//#entry "self_referential_struct_init"
+proc test_self_referential_struct_init() void {
+    let mut x = MakeStruct.{ a: 10, b: 20 };
+    x = MakeStruct.{ a: x.b, b: x.a };
+    assert(x.a == 20);
+    assert(x.b == 10);
+}
+struct MakeStruct {
+    a: s32,
+    b: s32,
+}
