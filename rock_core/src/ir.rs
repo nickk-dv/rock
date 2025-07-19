@@ -1,3 +1,4 @@
+use crate::hir::{BinOp, UnOp};
 use std::mem;
 
 struct IR<'ir> {
@@ -40,12 +41,14 @@ pub enum ExprKind {
     Global,
     CallDirect,
     StructInit,
+    Unary,
+    Binary,
 }
 
 #[allow(unsafe_code)]
 impl Body<'_> {
     pub fn expr_kind(&self, id: ExprID) -> ExprKind {
-        let kind = self.expr_data[id.index()] as u8;
+        let kind = (self.expr_data[id.index()] & 0xFF) as u8;
         unsafe { mem::transmute(kind) }
     }
     pub fn param(&self, id: ExprID) -> ParamID {
@@ -71,8 +74,26 @@ impl Body<'_> {
         let input = &self.expr_data[start..start + count];
         (struct_id, unsafe { mem::transmute(input) })
     }
+    pub fn unary(&self, id: ExprID) -> (UnOp, ExprID, Option<u32>) {
+        let tag = self.expr_data[id.index()];
+        let op: UnOp = unsafe { mem::transmute(((tag >> 16) & 0xFF) as u8) };
+        let rhs = ExprID(self.expr_data[id.index() + 1]);
+        let array_op = (tag >> 8) & 0xFF != 0;
+        let array_len = array_op.then(|| self.expr_data[id.index() + 2]);
+        (op, rhs, array_len)
+    }
+    pub fn binary(&self, id: ExprID) -> (BinOp, ExprID, ExprID, Option<u32>) {
+        let tag = self.expr_data[id.index()];
+        let op: BinOp = unsafe { mem::transmute(self.expr_data[id.index() + 1]) };
+        let lhs = ExprID(self.expr_data[id.index() + 2]);
+        let rhs = ExprID(self.expr_data[id.index() + 3]);
+        let array_op = (tag >> 8) & 0xFF != 0;
+        let array_len = array_op.then(|| self.expr_data[id.index() + 4]);
+        (op, lhs, rhs, array_len)
+    }
 }
 
+#[allow(unsafe_code)]
 impl Writer {
     pub fn param(&mut self, param_id: ParamID) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
@@ -104,6 +125,28 @@ impl Writer {
         self.expr_data.push(struct_id.0);
         for expr_id in input.iter().copied() {
             self.expr_data.push(expr_id.0);
+        }
+        id
+    }
+    pub fn unary(&mut self, op: UnOp, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        let array_op = arr_len.is_some();
+        self.expr_data.push(ExprKind::Unary as u32 | (array_op as u32) << 8 | (op as u32) << 16);
+        self.expr_data.push(rhs.0);
+        if let Some(len) = arr_len {
+            self.expr_data.push(len);
+        }
+        id
+    }
+    pub fn binary(&mut self, op: BinOp, lhs: ExprID, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        let array_op = arr_len.is_some();
+        self.expr_data.push(ExprKind::Binary as u32 | (array_op as u32) << 8);
+        self.expr_data.push(unsafe { mem::transmute(op) });
+        self.expr_data.push(lhs.0);
+        self.expr_data.push(rhs.0);
+        if let Some(len) = arr_len {
+            self.expr_data.push(len);
         }
         id
     }
