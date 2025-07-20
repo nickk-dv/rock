@@ -9,7 +9,7 @@ use crate::text::TextRange;
 struct PathResolved<'ast, 'hir> {
     kind: PathResolvedKind<'hir>,
     at_segment: ast::PathSegment<'ast>,
-    names: &'ast [ast::PathSegment<'ast>],
+    segments: &'ast [ast::PathSegment<'ast>],
 }
 
 enum PathResolvedKind<'hir> {
@@ -33,14 +33,14 @@ fn path_resolve<'ast, 'hir>(
     ctx: &mut HirCtx,
     path: &ast::Path<'ast>,
 ) -> Result<PathResolved<'ast, 'hir>, ()> {
-    let segment_0 = path.segments.first().copied().expect("non empty path");
+    let segment_0 = path.segments.first().copied().unwrap(); //path cannot be empty
 
     // <variable> | <poly_param> | <symbol> | <module>
     if let Some(var_id) = ctx.scope.local.find_variable(segment_0.name.id, true) {
         return Ok(PathResolved {
             kind: PathResolvedKind::Variable(var_id),
             at_segment: segment_0,
-            names: path.segments.split_at(1).1,
+            segments: path.segments.split_at(1).1,
         });
     }
     if let Some((poly_ty, range)) = ctx.scope.poly.find_poly_param(segment_0.name.id, &ctx.registry)
@@ -48,7 +48,7 @@ fn path_resolve<'ast, 'hir>(
         return Ok(PathResolved {
             kind: PathResolvedKind::PolyParam(poly_ty, range),
             at_segment: segment_0,
-            names: path.segments.split_at(1).1,
+            segments: path.segments.split_at(1).1,
         });
     }
     let symbol = ctx.scope.global.find_symbol(
@@ -65,12 +65,12 @@ fn path_resolve<'ast, 'hir>(
             return Ok(PathResolved {
                 kind: PathResolvedKind::Symbol(symbol_id),
                 at_segment: segment_0,
-                names: path.segments.split_at(1).1,
+                segments: path.segments.split_at(1).1,
             });
         }
         SymbolOrModule::Module(module_id) => {
             // module can be accessed by another segment, check poly args here
-            check_unexpected_poly_args(ctx, segment_0, "module")?;
+            check_unexpected_poly_args(ctx, &segment_0, "module")?;
             module_id
         }
     };
@@ -82,7 +82,7 @@ fn path_resolve<'ast, 'hir>(
         return Ok(PathResolved {
             kind: PathResolvedKind::Module(target_id),
             at_segment: segment_0,
-            names: path.segments.split_at(1).1,
+            segments: path.segments.split_at(1).1,
         });
     };
 
@@ -99,7 +99,7 @@ fn path_resolve<'ast, 'hir>(
         SymbolOrModule::Symbol(symbol_id) => Ok(PathResolved {
             kind: PathResolvedKind::Symbol(symbol_id),
             at_segment: segment_1,
-            names: path.segments.split_at(2).1,
+            segments: path.segments.split_at(2).1,
         }),
         SymbolOrModule::Module(_) => unreachable!("module from other module"),
     }
@@ -123,7 +123,7 @@ fn check_unexpected_segments(
 
 fn check_unexpected_poly_args(
     ctx: &mut HirCtx,
-    segment: ast::PathSegment,
+    segment: &ast::PathSegment,
     after_kind: &'static str,
 ) -> Result<(), ()> {
     if let Some(poly_args) = segment.poly_args {
@@ -133,6 +133,18 @@ fn check_unexpected_poly_args(
     } else {
         Ok(())
     }
+}
+
+fn check_unexpected_parts_for_value(
+    ctx: &mut HirCtx,
+    path: &PathResolved,
+    after_kind: &'static str,
+) -> Result<(), ()> {
+    check_unexpected_poly_args(ctx, &path.at_segment, after_kind)?;
+    for field in path.segments {
+        check_unexpected_poly_args(ctx, field, "field access")?;
+    }
+    Ok(())
 }
 
 pub fn path_resolve_type<'hir, 'ast>(
@@ -205,14 +217,14 @@ pub fn path_resolve_type<'hir, 'ast>(
             return hir::Type::Error;
         }
         PathResolvedKind::PolyParam(poly_ty, _) => {
-            if check_unexpected_poly_args(ctx, path.at_segment, "type parameter").is_err() {
+            if check_unexpected_poly_args(ctx, &path.at_segment, "type parameter").is_err() {
                 return hir::Type::Error;
             }
             poly_ty
         }
     };
 
-    if check_unexpected_segments(ctx, path.names, "type").is_err() {
+    if check_unexpected_segments(ctx, path.segments, "type").is_err() {
         return hir::Type::Error;
     }
     ty
@@ -251,7 +263,7 @@ pub fn path_resolve_enum_opt<'hir, 'ast>(
         _ => return None,
     };
 
-    if check_unexpected_segments(ctx, path.names, "enum type").is_err() {
+    if check_unexpected_segments(ctx, path.segments, "enum type").is_err() {
         return None;
     }
     enum_id
@@ -386,7 +398,7 @@ pub fn path_resolve_struct<'hir, 'ast>(
         }
     };
 
-    if check_unexpected_segments(ctx, path.names, "struct").is_err() {
+    if check_unexpected_segments(ctx, path.segments, "struct").is_err() {
         return None;
     }
     Some((struct_id, poly_types))
@@ -408,7 +420,7 @@ pub fn path_resolve_value<'hir, 'ast>(
     match path.kind {
         PathResolvedKind::Symbol(symbol_id) => match symbol_id {
             SymbolID::Proc(proc_id) => {
-                if check_unexpected_segments(ctx, path.names, "procedure").is_err() {
+                if check_unexpected_segments(ctx, path.segments, "procedure").is_err() {
                     ValueID::None
                 } else {
                     let data = ctx.registry.proc_data(proc_id);
@@ -425,11 +437,11 @@ pub fn path_resolve_value<'hir, 'ast>(
                 }
             }
             SymbolID::Enum(enum_id) => {
-                if let Some(next) = path.names.first().copied() {
+                if let Some(next) = path.segments.first().copied() {
                     if let Some(variant_id) =
                         scope::check_find_enum_variant(ctx, enum_id, next.name)
                     {
-                        let names = path.names.split_at(1).1;
+                        let names = path.segments.split_at(1).1;
                         if check_unexpected_segments(ctx, names, "enum variant").is_err() {
                             ValueID::None
                         } else {
@@ -463,13 +475,28 @@ pub fn path_resolve_value<'hir, 'ast>(
                 err::path_not_expected(&mut ctx.emit, src, defined_src, name, "value", "struct");
                 ValueID::None
             }
-            SymbolID::Const(id) => ValueID::Const(id, path.names),
-            SymbolID::Global(id) => ValueID::Global(id, path.names),
+            SymbolID::Const(id) => {
+                if check_unexpected_parts_for_value(ctx, &path, "constant").is_err() {
+                    return ValueID::None;
+                }
+                ValueID::Const(id, path.segments)
+            }
+            SymbolID::Global(id) => {
+                if check_unexpected_parts_for_value(ctx, &path, "global").is_err() {
+                    return ValueID::None;
+                }
+                ValueID::Global(id, path.segments)
+            }
         },
-        PathResolvedKind::Variable(local_var_id) => match local_var_id {
-            LocalVariableID::Param(id) => ValueID::Param(id, path.names),
-            LocalVariableID::Variable(id) => ValueID::Variable(id, path.names),
-        },
+        PathResolvedKind::Variable(local_var_id) => {
+            if check_unexpected_parts_for_value(ctx, &path, local_var_id.desc()).is_err() {
+                return ValueID::None;
+            }
+            match local_var_id {
+                LocalVariableID::Param(id) => ValueID::Param(id, path.segments),
+                LocalVariableID::Variable(id) => ValueID::Variable(id, path.segments),
+            }
+        }
         PathResolvedKind::Module(_) => {
             let src = ctx.src(path.at_segment.name.range);
             let name = ctx.name(path.at_segment.name.id);

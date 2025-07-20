@@ -1,0 +1,73 @@
+//#prelude
+CONST = 0;
+let GLOBAL: s32 = 0;
+
+//#entry(check) "path_unexpected_value_poly_args"
+//#expect
+//error: unexpected polymorphic arguments after variable
+//  │
+//3 │     local:(u64);
+//  │           ^^^^^
+//  └─ src/test.rock:3:11
+//
+//error: unexpected polymorphic arguments after parameter
+//  │
+//4 │     param:(u64);
+//  │           ^^^^^
+//  └─ src/test.rock:4:11
+//
+//error: unexpected polymorphic arguments after constant
+//  │
+//5 │     CONST:(u64);
+//  │           ^^^^^
+//  └─ src/test.rock:5:11
+//
+//error: unexpected polymorphic arguments after global
+//  │
+//6 │     GLOBAL:(u64);
+//  │            ^^^^^
+//  └─ src/test.rock:6:12
+//
+//#!
+proc test_path_unexpected_value_poly_args(param: s32) void {
+    let local = 0;
+    local:(u64);
+    param:(u64);
+    CONST:(u64);
+    GLOBAL:(u64);
+}
+
+//#entry(check) "path_unexpected_value_field_poly_args"
+//#expect
+//error: unexpected polymorphic arguments after field access
+//  │
+//3 │     local.field:(u64);
+//  │                 ^^^^^
+//  └─ src/test.rock:3:17
+//
+//error: unexpected polymorphic arguments after field access
+//  │
+//4 │     param.field:(u64);
+//  │                 ^^^^^
+//  └─ src/test.rock:4:17
+//
+//error: unexpected polymorphic arguments after field access
+//  │
+//5 │     CONST.field:(u64);
+//  │                 ^^^^^
+//  └─ src/test.rock:5:17
+//
+//error: unexpected polymorphic arguments after field access
+//  │
+//6 │     GLOBAL.field:(u64);
+//  │                  ^^^^^
+//  └─ src/test.rock:6:18
+//
+//#!
+proc test_path_unexpected_value_field_poly_args(param: s32) void {
+    let local = 0;
+    local.field:(u64);
+    param.field:(u64);
+    CONST.field:(u64);
+    GLOBAL.field:(u64);
+}

@@ -1880,10 +1880,9 @@ fn typecheck_item<'hir, 'ast>(
 
     let mut target_res = item_res;
 
-    //@check segments for having poly types in them + rename
-    for &name in fields {
+    for field in fields {
         let expr_res = target_res.into_expr_result(ctx);
-        let field_res = check_field_from_type(ctx, name.name, expr_res.ty);
+        let field_res = check_field_from_type(ctx, field.name, expr_res.ty);
         target_res = emit_field_expr(ctx, expr_res.expr, field_res);
     }
 
