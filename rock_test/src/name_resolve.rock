@@ -2,7 +2,140 @@
 CONST = 0;
 let GLOBAL: s32 = 0;
 
-//#entry(check) "path_unexpected_value_poly_args"
+enum Enum {
+    A(u8, u8),
+    B(u8, u8),
+}
+
+//#entry(check) "name_shadowing"
+//#expect
+//error: name `x` is defined multiple times
+//  │
+//4 │         let x = 0;
+//  │             ^
+//  ├─ src/test.rock:4:13
+//  │
+//3 │         let x = 0;
+//  │             ─ existing definition
+//  └─ src/test.rock:3:13
+//
+//#!
+proc test_name_shadowing() void {
+    {
+        let x = 0;
+        let x = 0;
+    }
+    let x = 0;
+}
+
+//#entry(check) "name_shadowing_for"
+//#expect
+//error: name `it` is defined multiple times
+//  │
+//2 │     for it, it in 0..<10 {}
+//  │             ^^
+//  ├─ src/test.rock:2:13
+//  │
+//2 │     for it, it in 0..<10 {}
+//  │         ── existing definition
+//  └─ src/test.rock:2:9
+//
+//error: name `it` is defined multiple times
+//  │
+//5 │         let it = 0;
+//  │             ^^
+//  ├─ src/test.rock:5:13
+//  │
+//4 │     for it, idx in 0..<10 {
+//  │         ── existing definition
+//  └─ src/test.rock:4:9
+//
+//error: name `idx` is defined multiple times
+//  │
+//6 │         let idx = 0;
+//  │             ^^^
+//  ├─ src/test.rock:6:13
+//  │
+//4 │     for it, idx in 0..<10 {
+//  │             ─── existing definition
+//  └─ src/test.rock:4:13
+//
+//#!
+proc test_name_shadowing_for() void {
+    for it, it in 0..<10 {}
+
+    for it, idx in 0..<10 {
+        let it = 0;
+        let idx = 0;
+    }
+
+    let it = 0;
+    let idx = 0;
+}
+
+//#entry(check) "name_shadowing_if_let"
+//#expect
+//error: name `e` is defined multiple times
+//  │
+//3 │     if let .A(e, b) = e {
+//  │               ^
+//  ├─ src/test.rock:3:15
+//  │
+//2 │     let e = Enum.A(0, 0);
+//  │         ─ existing definition
+//  └─ src/test.rock:2:9
+//
+//error: name `x` is defined multiple times
+//  │
+//5 │     if let .A(x, x) = e {
+//  │                  ^
+//  ├─ src/test.rock:5:18
+//  │
+//5 │     if let .A(x, x) = e {
+//  │               ─ existing definition
+//  └─ src/test.rock:5:15
+//
+//#!
+proc test_name_shadowing_if_let() void {
+    let e = Enum.A(0, 0);
+    if let .A(e, b) = e {
+    }
+    if let .A(x, x) = e {
+    }
+}
+
+//#entry(check) "name_shadowing_match"
+//#expect
+//error: name `e` is defined multiple times
+//  │
+//4 │         .A(e, b) -> {},
+//  │            ^
+//  ├─ src/test.rock:4:12
+//  │
+//2 │     let e = Enum.A(0, 0);
+//  │         ─ existing definition
+//  └─ src/test.rock:2:9
+//
+//error: name `x` is defined multiple times
+//  │
+//5 │         .B(x, x) -> {},
+//  │               ^
+//  ├─ src/test.rock:5:15
+//  │
+//5 │         .B(x, x) -> {},
+//  │            ─ existing definition
+//  └─ src/test.rock:5:12
+//
+//#!
+proc test_name_shadowing_match() void {
+    let e = Enum.A(0, 0);
+    match e {
+        .A(e, b) -> {},
+        .B(x, x) -> {},
+    }
+}
+
+//#entry(check) "path_unexpected_poly_args_value"
 //#expect
 //error: unexpected polymorphic arguments after variable
 //  │
@@ -29,7 +162,7 @@ let GLOBAL: s32 = 0;
 //  └─ src/test.rock:6:12
 //
 //#!
-proc test_path_unexpected_value_poly_args(param: s32) void {
+proc test_path_unexpected_poly_args_value(param: s32) void {
     let local = 0;
     local:(u64);
     param:(u64);
@@ -37,7 +170,7 @@ proc test_path_unexpected_value_poly_args(param: s32) void {
     GLOBAL:(u64);
 }
 
-//#entry(check) "path_unexpected_value_field_poly_args"
+//#entry(check) "path_unexpected_poly_args_value_field"
 //#expect
 //error: unexpected polymorphic arguments after field access
 //  │
@@ -64,7 +197,7 @@ proc test_path_unexpected_value_poly_args(param: s32) void {
 //  └─ src/test.rock:6:18
 //
 //#!
-proc test_path_unexpected_value_field_poly_args(param: s32) void {
+proc test_path_unexpected_poly_args_value_field(param: s32) void {
     let local = 0;
     local.field:(u64);
     param.field:(u64);
