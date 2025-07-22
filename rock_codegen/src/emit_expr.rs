@@ -1574,7 +1574,12 @@ fn codegen_array_repeat<'c>(
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(copied_val, elem_ptr);
 
-    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize(1));
+    let count_inc = codegen_binary_op(
+        cg,
+        hir::BinOp::Add_Int(hir::IntType::Usize),
+        count_val,
+        cg.const_usize(1),
+    );
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);
@@ -1622,10 +1627,10 @@ fn codegen_unary<'c>(
 ) -> llvm::Value {
     let rhs = codegen_expr_value(cg, rhs);
     match op {
-        hir::UnOp::Neg_Int => cg.build.neg(rhs, "un"),
-        hir::UnOp::Neg_Float => cg.build.fneg(rhs, "un"),
-        hir::UnOp::BitNot => cg.build.not(rhs, "un"),
-        hir::UnOp::LogicNot => {
+        hir::UnOp::Neg_Int(_) => cg.build.neg(rhs, "un"),
+        hir::UnOp::Neg_Float(_) => cg.build.fneg(rhs, "un"),
+        hir::UnOp::BitNot(_) => cg.build.not(rhs, "un"),
+        hir::UnOp::LogicNot(_) => {
             let int_ty = llvm::typeof_value(rhs);
             let one = llvm::const_int(int_ty, 1, false);
             cg.build.bin_op(llvm::OpCode::LLVMXor, rhs, one, "un")
@@ -1669,7 +1674,22 @@ pub fn codegen_array_binary_op<'c>(
     lhs_ptr: llvm::ValuePtr,
     rhs_ptr: llvm::ValuePtr,
 ) -> Option<llvm::Value> {
-    let elem_ty = cg.ty(array.elem_ty);
+    let elem_ty = match op {
+        hir::BinOp::Add_Int(ty) => hir::Type::Int(ty),
+        hir::BinOp::Add_Float(ty) => hir::Type::Float(ty),
+        hir::BinOp::Sub_Int(ty) => hir::Type::Int(ty),
+        hir::BinOp::Sub_Float(ty) => hir::Type::Float(ty),
+        hir::BinOp::Mul_Int(ty) => hir::Type::Int(ty),
+        hir::BinOp::Mul_Float(ty) => hir::Type::Float(ty),
+        hir::BinOp::Div_Int(ty) => hir::Type::Int(ty),
+        hir::BinOp::Div_Float(ty) => hir::Type::Float(ty),
+        hir::BinOp::Rem_Int(ty) => hir::Type::Int(ty),
+        hir::BinOp::BitAnd(ty) => hir::Type::Int(ty),
+        hir::BinOp::BitOr(ty) => hir::Type::Int(ty),
+        hir::BinOp::BitXor(ty) => hir::Type::Int(ty),
+        _ => unreachable!(), //unsupported op
+    };
+    let elem_ty = cg.ty(elem_ty);
     let array_ty = llvm::array_type(elem_ty, array.len);
     let array_ptr = cg.entry_alloca(array_ty, "array_binary");
 
@@ -1702,7 +1722,12 @@ pub fn codegen_array_binary_op<'c>(
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(bin, elem_ptr);
 
-    let count_inc = codegen_binary_op(cg, hir::BinOp::Add_Int, count_val, cg.const_usize(1));
+    let count_inc = codegen_binary_op(
+        cg,
+        hir::BinOp::Add_Int(hir::IntType::Usize),
+        count_val,
+        cg.const_usize(1),
+    );
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);
@@ -1759,24 +1784,24 @@ pub fn codegen_binary_op(
 ) -> llvm::Value {
     use llvm::{IntPred, OpCode};
     match op {
-        hir::BinOp::Add_Int => cg.build.bin_op(OpCode::LLVMAdd, lhs, rhs, "bin"),
-        hir::BinOp::Add_Float => cg.build.bin_op(OpCode::LLVMFAdd, lhs, rhs, "bin"),
-        hir::BinOp::Sub_Int => cg.build.bin_op(OpCode::LLVMSub, lhs, rhs, "bin"),
-        hir::BinOp::Sub_Float => cg.build.bin_op(OpCode::LLVMFSub, lhs, rhs, "bin"),
-        hir::BinOp::Mul_Int => cg.build.bin_op(OpCode::LLVMMul, lhs, rhs, "bin"),
-        hir::BinOp::Mul_Float => cg.build.bin_op(OpCode::LLVMFMul, lhs, rhs, "bin"),
+        hir::BinOp::Add_Int(_) => cg.build.bin_op(OpCode::LLVMAdd, lhs, rhs, "bin"),
+        hir::BinOp::Add_Float(_) => cg.build.bin_op(OpCode::LLVMFAdd, lhs, rhs, "bin"),
+        hir::BinOp::Sub_Int(_) => cg.build.bin_op(OpCode::LLVMSub, lhs, rhs, "bin"),
+        hir::BinOp::Sub_Float(_) => cg.build.bin_op(OpCode::LLVMFSub, lhs, rhs, "bin"),
+        hir::BinOp::Mul_Int(_) => cg.build.bin_op(OpCode::LLVMMul, lhs, rhs, "bin"),
+        hir::BinOp::Mul_Float(_) => cg.build.bin_op(OpCode::LLVMFMul, lhs, rhs, "bin"),
         hir::BinOp::Div_Int(int_ty) => {
             let op = if int_ty.is_signed() { OpCode::LLVMSDiv } else { OpCode::LLVMUDiv };
             cg.build.bin_op(op, lhs, rhs, "bin")
         }
-        hir::BinOp::Div_Float => cg.build.bin_op(OpCode::LLVMFDiv, lhs, rhs, "bin"),
+        hir::BinOp::Div_Float(_) => cg.build.bin_op(OpCode::LLVMFDiv, lhs, rhs, "bin"),
         hir::BinOp::Rem_Int(int_ty) => {
             let op = if int_ty.is_signed() { OpCode::LLVMSRem } else { OpCode::LLVMURem };
             cg.build.bin_op(op, lhs, rhs, "bin")
         }
-        hir::BinOp::BitAnd => cg.build.bin_op(OpCode::LLVMAnd, lhs, rhs, "bin"),
-        hir::BinOp::BitOr => cg.build.bin_op(OpCode::LLVMOr, lhs, rhs, "bin"),
-        hir::BinOp::BitXor => cg.build.bin_op(OpCode::LLVMXor, lhs, rhs, "bin"),
+        hir::BinOp::BitAnd(_) => cg.build.bin_op(OpCode::LLVMAnd, lhs, rhs, "bin"),
+        hir::BinOp::BitOr(_) => cg.build.bin_op(OpCode::LLVMOr, lhs, rhs, "bin"),
+        hir::BinOp::BitXor(_) => cg.build.bin_op(OpCode::LLVMXor, lhs, rhs, "bin"),
         hir::BinOp::BitShl(lhs_ty, cast) => {
             let rhs = codegen_cast_op(cg, rhs, cg.int_type(lhs_ty), cast);
             cg.build.bin_op(OpCode::LLVMShl, lhs, rhs, "bin")

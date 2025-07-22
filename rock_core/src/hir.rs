@@ -524,7 +524,6 @@ pub struct ArrayRepeat<'hir> {
 #[derive(Copy, Clone)]
 pub struct ArrayBinary<'hir> {
     pub len: u64,
-    pub elem_ty: Type<'hir>,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
 }
@@ -599,21 +598,24 @@ crate::enum_as_str! {
 #[derive(Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum UnOp {
-    Neg_Int, Neg_Float,
-    BitNot,
-    LogicNot,
+    Neg_Int(IntType),
+    Neg_Float(FloatType),
+    BitNot(IntType),
+    LogicNot(BoolType),
 }
 
 #[rustfmt::skip]
 #[derive(Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum BinOp {
-    Add_Int, Add_Float,
-    Sub_Int, Sub_Float,
-    Mul_Int, Mul_Float,
-    Div_Int(IntType), Div_Float,
+    Add_Int(IntType), Add_Float(FloatType),
+    Sub_Int(IntType), Sub_Float(FloatType),
+    Mul_Int(IntType), Mul_Float(FloatType),
+    Div_Int(IntType), Div_Float(FloatType),
     Rem_Int(IntType),
-    BitAnd, BitOr, BitXor,
+    BitAnd(IntType),
+    BitOr(IntType),
+    BitXor(IntType),
     BitShl(IntType, CastKind),
     BitShr(IntType, CastKind),
     Eq_Int_Other(BoolType),
@@ -1096,14 +1098,14 @@ impl BoolType {
 impl BinOp {
     pub fn as_str(self) -> &'static str {
         match self {
-            BinOp::Add_Int | BinOp::Add_Float => "+",
-            BinOp::Sub_Int | BinOp::Sub_Float => "-",
-            BinOp::Mul_Int | BinOp::Mul_Float => "*",
-            BinOp::Div_Int(_) | BinOp::Div_Float => "/",
+            BinOp::Add_Int(_) | BinOp::Add_Float(_) => "+",
+            BinOp::Sub_Int(_) | BinOp::Sub_Float(_) => "-",
+            BinOp::Mul_Int(_) | BinOp::Mul_Float(_) => "*",
+            BinOp::Div_Int(_) | BinOp::Div_Float(_) => "/",
             BinOp::Rem_Int(_) => "%",
-            BinOp::BitAnd => "&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
+            BinOp::BitAnd(_) => "&",
+            BinOp::BitOr(_) => "|",
+            BinOp::BitXor(_) => "^",
             BinOp::BitShl(_, _) => "<<",
             BinOp::BitShr(_, _) => ">>",
             BinOp::Eq_Int_Other(_) => "==",

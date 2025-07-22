@@ -1435,11 +1435,7 @@ fn typecheck_index<'hir, 'ast>(
                 let value = match target {
                     hir::ConstValue::String { val, .. } => {
                         let byte = ctx.session.intern_lit.get(*val).as_bytes()[index as usize];
-                        hir::ConstValue::Int {
-                            val: byte as u64,
-                            neg: false,
-                            int_ty: hir::IntType::U8,
-                        }
+                        hir::ConstValue::Int { val: byte as u64, neg: false, int_ty: IntType::U8 }
                     }
                     hir::ConstValue::Array { array } => array.values[index as usize],
                     hir::ConstValue::ArrayRepeat { array } => array.value,
@@ -2609,18 +2605,18 @@ fn typecheck_unary<'hir, 'ast>(
     let hir_op = match op {
         ast::UnOp::Neg => match rhs_res.ty {
             hir::Type::Int(int_ty) if int_ty.is_signed() || int_ty == IntType::Untyped => {
-                Ok(hir::UnOp::Neg_Int)
+                Ok(hir::UnOp::Neg_Int(int_ty))
             }
-            hir::Type::Float(_) => Ok(hir::UnOp::Neg_Float),
+            hir::Type::Float(float_ty) => Ok(hir::UnOp::Neg_Float(float_ty)),
             _ => Err(()),
         },
         ast::UnOp::BitNot => match rhs_res.ty {
             hir::Type::Int(IntType::Untyped) => Err(()),
-            hir::Type::Int(_) => Ok(hir::UnOp::BitNot),
+            hir::Type::Int(int_ty) => Ok(hir::UnOp::BitNot(int_ty)),
             _ => Err(()),
         },
         ast::UnOp::LogicNot => match rhs_res.ty {
-            hir::Type::Bool(_) => Ok(hir::UnOp::LogicNot),
+            hir::Type::Bool(bool_ty) => Ok(hir::UnOp::LogicNot(bool_ty)),
             _ => Err(()),
         },
     };
@@ -2651,18 +2647,15 @@ fn constfold_unary<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let src = ctx.src(range);
     match op {
-        hir::UnOp::Neg_Int => {
-            let int_ty = rhs.into_int_ty();
+        hir::UnOp::Neg_Int(int_ty) => {
             let val = -rhs.into_int();
             int_range_check(ctx, src, val, int_ty)
         }
-        hir::UnOp::Neg_Float => {
-            let float_ty = rhs.into_float_ty();
+        hir::UnOp::Neg_Float(float_ty) => {
             let val = -rhs.into_float();
             Ok(hir::ConstValue::Float { val, float_ty })
         }
-        hir::UnOp::BitNot => {
-            let int_ty = rhs.into_int_ty();
+        hir::UnOp::BitNot(int_ty) => {
             if int_ty.is_signed() {
                 Ok(hir::ConstValue::from_i64(!rhs.into_int_i64(), int_ty))
             } else {
@@ -2671,8 +2664,8 @@ fn constfold_unary<'hir>(
                 Ok(hir::ConstValue::from_u64(mask & !rhs.into_int_u64(), int_ty))
             }
         }
-        hir::UnOp::LogicNot => {
-            let (val, bool_ty) = rhs.expect_bool();
+        hir::UnOp::LogicNot(bool_ty) => {
+            let (val, _) = rhs.expect_bool();
             Ok(hir::ConstValue::Bool { val: !val, bool_ty })
         }
     }
@@ -2909,23 +2902,23 @@ fn check_binary_op<'hir>(
 
     let hir_op = match op {
         ast::BinOp::Add => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Add_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Add_Float),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::Add_Int(int_ty)),
+            hir::Type::Float(float_ty) => Ok(hir::BinOp::Add_Float(float_ty)),
             _ => Err(()),
         },
         ast::BinOp::Sub => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Sub_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Sub_Float),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::Sub_Int(int_ty)),
+            hir::Type::Float(float_ty) => Ok(hir::BinOp::Sub_Float(float_ty)),
             _ => Err(()),
         },
         ast::BinOp::Mul => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::Mul_Int),
-            hir::Type::Float(_) => Ok(hir::BinOp::Mul_Float),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::Mul_Int(int_ty)),
+            hir::Type::Float(float_ty) => Ok(hir::BinOp::Mul_Float(float_ty)),
             _ => Err(()),
         },
         ast::BinOp::Div => match lhs_ty {
             hir::Type::Int(int_ty) => Ok(hir::BinOp::Div_Int(int_ty)),
-            hir::Type::Float(_) => Ok(hir::BinOp::Div_Float),
+            hir::Type::Float(float_ty) => Ok(hir::BinOp::Div_Float(float_ty)),
             _ => Err(()),
         },
         ast::BinOp::Rem => match lhs_ty {
@@ -2933,15 +2926,15 @@ fn check_binary_op<'hir>(
             _ => Err(()),
         },
         ast::BinOp::BitAnd => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitAnd),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitAnd(int_ty)),
             _ => Err(()),
         },
         ast::BinOp::BitOr => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitOr),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitOr(int_ty)),
             _ => Err(()),
         },
         ast::BinOp::BitXor => match lhs_ty {
-            hir::Type::Int(_) => Ok(hir::BinOp::BitXor),
+            hir::Type::Int(int_ty) => Ok(hir::BinOp::BitXor(int_ty)),
             _ => Err(()),
         },
         ast::BinOp::BitShl => match (lhs_ty, rhs_ty) {
@@ -3059,16 +3052,14 @@ fn check_binary_op<'hir>(
     };
 
     let array_info = match lhs.ty {
-        hir::Type::ArrayStatic(array) => {
-            Some((array.elem_ty, ctx.array_len(array.len).unwrap_or(0)))
-        }
+        hir::Type::ArrayStatic(array) => Some(ctx.array_len(array.len).unwrap_or(0)),
         hir::Type::ArrayEnumerated(array) => {
-            Some((array.elem_ty, ctx.registry.enum_data(array.enum_id).variants.len() as u64))
+            Some(ctx.registry.enum_data(array.enum_id).variants.len() as u64)
         }
         _ => None,
     };
-    let array = if let Some((elem_ty, len)) = array_info {
-        let array = hir::ArrayBinary { len, elem_ty, lhs: lhs.expr, rhs: rhs.expr };
+    let array = if let Some(len) = array_info {
+        let array = hir::ArrayBinary { len, lhs: lhs.expr, rhs: rhs.expr };
         Some(ctx.arena.alloc(array))
     } else {
         None
@@ -3151,28 +3142,23 @@ fn constfold_binary<'hir>(
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let src = ctx.src(range);
     match op {
-        hir::BinOp::Add_Int => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::Add_Int(int_ty) => {
             let val = lhs.into_int() + rhs.into_int();
             int_range_check(ctx, src, val, int_ty)
         }
-        hir::BinOp::Add_Float => {
-            let float_ty = lhs.into_float_ty();
+        hir::BinOp::Add_Float(float_ty) => {
             let val = lhs.into_float() + rhs.into_float();
             Ok(hir::ConstValue::Float { val, float_ty })
         }
-        hir::BinOp::Sub_Int => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::Sub_Int(int_ty) => {
             let val = lhs.into_int() - rhs.into_int();
             int_range_check(ctx, src, val, int_ty)
         }
-        hir::BinOp::Sub_Float => {
-            let float_ty = lhs.into_float_ty();
+        hir::BinOp::Sub_Float(float_ty) => {
             let val = lhs.into_float() - rhs.into_float();
             Ok(hir::ConstValue::Float { val, float_ty })
         }
-        hir::BinOp::Mul_Int => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::Mul_Int(int_ty) => {
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
@@ -3183,13 +3169,11 @@ fn constfold_binary<'hir>(
                 Err(())
             }
         }
-        hir::BinOp::Mul_Float => {
-            let float_ty = lhs.into_float_ty();
+        hir::BinOp::Mul_Float(float_ty) => {
             let val = lhs.into_float() * rhs.into_float();
             Ok(hir::ConstValue::Float { val, float_ty })
         }
-        hir::BinOp::Div_Int(_) => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::Div_Int(int_ty) => {
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
@@ -3200,13 +3184,11 @@ fn constfold_binary<'hir>(
                 Err(())
             }
         }
-        hir::BinOp::Div_Float => {
-            let float_ty = lhs.into_float_ty();
+        hir::BinOp::Div_Float(float_ty) => {
             let val = lhs.into_float() / rhs.into_float();
             Ok(hir::ConstValue::Float { val, float_ty })
         }
-        hir::BinOp::Rem_Int(_) => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::Rem_Int(int_ty) => {
             let lhs = lhs.into_int();
             let rhs = rhs.into_int();
 
@@ -3217,8 +3199,7 @@ fn constfold_binary<'hir>(
                 Err(())
             }
         }
-        hir::BinOp::BitAnd => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::BitAnd(int_ty) => {
             if int_ty.is_signed() {
                 let val = lhs.into_int_i64() & rhs.into_int_i64();
                 Ok(hir::ConstValue::from_i64(val, int_ty))
@@ -3227,8 +3208,7 @@ fn constfold_binary<'hir>(
                 Ok(hir::ConstValue::from_u64(val, int_ty))
             }
         }
-        hir::BinOp::BitOr => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::BitOr(int_ty) => {
             if int_ty.is_signed() {
                 let val = lhs.into_int_i64() | rhs.into_int_i64();
                 Ok(hir::ConstValue::from_i64(val, int_ty))
@@ -3237,8 +3217,7 @@ fn constfold_binary<'hir>(
                 Ok(hir::ConstValue::from_u64(val, int_ty))
             }
         }
-        hir::BinOp::BitXor => {
-            let int_ty = lhs.into_int_ty();
+        hir::BinOp::BitXor(int_ty) => {
             if int_ty.is_signed() {
                 let val = lhs.into_int_i64() ^ rhs.into_int_i64();
                 Ok(hir::ConstValue::from_i64(val, int_ty))
@@ -3523,7 +3502,7 @@ fn typecheck_block<'hir, 'ast>(
                             hir::ConstID::dummy(),
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
+                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
                             lhs: expr_var,
                             rhs: expr_one,
                             lhs_ty: hir::Type::Int(int_ty),
@@ -3693,7 +3672,8 @@ fn typecheck_for<'hir, 'ast>(
             check_expect_boolean(ctx, cond.range, cond_res.ty);
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
-            let branch_cond = hir::Expr::Unary { op: hir::UnOp::LogicNot, rhs: cond_res.expr };
+            let branch_cond =
+                hir::Expr::Unary { op: hir::UnOp::LogicNot(BoolType::Bool), rhs: cond_res.expr };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
             let branch = hir::Branch { cond: ctx.arena.alloc(branch_cond), block: branch_block };
             let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
@@ -3791,8 +3771,11 @@ fn typecheck_for<'hir, 'ast>(
             };
 
             let curr_block = ctx.scope.local.current_block_mut();
-            let index_change_op =
-                if header.reverse { hir::BinOp::Sub_Int } else { hir::BinOp::Add_Int };
+            let index_change_op = if header.reverse {
+                hir::BinOp::Sub_Int(IntType::Usize)
+            } else {
+                hir::BinOp::Add_Int(IntType::Usize)
+            };
             curr_block.for_idx_change = Some((index_id, index_change_op));
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
@@ -4062,7 +4045,7 @@ fn typecheck_for<'hir, 'ast>(
             let end_id = ctx.scope.local.add_variable(end_var);
 
             let curr_block = ctx.scope.local.current_block_mut();
-            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int));
+            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int(IntType::Usize)));
             curr_block.for_value_change = Some((start_id, int_ty));
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
@@ -4099,7 +4082,8 @@ fn typecheck_for<'hir, 'ast>(
                 lhs: expr_start_var,
                 rhs: expr_end_var,
             });
-            let break_cond = hir::Expr::Unary { op: hir::UnOp::LogicNot, rhs: continue_cond };
+            let break_cond =
+                hir::Expr::Unary { op: hir::UnOp::LogicNot(BoolType::Bool), rhs: continue_cond };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
             let branch = hir::Branch { cond: ctx.arena.alloc(break_cond), block: branch_block };
             let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
@@ -4111,7 +4095,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::ConstID::dummy(),
             ));
             let stmt_value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
                 lhs: expr_start_var,
                 rhs: expr_one_iter,
                 lhs_ty: hir::Type::Int(int_ty),
@@ -4121,7 +4105,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::ConstID::dummy(),
             ));
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(hir::BinOp::Add_Int, None),
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int(IntType::Usize), None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
                 lhs_ty: hir::Type::Int(IntType::Usize),
@@ -4291,7 +4275,7 @@ pub fn int_range_check<'hir>(
     ctx: &mut HirCtx,
     src: SourceRange,
     val: i128,
-    int_ty: hir::IntType,
+    int_ty: IntType,
 ) -> Result<hir::ConstValue<'hir>, ()> {
     let ptr_width = ctx.session.config.target_ptr_width;
     let min = int_ty.min_128(ptr_width);

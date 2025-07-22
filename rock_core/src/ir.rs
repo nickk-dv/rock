@@ -76,7 +76,7 @@ impl Body<'_> {
     }
     pub fn unary(&self, id: ExprID) -> (UnOp, ExprID, Option<u32>) {
         let tag = self.expr_data[id.index()];
-        let op: UnOp = unsafe { mem::transmute(((tag >> 16) & 0xFF) as u8) };
+        let op: UnOp = unsafe { mem::transmute(((tag >> 16) & 0xFFFF) as u16) };
         let rhs = ExprID(self.expr_data[id.index() + 1]);
         let array_op = (tag >> 8) & 0xFF != 0;
         let array_len = array_op.then(|| self.expr_data[id.index() + 2]);
@@ -131,6 +131,7 @@ impl Writer {
     pub fn unary(&mut self, op: UnOp, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         let array_op = arr_len.is_some();
+        let op: u16 = unsafe { mem::transmute(op) };
         self.expr_data.push(ExprKind::Unary as u32 | (array_op as u32) << 8 | (op as u32) << 16);
         self.expr_data.push(rhs.0);
         if let Some(len) = arr_len {
