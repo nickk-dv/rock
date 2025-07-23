@@ -1,3 +1,4 @@
+use crate::ast;
 use crate::hir::{BinOp, UnOp};
 use std::mem;
 
@@ -31,7 +32,7 @@ crate::define_id!(pub ImportID);
 crate::define_id!(pub ParamID);
 crate::define_id!(pub VariableID);
 crate::define_id!(pub ExprID);
-
+crate::define_id!(pub TypeID);
 crate::define_id!(pub VariantID);
 
 #[repr(u8)]
@@ -41,6 +42,10 @@ pub enum ExprKind {
     Global,
     CallDirect,
     StructInit,
+    ArrayInit,
+    ArrayRepeat,
+    Deref,
+    Address,
     Unary,
     Binary,
 }
@@ -63,7 +68,7 @@ impl Body<'_> {
     pub fn call_direct(&self, id: ExprID, ir: &IR) -> (ProcID, &[ExprID]) {
         let proc_id = ProcID(self.expr_data[id.index() + 1]);
         let start = id.index() + 2;
-        let count = ir.procs[proc_id.index()].params.len();
+        let count = ir.procs[proc_id.index()].params.len(); //@variadics?
         let input = &self.expr_data[start..start + count];
         (proc_id, unsafe { mem::transmute(input) })
     }
@@ -73,6 +78,29 @@ impl Body<'_> {
         let count = ir.structs[struct_id.index()].fields.len();
         let input = &self.expr_data[start..start + count];
         (struct_id, unsafe { mem::transmute(input) })
+    }
+    pub fn array_init(&self, id: ExprID) -> (TypeID, &[ExprID]) {
+        let elem_ty = TypeID(self.expr_data[id.index() + 1]);
+        let len = self.expr_data[id.index() + 2] as usize;
+        let start = id.index() + 3;
+        let input = &self.expr_data[start..start + len];
+        (elem_ty, unsafe { mem::transmute(input) })
+    }
+    pub fn array_repeat(&self, id: ExprID) -> (TypeID, u32, ExprID) {
+        let elem_ty = TypeID(self.expr_data[id.index() + 1]);
+        let len = self.expr_data[id.index() + 2];
+        let value = ExprID(self.expr_data[id.index() + 3]);
+        (elem_ty, len, value)
+    }
+    pub fn deref(&self, id: ExprID) -> (ExprID, TypeID, ast::Mut) {
+        let tag = self.expr_data[id.index()];
+        let target = ExprID(self.expr_data[id.index() + 1]);
+        let ref_ty = TypeID(self.expr_data[id.index() + 2]);
+        let mutt = unsafe { mem::transmute(((tag >> 8) & 0xFF) as u8) };
+        (target, ref_ty, mutt)
+    }
+    pub fn address(&self, id: ExprID) -> ExprID {
+        ExprID(self.expr_data[id.index() + 1])
     }
     pub fn unary(&self, id: ExprID) -> (UnOp, ExprID, Option<u32>) {
         let tag = self.expr_data[id.index()];
@@ -126,6 +154,37 @@ impl Writer {
         for expr_id in input.iter().copied() {
             self.expr_data.push(expr_id.0);
         }
+        id
+    }
+    pub fn array_init(&mut self, elem_ty: TypeID, input: &[ExprID]) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::ArrayInit as u32);
+        self.expr_data.push(elem_ty.0);
+        self.expr_data.push(input.len() as u32);
+        for expr_id in input.iter().copied() {
+            self.expr_data.push(expr_id.0);
+        }
+        id
+    }
+    pub fn array_repeat(&mut self, elem_ty: TypeID, len: u32, value: ExprID) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::ArrayRepeat as u32);
+        self.expr_data.push(elem_ty.0);
+        self.expr_data.push(len);
+        self.expr_data.push(value.0);
+        id
+    }
+    pub fn deref(&mut self, target: ExprID, ref_ty: TypeID, mutt: ast::Mut) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::Deref as u32 | (mutt as u32) << 8);
+        self.expr_data.push(target.0);
+        self.expr_data.push(ref_ty.0);
+        id
+    }
+    pub fn address(&mut self, target: ExprID) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::Address as u32);
+        self.expr_data.push(target.0);
         id
     }
     pub fn unary(&mut self, op: UnOp, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
