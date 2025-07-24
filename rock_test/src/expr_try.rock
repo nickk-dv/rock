@@ -1,24 +1,51 @@
 //#prelude
 import core:option.{Option}
 import core:result.{Result}
-import core:runtime.{assert, unreachable}
+import core:fmt.{print}
+import core:runtime.{unreachable}
 
 //#entry "try_option"
+//#expect(no_endl)
+//25
+//#!
 proc test_try_option() Option(u64) {
     let opt: Option(u8) = .Some(25);
     let val: u8 = opt.?;
-    assert(val == 25);
-
+    print(val);
     let _: f32 = Option:(f32).None.?;
     unreachable();
 }
 
+//#entry "try_option_nested"
+//#expect(no_endl)
+//25
+//#!
+proc test_try_option_nested() Option(u64) {
+    let opt: Option(Option(u8)) = .Some(.Some(25));
+    let val: u8 = opt.?.?;
+    print(val);
+    .None
+}
+
 //#entry "try_result"
+//#expect(no_endl)
+//25
+//#!
 proc test_try_result() Result(u64, string) {
     let res: Result(u8, string) = .Ok(25);
     let val: u8 = res.?;
-    assert(val == 25);
-
+    print(val);
     let _: f32 = Result:(f32, string).Err("error").?;
     unreachable();
+}
+
+//#entry "try_result_nested"
+//#expect(no_endl)
+//25
+//#!
+proc test_try_result_nested() Result(u64, string) {
+    let res: Result(Result(u8, string), string) = .Ok(.Ok(25));
+    let val: u8 = res.?.?;
+    print(val);
+    .Err("error")
 }
