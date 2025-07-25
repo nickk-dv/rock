@@ -1,19 +1,31 @@
 use crate::ast;
-use crate::hir::{BinOp, UnOp};
+use crate::hir::{BinOp, CastKind, UnOp};
 use std::mem;
 
 struct IR<'ir> {
     procs: Vec<ProcData<'ir>>,
+    enums: Vec<EnumData<'ir>>,
     structs: Vec<StructData<'ir>>,
 }
+
 struct ProcData<'ir> {
-    params: &'ir [ParamData],
+    poly: Option<&'ir [ast::Name]>,
+    params: &'ir [Param],
 }
+
+struct EnumData<'ir> {
+    poly: Option<&'ir [ast::Name]>,
+    variants: &'ir [Variant],
+}
+
 struct StructData<'ir> {
-    fields: &'ir [FieldData],
+    poly: Option<&'ir [ast::Name]>,
+    fields: &'ir [Field],
 }
-struct ParamData {}
-struct FieldData {}
+
+struct Param {}
+struct Variant {}
+struct Field {}
 
 struct Writer {
     expr_data: Vec<u32>,
@@ -37,6 +49,7 @@ crate::define_id!(pub VariantID);
 
 #[repr(u8)]
 pub enum ExprKind {
+    Cast,
     Param,
     Local,
     Global,
@@ -56,6 +69,17 @@ impl Body<'_> {
         let kind = (self.expr_data[id.index()] & 0xFF) as u8;
         unsafe { mem::transmute(kind) }
     }
+    fn read_slice<T>(&self, start: usize, count: usize) -> &[T] {
+        unsafe { mem::transmute(&self.expr_data[start..start + count]) }
+    }
+
+    pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
+        let tag = self.expr_data[id.index()];
+        let target = ExprID(self.expr_data[id.index() + 1]);
+        let into = TypeID(self.expr_data[id.index() + 2]);
+        let kind = unsafe { mem::transmute(((tag >> 8) & 0xFF) as u8) };
+        (target, into, kind)
+    }
     pub fn param(&self, id: ExprID) -> ParamID {
         ParamID(self.expr_data[id.index()] >> 8)
     }
@@ -65,26 +89,37 @@ impl Body<'_> {
     pub fn global(&self, id: ExprID) -> GlobalID {
         GlobalID(self.expr_data[id.index()] >> 8)
     }
-    pub fn call_direct(&self, id: ExprID, ir: &IR) -> (ProcID, &[ExprID]) {
+    pub fn call_direct(&self, id: ExprID, ir: &IR) -> (ProcID, &[TypeID], &[ExprID]) {
         let proc_id = ProcID(self.expr_data[id.index() + 1]);
+        let data = &ir.procs[proc_id.index()];
+
         let start = id.index() + 2;
-        let count = ir.procs[proc_id.index()].params.len(); //@variadics?
-        let input = &self.expr_data[start..start + count];
-        (proc_id, unsafe { mem::transmute(input) })
+        let count = data.poly.map(|p| p.len()).unwrap_or(0);
+        let poly: &[TypeID] = self.read_slice(start, count);
+
+        let start = start + count;
+        let count = data.params.len();
+        let input: &[ExprID] = self.read_slice(start, count);
+        (proc_id, poly, input)
     }
-    pub fn struct_init(&self, id: ExprID, ir: &IR) -> (StructID, &[ExprID]) {
+    pub fn struct_init(&self, id: ExprID, ir: &IR) -> (StructID, &[TypeID], &[ExprID]) {
         let struct_id = StructID(self.expr_data[id.index() + 1]);
+        let data = &ir.structs[struct_id.index()];
+
         let start = id.index() + 2;
-        let count = ir.structs[struct_id.index()].fields.len();
-        let input = &self.expr_data[start..start + count];
-        (struct_id, unsafe { mem::transmute(input) })
+        let count = data.poly.map(|p| p.len()).unwrap_or(0);
+        let poly: &[TypeID] = self.read_slice(start, count);
+
+        let start = start + count;
+        let count = data.fields.len();
+        let input: &[ExprID] = self.read_slice(start, count);
+        (struct_id, poly, input)
     }
     pub fn array_init(&self, id: ExprID) -> (TypeID, &[ExprID]) {
         let elem_ty = TypeID(self.expr_data[id.index() + 1]);
-        let len = self.expr_data[id.index() + 2] as usize;
         let start = id.index() + 3;
-        let input = &self.expr_data[start..start + len];
-        (elem_ty, unsafe { mem::transmute(input) })
+        let count = self.expr_data[id.index() + 2] as usize;
+        (elem_ty, self.read_slice(start, count))
     }
     pub fn array_repeat(&self, id: ExprID) -> (TypeID, u32, ExprID) {
         let elem_ty = TypeID(self.expr_data[id.index() + 1]);
@@ -123,6 +158,13 @@ impl Body<'_> {
 
 #[allow(unsafe_code)]
 impl Writer {
+    pub fn cast(&mut self, target: ExprID, into: TypeID, kind: CastKind) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::Cast as u32 | ((kind as u32) << 8));
+        self.expr_data.push(target.0);
+        self.expr_data.push(into.0);
+        id
+    }
     pub fn param(&mut self, param_id: ParamID) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::Param as u32 | (param_id.0 << 8));
@@ -138,19 +180,30 @@ impl Writer {
         self.expr_data.push(ExprKind::Global as u32 | (global_id.0 << 8));
         id
     }
-    pub fn call_direct(&mut self, proc_id: ProcID, input: &[ExprID]) -> ExprID {
+    pub fn call_direct(&mut self, proc_id: ProcID, poly: &[TypeID], input: &[ExprID]) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::CallDirect as u32);
         self.expr_data.push(proc_id.0);
+        for type_id in poly.iter().copied() {
+            self.expr_data.push(type_id.0);
+        }
         for expr_id in input.iter().copied() {
             self.expr_data.push(expr_id.0);
         }
         id
     }
-    pub fn struct_init(&mut self, struct_id: StructID, input: &[ExprID]) -> ExprID {
+    pub fn struct_init(
+        &mut self,
+        struct_id: StructID,
+        poly: &[TypeID],
+        input: &[ExprID],
+    ) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::StructInit as u32);
         self.expr_data.push(struct_id.0);
+        for type_id in poly.iter().copied() {
+            self.expr_data.push(type_id.0);
+        }
         for expr_id in input.iter().copied() {
             self.expr_data.push(expr_id.0);
         }
