@@ -13,18 +13,20 @@ struct ProcData<'ir> {
     params: &'ir [Param],
 }
 
+struct Param {}
+
 struct EnumData<'ir> {
     poly: Option<&'ir [ast::Name]>,
     variants: &'ir [Variant],
 }
+
+struct Variant {}
 
 struct StructData<'ir> {
     poly: Option<&'ir [ast::Name]>,
     fields: &'ir [Field],
 }
 
-struct Param {}
-struct Variant {}
 struct Field {}
 
 struct Writer {
@@ -63,21 +65,32 @@ pub enum ExprKind {
     Binary,
 }
 
+macro_rules! read_value_bool {
+    ($code:expr, $at:expr) => {
+        (($code >> $at) & 0b1) == 1
+    };
+}
+macro_rules! read_value_bits {
+    ($code:expr, $at:expr, $typ:ty, $repr:ty) => {
+        unsafe { mem::transmute::<$repr, $typ>((($code >> $at) & (<$repr>::MAX as u32)) as $repr) }
+    };
+}
+
 #[allow(unsafe_code)]
 impl Body<'_> {
-    pub fn expr_kind(&self, id: ExprID) -> ExprKind {
-        let kind = (self.expr_data[id.index()] & 0xFF) as u8;
-        unsafe { mem::transmute(kind) }
-    }
+    #[inline(always)]
     fn read_slice<T>(&self, start: usize, count: usize) -> &[T] {
         unsafe { mem::transmute(&self.expr_data[start..start + count]) }
     }
-
+    pub fn expr_kind(&self, id: ExprID) -> ExprKind {
+        let tag = self.expr_data[id.index()];
+        read_value_bits!(tag, 0, ExprKind, u8)
+    }
     pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
         let tag = self.expr_data[id.index()];
+        let kind = read_value_bits!(tag, 8, CastKind, u8);
         let target = ExprID(self.expr_data[id.index() + 1]);
         let into = TypeID(self.expr_data[id.index() + 2]);
-        let kind = unsafe { mem::transmute(((tag >> 8) & 0xFF) as u8) };
         (target, into, kind)
     }
     pub fn param(&self, id: ExprID) -> ParamID {
@@ -129,9 +142,9 @@ impl Body<'_> {
     }
     pub fn deref(&self, id: ExprID) -> (ExprID, TypeID, ast::Mut) {
         let tag = self.expr_data[id.index()];
+        let mutt = read_value_bits!(tag, 8, ast::Mut, u8);
         let target = ExprID(self.expr_data[id.index() + 1]);
         let ref_ty = TypeID(self.expr_data[id.index() + 2]);
-        let mutt = unsafe { mem::transmute(((tag >> 8) & 0xFF) as u8) };
         (target, ref_ty, mutt)
     }
     pub fn address(&self, id: ExprID) -> ExprID {
@@ -139,18 +152,18 @@ impl Body<'_> {
     }
     pub fn unary(&self, id: ExprID) -> (UnOp, ExprID, Option<u32>) {
         let tag = self.expr_data[id.index()];
-        let op: UnOp = unsafe { mem::transmute(((tag >> 16) & 0xFFFF) as u16) };
+        let array_op = read_value_bool!(tag, 8);
+        let op = read_value_bits!(tag, 16, UnOp, u16);
         let rhs = ExprID(self.expr_data[id.index() + 1]);
-        let array_op = (tag >> 8) & 0xFF != 0;
         let array_len = array_op.then(|| self.expr_data[id.index() + 2]);
         (op, rhs, array_len)
     }
     pub fn binary(&self, id: ExprID) -> (BinOp, ExprID, ExprID, Option<u32>) {
         let tag = self.expr_data[id.index()];
+        let array_op = read_value_bool!(tag, 8);
         let op: BinOp = unsafe { mem::transmute(self.expr_data[id.index() + 1]) };
         let lhs = ExprID(self.expr_data[id.index() + 2]);
         let rhs = ExprID(self.expr_data[id.index() + 3]);
-        let array_op = (tag >> 8) & 0xFF != 0;
         let array_len = array_op.then(|| self.expr_data[id.index() + 4]);
         (op, lhs, rhs, array_len)
     }
