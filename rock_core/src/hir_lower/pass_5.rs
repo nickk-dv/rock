@@ -1060,7 +1060,7 @@ fn typecheck_field<'hir, 'ast>(
 ) -> TypeResult<'hir> {
     let target_res = typecheck_expr(ctx, Expectation::None, target);
     let field_res = check_field_from_type(ctx, name, target_res.ty);
-    emit_field_expr(ctx, target_res.expr, field_res)
+    emit_field_expr(ctx, target_res.expr, field_res, name.range.start())
 }
 
 struct FieldResult<'hir> {
@@ -1075,6 +1075,7 @@ enum FieldKind<'hir> {
     Struct(hir::StructID, hir::FieldID, &'hir [hir::Type<'hir>]),
     ArraySlice { field: hir::SliceField },
     ArrayStatic { len: hir::ConstValue<'hir> },
+    ArrayStaticIndex { index: u64, len: hir::ArrayStaticLen },
 }
 
 impl<'hir> FieldResult<'hir> {
@@ -1142,11 +1143,7 @@ fn check_field_from_type<'hir>(
             None => FieldResult::error(),
         },
         hir::Type::ArrayStatic(array) => match check_field_from_array(ctx, name, array) {
-            Some(len) => {
-                let kind = FieldKind::ArrayStatic { len };
-                let field_ty = hir::Type::Int(IntType::Usize);
-                FieldResult::new(deref, kind, field_ty)
-            }
+            Some((kind, field_ty)) => FieldResult::new(deref, kind, field_ty),
             None => FieldResult::error(),
         },
         hir::Type::ArrayEnumerated(array) => match check_field_from_array_enum(ctx, name, array) {
@@ -1183,28 +1180,33 @@ fn check_field_from_slice(ctx: &mut HirCtx, name: ast::Name) -> Option<hir::Slic
 fn check_field_from_array<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     name: ast::Name,
-    array: &hir::ArrayStatic,
-) -> Option<hir::ConstValue<'hir>> {
-    let field_name = ctx.name(name.id);
-    match field_name {
-        "len" => {
-            let len = match array.len {
-                hir::ArrayStaticLen::Immediate(len) => {
-                    hir::ConstValue::from_u64(len, IntType::Usize)
-                }
-                hir::ArrayStaticLen::ConstEval(eval_id) => {
-                    let (eval, _, _) = ctx.registry.const_eval(eval_id);
-                    eval.resolved().ok()?
-                }
-            };
-            Some(len)
-        }
+    array: &hir::ArrayStatic<'hir>,
+) -> Option<(FieldKind<'hir>, hir::Type<'hir>)> {
+    let len = ctx.array_len(array.len).ok()?;
+    let field = ctx.name(name.id);
+
+    if field == "len" {
+        //@unchecked for 32bit target usize range
+        let len = hir::ConstValue::from_u64(len, IntType::Usize);
+        return Some((FieldKind::ArrayStatic { len }, hir::Type::Int(IntType::Usize)));
+    }
+    let index: u64 = match field {
+        "x" | "r" => 0,
+        "y" | "g" => 1,
+        "z" | "b" => 2,
+        "w" | "a" => 3,
         _ => {
             let src = ctx.src(name.range);
-            err::tycheck_field_not_found_array(&mut ctx.emit, src, field_name);
-            None
+            err::tycheck_field_not_found_array(&mut ctx.emit, src, field);
+            return None;
         }
+    };
+    if index >= len {
+        let src = ctx.src(name.range);
+        err::tycheck_field_not_found_array(&mut ctx.emit, src, field); //@custom error?
+        return None;
     }
+    Some((FieldKind::ArrayStaticIndex { index, len: array.len }, array.elem_ty))
 }
 
 fn check_field_from_array_enum<'hir>(
@@ -1230,6 +1232,7 @@ fn emit_field_expr<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     target: &'hir hir::Expr<'hir>,
     field_res: FieldResult<'hir>,
+    name_start: TextOffset,
 ) -> TypeResult<'hir> {
     match field_res.kind {
         FieldKind::Error => TypeResult::error(),
@@ -1273,6 +1276,29 @@ fn emit_field_expr<'hir>(
         }
         FieldKind::ArrayStatic { len } => {
             TypeResult::new(field_res.field_ty, hir::Expr::Const(len, hir::ConstID::dummy()))
+        }
+        FieldKind::ArrayStaticIndex { index, len } => {
+            if let hir::Expr::Const(value, const_id) = target {
+                let elem_value = match value {
+                    hir::ConstValue::Array { array } => array.values[index as usize],
+                    hir::ConstValue::ArrayRepeat { array } => array.value,
+                    _ => unreachable!(),
+                };
+                TypeResult::new(field_res.field_ty, hir::Expr::Const(elem_value, *const_id))
+            } else {
+                let access = hir::IndexAccess {
+                    deref: field_res.deref,
+                    elem_ty: field_res.field_ty,
+                    kind: hir::IndexKind::Array(len),
+                    index: ctx.arena.alloc(hir::Expr::Const(
+                        hir::ConstValue::from_u64(index, IntType::Usize),
+                        hir::ConstID::dummy(),
+                    )),
+                    offset: name_start,
+                };
+                let expr = hir::Expr::Index { target, access: ctx.arena.alloc(access) };
+                TypeResult::new(field_res.field_ty, expr)
+            }
         }
     }
 }
@@ -1879,7 +1905,7 @@ fn typecheck_item<'hir, 'ast>(
     for field in fields {
         let expr_res = target_res.into_expr_result(ctx);
         let field_res = check_field_from_type(ctx, field.name, expr_res.ty);
-        target_res = emit_field_expr(ctx, expr_res.expr, field_res);
+        target_res = emit_field_expr(ctx, expr_res.expr, field_res, field.name.range.start());
     }
 
     if let Some(args_list) = args_list {

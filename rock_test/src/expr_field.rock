@@ -105,3 +105,38 @@ proc test_field_array_enum() void {
     //constant
     assert(ARRAY_ENUM.len == 3);
 }
+
+//#entry "field_array_index"
+VALUES = [1, 2, 3, 4];
+proc test_field_array_index() void {
+    let array = VALUES;
+    assert(array.r == 1);
+    assert(array.g == 2);
+    assert(array.b == 3);
+    assert(array.a == 4);
+    assert(array.x == 1);
+    assert(array.y == 2);
+    assert(array.z == 3);
+    assert(array.w == 4);
+
+    //single auto-deref
+    let array_ref = &array;
+    assert(array_ref.r == 1);
+    assert(array_ref.g == 2);
+    assert(array_ref.b == 3);
+    assert(array_ref.a == 4);
+    assert(array_ref.x == 1);
+    assert(array_ref.y == 2);
+    assert(array_ref.z == 3);
+    assert(array_ref.w == 4);
+
+    //constant
+    assert(VALUES.r == 1);
+    assert(VALUES.g == 2);
+    assert(VALUES.b == 3);
+    assert(VALUES.a == 4);
+    assert(VALUES.x == 1);
+    assert(VALUES.y == 2);
+    assert(VALUES.z == 3);
+    assert(VALUES.w == 4);
+}
