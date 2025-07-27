@@ -827,6 +827,7 @@ fn codegen_index<'c>(
     }
 
     let bound = match access.kind {
+        // never bounds checked:
         hir::IndexKind::Multi(_) => None,
         hir::IndexKind::Slice(_) => {
             let slice_len_ptr =
@@ -834,13 +835,24 @@ fn codegen_index<'c>(
             let len = cg.build.load(cg.ptr_sized_int(), slice_len_ptr, "slice_len");
             Some(len)
         }
+        // skip if index is proven to be in bounds:
         hir::IndexKind::Array(len) => {
             let len = cg.array_len(len);
-            Some(cg.const_usize(len))
+            match access.index {
+                hir::Expr::Const(hir::ConstValue::Int { val, .. }, _) if *val < len => None,
+                _ => Some(cg.const_usize(len)),
+            }
         }
+        // skip if index is constant, meaning it cannot be corrupted:
         hir::IndexKind::ArrayEnum(enum_id) => {
             let len = cg.hir.enum_data(enum_id).variants.len() as u64;
-            Some(cg.const_usize(len))
+            match access.index {
+                hir::Expr::Const(
+                    hir::ConstValue::Variant { .. } | hir::ConstValue::VariantPoly { .. },
+                    _,
+                ) => None,
+                _ => Some(cg.const_usize(len)),
+            }
         }
         hir::IndexKind::ArrayCore => {
             let elem_concrete = context::substitute_type(cg, access.elem_ty, &[]);
