@@ -3446,7 +3446,7 @@ fn typecheck_block<'hir, 'ast>(
                     LocalResult::Error => continue,
                     LocalResult::Local(local) => hir::Stmt::Local(local),
                     LocalResult::Discard(None) => continue,
-                    LocalResult::Discard(Some(expr)) => hir::Stmt::Discard(expr),
+                    LocalResult::Discard(Some(expr)) => hir::Stmt::ExprSemi(expr),
                 }
             }
             ast::StmtKind::Assign(assign) => {

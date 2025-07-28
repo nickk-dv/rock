@@ -1,5 +1,6 @@
 use crate::ast;
 use crate::hir::{BinOp, CastKind, UnOp};
+use crate::support::Arena;
 use std::mem;
 
 struct IR<'ir> {
@@ -45,11 +46,22 @@ crate::define_id!(pub ImportID);
 
 crate::define_id!(pub ParamID);
 crate::define_id!(pub VariableID);
+crate::define_id!(pub StmtID);
 crate::define_id!(pub ExprID);
 crate::define_id!(pub TypeID);
 crate::define_id!(pub VariantID);
 
-#[repr(u8)]
+pub enum StmtKind {
+    Break,
+    Continue,
+    Return,
+    Loop,
+    Local,
+    Assign,
+    ExprSemi,
+    ExprTail,
+}
+
 pub enum ExprKind {
     Cast,
     Param,
@@ -82,10 +94,31 @@ impl Body<'_> {
     fn read_slice<T>(&self, start: usize, count: usize) -> &[T] {
         unsafe { mem::transmute(&self.expr_data[start..start + count]) }
     }
+
+    pub fn stmt_kind(&self, id: StmtID) -> StmtKind {
+        let tag = self.expr_data[id.index()];
+        read_value_bits!(tag, 0, StmtKind, u8)
+    }
     pub fn expr_kind(&self, id: ExprID) -> ExprKind {
         let tag = self.expr_data[id.index()];
         read_value_bits!(tag, 0, ExprKind, u8)
     }
+
+    pub fn stmt_return(&self, id: StmtID) -> Option<ExprID> {
+        let tag = self.expr_data[id.index()];
+        if read_value_bool!(tag, 8) {
+            Some(ExprID(self.expr_data[id.index() + 1]))
+        } else {
+            None
+        }
+    }
+    pub fn stmt_expr_semi(&self, id: StmtID) -> ExprID {
+        ExprID(self.expr_data[id.index() + 1])
+    }
+    pub fn stmt_expr_tail(&self, id: StmtID) -> ExprID {
+        ExprID(self.expr_data[id.index() + 1])
+    }
+
     pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
         let tag = self.expr_data[id.index()];
         let kind = read_value_bits!(tag, 8, CastKind, u8);
@@ -171,6 +204,43 @@ impl Body<'_> {
 
 #[allow(unsafe_code)]
 impl Writer {
+    pub fn alloc_body<'ir>(&mut self, arena: &mut Arena<'ir>) -> Body<'ir> {
+        let expr_data = arena.alloc_slice(&self.expr_data);
+        self.expr_data.clear();
+        Body { expr_data }
+    }
+
+    pub fn stmt_break(&mut self) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::Break as u32);
+        id
+    }
+    pub fn stmt_continue(&mut self) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::Continue as u32);
+        id
+    }
+    pub fn stmt_return(&mut self, value: Option<ExprID>) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::Return as u32 | (value.is_some() as u32) << 8);
+        if let Some(value) = value {
+            self.expr_data.push(value.0);
+        }
+        id
+    }
+    pub fn stmt_expr_semi(&mut self, expr: ExprID) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::ExprSemi as u32);
+        self.expr_data.push(expr.0);
+        id
+    }
+    pub fn stmt_expr_tail(&mut self, expr: ExprID) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::ExprTail as u32);
+        self.expr_data.push(expr.0);
+        id
+    }
+
     pub fn cast(&mut self, target: ExprID, into: TypeID, kind: CastKind) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::Cast as u32 | ((kind as u32) << 8));

@@ -263,7 +263,6 @@ pub enum Stmt<'hir> {
     Return(Option<&'hir Expr<'hir>>),
     Loop(&'hir Block<'hir>),
     Local(&'hir Local<'hir>),
-    Discard(&'hir Expr<'hir>),
     Assign(&'hir Assign<'hir>),
     ExprSemi(&'hir Expr<'hir>),
     ExprTail(&'hir Expr<'hir>),
@@ -287,7 +286,7 @@ pub struct Assign<'hir> {
     pub op: AssignOp<'hir>,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
-    pub lhs_ty: Type<'hir>,
+    pub lhs_ty: Type<'hir>, //@can be removed, infer based on binary op
 }
 
 #[rustfmt::skip]
@@ -639,6 +638,7 @@ crate::enum_as_str! {
     }
 }
 
+//@bad representation, lhs and rhs is duplicated in `ArrayBinary` only len is relevant.
 #[derive(Copy, Clone)]
 pub enum AssignOp<'hir> {
     Assign,

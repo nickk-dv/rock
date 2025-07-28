@@ -18,7 +18,6 @@ fn codegen_stmt<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, stmt: hir::Stm
         hir::Stmt::Return(expr) => codegen_return(cg, expr),
         hir::Stmt::Loop(block) => codegen_loop(cg, block),
         hir::Stmt::Local(local) => codegen_local(cg, local),
-        hir::Stmt::Discard(expr) => emit_expr::codegen_expr_discard(cg, expr),
         hir::Stmt::Assign(assign) => codegen_assign(cg, assign),
         hir::Stmt::ExprSemi(expr) => emit_expr::codegen_expr_discard(cg, expr),
         hir::Stmt::ExprTail(expr) => emit_expr::codegen_expr_tail(cg, expect, expr),
