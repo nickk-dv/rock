@@ -94,6 +94,10 @@ impl Body<'_> {
     fn read_slice<T>(&self, start: usize, count: usize) -> &[T] {
         unsafe { mem::transmute(&self.expr_data[start..start + count]) }
     }
+    #[inline(always)]
+    fn read_block(&self, offset: usize) -> &[StmtID] {
+        self.read_slice(offset + 1, self.expr_data[offset] as usize)
+    }
 
     pub fn stmt_kind(&self, id: StmtID) -> StmtKind {
         let tag = self.expr_data[id.index()];
@@ -112,6 +116,18 @@ impl Body<'_> {
             None
         }
     }
+    pub fn stmt_loop(&self, id: StmtID) -> &[StmtID] {
+        self.read_block(id.index() + 1)
+    }
+    pub fn stmt_local(&self, id: StmtID) -> (VariableID, LocalInit) {
+        let var_id = VariableID(self.expr_data[id.index()] >> 8);
+        let init = match self.expr_data[id.index() + 1] {
+            LOCAL_INIT_ZEROED => LocalInit::Zeroed,
+            LOCAL_INIT_UNDEFINED => LocalInit::Undefined,
+            value => LocalInit::Init(ExprID(value)),
+        };
+        (var_id, init)
+    }
     pub fn stmt_expr_semi(&self, id: StmtID) -> ExprID {
         ExprID(self.expr_data[id.index() + 1])
     }
@@ -119,6 +135,9 @@ impl Body<'_> {
         ExprID(self.expr_data[id.index() + 1])
     }
 
+    pub fn block(&self, id: ExprID) -> &[StmtID] {
+        self.read_block(id.index() + 1)
+    }
     pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
         let tag = self.expr_data[id.index()];
         let kind = read_value_bits!(tag, 8, CastKind, u8);
@@ -202,6 +221,15 @@ impl Body<'_> {
     }
 }
 
+pub enum LocalInit {
+    Init(ExprID),
+    Zeroed,
+    Undefined,
+}
+
+const LOCAL_INIT_ZEROED: u32 = u32::MAX - 1;
+const LOCAL_INIT_UNDEFINED: u32 = u32::MAX;
+
 #[allow(unsafe_code)]
 impl Writer {
     pub fn alloc_body<'ir>(&mut self, arena: &mut Arena<'ir>) -> Body<'ir> {
@@ -225,6 +253,25 @@ impl Writer {
         self.expr_data.push(StmtKind::Return as u32 | (value.is_some() as u32) << 8);
         if let Some(value) = value {
             self.expr_data.push(value.0);
+        }
+        id
+    }
+    pub fn stmt_loop(&mut self, block: &[StmtID]) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(StmtKind::Loop as u32);
+        self.expr_data.push(block.len() as u32);
+        for stmt in block.iter().copied() {
+            self.expr_data.push(stmt.0);
+        }
+        id
+    }
+    pub fn stmt_local(&mut self, var_id: VariableID, init: LocalInit) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32 | (var_id.0 << 8));
+        self.expr_data.push(StmtKind::Local as u32);
+        match init {
+            LocalInit::Init(value) => self.expr_data.push(value.0),
+            LocalInit::Zeroed => self.expr_data.push(LOCAL_INIT_ZEROED),
+            LocalInit::Undefined => self.expr_data.push(LOCAL_INIT_UNDEFINED),
         }
         id
     }
