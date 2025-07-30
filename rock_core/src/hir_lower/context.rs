@@ -55,6 +55,8 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             from_raw_parts: hir::ProcID::dummy(),
             range_bound: None,
             array: hir::StructID::dummy(),
+            values: hir::ProcID::dummy(),
+            values_mut: hir::ProcID::dummy(),
             option: hir::EnumID::dummy(),
             result: hir::EnumID::dummy(),
             any: None,

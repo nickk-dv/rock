@@ -31,6 +31,8 @@ pub struct CoreItems {
     pub from_raw_parts: ProcID,
     pub range_bound: Option<EnumID>,
     pub array: StructID,
+    pub values: ProcID,
+    pub values_mut: ProcID,
     pub option: EnumID,
     pub result: EnumID,
     pub any: Option<StructID>,

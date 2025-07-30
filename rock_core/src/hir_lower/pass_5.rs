@@ -1497,8 +1497,10 @@ fn typecheck_slice<'hir, 'ast>(
     let collection = match type_as_collection(ctx, target_res.ty) {
         Ok(None) => return TypeResult::error(),
         Ok(Some(collection)) => match collection.kind {
-            CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
+            CollectionKind::Slice(_) | CollectionKind::Array(_) | CollectionKind::ArrayCore => {
+                collection
+            }
+            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
                 let src = ctx.src(target.range);
                 let ty_fmt = type_format(ctx, target_res.ty);
                 err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -1513,8 +1515,11 @@ fn typecheck_slice<'hir, 'ast>(
         }
     };
 
+    let addr_res = resolve_expr_addressability(ctx, target_res.expr);
+    let slice_mutt = check_slice_addressability(ctx, addr_res, &collection, expr_range);
+
     let slice = match collection.kind {
-        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
+        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
             unreachable!()
         }
         CollectionKind::Slice(_) => {
@@ -1542,10 +1547,23 @@ fn typecheck_slice<'hir, 'ast>(
             let input = ctx.arena.alloc((input, poly_types));
             ctx.arena.alloc(hir::Expr::CallDirectPoly { proc_id, input })
         }
+        CollectionKind::ArrayCore => {
+            let ptr = if let hir::Type::Reference(_, _) = target_res.ty {
+                target_res.expr
+            } else {
+                ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
+            };
+            let proc_id = if slice_mutt == ast::Mut::Immutable {
+                ctx.core.values
+            } else {
+                ctx.core.values_mut
+            };
+            let input = ctx.arena.alloc_slice(&[ptr]);
+            let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
+            let input = ctx.arena.alloc((input, poly_types));
+            ctx.arena.alloc(hir::Expr::CallDirectPoly { proc_id, input })
+        }
     };
-
-    let addr_res = resolve_expr_addressability(ctx, target_res.expr);
-    let slice_mutt = check_slice_addressability(ctx, addr_res, &collection, expr_range);
 
     let return_ty = if let Some(string_ty) = collection.string_ty {
         hir::Type::String(string_ty)
