@@ -1497,10 +1497,11 @@ fn typecheck_slice<'hir, 'ast>(
     let collection = match type_as_collection(ctx, target_res.ty) {
         Ok(None) => return TypeResult::error(),
         Ok(Some(collection)) => match collection.kind {
-            CollectionKind::Slice(_) | CollectionKind::Array(_) | CollectionKind::ArrayCore => {
-                collection
-            }
-            CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
+            CollectionKind::Slice(_)
+            | CollectionKind::Array(_)
+            | CollectionKind::ArrayEnum(_)
+            | CollectionKind::ArrayCore => collection,
+            CollectionKind::Multi(_) => {
                 let src = ctx.src(target.range);
                 let ty_fmt = type_format(ctx, target_res.ty);
                 err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
@@ -1517,9 +1518,10 @@ fn typecheck_slice<'hir, 'ast>(
 
     let addr_res = resolve_expr_addressability(ctx, target_res.expr);
     let slice_mutt = check_slice_addressability(ctx, addr_res, &collection, expr_range);
+    let mut expect = Expectation::USIZE;
 
     let slice = match collection.kind {
-        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) => {
+        CollectionKind::Multi(_) => {
             unreachable!()
         }
         CollectionKind::Slice(_) => {
@@ -1537,6 +1539,24 @@ fn typecheck_slice<'hir, 'ast>(
                 ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
             };
             let len = ctx.array_len(array.len).unwrap_or(0);
+            let len = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::from_u64(len, IntType::Usize),
+                hir::ConstID::dummy(),
+            ));
+            let proc_id = ctx.core.from_raw_parts;
+            let input = ctx.arena.alloc_slice(&[ptr, len]);
+            let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
+            let input = ctx.arena.alloc((input, poly_types));
+            ctx.arena.alloc(hir::Expr::CallDirectPoly { proc_id, input })
+        }
+        CollectionKind::ArrayEnum(array) => {
+            expect = Expectation::HasType(hir::Type::Enum(array.enum_id, &[]), None);
+            let ptr = if let hir::Type::Reference(_, _) = target_res.ty {
+                target_res.expr
+            } else {
+                ctx.arena.alloc(hir::Expr::Address { rhs: target_res.expr })
+            };
+            let len = ctx.registry.enum_data(array.enum_id).variants.len() as u64;
             let len = ctx.arena.alloc(hir::Expr::Const(
                 hir::ConstValue::from_u64(len, IntType::Usize),
                 hir::ConstID::dummy(),
@@ -1579,7 +1599,16 @@ fn typecheck_slice<'hir, 'ast>(
 
     // range start
     let start = if let Some(start) = range.start {
-        typecheck_expr(ctx, Expectation::USIZE, start).expr
+        let mut bound = typecheck_expr(ctx, expect, start).expr;
+        if let CollectionKind::ArrayEnum(_) = collection.kind {
+            let cast = hir::Expr::Cast {
+                target: bound,
+                into: &hir::Type::Int(IntType::Usize),
+                kind: hir::CastKind::EnumU_Extend_to_Int,
+            };
+            bound = ctx.arena.alloc(cast);
+        }
+        bound
     } else {
         let zero_usize = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
         ctx.arena.alloc(hir::Expr::Const(zero_usize, hir::ConstID::dummy()))
@@ -1592,8 +1621,16 @@ fn typecheck_slice<'hir, 'ast>(
             ast::RangeKind::Exclusive => hir::VariantID::new(1),
             ast::RangeKind::Inclusive => hir::VariantID::new(2),
         };
-        let idx = typecheck_expr(ctx, Expectation::USIZE, end).expr;
-        (variant_id, ctx.arena.alloc_slice(&[idx]))
+        let mut bound = typecheck_expr(ctx, expect, end).expr;
+        if let CollectionKind::ArrayEnum(_) = collection.kind {
+            let cast = hir::Expr::Cast {
+                target: bound,
+                into: &hir::Type::Int(IntType::Usize),
+                kind: hir::CastKind::EnumU_Extend_to_Int,
+            };
+            bound = ctx.arena.alloc(cast);
+        }
+        (variant_id, ctx.arena.alloc_slice(&[bound]))
     } else {
         (hir::VariantID::new(0), ctx.arena.alloc_slice(&[]))
     };
@@ -1607,11 +1644,11 @@ fn typecheck_slice<'hir, 'ast>(
     let op_call = hir::Expr::CallDirectPoly { proc_id, input };
 
     let kind = match collection.kind {
-        CollectionKind::Multi(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
-            unreachable!()
-        }
+        CollectionKind::Multi(_) => unreachable!(),
         CollectionKind::Slice(slice) => hir::SliceKind::Slice(slice.mutt),
-        CollectionKind::Array(_) => hir::SliceKind::Array,
+        CollectionKind::Array(_) | CollectionKind::ArrayEnum(_) | CollectionKind::ArrayCore => {
+            hir::SliceKind::Array
+        }
     };
     let access = hir::SliceAccess { deref: collection.deref, kind, op_call };
     let access = ctx.arena.alloc(access);
