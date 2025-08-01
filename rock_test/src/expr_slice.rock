@@ -1,0 +1,125 @@
+//#prelude
+import core:array;
+import core:runtime.{assert}
+
+STRING: string = "example";
+ARRAY = [1, 2, 3, 4, 5];
+ARRAY_ENUM = [Enum.A = 1, .B = 2, .C = 3, .D = 4, .E = 5];
+
+enum Enum {
+    A,
+    B,
+    C,
+    D,
+    E,
+}
+
+proc slice_eq(a: []s32, b: []s32) bool {
+    if a.len != b.len {
+        return false;
+    }
+    for idx in 0..<a.len {
+        if a[idx] != b[idx] {
+            return false;
+        }
+    }
+    true
+}
+
+//#entry "slice_string"
+proc test_slice_string() void {
+    let str = STRING;
+    assert(str[..] == "example");
+    assert(str[..<3] == "exa");
+    assert(str[..=3] == "exam");
+    assert(str[2..] == "ample");
+    assert(str[2..<3] == "a");
+    assert(str[2..=3] == "am");
+
+    let str_ref = &str;
+    assert(str_ref[..] == "example");
+    assert(str_ref[..<3] == "exa");
+    assert(str_ref[..=3] == "exam");
+    assert(str_ref[2..] == "ample");
+    assert(str_ref[2..<3] == "a");
+    assert(str_ref[2..=3] == "am");
+}
+
+//#entry "slice_slice"
+proc test_slice_slice() void {
+    let values = ARRAY;
+    let slice = values[..];
+    assert(slice_eq(slice[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(slice[..<3], [1, 2, 3][..]));
+    assert(slice_eq(slice[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(slice[2..], [3, 4, 5][..]));
+    assert(slice_eq(slice[2..<3], [3][..]));
+    assert(slice_eq(slice[2..=3], [3, 4][..]));
+
+    let slice_ref = &slice;
+    assert(slice_eq(slice_ref[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(slice_ref[..<3], [1, 2, 3][..]));
+    assert(slice_eq(slice_ref[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(slice_ref[2..], [3, 4, 5][..]));
+    assert(slice_eq(slice_ref[2..<3], [3][..]));
+    assert(slice_eq(slice_ref[2..=3], [3, 4][..]));
+}
+
+//#entry "slice_array"
+proc test_slice_array() void {
+    let arr = ARRAY;
+    assert(slice_eq(arr[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr[..<3], [1, 2, 3][..]));
+    assert(slice_eq(arr[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr[2..], [3, 4, 5][..]));
+    assert(slice_eq(arr[2..<3], [3][..]));
+    assert(slice_eq(arr[2..=3], [3, 4][..]));
+
+    let arr_ref = &arr;
+    assert(slice_eq(arr_ref[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr_ref[..<3], [1, 2, 3][..]));
+    assert(slice_eq(arr_ref[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr_ref[2..], [3, 4, 5][..]));
+    assert(slice_eq(arr_ref[2..<3], [3][..]));
+    assert(slice_eq(arr_ref[2..=3], [3, 4][..]));
+}
+
+//#entry "slice_array_enum"
+proc test_slice_array_enum() void {
+    let arr = ARRAY_ENUM;
+    assert(slice_eq(arr[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr[..<.D], [1, 2, 3][..]));
+    assert(slice_eq(arr[..=.D], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr[.C..], [3, 4, 5][..]));
+    assert(slice_eq(arr[.C..<.D], [3][..]));
+    assert(slice_eq(arr[.C..=.D], [3, 4][..]));
+
+    let arr_ref = &arr;
+    assert(slice_eq(arr_ref[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr_ref[..<.D], [1, 2, 3][..]));
+    assert(slice_eq(arr_ref[..=.D], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr_ref[.C..], [3, 4, 5][..]));
+    assert(slice_eq(arr_ref[.C..<.D], [3][..]));
+    assert(slice_eq(arr_ref[.C..=.D], [3, 4][..]));
+}
+
+//#entry "slice_array_core"
+proc test_slice_array_core() void {
+    let mut arr = array.new:(s32)();
+    let values = ARRAY;
+    array.extend(&mut arr, values[..]);
+    assert(slice_eq(arr[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr[..<3], [1, 2, 3][..]));
+    assert(slice_eq(arr[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr[2..], [3, 4, 5][..]));
+    assert(slice_eq(arr[2..<3], [3][..]));
+    assert(slice_eq(arr[2..=3], [3, 4][..]));
+
+    let arr_ref = &arr;
+    assert(slice_eq(arr_ref[..], [1, 2, 3, 4, 5][..]));
+    assert(slice_eq(arr_ref[..<3], [1, 2, 3][..]));
+    assert(slice_eq(arr_ref[..=3], [1, 2, 3, 4][..]));
+    assert(slice_eq(arr_ref[2..], [3, 4, 5][..]));
+    assert(slice_eq(arr_ref[2..<3], [3][..]));
+    assert(slice_eq(arr_ref[2..=3], [3, 4][..]));
+}

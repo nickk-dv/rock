@@ -1,7 +1,7 @@
 //#prelude
 import core:mem;
 import core:array;
-import core:runtime as _.{assert}
+import core:runtime.{assert}
 
 STRING: string = "example";
 CSTRING: cstring = "example";
