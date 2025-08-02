@@ -77,6 +77,20 @@ pub enum ExprKind {
     Binary,
 }
 
+pub enum LocalInit {
+    Init(ExprID),
+    Zeroed,
+    Undefined,
+}
+
+pub enum AssignOp {
+    Assign,
+    Binary(BinOp, Option<u32>),
+}
+
+const LOCAL_INIT_ZEROED: u32 = u32::MAX - 1;
+const LOCAL_INIT_UNDEFINED: u32 = u32::MAX;
+
 macro_rules! read_value_bool {
     ($code:expr, $at:expr) => {
         (($code >> $at) & 0b1) == 1
@@ -127,6 +141,19 @@ impl Body<'_> {
             value => LocalInit::Init(ExprID(value)),
         };
         (var_id, init)
+    }
+    pub fn stmt_assign(&mut self, id: StmtID) -> (ExprID, ExprID, AssignOp) {
+        let tag = self.expr_data[id.index()];
+        let lhs = ExprID(self.expr_data[id.index() + 1]);
+        let rhs = ExprID(self.expr_data[id.index() + 2]);
+        let op = if read_value_bool!(tag, 8) {
+            let op: BinOp = unsafe { mem::transmute(self.expr_data[id.index() + 3]) };
+            let arr_len = read_value_bool!(tag, 9).then(|| self.expr_data[id.index() + 4]);
+            AssignOp::Binary(op, arr_len)
+        } else {
+            AssignOp::Assign
+        };
+        (lhs, rhs, op)
     }
     pub fn stmt_expr_semi(&self, id: StmtID) -> ExprID {
         ExprID(self.expr_data[id.index() + 1])
@@ -221,15 +248,6 @@ impl Body<'_> {
     }
 }
 
-pub enum LocalInit {
-    Init(ExprID),
-    Zeroed,
-    Undefined,
-}
-
-const LOCAL_INIT_ZEROED: u32 = u32::MAX - 1;
-const LOCAL_INIT_UNDEFINED: u32 = u32::MAX;
-
 #[allow(unsafe_code)]
 impl Writer {
     pub fn alloc_body<'ir>(&mut self, arena: &mut Arena<'ir>) -> Body<'ir> {
@@ -272,6 +290,24 @@ impl Writer {
             LocalInit::Init(value) => self.expr_data.push(value.0),
             LocalInit::Zeroed => self.expr_data.push(LOCAL_INIT_ZEROED),
             LocalInit::Undefined => self.expr_data.push(LOCAL_INIT_UNDEFINED),
+        }
+        id
+    }
+    pub fn stmt_assign(&mut self, lhs: ExprID, rhs: ExprID, op: AssignOp) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        let (binary, array) = match op {
+            AssignOp::Assign => (false, false),
+            AssignOp::Binary(_, None) => (true, false),
+            AssignOp::Binary(_, Some(_)) => (true, true),
+        };
+        self.expr_data.push(StmtKind::Assign as u32 | (binary as u32) << 8 | (array as u32) << 9);
+        self.expr_data.push(lhs.0);
+        self.expr_data.push(rhs.0);
+        if let AssignOp::Binary(op, arr_len) = op {
+            self.expr_data.push(unsafe { mem::transmute(op) });
+            if let Some(len) = arr_len {
+                self.expr_data.push(len);
+            }
         }
         id
     }
@@ -372,9 +408,9 @@ impl Writer {
     }
     pub fn unary(&mut self, op: UnOp, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
-        let array_op = arr_len.is_some();
+        let array = arr_len.is_some();
         let op: u16 = unsafe { mem::transmute(op) };
-        self.expr_data.push(ExprKind::Unary as u32 | (array_op as u32) << 8 | (op as u32) << 16);
+        self.expr_data.push(ExprKind::Unary as u32 | (array as u32) << 8 | (op as u32) << 16);
         self.expr_data.push(rhs.0);
         if let Some(len) = arr_len {
             self.expr_data.push(len);
@@ -383,8 +419,8 @@ impl Writer {
     }
     pub fn binary(&mut self, op: BinOp, lhs: ExprID, rhs: ExprID, arr_len: Option<u32>) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
-        let array_op = arr_len.is_some();
-        self.expr_data.push(ExprKind::Binary as u32 | (array_op as u32) << 8);
+        let array = arr_len.is_some();
+        self.expr_data.push(ExprKind::Binary as u32 | (array as u32) << 8);
         self.expr_data.push(unsafe { mem::transmute(op) });
         self.expr_data.push(lhs.0);
         self.expr_data.push(rhs.0);

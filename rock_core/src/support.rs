@@ -334,6 +334,7 @@ macro_rules! size_lock {
 #[macro_export]
 macro_rules! define_id {
     ($vis:vis $name:ident) => {
+        #[must_use]
         #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
         $vis struct $name(u32);
 
