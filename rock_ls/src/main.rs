@@ -344,9 +344,6 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
             }
             cst::Item::Import(item) if update != SymbolUpdate::Defined => {
                 let module_name = if let Some(rename) = item.rename(tree) {
-                    if rename.t_discard(tree).is_some() {
-                        continue;
-                    }
                     rename
                         .alias(tree)
                         .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
@@ -358,16 +355,15 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                     None
                 };
 
-                let Some(module_name) = module_name else {
-                    continue;
-                };
                 let Some(source_id) = resolve_import_module(&server.session, module_id, item)
                 else {
                     continue;
                 };
-                server.modules[module_id.index()]
-                    .symbols
-                    .insert(module_name, Symbol::Module(source_id));
+                if let Some(module_name) = module_name {
+                    server.modules[module_id.index()]
+                        .symbols
+                        .insert(module_name, Symbol::Module(source_id));
+                }
 
                 if let Some(symbol_list) = item.import_symbol_list(tree) {
                     for symbol in symbol_list.import_symbols(tree) {
