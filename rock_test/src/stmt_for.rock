@@ -1,0 +1,59 @@
+//#prelude
+import core:fmt.{print}
+
+//#entry "for_loop"
+//#expect(no_endl)
+//123456789
+//#!
+proc test_for_loop() void {
+    let mut idx = 0;
+    for {
+        idx += 1;
+        print(idx);
+        if idx == 9 {
+            break;
+        }
+    }
+}
+
+//#entry "for_condition"
+//#expect(no_endl)
+//123456789
+//123456789
+//123456789
+//123456789
+//#!
+proc test_for_condition() void {
+    let mut idx = 0;
+    for idx < 9 {
+        idx += 1;
+        print(idx);
+    }
+    idx = 0;
+    print('\n');
+    for (idx < 9) as bool16 {
+        idx += 1;
+        print(idx);
+    }
+    idx = 0;
+    print('\n');
+    for (idx < 9) as bool32 {
+        idx += 1;
+        print(idx);
+    }
+    idx = 0;
+    print('\n');
+    for (idx < 9) as bool64 {
+        idx += 1;
+        print(idx);
+    }
+}
+
+//#entry "for_element"
+proc test_for_element() void {}
+
+//#entry "for_range"
+proc test_for_range() void {}
+
+//#entry "for_pattern"
+proc test_for_pattern() void {}
