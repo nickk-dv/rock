@@ -1,5 +1,6 @@
 //#prelude
 import core:fmt.{print}
+import core:runtime.{unreachable}
 
 //#entry "for_loop"
 //#expect(no_endl)
@@ -53,7 +54,27 @@ proc test_for_condition() void {
 proc test_for_element() void {}
 
 //#entry "for_range"
-proc test_for_range() void {}
+//#expect(no_endl)
+//0
+//12345678
+//123456789
+//#!
+proc test_for_range() void {
+    for _ in 0..<0 {
+        unreachable();
+    }
+    for idx in 0..=0 {
+        print(idx);
+    }
+    print('\n');
+    for idx in 1..<9 {
+        print(idx);
+    }
+    print('\n');
+    for idx in 1..=9 {
+        print(idx);
+    }
+}
 
 //#entry "for_pattern"
 proc test_for_pattern() void {}
