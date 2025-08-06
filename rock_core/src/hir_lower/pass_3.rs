@@ -414,7 +414,6 @@ pub fn type_resolve<'hir, 'ast>(
         ast::TypeKind::ArrayStatic(array) => {
             let enum_id = if let ast::ExprKind::Item { path, args_list } = array.len.0.kind {
                 if args_list.is_none() {
-                    //@check no field, no poly, default initialized (0..)
                     check_path::path_resolve_enum_opt(ctx, path, const_eval_len)
                 } else {
                     None

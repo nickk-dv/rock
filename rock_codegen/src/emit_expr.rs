@@ -1686,22 +1686,7 @@ pub fn codegen_array_binary_op<'c>(
     lhs_ptr: llvm::ValuePtr,
     rhs_ptr: llvm::ValuePtr,
 ) -> Option<llvm::Value> {
-    let elem_ty = match op {
-        hir::BinOp::Add_Int(ty) => hir::Type::Int(ty),
-        hir::BinOp::Add_Float(ty) => hir::Type::Float(ty),
-        hir::BinOp::Sub_Int(ty) => hir::Type::Int(ty),
-        hir::BinOp::Sub_Float(ty) => hir::Type::Float(ty),
-        hir::BinOp::Mul_Int(ty) => hir::Type::Int(ty),
-        hir::BinOp::Mul_Float(ty) => hir::Type::Float(ty),
-        hir::BinOp::Div_Int(ty) => hir::Type::Int(ty),
-        hir::BinOp::Div_Float(ty) => hir::Type::Float(ty),
-        hir::BinOp::Rem_Int(ty) => hir::Type::Int(ty),
-        hir::BinOp::BitAnd(ty) => hir::Type::Int(ty),
-        hir::BinOp::BitOr(ty) => hir::Type::Int(ty),
-        hir::BinOp::BitXor(ty) => hir::Type::Int(ty),
-        _ => unreachable!(), //unsupported op
-    };
-    let elem_ty = cg.ty(elem_ty);
+    let elem_ty = bin_op_operand_type(cg, op);
     let array_ty = llvm::array_type(elem_ty, array.len);
     let array_ptr = cg.entry_alloca(array_ty, "array_binary");
 
@@ -1932,4 +1917,31 @@ fn convert_bool_to_i1(cg: &mut Codegen, val: llvm::Value) -> llvm::Value {
     }
     let one = llvm::const_int(into_ty, 1, false);
     cg.build.icmp(llvm::IntPred::LLVMIntEQ, val, one, "bool_to_i1")
+}
+
+//only valid for supported array & assign binary ops
+pub fn bin_op_operand_type(cg: &Codegen, op: hir::BinOp) -> llvm::Type {
+    match op {
+        hir::BinOp::Add_Int(ty) => cg.int_type(ty),
+        hir::BinOp::Add_Float(ty) => cg.float_type(ty),
+        hir::BinOp::Sub_Int(ty) => cg.int_type(ty),
+        hir::BinOp::Sub_Float(ty) => cg.float_type(ty),
+        hir::BinOp::Mul_Int(ty) => cg.int_type(ty),
+        hir::BinOp::Mul_Float(ty) => cg.float_type(ty),
+        hir::BinOp::Div_Int(ty) => cg.int_type(ty),
+        hir::BinOp::Div_Float(ty) => cg.float_type(ty),
+        hir::BinOp::Rem_Int(ty) => cg.int_type(ty),
+        hir::BinOp::BitAnd(ty) => cg.int_type(ty),
+        hir::BinOp::BitOr(ty) => cg.int_type(ty),
+        hir::BinOp::BitXor(ty) => cg.int_type(ty),
+        hir::BinOp::BitShl(ty, _) => cg.int_type(ty),
+        hir::BinOp::BitShr(ty, _) => cg.int_type(ty),
+        hir::BinOp::Eq_Int_Other(_)
+        | hir::BinOp::NotEq_Int_Other(_)
+        | hir::BinOp::Cmp_Int(_, _, _)
+        | hir::BinOp::Cmp_Float(_, _, _)
+        | hir::BinOp::Cmp_String(_, _, _)
+        | hir::BinOp::LogicAnd(_)
+        | hir::BinOp::LogicOr(_) => unreachable!(),
+    }
 }

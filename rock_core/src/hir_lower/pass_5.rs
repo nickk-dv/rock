@@ -3572,7 +3572,6 @@ fn typecheck_block<'hir, 'ast>(
                             op: hir::AssignOp::Bin(op, None),
                             lhs: expr_var,
                             rhs: expr_one,
-                            lhs_ty: hir::Type::Int(IntType::Usize),
                         }));
                         ctx.cache.stmts.push(index_change);
                     }
@@ -3586,7 +3585,6 @@ fn typecheck_block<'hir, 'ast>(
                             op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
                             lhs: expr_var,
                             rhs: expr_one,
-                            lhs_ty: hir::Type::Int(int_ty),
                         }));
                         ctx.cache.stmts.push(index_change);
                     }
@@ -3770,7 +3768,6 @@ fn typecheck_for<'hir, 'ast>(
         ast::ForHeader::Elem(header) => {
             let expr_res = typecheck_expr(ctx, Expectation::None, header.expr);
 
-            //@dont instantly return here, check the block also!
             let collection = match type_as_collection(ctx, expr_res.ty) {
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
@@ -3977,7 +3974,6 @@ fn typecheck_for<'hir, 'ast>(
                 op: hir::AssignOp::Bin(index_change_op, None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
-                lhs_ty: hir::Type::Int(IntType::Usize),
             }));
 
             let expr_for_block = hir::Expr::Block { block: block_res.block };
@@ -4179,7 +4175,6 @@ fn typecheck_for<'hir, 'ast>(
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
                 lhs: expr_start_var,
                 rhs: expr_one_iter,
-                lhs_ty: hir::Type::Int(int_ty),
             }));
             let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
                 hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
@@ -4189,7 +4184,6 @@ fn typecheck_for<'hir, 'ast>(
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int(IntType::Usize), None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
-                lhs_ty: hir::Type::Int(IntType::Usize),
             }));
 
             let expr_for_block = hir::Expr::Block { block: block_res.block };
@@ -4347,8 +4341,7 @@ fn typecheck_assign<'hir, 'ast>(
         }
     };
 
-    let assign =
-        hir::Assign { op: assign_op, lhs: lhs_res.expr, rhs: rhs_res.expr, lhs_ty: lhs_res.ty };
+    let assign = hir::Assign { op: assign_op, lhs: lhs_res.expr, rhs: rhs_res.expr };
     ctx.arena.alloc(assign)
 }
 

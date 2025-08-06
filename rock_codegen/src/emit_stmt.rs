@@ -83,7 +83,7 @@ fn codegen_assign<'c>(cg: &mut Codegen<'c, '_, '_>, assign: &hir::Assign<'c>) {
                 );
                 cg.build.store(bin_val.unwrap(), lhs_ptr);
             } else {
-                let lhs_ty = cg.ty(assign.lhs_ty);
+                let lhs_ty = emit_expr::bin_op_operand_type(cg, op);
                 let lhs_val = cg.build.load(lhs_ty, lhs_ptr, "load_val");
                 let rhs_val = emit_expr::codegen_expr_value(cg, assign.rhs);
                 let bin_val = emit_expr::codegen_binary_op(cg, op, lhs_val, rhs_val);

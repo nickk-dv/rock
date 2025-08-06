@@ -288,7 +288,6 @@ pub struct Assign<'hir> {
     pub op: AssignOp<'hir>,
     pub lhs: &'hir Expr<'hir>,
     pub rhs: &'hir Expr<'hir>,
-    pub lhs_ty: Type<'hir>, //@can be removed, infer based on binary op
 }
 
 #[rustfmt::skip]
