@@ -3494,9 +3494,9 @@ fn typecheck_block<'hir, 'ast>(
                 }
             }
             ast::StmtKind::Local(local) => {
-                //@can diverge any diverging expr inside
-                check_stmt_diverges(ctx, false, stmt.range);
-                let local_res = typecheck_local(ctx, local);
+                let mut will_diverge = false;
+                let local_res = typecheck_local(ctx, local, &mut will_diverge);
+                check_stmt_diverges(ctx, will_diverge, stmt.range);
                 match local_res {
                     LocalResult::Error => continue,
                     LocalResult::Local(local) => hir::Stmt::Local(local),
@@ -3505,39 +3505,33 @@ fn typecheck_block<'hir, 'ast>(
                 }
             }
             ast::StmtKind::Assign(assign) => {
-                //@can diverge any diverging expr inside
-                check_stmt_diverges(ctx, false, stmt.range);
-                hir::Stmt::Assign(typecheck_assign(ctx, assign))
+                let mut will_diverge = false;
+                let assign = typecheck_assign(ctx, assign, &mut will_diverge);
+                check_stmt_diverges(ctx, will_diverge, stmt.range);
+                hir::Stmt::Assign(assign)
             }
             ast::StmtKind::ExprSemi(expr) => {
-                //@can diverge but expression divergence isnt implemented (if, match, explicit `never` calls like panic)
                 let expect = match expr.kind {
                     ast::ExprKind::If { .. }
                     | ast::ExprKind::Block { .. }
                     | ast::ExprKind::Match { .. } => Expectation::VOID,
                     _ => Expectation::None,
                 };
-
                 let error_count = ctx.emit.error_count();
                 let expr_res = typecheck_expr(ctx, expect, expr);
                 if !ctx.emit.did_error(error_count) {
                     check_unused_expr_semi(ctx, expr_res.expr, expr.range);
                 }
-
-                let will_diverge = expr_res.ty.is_never();
-                check_stmt_diverges(ctx, will_diverge, stmt.range);
+                check_stmt_diverges(ctx, expr_res.ty.is_never(), stmt.range);
                 hir::Stmt::ExprSemi(expr_res.expr)
             }
             ast::StmtKind::ExprTail(expr) => {
                 //type expectation is delegated to tail expression, instead of the block itself
                 let expr_res = typecheck_expr(ctx, expect, expr);
-                let stmt_res = hir::Stmt::ExprTail(expr_res.expr);
-
-                let will_diverge = expr_res.ty.is_never();
-                check_stmt_diverges(ctx, will_diverge, stmt.range);
                 block_tail_ty = Some(expr_res.ty);
                 block_tail_range = Some(expr.range);
-                stmt_res
+                check_stmt_diverges(ctx, expr_res.ty.is_never(), stmt.range);
+                hir::Stmt::ExprTail(expr_res.expr)
             }
             ast::StmtKind::WithDirective(_) => unreachable!(),
         };
@@ -4259,6 +4253,7 @@ enum LocalResult<'hir> {
 fn typecheck_local<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     local: &ast::Local<'ast>,
+    will_diverge: &mut bool,
 ) -> LocalResult<'hir> {
     let already_defined = match local.bind {
         ast::Binding::Named(_, name) => ctx
@@ -4281,6 +4276,7 @@ fn typecheck_local<'hir, 'ast>(
         ast::LocalInit::Init(expr) => {
             let init_res = typecheck_expr(ctx, expect, expr);
             local_ty = local_ty.or(Some(init_res.ty));
+            *will_diverge = init_res.ty.is_never();
             hir::LocalInit::Init(init_res.expr)
         }
         ast::LocalInit::Zeroed(_) => hir::LocalInit::Zeroed,
@@ -4317,6 +4313,7 @@ fn typecheck_local<'hir, 'ast>(
 fn typecheck_assign<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     assign: &ast::Assign<'ast>,
+    will_diverge: &mut bool,
 ) -> &'hir hir::Assign<'hir> {
     let lhs_res = typecheck_expr(ctx, Expectation::None, assign.lhs);
     let addr_res = resolve_expr_addressability(ctx, lhs_res.expr);
@@ -4324,6 +4321,7 @@ fn typecheck_assign<'hir, 'ast>(
 
     let expect = Expectation::HasType(lhs_res.ty, Some(ctx.src(assign.lhs.range)));
     let rhs_res = typecheck_expr(ctx, expect, assign.rhs);
+    *will_diverge = rhs_res.ty.is_never(); //when lhs is `never` typecheck will require rhs `never`
 
     let assign_op = match assign.op {
         ast::AssignOp::Assign => hir::AssignOp::Assign,
