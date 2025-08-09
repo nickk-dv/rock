@@ -5,7 +5,6 @@ pub struct Config {
     pub target: TargetTriple,
     pub target_os: TargetOS,
     pub target_arch: TargetArch,
-    pub target_ptr_width: TargetPtrWidth,
     pub build: Build,
 }
 
@@ -56,13 +55,7 @@ crate::enum_as_str! {
 
 impl Config {
     pub fn new(target: TargetTriple, build: Build) -> Config {
-        Config {
-            target,
-            target_os: target.os(),
-            target_arch: target.arch(),
-            target_ptr_width: target.arch().ptr_width(),
-            build,
-        }
+        Config { target, target_os: target.os(), target_arch: target.arch(), build }
     }
 }
 

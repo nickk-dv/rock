@@ -103,10 +103,7 @@ fn match_cov_int(ctx: &mut HirCtx, check: &CheckContext, int_ty: hir::IntType) {
     pat_cov(ctx, check, int_ty, pat_cov_int);
 
     if let Some(match_kw) = check.match_kw {
-        let ptr_width = ctx.session.config.target_ptr_width;
-        let not_covered =
-            ctx.pat.cov_int.not_covered(int_ty.min_128(ptr_width), int_ty.max_128(ptr_width));
-
+        let not_covered = ctx.pat.cov_int.not_covered(int_ty.min_128(), int_ty.max_128());
         if !not_covered.is_empty() {
             let mut msg = String::from("patterns not covered:\n");
             for value in not_covered {
@@ -215,12 +212,8 @@ where
 }
 
 fn pat_cov_int(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, int_ty: hir::IntType) {
-    let ptr_width = ctx.session.config.target_ptr_width;
-
     let result = match pat {
-        hir::Pat::Wild => {
-            ctx.pat.cov_int.cover_wild(int_ty.min_128(ptr_width), int_ty.max_128(ptr_width))
-        }
+        hir::Pat::Wild => ctx.pat.cov_int.cover_wild(int_ty.min_128(), int_ty.max_128()),
         hir::Pat::Lit(value) => {
             let value = value.into_int();
             let range = RangeInc::new(value, value);

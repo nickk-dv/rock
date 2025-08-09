@@ -342,10 +342,6 @@ fn check_config_parameter(
             Some(value) => Ok(ConfigState(value == ctx.session.config.target_arch)),
             None => Err(()),
         },
-        "target_ptr_width" => match config::TargetPtrWidth::from_str(param_value) {
-            Some(value) => Ok(ConfigState(value == ctx.session.config.target_ptr_width)),
-            None => Err(()),
-        },
         "build" => match config::Build::from_str(param_value) {
             Some(value) => Ok(ConfigState(value == ctx.session.config.build)),
             None => Err(()),

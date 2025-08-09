@@ -229,7 +229,7 @@ proc test_bounds_check_const() void {
 //
 //#!
 proc test_index_const_with_runtime_index() void {
-    let idx: usize = 0;
+    let idx: u64 = 0;
     let enum_idx = Enum.A;
     CSTRING[idx];
     STRING[idx];

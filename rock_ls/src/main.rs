@@ -1128,8 +1128,8 @@ fn semantic_token_style(
         T![if] | T![else] | T![match] | T![as] => SemanticToken::Keyword,
         T![_] => SemanticToken::Parameter,
 
-        T![s8] | T![s16] | T![s32] | T![s64] | T![ssize] |
-        T![u8] | T![u16] | T![u32] | T![u64] | T![usize] |
+        T![s8] | T![s16] | T![s32] | T![s64] |
+        T![u8] | T![u16] | T![u32] | T![u64] |
         T![f32] | T![f64] | T![bool] | T![bool16] | T![bool32] | T![bool64] |
         T![string] | T![cstring] | T![char] | T![never] | T![rawptr] => SemanticToken::Type,
         T![void] if parent == SyntaxKind::TYPE_BASIC => SemanticToken::Type,

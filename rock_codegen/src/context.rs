@@ -77,7 +77,6 @@ pub struct CodegenCache<'c> {
     float_64: llvm::Type,
     void_type: llvm::Type,
     ptr_type: llvm::Type,
-    ptr_sized_int: llvm::Type,
     slice_type: llvm::TypeStruct,
     void_val_type: llvm::TypeStruct,
     pub zero_i8: llvm::Value,
@@ -300,7 +299,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         self.cache.ptr_type
     }
     pub fn ptr_sized_int(&self) -> llvm::Type {
-        self.cache.ptr_sized_int
+        self.cache.int_64
     }
     pub fn slice_type(&self) -> llvm::TypeStruct {
         self.cache.slice_type
@@ -312,7 +311,6 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir::IntType::S16 | hir::IntType::U16 => self.cache.int_16,
             hir::IntType::S32 | hir::IntType::U32 => self.cache.int_32,
             hir::IntType::S64 | hir::IntType::U64 => self.cache.int_64,
-            hir::IntType::Ssize | hir::IntType::Usize => self.cache.ptr_sized_int,
             hir::IntType::Untyped => unreachable!(),
         }
     }
@@ -511,7 +509,6 @@ impl<'c> CodegenCache<'c> {
             float_64: context.float_64(),
             void_type: context.void_type(),
             ptr_type,
-            ptr_sized_int,
             slice_type,
             void_val_type,
             zero_i8: llvm::const_int(context.int_8(), 0, false),
@@ -599,9 +596,6 @@ impl<'hir> layout::LayoutContext<'hir> for Codegen<'hir, '_, '_> {
 
     fn error(&mut self) -> &mut impl rock_core::error::ErrorSink {
         &mut self.emit
-    }
-    fn ptr_size(&self) -> u64 {
-        self.session.config.target_ptr_width.ptr_size()
     }
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
         Ok(self.array_len(len))

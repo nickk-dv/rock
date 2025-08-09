@@ -255,8 +255,7 @@ fn write_const<'c>(
     match value {
         hir::ConstValue::Void => {}
         hir::ConstValue::Null => {
-            let ptr_size = cg.session.config.target_ptr_width.ptr_size();
-            (0..ptr_size).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
+            (0..8).for_each(|_| cg.cache.values.push(cg.cache.zero_i8));
         }
         hir::ConstValue::Bool { val, bool_ty } => {
             write_const_int(cg, val as u64, false, bool_ty.int_equivalent())
@@ -283,7 +282,7 @@ fn write_const<'c>(
 
             if string_ty == hir::StringType::String {
                 let len = cg.session.intern_lit.get(val).len();
-                write_const_int(cg, len as u64, false, hir::IntType::Usize);
+                write_const_int(cg, len as u64, false, hir::IntType::U64);
             }
         }
         hir::ConstValue::Procedure { proc_id, poly_types } => {
@@ -363,7 +362,7 @@ fn write_const<'c>(
                 "global.idx",
             );
             writer.write_ptr_or_undef(cg, ptr.as_val());
-            write_const_int(cg, len as u64, false, hir::IntType::Usize);
+            write_const_int(cg, len as u64, false, hir::IntType::U64);
         }
     }
 }
@@ -395,7 +394,6 @@ fn write_enum_tag(
 }
 
 fn write_const_int(cg: &mut Codegen, val: u64, neg: bool, int_ty: hir::IntType) {
-    let ptr_size = cg.session.config.target_ptr_width.ptr_size();
     let sign = if neg { -1 } else { 1 };
     let bytes = match int_ty {
         hir::IntType::S8 => &(val as i8 * sign as i8).to_le_bytes()[..],
@@ -406,20 +404,6 @@ fn write_const_int(cg: &mut Codegen, val: u64, neg: bool, int_ty: hir::IntType) 
         hir::IntType::U16 => &(val as u16).to_le_bytes()[..],
         hir::IntType::U32 => &(val as u32).to_le_bytes()[..],
         hir::IntType::U64 => &val.to_le_bytes()[..],
-        hir::IntType::Ssize => {
-            if ptr_size == 8 {
-                &(val as i64 * sign as i64).to_le_bytes()[..]
-            } else {
-                &(val as i32 * sign).to_le_bytes()[..]
-            }
-        }
-        hir::IntType::Usize => {
-            if ptr_size == 8 {
-                &val.to_le_bytes()[..]
-            } else {
-                &(val as u32).to_le_bytes()[..]
-            }
-        }
         hir::IntType::Untyped => unreachable!(),
     };
     let byte_ty = cg.int_type(hir::IntType::U8);
@@ -821,7 +805,7 @@ fn codegen_index<'c>(
         index_val = codegen_cast_op(
             cg,
             index_val,
-            cg.int_type(hir::IntType::Usize),
+            cg.int_type(hir::IntType::U64),
             hir::CastKind::IntU_Extend,
         );
     }
@@ -858,7 +842,7 @@ fn codegen_index<'c>(
             let elem_concrete = context::substitute_type(cg, access.elem_ty, &[]);
             let array_ty = *cg.structs_poly.get(&(cg.hir.core.array, &[elem_concrete])).unwrap();
             let len_ptr = cg.build.gep_struct(array_ty, target_ptr, 0, "array.len.ptr");
-            Some(cg.build.load(cg.int_type(hir::IntType::Usize), len_ptr, "array.len"))
+            Some(cg.build.load(cg.int_type(hir::IntType::U64), len_ptr, "array.len"))
         }
     };
 
@@ -867,7 +851,7 @@ fn codegen_index<'c>(
         let exit_bb = cg.append_bb("bounds_check_ok");
         let cond = codegen_binary_op(
             cg,
-            hir::BinOp::Cmp_Int(CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::Usize),
+            hir::BinOp::Cmp_Int(CmpPred::GreaterEq, hir::BoolType::Bool, hir::IntType::U64),
             index_val,
             bound,
         );
@@ -1034,7 +1018,6 @@ fn codegen_variant<'c>(
     let variant = data.variant(variant_id);
     let with_fields = data.flag_set.contains(hir::EnumFlag::WithFields);
 
-    //@generating each time
     let tag = match variant.kind {
         hir::VariantKind::Default(id) => cg.hir.variant_eval_values[id.index()],
         hir::VariantKind::Constant(id) => cg.hir.const_eval_values[id.index()],
@@ -1575,7 +1558,7 @@ fn codegen_array_repeat<'c>(
     let repeat_val = cg.const_usize(array.len);
     let cond = codegen_binary_op(
         cg,
-        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
+        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::U64),
         count_val,
         repeat_val,
     );
@@ -1586,12 +1569,8 @@ fn codegen_array_repeat<'c>(
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(copied_val, elem_ptr);
 
-    let count_inc = codegen_binary_op(
-        cg,
-        hir::BinOp::Add_Int(hir::IntType::Usize),
-        count_val,
-        cg.const_usize(1),
-    );
+    let count_inc =
+        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_usize(1));
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);
@@ -1703,7 +1682,7 @@ pub fn codegen_array_binary_op<'c>(
     let repeat_val = cg.const_usize(array.len);
     let cond = codegen_binary_op(
         cg,
-        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::Usize),
+        hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::U64),
         count_val,
         repeat_val,
     );
@@ -1719,12 +1698,8 @@ pub fn codegen_array_binary_op<'c>(
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(bin, elem_ptr);
 
-    let count_inc = codegen_binary_op(
-        cg,
-        hir::BinOp::Add_Int(hir::IntType::Usize),
-        count_val,
-        cg.const_usize(1),
-    );
+    let count_inc =
+        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_usize(1));
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);

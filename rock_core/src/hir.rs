@@ -555,12 +555,10 @@ crate::enum_as_str! {
         S16 "s16",
         S32 "s32",
         S64 "s64",
-        Ssize "ssize",
         U8 "u8",
         U16 "u16",
         U32 "u32",
         U64 "u64",
-        Usize "usize",
         Untyped "untyped int",
     }
 }
@@ -1028,57 +1026,42 @@ impl IntType {
             ast::BasicType::S16 => Some(IntType::S16),
             ast::BasicType::S32 => Some(IntType::S32),
             ast::BasicType::S64 => Some(IntType::S64),
-            ast::BasicType::Ssize => Some(IntType::Ssize),
             ast::BasicType::U8 => Some(IntType::U8),
             ast::BasicType::U16 => Some(IntType::U16),
             ast::BasicType::U32 => Some(IntType::U32),
             ast::BasicType::U64 => Some(IntType::U64),
-            ast::BasicType::Usize => Some(IntType::Usize),
             _ => None,
         }
     }
 
     pub fn is_signed(self) -> bool {
-        matches!(self, IntType::S8 | IntType::S16 | IntType::S32 | IntType::S64 | IntType::Ssize)
+        matches!(self, IntType::S8 | IntType::S16 | IntType::S32 | IntType::S64)
     }
 
-    pub fn min_128(self, ptr_width: TargetPtrWidth) -> i128 {
+    pub fn min_128(self) -> i128 {
         match self {
             IntType::S8 => i8::MIN as i128,
             IntType::S16 => i16::MIN as i128,
             IntType::S32 => i32::MIN as i128,
             IntType::S64 => i64::MIN as i128,
-            IntType::Ssize => match ptr_width {
-                TargetPtrWidth::Bit_32 => i32::MIN as i128,
-                TargetPtrWidth::Bit_64 => i64::MIN as i128,
-            },
             IntType::U8 => 0,
             IntType::U16 => 0,
             IntType::U32 => 0,
             IntType::U64 => 0,
-            IntType::Usize => 0,
             IntType::Untyped => -(u64::MAX as i128), // u64 magnitude
         }
     }
 
-    pub fn max_128(self, ptr_width: TargetPtrWidth) -> i128 {
+    pub fn max_128(self) -> i128 {
         match self {
             IntType::S8 => i8::MAX as i128,
             IntType::S16 => i16::MAX as i128,
             IntType::S32 => i32::MAX as i128,
             IntType::S64 => i64::MAX as i128,
-            IntType::Ssize => match ptr_width {
-                TargetPtrWidth::Bit_32 => i32::MAX as i128,
-                TargetPtrWidth::Bit_64 => i64::MAX as i128,
-            },
             IntType::U8 => u8::MAX as i128,
             IntType::U16 => u16::MAX as i128,
             IntType::U32 => u32::MAX as i128,
             IntType::U64 => u64::MAX as i128,
-            IntType::Usize => match ptr_width {
-                TargetPtrWidth::Bit_32 => u32::MAX as i128,
-                TargetPtrWidth::Bit_64 => u64::MAX as i128,
-            },
             IntType::Untyped => u64::MAX as i128, // u64 magnitude
         }
     }

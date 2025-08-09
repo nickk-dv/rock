@@ -1236,8 +1236,8 @@ const FIRST_PROC_TYPE_PARAM: TokenSet = FIRST_TYPE.combine(TokenSet::new(&[T![id
 #[rustfmt::skip]
 const FIRST_TYPE: TokenSet = TokenSet::new(&[
     T![char], T![void], T![never], T![rawptr],
-    T![s8], T![s16], T![s32], T![s64], T![ssize],
-    T![u8], T![u16], T![u32], T![u64], T![usize],
+    T![s8], T![s16], T![s32], T![s64],
+    T![u8], T![u16], T![u32], T![u64],
     T![f32], T![f64], T![bool], T![bool16], T![bool32], T![bool64],
     T![string], T![cstring], T![ident], T![&], T![proc], T!['['],
 ]);

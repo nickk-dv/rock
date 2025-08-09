@@ -294,7 +294,7 @@ pub enum Expectation<'hir> {
 impl<'hir> Expectation<'hir> {
     pub const VOID: Expectation<'static> = Expectation::HasType(hir::Type::Void, None);
     pub const USIZE: Expectation<'static> =
-        Expectation::HasType(hir::Type::Int(IntType::Usize), None);
+        Expectation::HasType(hir::Type::Int(IntType::U64), None);
     pub const ERROR: Expectation<'static> = Expectation::HasType(hir::Type::Error, None);
 
     fn inner_type(&self) -> Option<hir::Type<'hir>> {
@@ -1108,7 +1108,7 @@ fn check_field_from_type<'hir>(
             match field_name {
                 "len" => {
                     let kind = FieldKind::ArraySlice { field: hir::SliceField::Len };
-                    let field_ty = hir::Type::Int(IntType::Usize);
+                    let field_ty = hir::Type::Int(IntType::U64);
                     FieldResult::new(deref, kind, field_ty)
                 }
                 _ => {
@@ -1136,7 +1136,7 @@ fn check_field_from_type<'hir>(
                 let kind = FieldKind::ArraySlice { field };
                 let field_ty = match field {
                     hir::SliceField::Ptr => hir::Type::Reference(slice.mutt, &slice.elem_ty),
-                    hir::SliceField::Len => hir::Type::Int(IntType::Usize),
+                    hir::SliceField::Len => hir::Type::Int(IntType::U64),
                 };
                 FieldResult::new(deref, kind, field_ty)
             }
@@ -1149,7 +1149,7 @@ fn check_field_from_type<'hir>(
         hir::Type::ArrayEnumerated(array) => match check_field_from_array_enum(ctx, name, array) {
             Some(len) => {
                 let kind = FieldKind::ArrayStatic { len };
-                let field_ty = hir::Type::Int(IntType::Usize);
+                let field_ty = hir::Type::Int(IntType::U64);
                 FieldResult::new(deref, kind, field_ty)
             }
             None => FieldResult::error(),
@@ -1186,9 +1186,8 @@ fn check_field_from_array<'hir>(
     let field = ctx.name(name.id);
 
     if field == "len" {
-        //@unchecked for 32bit target usize range
-        let len = hir::ConstValue::from_u64(len, IntType::Usize);
-        return Some((FieldKind::ArrayStatic { len }, hir::Type::Int(IntType::Usize)));
+        let len = hir::ConstValue::from_u64(len, IntType::U64);
+        return Some((FieldKind::ArrayStatic { len }, hir::Type::Int(IntType::U64)));
     }
     let index: u64 = match field {
         "x" | "r" => 0,
@@ -1218,7 +1217,7 @@ fn check_field_from_array_enum<'hir>(
     match field_name {
         "len" => {
             let val = ctx.registry.enum_data(array.enum_id).variants.len() as u64;
-            Some(hir::ConstValue::Int { val, neg: false, int_ty: IntType::Usize })
+            Some(hir::ConstValue::Int { val, neg: false, int_ty: IntType::U64 })
         }
         _ => {
             let src = ctx.src(name.range);
@@ -1262,7 +1261,7 @@ fn emit_field_expr<'hir>(
                 let field = match value {
                     hir::ConstValue::String { val, .. } => {
                         let len = ctx.session.intern_lit.get(*val).len();
-                        hir::ConstValue::from_u64(len as u64, IntType::Usize)
+                        hir::ConstValue::from_u64(len as u64, IntType::U64)
                     }
                     _ => unreachable!(),
                 };
@@ -1291,7 +1290,7 @@ fn emit_field_expr<'hir>(
                     elem_ty: field_res.field_ty,
                     kind: hir::IndexKind::Array(len),
                     index: ctx.arena.alloc(hir::Expr::Const(
-                        hir::ConstValue::from_u64(index, IntType::Usize),
+                        hir::ConstValue::from_u64(index, IntType::U64),
                         hir::ConstID::dummy(),
                     )),
                     offset: name_start,
@@ -1540,7 +1539,7 @@ fn typecheck_slice<'hir, 'ast>(
             };
             let len = ctx.array_len(array.len).unwrap_or(0);
             let len = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::from_u64(len, IntType::Usize),
+                hir::ConstValue::from_u64(len, IntType::U64),
                 hir::ConstID::dummy(),
             ));
             let proc_id = ctx.core.from_raw_parts;
@@ -1558,7 +1557,7 @@ fn typecheck_slice<'hir, 'ast>(
             };
             let len = ctx.registry.enum_data(array.enum_id).variants.len() as u64;
             let len = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::from_u64(len, IntType::Usize),
+                hir::ConstValue::from_u64(len, IntType::U64),
                 hir::ConstID::dummy(),
             ));
             let proc_id = ctx.core.from_raw_parts;
@@ -1603,14 +1602,14 @@ fn typecheck_slice<'hir, 'ast>(
         if let CollectionKind::ArrayEnum(_) = collection.kind {
             let cast = hir::Expr::Cast {
                 target: bound,
-                into: &hir::Type::Int(IntType::Usize),
+                into: &hir::Type::Int(IntType::U64),
                 kind: hir::CastKind::EnumU_Extend_to_Int,
             };
             bound = ctx.arena.alloc(cast);
         }
         bound
     } else {
-        let zero_usize = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
+        let zero_usize = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 };
         ctx.arena.alloc(hir::Expr::Const(zero_usize, hir::ConstID::dummy()))
     };
 
@@ -1625,7 +1624,7 @@ fn typecheck_slice<'hir, 'ast>(
         if let CollectionKind::ArrayEnum(_) = collection.kind {
             let cast = hir::Expr::Cast {
                 target: bound,
-                into: &hir::Type::Int(IntType::Usize),
+                into: &hir::Type::Int(IntType::U64),
                 kind: hir::CastKind::EnumU_Extend_to_Int,
             };
             bound = ctx.arena.alloc(cast);
@@ -1742,7 +1741,7 @@ fn typecheck_cast<'hir, 'ast>(
                 CastKind::Bool_NoOp_to_Int
             } else {
                 let from_size = layout::bool_layout(from_ty).size;
-                let into_size = layout::int_layout(ctx, into_ty).size;
+                let into_size = layout::int_layout(into_ty).size;
                 match from_size.cmp(&into_size) {
                     Ordering::Less => CastKind::Bool_Extend_to_Int,
                     Ordering::Equal => {
@@ -1772,8 +1771,8 @@ fn typecheck_cast<'hir, 'ast>(
                 return TypeResult::error();
             };
 
-            let from_size = layout::int_layout(ctx, from_ty).size;
-            let into_size = layout::int_layout(ctx, into_ty).size;
+            let from_size = layout::int_layout(from_ty).size;
+            let into_size = layout::int_layout(into_ty).size;
 
             if enum_data.flag_set.contains(hir::EnumFlag::WithFields) {
                 CastKind::Error
@@ -1829,8 +1828,8 @@ fn integer_cast_kind(ctx: &HirCtx, from_ty: IntType, into_ty: IntType) -> hir::C
         return hir::CastKind::Int_NoOp;
     }
 
-    let from_size = layout::int_layout(ctx, from_ty).size;
-    let into_size = layout::int_layout(ctx, into_ty).size;
+    let from_size = layout::int_layout(from_ty).size;
+    let into_size = layout::int_layout(into_ty).size;
     match from_size.cmp(&into_size) {
         Ordering::Less => {
             if from_ty.is_signed() {
@@ -2740,7 +2739,7 @@ fn constfold_unary<'hir>(
             if int_ty.is_signed() {
                 Ok(hir::ConstValue::from_i64(!rhs.into_int_i64(), int_ty))
             } else {
-                let value_bits = layout::int_layout(ctx, int_ty).size * 8;
+                let value_bits = layout::int_layout(int_ty).size * 8;
                 let mask = if value_bits == 64 { u64::MAX } else { (1 << value_bits) - 1 };
                 Ok(hir::ConstValue::from_u64(mask & !rhs.into_int_u64(), int_ty))
             }
@@ -3201,7 +3200,7 @@ fn check_binary_const_rhs(
         let layout = if int_ty == IntType::Untyped {
             hir::Layout::equal(8)
         } else {
-            layout::int_layout(ctx, int_ty)
+            layout::int_layout(int_ty)
         };
         let max = (layout.size * 8 - 1) as i128;
         if val < 0 || val > max {
@@ -3314,7 +3313,7 @@ fn constfold_binary<'hir>(
             let layout = if int_ty == IntType::Untyped {
                 hir::Layout::equal(8)
             } else {
-                layout::int_layout(ctx, int_ty)
+                layout::int_layout(int_ty)
             };
 
             let val = if int_ty == IntType::Untyped || int_ty.is_signed() {
@@ -3559,7 +3558,7 @@ fn typecheck_block<'hir, 'ast>(
                     if let Some((var_id, op)) = curr_block.for_idx_change {
                         let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
                         let expr_one = ctx.arena.alloc(hir::Expr::Const(
-                            hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                            hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
                             hir::ConstID::dummy(),
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
@@ -3810,7 +3809,7 @@ fn typecheck_for<'hir, 'ast>(
             let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header.index.unwrap_or(name_dummy),
-                ty: hir::Type::Int(IntType::Usize),
+                ty: hir::Type::Int(IntType::U64),
                 was_used: false,
             };
 
@@ -3844,9 +3843,9 @@ fn typecheck_for<'hir, 'ast>(
 
             let curr_block = ctx.scope.local.current_block_mut();
             let index_change_op = if header.reverse {
-                hir::BinOp::Sub_Int(IntType::Usize)
+                hir::BinOp::Sub_Int(IntType::U64)
             } else {
-                hir::BinOp::Add_Int(IntType::Usize)
+                hir::BinOp::Add_Int(IntType::U64)
             };
             curr_block.for_idx_change = Some((index_id, index_change_op));
 
@@ -3884,7 +3883,7 @@ fn typecheck_for<'hir, 'ast>(
                     let len_value = hir::ConstValue::Int {
                         val: ctx.array_len(array.len).unwrap_or(0),
                         neg: false,
-                        int_ty: IntType::Usize,
+                        int_ty: IntType::U64,
                     };
                     ctx.arena.alloc(hir::Expr::Const(len_value, hir::ConstID::dummy()))
                 }
@@ -3901,11 +3900,11 @@ fn typecheck_for<'hir, 'ast>(
                 | CollectionKind::ArrayCore => unreachable!(),
             };
             let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize },
+                hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 },
                 hir::ConstID::dummy(),
             ));
             let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
                 hir::ConstID::dummy(),
             ));
 
@@ -3923,9 +3922,9 @@ fn typecheck_for<'hir, 'ast>(
             // conditional loop break:
             let cond_rhs = if header.reverse { expr_zero_usize } else { expr_iter_len };
             let cond_op = if header.reverse {
-                hir::BinOp::Cmp_Int(CmpPred::Eq, BoolType::Bool, IntType::Usize)
+                hir::BinOp::Cmp_Int(CmpPred::Eq, BoolType::Bool, IntType::U64)
             } else {
-                hir::BinOp::Cmp_Int(CmpPred::GreaterEq, BoolType::Bool, IntType::Usize)
+                hir::BinOp::Cmp_Int(CmpPred::GreaterEq, BoolType::Bool, IntType::U64)
             };
             let branch_cond = hir::Expr::Binary { op: cond_op, lhs: expr_index_var, rhs: cond_rhs };
             let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
@@ -4083,7 +4082,7 @@ fn typecheck_for<'hir, 'ast>(
             let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header.index.unwrap_or(name_dummy),
-                ty: hir::Type::Int(IntType::Usize),
+                ty: hir::Type::Int(IntType::U64),
                 was_used: false,
             };
 
@@ -4116,7 +4115,7 @@ fn typecheck_for<'hir, 'ast>(
             let end_id = ctx.scope.local.add_variable(end_var);
 
             let curr_block = ctx.scope.local.current_block_mut();
-            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int(IntType::Usize)));
+            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int(IntType::U64)));
             curr_block.for_value_change = Some((start_id, int_ty));
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
@@ -4130,7 +4129,7 @@ fn typecheck_for<'hir, 'ast>(
             let end_local = hir::Local { var_id: end_id, init: hir::LocalInit::Init(end_res.expr) };
             let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
 
-            let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::Usize };
+            let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 };
             let zero = ctx.arena.alloc(hir::Expr::Const(zero, hir::ConstID::dummy()));
             let index_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(zero) };
             let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
@@ -4171,11 +4170,11 @@ fn typecheck_for<'hir, 'ast>(
                 rhs: expr_one_iter,
             }));
             let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::Usize },
+                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
                 hir::ConstID::dummy(),
             ));
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                op: hir::AssignOp::Bin(hir::BinOp::Add_Int(IntType::Usize), None),
+                op: hir::AssignOp::Bin(hir::BinOp::Add_Int(IntType::U64), None),
                 lhs: expr_index_var,
                 rhs: expr_one_usize,
             }));
@@ -4349,9 +4348,8 @@ pub fn int_range_check<'hir>(
     val: i128,
     int_ty: IntType,
 ) -> Result<hir::ConstValue<'hir>, ()> {
-    let ptr_width = ctx.session.config.target_ptr_width;
-    let min = int_ty.min_128(ptr_width);
-    let max = int_ty.max_128(ptr_width);
+    let min = int_ty.min_128();
+    let max = int_ty.max_128();
 
     if val < min || val > max {
         let int_ty = int_ty.as_str();
@@ -4797,12 +4795,12 @@ fn check_call_intrinsic<'hir>(
             let layout = layout::type_layout(ctx, poly_types[0], &[], src);
             let expr = layout
                 .map(|layout| {
-                    int_range_check(ctx, src, layout.size as i128, IntType::Usize)
+                    int_range_check(ctx, src, layout.size as i128, IntType::U64)
                         .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                         .unwrap_or(hir::Expr::Error)
                 })
                 .unwrap_or(hir::Expr::Error);
-            Some(TypeResult::new(hir::Type::Int(IntType::Usize), expr))
+            Some(TypeResult::new(hir::Type::Int(IntType::U64), expr))
         }
         "align_of" => {
             if types::has_poly_layout_dep(poly_types[0]) {
@@ -4811,12 +4809,12 @@ fn check_call_intrinsic<'hir>(
             let layout = layout::type_layout(ctx, poly_types[0], &[], src);
             let expr = layout
                 .map(|layout| {
-                    int_range_check(ctx, src, layout.align as i128, IntType::Usize)
+                    int_range_check(ctx, src, layout.align as i128, IntType::U64)
                         .map(|value| hir::Expr::Const(value, hir::ConstID::dummy()))
                         .unwrap_or(hir::Expr::Error)
                 })
                 .unwrap_or(hir::Expr::Error);
-            Some(TypeResult::new(hir::Type::Int(IntType::Usize), expr))
+            Some(TypeResult::new(hir::Type::Int(IntType::U64), expr))
         }
         "transmute" => {
             let from_ty = poly_types[0];

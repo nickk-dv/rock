@@ -1,4 +1,4 @@
-use super::token::{self, Token, TokenList, Trivia};
+use super::token::{self, Token, TokenList, Trivia, T};
 use crate::error::{ErrorBuffer, SourceRange};
 use crate::errors as err;
 use crate::intern::{InternPool, LitID};
@@ -186,7 +186,7 @@ fn lex_ident(lex: &mut Lexer) {
 
     let range = lex.make_range(start);
     let string = unsafe { lex.source.get_unchecked(range.as_usize()) };
-    let token = gperf::lookup(string);
+    let token = keyword(string);
 
     if token == Token::Ident {
         lex.tokens.add_ident(range);
@@ -623,6 +623,57 @@ fn skip_num_digits(lex: &mut Lexer) {
     }
 }
 
+fn keyword(ident: &str) -> Token {
+    match ident {
+        "proc" => T![proc],
+        "enum" => T![enum],
+        "struct" => T![struct],
+        "import" => T![import],
+
+        "break" => T![break],
+        "continue" => T![continue],
+        "return" => T![return],
+        "defer" => T![defer],
+        "for" => T![for],
+        "in" => T![in],
+        "let" => T![let],
+        "mut" => T![mut],
+        "zeroed" => T![zeroed],
+        "undefined" => T![undefined],
+
+        "null" => T![null],
+        "true" => T![true],
+        "false" => T![false],
+        "if" => T![if],
+        "else" => T![else],
+        "match" => T![match],
+        "as" => T![as],
+        "_" => T![_],
+
+        "s8" => T![s8],
+        "s16" => T![s16],
+        "s32" => T![s32],
+        "s64" => T![s64],
+        "u8" => T![u8],
+        "u16" => T![u16],
+        "u32" => T![u32],
+        "u64" => T![u64],
+        "f32" => T![f32],
+        "f64" => T![f64],
+        "bool" => T![bool],
+        "bool16" => T![bool16],
+        "bool32" => T![bool32],
+        "bool64" => T![bool64],
+        "string" => T![string],
+        "cstring" => T![cstring],
+        "char" => T![char],
+        "void" => T![void],
+        "never" => T![never],
+        "rawptr" => T![rawptr],
+        _ => T![ident],
+    }
+}
+
 /// generated using `gperf-3.0.1`  
 /// command: `gperf keywords.txt -G -7 > gperf.h`  
 mod gperf {
@@ -663,8 +714,8 @@ mod gperf {
 
     #[rustfmt::skip]
     const KEYWORD_TABLE: [Token; 82] = [
-        T![ident], T![_], T![u8], T![u64], T![else], T![usize], T![ident], T![s8],
-        T![s64], T![ident], T![ssize], T![string], T![as], T![u32], T![true], T![ident],
+        T![ident], T![_], T![u8], T![u64], T![else], T![ident], T![ident], T![s8],
+        T![s64], T![ident], T![ident], T![string], T![as], T![u32], T![true], T![ident],
         T![rawptr], T![ident], T![s32], T![undefined], T![defer], T![struct], T![ident], T![f64],
         T![void], T![false], T![import], T![ident], T![for], T![ident], T![ident], T![zeroed],
         T![if], T![f32], T![ident], T![never], T![return], T![in], T![let], T![ident],

@@ -452,9 +452,6 @@ impl<'hir> super::layout::LayoutContext<'hir> for HirCtx<'hir, '_, '_> {
     fn error(&mut self) -> &mut impl ErrorSink {
         &mut self.emit
     }
-    fn ptr_size(&self) -> u64 {
-        self.session.config.target_ptr_width.ptr_size()
-    }
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()> {
         self.array_len(len)
     }

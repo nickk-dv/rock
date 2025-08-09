@@ -12,7 +12,6 @@ pub trait LayoutContext<'hir>: super::types::SubstituteContext<'hir> {
     fn take_u64s(&mut self, offset: TempOffset<u64>) -> &'hir [u64];
 
     fn error(&mut self) -> &mut impl ErrorSink;
-    fn ptr_size(&self) -> u64;
     fn array_len(&self, len: hir::ArrayStaticLen) -> Result<u64, ()>;
     fn enum_data(&self, id: hir::EnumID) -> &hir::EnumData<'hir>;
     fn struct_data(&self, id: hir::StructID) -> &hir::StructData<'hir>;
@@ -43,11 +42,11 @@ pub fn type_layout<'hir>(
         hir::Type::Void => Ok(hir::Layout::new(0, 1)),
         hir::Type::Never => Ok(hir::Layout::new(0, 1)),
         hir::Type::UntypedChar => unreachable!(),
-        hir::Type::Rawptr => Ok(hir::Layout::equal(ctx.ptr_size())),
-        hir::Type::Int(int_ty) => Ok(int_layout(ctx, int_ty)),
+        hir::Type::Rawptr => Ok(hir::Layout::equal(8)),
+        hir::Type::Int(int_ty) => Ok(int_layout(int_ty)),
         hir::Type::Float(float_ty) => Ok(float_layout(float_ty)),
         hir::Type::Bool(bool_ty) => Ok(bool_layout(bool_ty)),
-        hir::Type::String(string_ty) => Ok(string_layout(ctx, string_ty)),
+        hir::Type::String(string_ty) => Ok(string_layout(string_ty)),
         hir::Type::PolyProc(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
         hir::Type::PolyEnum(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
         hir::Type::PolyStruct(_, poly_idx) => type_layout(ctx, poly_set[poly_idx], &[], src),
@@ -88,12 +87,9 @@ pub fn type_layout<'hir>(
             }
         }
         hir::Type::Reference(_, _) | hir::Type::MultiReference(_, _) | hir::Type::Procedure(_) => {
-            Ok(hir::Layout::equal(ctx.ptr_size()))
+            Ok(hir::Layout::equal(8))
         }
-        hir::Type::ArraySlice(_) => {
-            let ptr_size = ctx.ptr_size();
-            Ok(hir::Layout::new(2 * ptr_size, ptr_size))
-        }
+        hir::Type::ArraySlice(_) => Ok(hir::Layout::new(16, 8)),
         hir::Type::ArrayStatic(array) => {
             let len = ctx.array_len(array.len)?;
             let elem_layout = type_layout(ctx, array.elem_ty, &[], src)?;
@@ -120,13 +116,12 @@ pub fn type_layout<'hir>(
 }
 
 #[inline]
-pub fn int_layout<'hir>(ctx: &impl LayoutContext<'hir>, int_ty: hir::IntType) -> hir::Layout {
+pub fn int_layout<'hir>(int_ty: hir::IntType) -> hir::Layout {
     match int_ty {
         hir::IntType::S8 | hir::IntType::U8 => hir::Layout::equal(1),
         hir::IntType::S16 | hir::IntType::U16 => hir::Layout::equal(2),
         hir::IntType::S32 | hir::IntType::U32 => hir::Layout::equal(4),
         hir::IntType::S64 | hir::IntType::U64 => hir::Layout::equal(8),
-        hir::IntType::Ssize | hir::IntType::Usize => hir::Layout::equal(ctx.ptr_size()),
         hir::IntType::Untyped => unreachable!(),
     }
 }
@@ -152,14 +147,10 @@ pub fn bool_layout(bool_ty: hir::BoolType) -> hir::Layout {
 }
 
 #[inline]
-pub fn string_layout<'hir>(
-    ctx: &impl LayoutContext<'hir>,
-    string_ty: hir::StringType,
-) -> hir::Layout {
-    let ptr_size = ctx.ptr_size();
+pub fn string_layout<'hir>(string_ty: hir::StringType) -> hir::Layout {
     match string_ty {
-        hir::StringType::String => hir::Layout::new(2 * ptr_size, ptr_size),
-        hir::StringType::CString => hir::Layout::equal(ptr_size),
+        hir::StringType::String => hir::Layout::new(16, 8),
+        hir::StringType::CString => hir::Layout::equal(8),
         hir::StringType::Untyped => unreachable!(),
     }
 }
@@ -249,7 +240,7 @@ pub fn resolve_enum_layout<'hir>(
     let data = ctx.enum_data(enum_id);
     if !data.flag_set.contains(hir::EnumFlag::WithFields) {
         let tag_ty = data.tag_ty.resolved()?;
-        return Ok(int_layout(ctx, tag_ty));
+        return Ok(int_layout(tag_ty));
     }
 
     let mut size: u64 = 0;

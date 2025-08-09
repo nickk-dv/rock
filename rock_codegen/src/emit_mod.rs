@@ -780,7 +780,7 @@ fn const_bool<'c>(val: bool) -> hir::ConstValue<'c> {
 }
 
 fn const_usize<'c>(val: u64) -> hir::ConstValue<'c> {
-    hir::ConstValue::Int { val, neg: false, int_ty: hir::IntType::Usize }
+    hir::ConstValue::Int { val, neg: false, int_ty: hir::IntType::U64 }
 }
 
 fn const_string<'c>(val: LitID) -> hir::ConstValue<'c> {
