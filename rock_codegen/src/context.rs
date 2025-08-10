@@ -298,7 +298,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     pub fn ptr_type(&self) -> llvm::Type {
         self.cache.ptr_type
     }
-    pub fn ptr_sized_int(&self) -> llvm::Type {
+    pub fn u64_type(&self) -> llvm::Type {
         self.cache.int_64
     }
     pub fn slice_type(&self) -> llvm::TypeStruct {
@@ -406,8 +406,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     }
 
     #[inline]
-    pub fn const_usize(&self, val: u64) -> llvm::Value {
-        llvm::const_int(self.ptr_sized_int(), val, false)
+    pub fn const_u64(&self, val: u64) -> llvm::Value {
+        llvm::const_int(self.u64_type(), val, false)
     }
 }
 

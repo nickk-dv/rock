@@ -342,7 +342,7 @@ fn write_const<'c>(
             let ptr = cg.build.gep_inbounds(
                 ptr_ty,
                 global.as_ptr(),
-                &[cg.const_usize(0), cg.const_usize(index)],
+                &[cg.const_u64(0), cg.const_u64(index)],
                 "global.idx",
             );
             writer.write_ptr_or_undef(cg, ptr.as_val());
@@ -358,7 +358,7 @@ fn write_const<'c>(
             let ptr = cg.build.gep_inbounds(
                 ptr_ty,
                 global.as_ptr(),
-                &[cg.const_usize(0), cg.const_usize(index as u64)],
+                &[cg.const_u64(0), cg.const_u64(index as u64)],
                 "global.idx",
             );
             writer.write_ptr_or_undef(cg, ptr.as_val());
@@ -457,7 +457,7 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
                 .gep_inbounds(
                     ptr_ty,
                     global.as_ptr(),
-                    &[cg.const_usize(0), cg.const_usize(index)],
+                    &[cg.const_u64(0), cg.const_u64(index)],
                     "global.idx",
                 )
                 .as_val()
@@ -475,11 +475,11 @@ pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c
                 .gep_inbounds(
                     ptr_ty,
                     global.as_ptr(),
-                    &[cg.const_usize(0), cg.const_usize(index as u64)],
+                    &[cg.const_u64(0), cg.const_u64(index as u64)],
                     "global.idx",
                 )
                 .as_val();
-            llvm::const_struct_named(cg.slice_type(), &[slice_ptr, cg.const_usize(len as u64)])
+            llvm::const_struct_named(cg.slice_type(), &[slice_ptr, cg.const_u64(len as u64)])
         }
     }
 }
@@ -493,7 +493,7 @@ fn codegen_const_string(cg: &mut Codegen, val: LitID, string_ty: hir::StringType
     match string_ty {
         hir::StringType::String => {
             let string = cg.session.intern_lit.get(val);
-            let slice_len = cg.const_usize(string.len() as u64);
+            let slice_len = cg.const_u64(string.len() as u64);
             llvm::const_struct_named(cg.slice_type(), &[string_ptr.as_val(), slice_len])
         }
         hir::StringType::CString => string_ptr.as_val(),
@@ -663,13 +663,13 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
                         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
                         let bind_var = proc_data.variable(var_id);
 
-                        let offset = cg.const_usize(layout.field_offset[field_idx + 1]);
+                        let offset = cg.const_u64(layout.field_offset[field_idx + 1]);
                         let array_ptr =
                             cg.build.gep_struct(enum_ty, enum_ptr.unwrap(), 0, "enum_bytes_ptr");
                         let field_ptr = cg.build.gep_inbounds(
                             enum_ty.field_ty(0),
                             array_ptr,
-                            &[cg.const_usize(0), offset],
+                            &[cg.const_u64(0), offset],
                             "variant_field_ptr",
                         );
                         let var_ptr = cg.proc.variable_ptrs[var_id.index()];
@@ -769,7 +769,7 @@ fn codegen_slice_field<'c>(
 
     let (idx, field_ty, ptr_name, value_name) = match access.field {
         hir::SliceField::Ptr => (0, cg.ptr_type(), "slice_ptr_ptr", "slice_ptr"),
-        hir::SliceField::Len => (1, cg.ptr_sized_int(), "slice_len_ptr", "slice_len"),
+        hir::SliceField::Len => (1, cg.u64_type(), "slice_len_ptr", "slice_len"),
     };
 
     let slice_ty = cg.slice_type();
@@ -816,7 +816,7 @@ fn codegen_index<'c>(
         hir::IndexKind::Slice(_) => {
             let slice_len_ptr =
                 cg.build.gep_struct(cg.slice_type(), target_ptr, 1, "slice_len_ptr");
-            let len = cg.build.load(cg.ptr_sized_int(), slice_len_ptr, "slice_len");
+            let len = cg.build.load(cg.u64_type(), slice_len_ptr, "slice_len");
             Some(len)
         }
         // skip if index is proven to be in bounds:
@@ -824,7 +824,7 @@ fn codegen_index<'c>(
             let len = cg.array_len(len);
             match access.index {
                 hir::Expr::Const(hir::ConstValue::Int { val, .. }, _) if *val < len => None,
-                _ => Some(cg.const_usize(len)),
+                _ => Some(cg.const_u64(len)),
             }
         }
         // skip if index is constant, meaning it cannot be corrupted:
@@ -835,7 +835,7 @@ fn codegen_index<'c>(
                     hir::ConstValue::Variant { .. } | hir::ConstValue::VariantPoly { .. },
                     _,
                 ) => None,
-                _ => Some(cg.const_usize(len)),
+                _ => Some(cg.const_u64(len)),
             }
         }
         hir::IndexKind::ArrayCore => {
@@ -888,7 +888,7 @@ fn codegen_index<'c>(
             cg.build.gep_inbounds(
                 array_ty,
                 target_ptr,
-                &[cg.const_usize(0), index_val],
+                &[cg.const_u64(0), index_val],
                 "array_elem_ptr",
             )
         }
@@ -898,7 +898,7 @@ fn codegen_index<'c>(
             cg.build.gep_inbounds(
                 array_ty,
                 target_ptr,
-                &[cg.const_usize(0), index_val],
+                &[cg.const_u64(0), index_val],
                 "array_elem_ptr",
             )
         }
@@ -1036,11 +1036,11 @@ fn codegen_variant<'c>(
     cg.build.store(tag, enum_ptr);
 
     for (idx, expr) in input.iter().copied().enumerate() {
-        let offset = cg.const_usize(layout.field_offset[idx + 1]);
+        let offset = cg.const_u64(layout.field_offset[idx + 1]);
         let field_ptr = cg.build.gep_inbounds(
             enum_ty.field_ty(0),
             array_ptr,
-            &[cg.const_usize(0), offset],
+            &[cg.const_u64(0), offset],
             "variant_field_ptr",
         );
         codegen_expr_store(cg, expr, field_ptr);
@@ -1246,14 +1246,14 @@ pub fn codegen_call_intrinsic<'c>(
             let src = SourceRange::new(origin, TextRange::zero());
             let layout_res = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src);
             let size = layout_res.map(|l| l.size).unwrap_or(0);
-            Some(llvm::const_int(cg.ptr_sized_int(), size, false))
+            Some(llvm::const_int(cg.u64_type(), size, false))
         }
         "align_of" => {
             let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
             let src = SourceRange::new(origin, TextRange::zero());
             let layout_res = layout::type_layout(cg, poly_types[0], cg.proc.poly_types, src);
             let align = layout_res.map(|l| l.align).unwrap_or(1);
-            Some(llvm::const_int(cg.ptr_sized_int(), align, false))
+            Some(llvm::const_int(cg.u64_type(), align, false))
         }
         "transmute" => {
             let value = codegen_expr_value(cg, input[0]);
@@ -1473,7 +1473,7 @@ fn codegen_variadic_arg<'c>(
         let array_gep = cg.build.gep_inbounds(
             array_ty,
             array_ptr,
-            &[cg.const_usize(0), cg.const_usize(idx as u64)],
+            &[cg.const_u64(0), cg.const_u64(idx as u64)],
             "any_array.idx",
         );
         let data_ptr = cg.build.gep_struct(any_ty, array_gep, 0, "any.data");
@@ -1481,7 +1481,7 @@ fn codegen_variadic_arg<'c>(
         cg.build.store(value_ptr.as_val(), data_ptr);
     }
 
-    let array_len = cg.const_usize(arg.exprs.len() as u64);
+    let array_len = cg.const_u64(arg.exprs.len() as u64);
     codegen_from_raw_parts(cg, array_ptr.as_val(), array_len)
 }
 
@@ -1517,9 +1517,9 @@ fn codegen_array_init<'c>(
     let array_ty = llvm::array_type(elem_ty, array.input.len() as u64);
     let array_ptr = cg.entry_alloca(array_ty, "array_init");
 
-    let mut indices = [cg.const_usize(0), cg.const_usize(0)];
+    let mut indices = [cg.const_u64(0), cg.const_u64(0)];
     for (idx, expr) in array.input.iter().copied().enumerate() {
-        indices[1] = cg.const_usize(idx as u64);
+        indices[1] = cg.const_u64(idx as u64);
         let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
         codegen_expr_store(cg, expr, elem_ptr);
     }
@@ -1545,8 +1545,8 @@ fn codegen_array_repeat<'c>(
     };
 
     let copied_val = codegen_expr_value(cg, array.value);
-    let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
-    cg.build.store(cg.const_usize(0), count_ptr);
+    let count_ptr = cg.entry_alloca(cg.u64_type(), "rep_count");
+    cg.build.store(cg.const_u64(0), count_ptr);
 
     let entry_bb = cg.append_bb("rep_entry");
     let body_bb = cg.append_bb("rep_body");
@@ -1554,8 +1554,8 @@ fn codegen_array_repeat<'c>(
 
     cg.build.br(entry_bb);
     cg.build.position_at_end(entry_bb);
-    let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
-    let repeat_val = cg.const_usize(array.len);
+    let count_val = cg.build.load(cg.u64_type(), count_ptr, "rep_val");
+    let repeat_val = cg.const_u64(array.len);
     let cond = codegen_binary_op(
         cg,
         hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::U64),
@@ -1565,12 +1565,12 @@ fn codegen_array_repeat<'c>(
     cg.build.cond_br(cond, body_bb, exit_bb);
 
     cg.build.position_at_end(body_bb);
-    let indices = [cg.const_usize(0), count_val];
+    let indices = [cg.const_u64(0), count_val];
     let elem_ptr = cg.build.gep_inbounds(array_ty, array_ptr, &indices, "elem_ptr");
     cg.build.store(copied_val, elem_ptr);
 
     let count_inc =
-        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_usize(1));
+        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_u64(1));
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);
@@ -1669,8 +1669,8 @@ pub fn codegen_array_binary_op<'c>(
     let array_ty = llvm::array_type(elem_ty, array.len);
     let array_ptr = cg.entry_alloca(array_ty, "array_binary");
 
-    let count_ptr = cg.entry_alloca(cg.ptr_sized_int(), "rep_count");
-    cg.build.store(cg.const_usize(0), count_ptr);
+    let count_ptr = cg.entry_alloca(cg.u64_type(), "rep_count");
+    cg.build.store(cg.const_u64(0), count_ptr);
 
     let entry_bb = cg.append_bb("rep_entry");
     let body_bb = cg.append_bb("rep_body");
@@ -1678,8 +1678,8 @@ pub fn codegen_array_binary_op<'c>(
 
     cg.build.br(entry_bb);
     cg.build.position_at_end(entry_bb);
-    let count_val = cg.build.load(cg.ptr_sized_int(), count_ptr, "rep_val");
-    let repeat_val = cg.const_usize(array.len);
+    let count_val = cg.build.load(cg.u64_type(), count_ptr, "rep_val");
+    let repeat_val = cg.const_u64(array.len);
     let cond = codegen_binary_op(
         cg,
         hir::BinOp::Cmp_Int(CmpPred::Less, hir::BoolType::Bool, hir::IntType::U64),
@@ -1689,7 +1689,7 @@ pub fn codegen_array_binary_op<'c>(
     cg.build.cond_br(cond, body_bb, exit_bb);
 
     cg.build.position_at_end(body_bb);
-    let indices = [cg.const_usize(0), count_val];
+    let indices = [cg.const_u64(0), count_val];
     let lhs_elem_ptr = cg.build.gep_inbounds(array_ty, lhs_ptr, &indices, "lhs_elem_ptr");
     let rhs_elem_ptr = cg.build.gep_inbounds(array_ty, rhs_ptr, &indices, "rhs_elem_ptr");
     let lhs = cg.build.load(elem_ty, lhs_elem_ptr, "lhs_val");
@@ -1699,7 +1699,7 @@ pub fn codegen_array_binary_op<'c>(
     cg.build.store(bin, elem_ptr);
 
     let count_inc =
-        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_usize(1));
+        codegen_binary_op(cg, hir::BinOp::Add_Int(hir::IntType::U64), count_val, cg.const_u64(1));
     cg.build.store(count_inc, count_ptr);
     cg.build.br(entry_bb);
     cg.build.position_at_end(exit_bb);

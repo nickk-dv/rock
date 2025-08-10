@@ -499,7 +499,7 @@ fn codegen_type_info(cg: &mut Codegen) {
             let array_gep = cg.build.gep_inbounds(
                 array_ty,
                 inst.into_ptr(),
-                &[cg.const_usize(0), cg.const_usize(arg_idx as u64)],
+                &[cg.const_u64(0), cg.const_u64(arg_idx as u64)],
                 "any_array.idx",
             );
             let type_ptr = cg.build.gep_struct(any_ty, array_gep, 1, "any.type");
@@ -508,7 +508,7 @@ fn codegen_type_info(cg: &mut Codegen) {
             let info_ptr = cg.build.gep_inbounds(
                 type_info_arr,
                 type_info_ptr,
-                &[cg.const_usize(0), cg.const_usize(type_id)],
+                &[cg.const_u64(0), cg.const_u64(type_id)],
                 "type_info",
             );
             cg.build.store(info_ptr.as_val(), type_ptr);
