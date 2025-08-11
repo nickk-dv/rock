@@ -570,10 +570,44 @@ fn handle_goto_definition(
     update_module_symbols(server, module_id, SymbolUpdate::All);
 
     let module = server.session.module.get(module_id);
+    let tree = module.tree.as_ref().unwrap();
     let offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
     let chain = node_chain(module.tree.as_ref().unwrap(), offset);
     let data = &server.modules[module_id.index()];
-    send_response(server.conn, id, serde_json::Value::Null)
+
+    let Some(path_id) = chain.iter().copied().nth_back(2) else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    let Some(path) = cst::Path::cast(tree.node(path_id)) else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    let Some(first) = path.segments(tree).next() else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    let Some(name) = first.name(tree) else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    if !name.0.range.contains_inclusive(offset) {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    }
+
+    let name_src = &module.file.source[name.ident(tree).unwrap().as_usize()];
+    let Some(name_id) = server.session.intern_name.get_id(name_src) else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    let Some(symbol) = data.symbols.get(&name_id).copied() else {
+        return send_response(server.conn, id, serde_json::Value::Null);
+    };
+    if let Symbol::Module(target_id) = symbol {
+        let target = server.session.module.get(target_id);
+        let location = lsp::Location {
+            uri: lsp::Url::from_file_path(&target.file.path).unwrap(),
+            range: lsp::Range::new(lsp::Position::new(0, 0), lsp::Position::new(0, 0)),
+        };
+        send_response(server.conn, id, location);
+    } else {
+        send_response(server.conn, id, serde_json::Value::Null)
+    }
 }
 
 fn node_chain(tree: &SyntaxTree, offset: TextOffset) -> Vec<NodeID> {
