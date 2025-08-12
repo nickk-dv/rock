@@ -554,6 +554,14 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
     send_response(server.conn, id, serde_json::Value::Null)
 }
 
+fn chain_node_nth_back<'syn, T: AstNode<'syn>>(
+    tree: &'syn SyntaxTree,
+    chain: &[NodeID],
+    idx: usize,
+) -> Option<T> {
+    T::cast(tree.node(chain.iter().copied().nth_back(idx)?))
+}
+
 fn handle_goto_definition(
     server: &mut ServerContext,
     id: RequestId,
@@ -575,15 +583,15 @@ fn handle_goto_definition(
     let chain = node_chain(module.tree.as_ref().unwrap(), offset);
     let data = &server.modules[module_id.index()];
 
-    let Some(path_id) = chain.iter().copied().nth_back(2) else {
+    let Some(path) = chain_node_nth_back::<cst::Path>(tree, &chain, 2) else {
         return send_response(server.conn, id, serde_json::Value::Null);
     };
-    let Some(path) = cst::Path::cast(tree.node(path_id)) else {
+    let mut segments = path.segments(tree);
+    let Some(first) = segments.next() else {
         return send_response(server.conn, id, serde_json::Value::Null);
     };
-    let Some(first) = path.segments(tree).next() else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
+    let second = segments.next();
+
     let Some(name) = first.name(tree) else {
         return send_response(server.conn, id, serde_json::Value::Null);
     };
@@ -605,6 +613,116 @@ fn handle_goto_definition(
             range: lsp::Range::new(lsp::Position::new(0, 0), lsp::Position::new(0, 0)),
         };
         send_response(server.conn, id, location);
+    } else if let Symbol::Defined(kind) = symbol {
+        let root = cst::SourceFile::cast(tree.root()).unwrap();
+        match kind {
+            SymbolKind::Proc => {
+                for item in root.items(tree) {
+                    let cst::Item::Proc(item) = item else {
+                        continue;
+                    };
+                    let Some(name) = item.name(tree) else {
+                        break;
+                    };
+                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
+                        continue;
+                    }
+                    let pos =
+                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
+                    let location = lsp::Location {
+                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        range: lsp::Range::new(pos, pos),
+                    };
+                    send_response(server.conn, id, location);
+                    return;
+                }
+            }
+            SymbolKind::Enum => {
+                for item in root.items(tree) {
+                    let cst::Item::Enum(item) = item else {
+                        continue;
+                    };
+                    let Some(name) = item.name(tree) else {
+                        break;
+                    };
+                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
+                        continue;
+                    }
+                    let pos =
+                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
+                    let location = lsp::Location {
+                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        range: lsp::Range::new(pos, pos),
+                    };
+                    send_response(server.conn, id, location);
+                    return;
+                }
+            }
+            SymbolKind::Struct => {
+                for item in root.items(tree) {
+                    let cst::Item::Struct(item) = item else {
+                        continue;
+                    };
+                    let Some(name) = item.name(tree) else {
+                        break;
+                    };
+                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
+                        continue;
+                    }
+                    let pos =
+                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
+                    let location = lsp::Location {
+                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        range: lsp::Range::new(pos, pos),
+                    };
+                    send_response(server.conn, id, location);
+                    return;
+                }
+            }
+            SymbolKind::Const => {
+                for item in root.items(tree) {
+                    let cst::Item::Const(item) = item else {
+                        continue;
+                    };
+                    let Some(name) = item.name(tree) else {
+                        break;
+                    };
+                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
+                        continue;
+                    }
+                    let pos =
+                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
+                    let location = lsp::Location {
+                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        range: lsp::Range::new(pos, pos),
+                    };
+                    send_response(server.conn, id, location);
+                    return;
+                }
+            }
+            SymbolKind::Global => {
+                for item in root.items(tree) {
+                    let cst::Item::Global(item) = item else {
+                        continue;
+                    };
+                    let Some(name) = item.name(tree) else {
+                        break;
+                    };
+                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
+                        continue;
+                    }
+                    let pos =
+                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
+                    let location = lsp::Location {
+                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        range: lsp::Range::new(pos, pos),
+                    };
+                    send_response(server.conn, id, location);
+                    return;
+                }
+            }
+        }
+        send_response(server.conn, id, serde_json::Value::Null)
     } else {
         send_response(server.conn, id, serde_json::Value::Null)
     }
