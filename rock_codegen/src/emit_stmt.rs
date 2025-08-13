@@ -2,6 +2,8 @@ use super::context::{Codegen, Expect};
 use super::emit_expr;
 use super::llvm;
 use crate::hir;
+use rock_core::error::SourceRange;
+use rock_core::hir_lower::layout;
 
 pub fn codegen_block<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, block: hir::Block<'c>) {
     cg.proc.block_enter();
@@ -56,8 +58,20 @@ fn codegen_local<'c>(cg: &mut Codegen<'c, '_, '_>, local: &hir::Local<'c>) {
             emit_expr::codegen_expr_store(cg, expr, var_ptr);
         }
         hir::LocalInit::Zeroed => {
-            let zero_init = llvm::const_zeroed(cg.ty(var.ty));
-            cg.build.store(zero_init, var_ptr);
+            let src = SourceRange::new(cg.hir.proc_data(cg.proc.proc_id).origin_id, var.name.range);
+            let layout = layout::type_layout(cg, var.ty, cg.proc.poly_types, src).unwrap();
+
+            match layout.size {
+                0 => {}
+                1..=32 => {
+                    let zero = llvm::const_zeroed(cg.ty(var.ty));
+                    cg.build.store(zero, var_ptr);
+                }
+                _ => {
+                    let zero = llvm::const_int(cg.int_type(hir::IntType::U8), 0, false);
+                    cg.build.memset(var_ptr, zero, cg.const_u64(layout.size), layout.align as u32);
+                }
+            }
         }
         hir::LocalInit::Undefined => {}
     }

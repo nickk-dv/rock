@@ -557,6 +557,12 @@ impl IRBuilder {
             ))
         }
     }
+
+    pub fn memset(&self, target: ValuePtr, byte: Value, size: Value, align: u32) {
+        unsafe {
+            let _ = core::LLVMBuildMemSet(self.builder, target.0, byte.0, size.0, align);
+        }
+    }
 }
 
 impl Drop for IRBuilder {
