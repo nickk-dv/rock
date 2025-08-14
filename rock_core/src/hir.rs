@@ -468,6 +468,7 @@ pub enum SliceKind {
 pub enum CastKind {
     Error,
     Char_NoOp,
+    UntypedChar_to_Int,
     Rawptr_NoOp,
 
     Int_NoOp,

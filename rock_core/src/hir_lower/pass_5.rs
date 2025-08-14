@@ -1683,6 +1683,7 @@ fn typecheck_cast<'hir, 'ast>(
 
     let kind = match (from, into) {
         (hir::Type::Char, hir::Type::Int(IntType::U32)) => CastKind::Char_NoOp,
+        (hir::Type::UntypedChar, hir::Type::Int(_)) => CastKind::UntypedChar_to_Int,
         (hir::Type::Rawptr, hir::Type::Reference(_, _))
         | (hir::Type::Rawptr, hir::Type::MultiReference(_, _))
         | (hir::Type::Rawptr, hir::Type::Procedure(_))
@@ -1693,7 +1694,7 @@ fn typecheck_cast<'hir, 'ast>(
             if from_ty != IntType::Untyped && from_ty == into_ty {
                 CastKind::Error
             } else {
-                integer_cast_kind(ctx, from_ty, into_ty)
+                integer_cast_kind(from_ty, into_ty)
             }
         }
         (hir::Type::Int(from_ty), hir::Type::Float(_)) => {
@@ -1820,7 +1821,7 @@ fn typecheck_cast<'hir, 'ast>(
     }
 }
 
-fn integer_cast_kind(ctx: &HirCtx, from_ty: IntType, into_ty: IntType) -> hir::CastKind {
+fn integer_cast_kind(from_ty: IntType, into_ty: IntType) -> hir::CastKind {
     use hir::CastKind;
     use std::cmp::Ordering;
 
@@ -1857,6 +1858,9 @@ fn constfold_cast<'hir>(
         CastKind::Error => Err(()),
         CastKind::Char_NoOp => {
             Ok(hir::ConstValue::from_u64(target.into_char() as u64, IntType::U32))
+        }
+        CastKind::UntypedChar_to_Int => {
+            int_range_check(ctx, src, target.into_char() as i128, into.unwrap_int())
         }
         CastKind::Rawptr_NoOp => Ok(target),
         CastKind::Int_NoOp
@@ -3019,14 +3023,14 @@ fn check_binary_op<'hir>(
         },
         ast::BinOp::BitShl => match (lhs_ty, rhs_ty) {
             (hir::Type::Int(lhs_ty), hir::Type::Int(rhs_ty)) => {
-                let cast = integer_cast_kind(ctx, rhs_ty, lhs_ty);
+                let cast = integer_cast_kind(rhs_ty, lhs_ty);
                 Ok(hir::BinOp::BitShl(lhs_ty, cast))
             }
             _ => Err(()),
         },
         ast::BinOp::BitShr => match (lhs_ty, rhs_ty) {
             (hir::Type::Int(lhs_ty), hir::Type::Int(rhs_ty)) => {
-                let cast = integer_cast_kind(ctx, rhs_ty, lhs_ty);
+                let cast = integer_cast_kind(rhs_ty, lhs_ty);
                 Ok(hir::BinOp::BitShr(lhs_ty, cast))
             }
             _ => Err(()),

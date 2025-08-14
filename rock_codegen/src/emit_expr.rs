@@ -938,7 +938,9 @@ fn codegen_cast_op(
     use llvm::OpCode;
 
     match kind {
-        CastKind::Error | CastKind::StringUntyped_NoOp => unreachable!(),
+        CastKind::Error | CastKind::StringUntyped_NoOp | CastKind::UntypedChar_to_Int => {
+            unreachable!()
+        }
         CastKind::Char_NoOp => val,
         CastKind::Rawptr_NoOp => val,
 
