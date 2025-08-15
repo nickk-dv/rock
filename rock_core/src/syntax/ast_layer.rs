@@ -356,6 +356,14 @@ macro_rules! token_find {
     };
 }
 
+macro_rules! token_expect {
+    ($fn_name:ident, $find_token:expr) => {
+        pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> TextRange {
+            self.0.token_find(tree, $find_token).unwrap()
+        }
+    };
+}
+
 macro_rules! token_find_rev {
     ($fn_name:ident, $find_token:expr) => {
         pub fn $fn_name(&self, tree: &'syn SyntaxTree) -> Option<TextRange> {
@@ -1237,7 +1245,7 @@ impl<'syn> LitString<'syn> {
 //==================== COMMON ====================
 
 impl<'syn> Name<'syn> {
-    token_find!(ident, T![ident]);
+    token_expect!(ident, T![ident]);
 }
 
 impl<'syn> Bind<'syn> {

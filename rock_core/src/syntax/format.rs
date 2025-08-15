@@ -1081,8 +1081,7 @@ fn lit(fmt: &mut Formatter, lit: cst::Lit) {
 //==================== COMMON ====================
 
 fn name(fmt: &mut Formatter, name: cst::Name) {
-    let range = name.ident(fmt.tree).unwrap();
-    fmt.write_range(range);
+    fmt.write_range(name.ident(fmt.tree));
 }
 
 fn bind(fmt: &mut Formatter, bind: cst::Bind) {

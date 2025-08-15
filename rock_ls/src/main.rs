@@ -449,8 +449,7 @@ fn name_id(
     file: &session::FileData,
     intern: &mut InternPool<NameID>,
 ) -> NameID {
-    let range = name.ident(tree).unwrap();
-    let text = &file.source[range.as_usize()];
+    let text = &file.source[name.ident(tree).as_usize()];
     intern.intern(text)
 }
 
@@ -460,8 +459,7 @@ fn name_id_opt(
     file: &session::FileData,
     intern: &InternPool<NameID>,
 ) -> Option<NameID> {
-    let range = name.ident(tree).unwrap();
-    let text = &file.source[range.as_usize()];
+    let text = &file.source[name.ident(tree).as_usize()];
     intern.get_id(text)
 }
 
@@ -577,155 +575,44 @@ fn handle_goto_definition(
     update_syntax_tree(&mut server.session, module_id);
     update_module_symbols(server, module_id, SymbolUpdate::All);
 
+    match goto_definition_location(server, module_id, pos) {
+        Some(location) => send_response(server.conn, id, location),
+        None => send_response(server.conn, id, serde_json::Value::Null),
+    }
+}
+
+fn goto_definition_location(
+    server: &mut ServerContext,
+    module_id: ModuleID,
+    pos: lsp::Position,
+) -> Option<lsp::Location> {
     let module = server.session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
     let offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
-    let chain = node_chain(module.tree.as_ref().unwrap(), offset);
-    let data = &server.modules[module_id.index()];
+    let chain = node_chain(tree, offset);
 
-    let Some(path) = chain_node_nth_back::<cst::Path>(tree, &chain, 2) else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
+    let path = chain_node_nth_back::<cst::Path>(tree, &chain, 2)?;
     let mut segments = path.segments(tree);
-    let Some(first) = segments.next() else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
-    let second = segments.next();
+    let first = segments.next()?; // module or symbol
+    let second = segments.next(); // maybe symbol
+    let third = segments.next(); // maybe variant
 
-    let Some(name) = first.name(tree) else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
-    if !name.0.range.contains_inclusive(offset) {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    }
+    let first_name = first.name(tree)?;
+    let first_name_str = &module.file.source[first_name.ident(tree).as_usize()];
+    let first_name_id = server.session.intern_name.intern(first_name_str);
+    let first_symbol = server.modules[module_id.index()].symbols.get(&first_name_id).copied()?;
 
-    let name_src = &module.file.source[name.ident(tree).unwrap().as_usize()];
-    let Some(name_id) = server.session.intern_name.get_id(name_src) else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
-    let Some(symbol) = data.symbols.get(&name_id).copied() else {
-        return send_response(server.conn, id, serde_json::Value::Null);
-    };
-    if let Symbol::Module(target_id) = symbol {
-        let target = server.session.module.get(target_id);
-        let location = lsp::Location {
-            uri: lsp::Url::from_file_path(&target.file.path).unwrap(),
-            range: lsp::Range::new(lsp::Position::new(0, 0), lsp::Position::new(0, 0)),
-        };
-        send_response(server.conn, id, location);
-    } else if let Symbol::Defined(kind) = symbol {
-        let root = cst::SourceFile::cast(tree.root()).unwrap();
-        match kind {
-            SymbolKind::Proc => {
-                for item in root.items(tree) {
-                    let cst::Item::Proc(item) = item else {
-                        continue;
-                    };
-                    let Some(name) = item.name(tree) else {
-                        break;
-                    };
-                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
-                        continue;
-                    }
-                    let pos =
-                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
-                    let location = lsp::Location {
-                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
-                        range: lsp::Range::new(pos, pos),
-                    };
-                    send_response(server.conn, id, location);
-                    return;
-                }
-            }
-            SymbolKind::Enum => {
-                for item in root.items(tree) {
-                    let cst::Item::Enum(item) = item else {
-                        continue;
-                    };
-                    let Some(name) = item.name(tree) else {
-                        break;
-                    };
-                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
-                        continue;
-                    }
-                    let pos =
-                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
-                    let location = lsp::Location {
-                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
-                        range: lsp::Range::new(pos, pos),
-                    };
-                    send_response(server.conn, id, location);
-                    return;
-                }
-            }
-            SymbolKind::Struct => {
-                for item in root.items(tree) {
-                    let cst::Item::Struct(item) = item else {
-                        continue;
-                    };
-                    let Some(name) = item.name(tree) else {
-                        break;
-                    };
-                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
-                        continue;
-                    }
-                    let pos =
-                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
-                    let location = lsp::Location {
-                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
-                        range: lsp::Range::new(pos, pos),
-                    };
-                    send_response(server.conn, id, location);
-                    return;
-                }
-            }
-            SymbolKind::Const => {
-                for item in root.items(tree) {
-                    let cst::Item::Const(item) = item else {
-                        continue;
-                    };
-                    let Some(name) = item.name(tree) else {
-                        break;
-                    };
-                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
-                        continue;
-                    }
-                    let pos =
-                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
-                    let location = lsp::Location {
-                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
-                        range: lsp::Range::new(pos, pos),
-                    };
-                    send_response(server.conn, id, location);
-                    return;
-                }
-            }
-            SymbolKind::Global => {
-                for item in root.items(tree) {
-                    let cst::Item::Global(item) = item else {
-                        continue;
-                    };
-                    let Some(name) = item.name(tree) else {
-                        break;
-                    };
-                    if name_src != &module.file.source[name.ident(tree).unwrap().as_usize()] {
-                        continue;
-                    }
-                    let pos =
-                        text_ops::offset_utf8_to_position_utf16(&module.file, name.0.range.start());
-                    let location = lsp::Location {
-                        uri: lsp::Url::from_file_path(&module.file.path).unwrap(),
-                        range: lsp::Range::new(pos, pos),
-                    };
-                    send_response(server.conn, id, location);
-                    return;
-                }
-            }
+    if let Symbol::Module(target_id) = first_symbol {
+        if first_name.0.range.contains_inclusive(offset) {
+            let target = server.session.module.get(target_id);
+            return Some(lsp::Location::new(
+                lsp::Url::from_file_path(&target.file.path).unwrap(),
+                lsp::Range::new(lsp::Position::new(0, 0), lsp::Position::new(0, 0)),
+            ));
         }
-        send_response(server.conn, id, serde_json::Value::Null)
-    } else {
-        send_response(server.conn, id, serde_json::Value::Null)
     }
+
+    None
 }
 
 fn node_chain(tree: &SyntaxTree, offset: TextOffset) -> Vec<NodeID> {
@@ -965,8 +852,7 @@ struct SemanticTokenBuilder<'s_ref, 's> {
 
 impl SemanticTokenBuilder<'_, '_> {
     fn name_id(&mut self, name: cst::Name) -> NameID {
-        let range = name.ident(self.tree).unwrap();
-        let text = &self.file.source[range.as_usize()];
+        let text = &self.file.source[name.ident(self.tree).as_usize()];
         self.intern_name.intern(text)
     }
 }
