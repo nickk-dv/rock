@@ -588,30 +588,98 @@ fn goto_definition_location(
 ) -> Option<lsp::Location> {
     let module = server.session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
-    let offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
-    let chain = node_chain(tree, offset);
+    let goto_offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
+    let chain = node_chain(tree, goto_offset);
 
     let path = chain_node_nth_back::<cst::Path>(tree, &chain, 2)?;
     let mut segments = path.segments(tree);
-    let first = segments.next()?; // module or symbol
-    let second = segments.next(); // maybe symbol
-    let third = segments.next(); // maybe variant
+    let mut name = segments.next()?.name(tree)?;
+    let mut symbol = scope_symbol(server, module_id, module_id, name)?;
+    let mut origin_id = module_id;
 
-    let first_name = first.name(tree)?;
-    let first_name_str = &module.file.source[first_name.ident(tree).as_usize()];
-    let first_name_id = server.session.intern_name.intern(first_name_str);
-    let first_symbol = server.modules[module_id.index()].symbols.get(&first_name_id).copied()?;
-
-    if let Symbol::Module(target_id) = first_symbol {
-        if first_name.0.range.contains_inclusive(offset) {
+    if let Symbol::Module(target_id) = symbol {
+        if name.0.range.contains_inclusive(goto_offset) {
             let target = server.session.module.get(target_id);
             return Some(lsp::Location::new(
                 lsp::Url::from_file_path(&target.file.path).unwrap(),
-                lsp::Range::new(lsp::Position::new(0, 0), lsp::Position::new(0, 0)),
+                lsp::Range::default(),
             ));
         }
+        name = segments.next()?.name(tree)?;
+        symbol = scope_symbol(server, target_id, module_id, name)?;
+        origin_id = target_id;
     }
 
+    let kind = match symbol {
+        Symbol::Module(_) => return None,
+        Symbol::Defined(kind) => kind,
+        Symbol::Imported(import_id, kind) => {
+            if origin_id != module_id {
+                return None;
+            }
+            origin_id = import_id;
+            kind
+        }
+    };
+
+    let offset = find_item_name_offset(server, origin_id, module_id, name)?;
+    if name.0.range.contains_exclusive(goto_offset) {
+        let target = server.session.module.get(origin_id);
+        let item_pos = text_ops::offset_utf8_to_position_utf16(&target.file, offset);
+        return Some(lsp::Location::new(
+            lsp::Url::from_file_path(&target.file.path).unwrap(),
+            lsp::Range::new(item_pos, item_pos),
+        ));
+    }
+    None
+}
+
+fn scope_symbol(
+    server: &ServerContext,
+    target_id: ModuleID,
+    module_id: ModuleID,
+    name: cst::Name,
+) -> Option<Symbol> {
+    let module = server.session.module.get(module_id);
+    let tree = module.tree.as_ref().unwrap();
+    let name_str = &module.file.source[name.ident(tree).as_usize()];
+    let name_id = server.session.intern_name.get_id(name_str)?; //@intern is better, borrow check blocked
+    server.modules[target_id.index()].symbols.get(&name_id).copied()
+}
+
+fn find_item_name_offset(
+    server: &ServerContext,
+    target_id: ModuleID,
+    module_id: ModuleID,
+    name: cst::Name,
+) -> Option<TextOffset> {
+    let module = server.session.module.get(module_id);
+    let tree = module.tree.as_ref().unwrap();
+    let name_str = &module.file.source[name.ident(tree).as_usize()];
+    let name_id = server.session.intern_name.get_id(name_str)?; //@intern is better, borrow check blocked
+
+    let module = server.session.module.get(target_id);
+    let tree = module.tree.as_ref().unwrap();
+    let root = cst::SourceFile(tree.root());
+
+    for item in root.items(tree) {
+        let name_opt = match item {
+            cst::Item::Proc(item) => item.name(tree),
+            cst::Item::Enum(item) => item.name(tree),
+            cst::Item::Struct(item) => item.name(tree),
+            cst::Item::Const(item) => item.name(tree),
+            cst::Item::Global(item) => item.name(tree),
+            cst::Item::Import(_) | cst::Item::Directive(_) => continue,
+        };
+        let Some(name) = name_opt else {
+            continue;
+        };
+        let name_str = &module.file.source[name.0.range.as_usize()];
+        //@intern is better, borrow check blocked
+        if server.session.intern_name.get_id(name_str) == Some(name_id) {
+            return Some(name.range().start());
+        }
+    }
     None
 }
 
