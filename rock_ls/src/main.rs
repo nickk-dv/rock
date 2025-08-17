@@ -622,7 +622,7 @@ fn goto_definition_location(
         }
     };
 
-    let offset = find_item_name_offset(server, origin_id, module_id, name)?;
+    let (offset, item) = find_item_name_offset(server, origin_id, module_id, name)?;
     if name.0.range.contains_exclusive(goto_offset) {
         let target = server.session.module.get(origin_id);
         let item_pos = text_ops::offset_utf8_to_position_utf16(&target.file, offset);
@@ -630,6 +630,34 @@ fn goto_definition_location(
             lsp::Url::from_file_path(&target.file.path).unwrap(),
             lsp::Range::new(item_pos, item_pos),
         ));
+    }
+
+    let cst::Item::Enum(item) = item else {
+        return None;
+    };
+    name = segments.next()?.name(tree)?;
+    if !name.0.range.contains_exclusive(goto_offset) {
+        return None;
+    }
+    let variant_name = &module.file.source[name.0.range.as_usize()];
+    let target = server.session.module.get(origin_id);
+    let tree = target.tree.as_ref().unwrap();
+
+    let Some(variants) = item.variant_list(tree) else {
+        return None;
+    };
+    for variant in variants.variants(tree) {
+        if let Some(vname) = variant.name(tree) {
+            let vname_name = &target.file.source[vname.0.range.as_usize()];
+            if variant_name == vname_name {
+                let item_pos =
+                    text_ops::offset_utf8_to_position_utf16(&target.file, vname.0.range.start());
+                return Some(lsp::Location::new(
+                    lsp::Url::from_file_path(&target.file.path).unwrap(),
+                    lsp::Range::new(item_pos, item_pos),
+                ));
+            }
+        }
     }
     None
 }
@@ -647,12 +675,12 @@ fn scope_symbol(
     server.modules[target_id.index()].symbols.get(&name_id).copied()
 }
 
-fn find_item_name_offset(
-    server: &ServerContext,
+fn find_item_name_offset<'s>(
+    server: &'s ServerContext,
     target_id: ModuleID,
     module_id: ModuleID,
     name: cst::Name,
-) -> Option<TextOffset> {
+) -> Option<(TextOffset, cst::Item<'s>)> {
     let module = server.session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
     let name_str = &module.file.source[name.ident(tree).as_usize()];
@@ -677,7 +705,7 @@ fn find_item_name_offset(
         let name_str = &module.file.source[name.0.range.as_usize()];
         //@intern is better, borrow check blocked
         if server.session.intern_name.get_id(name_str) == Some(name_id) {
-            return Some(name.range().start());
+            return Some((name.range().start(), item));
         }
     }
     None
