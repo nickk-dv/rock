@@ -552,6 +552,14 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
     send_response(server.conn, id, serde_json::Value::Null)
 }
 
+fn chain_node_nth<'syn, T: AstNode<'syn>>(
+    tree: &'syn SyntaxTree,
+    chain: &[NodeID],
+    idx: usize,
+) -> Option<T> {
+    T::cast(tree.node(chain.iter().copied().nth(idx)?))
+}
+
 fn chain_node_nth_back<'syn, T: AstNode<'syn>>(
     tree: &'syn SyntaxTree,
     chain: &[NodeID],
@@ -594,8 +602,33 @@ fn goto_definition_location(
     let path = chain_node_nth_back::<cst::Path>(tree, &chain, 2)?;
     let mut segments = path.segments(tree);
     let mut name = segments.next()?.name(tree)?;
-    let mut symbol = scope_symbol(server, module_id, module_id, name)?;
     let mut origin_id = module_id;
+
+    if name.0.range.contains_inclusive(goto_offset) {
+        if let Some(Some(param_list)) =
+            chain_node_nth::<cst::ProcItem>(tree, &chain, 0).map(|p| p.param_list(tree))
+        {
+            for param in param_list.params(tree) {
+                let Some(param_name) = param.name(tree) else {
+                    continue;
+                };
+                let name_str = &module.file.source[name.ident(tree).as_usize()];
+                let param_name_str = &module.file.source[param_name.ident(tree).as_usize()];
+                if name_str == param_name_str {
+                    let param_pos = text_ops::offset_utf8_to_position_utf16(
+                        &module.file,
+                        param_name.0.range.start(),
+                    );
+                    return Some(lsp::Location::new(
+                        lsp::Url::from_file_path(&module.file.path).unwrap(),
+                        lsp::Range::new(param_pos, param_pos),
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut symbol = scope_symbol(server, module_id, module_id, name)?;
 
     if let Symbol::Module(target_id) = symbol {
         if name.0.range.contains_inclusive(goto_offset) {
@@ -623,7 +656,7 @@ fn goto_definition_location(
     };
 
     let (offset, item) = find_item_name_offset(server, origin_id, module_id, name)?;
-    if name.0.range.contains_exclusive(goto_offset) {
+    if name.0.range.contains_inclusive(goto_offset) {
         let target = server.session.module.get(origin_id);
         let item_pos = text_ops::offset_utf8_to_position_utf16(&target.file, offset);
         return Some(lsp::Location::new(
@@ -636,7 +669,7 @@ fn goto_definition_location(
         return None;
     };
     name = segments.next()?.name(tree)?;
-    if !name.0.range.contains_exclusive(goto_offset) {
+    if !name.0.range.contains_inclusive(goto_offset) {
         return None;
     }
     let variant_name = &module.file.source[name.0.range.as_usize()];
