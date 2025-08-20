@@ -116,7 +116,7 @@ pub fn type_layout<'hir>(
 }
 
 #[inline]
-pub fn int_layout<'hir>(int_ty: hir::IntType) -> hir::Layout {
+pub fn int_layout(int_ty: hir::IntType) -> hir::Layout {
     match int_ty {
         hir::IntType::S8 | hir::IntType::U8 => hir::Layout::equal(1),
         hir::IntType::S16 | hir::IntType::U16 => hir::Layout::equal(2),
@@ -147,7 +147,7 @@ pub fn bool_layout(bool_ty: hir::BoolType) -> hir::Layout {
 }
 
 #[inline]
-pub fn string_layout<'hir>(string_ty: hir::StringType) -> hir::Layout {
+pub fn string_layout(string_ty: hir::StringType) -> hir::Layout {
     match string_ty {
         hir::StringType::String => hir::Layout::new(16, 8),
         hir::StringType::CString => hir::Layout::equal(8),

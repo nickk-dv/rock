@@ -198,8 +198,8 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     if tag_ty.is_unresolved() && !any_constant {
         let int_ty = match ctx.cache.enum_variants.len() {
             0..=0xFF => hir::IntType::U8,
-            0..=0xFFFF => hir::IntType::U16,
-            0..=0xFFFF_FFFF => hir::IntType::U32,
+            256..=0xFFFF => hir::IntType::U16,
+            65536..=0xFFFF_FFFF => hir::IntType::U32,
             _ => hir::IntType::U64,
         };
         tag_ty = hir::Eval::Resolved(int_ty);

@@ -3,7 +3,6 @@ use super::scope::{self, LocalVariableID, SymbolID, SymbolOrModule};
 use crate::ast;
 use crate::errors as err;
 use crate::hir;
-use crate::session::ModuleID;
 use crate::text::TextRange;
 
 struct PathResolved<'ast, 'hir> {
@@ -13,9 +12,9 @@ struct PathResolved<'ast, 'hir> {
 }
 
 enum PathResolvedKind<'hir> {
+    Module,
     Symbol(SymbolID),
     Variable(LocalVariableID),
-    Module(ModuleID),
     PolyParam(hir::Type<'hir>, TextRange),
 }
 
@@ -80,7 +79,7 @@ fn path_resolve<'ast, 'hir>(
         segment
     } else {
         return Ok(PathResolved {
-            kind: PathResolvedKind::Module(target_id),
+            kind: PathResolvedKind::Module,
             at_segment: segment_0,
             segments: path.segments.split_at(1).1,
         });
@@ -210,7 +209,7 @@ pub fn path_resolve_type<'hir, 'ast>(
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "type", var_id.desc());
             return hir::Type::Error;
         }
-        PathResolvedKind::Module(_) => {
+        PathResolvedKind::Module => {
             let src = ctx.src(path.at_segment.name.range);
             let name = ctx.name(path.at_segment.name.id);
             err::path_not_expected(&mut ctx.emit, src, None, name, "type", "module");
@@ -382,7 +381,7 @@ pub fn path_resolve_struct<'hir, 'ast>(
             err::path_not_expected(&mut ctx.emit, src, defined_src, name, "struct", var_id.desc());
             return None;
         }
-        PathResolvedKind::Module(_) => {
+        PathResolvedKind::Module => {
             let src = ctx.src(path.at_segment.name.range);
             let name = ctx.name(path.at_segment.name.id);
             err::path_not_expected(&mut ctx.emit, src, None, name, "struct", "module");
@@ -497,7 +496,7 @@ pub fn path_resolve_value<'hir, 'ast>(
                 LocalVariableID::Variable(id) => ValueID::Variable(id, path.segments),
             }
         }
-        PathResolvedKind::Module(_) => {
+        PathResolvedKind::Module => {
             let src = ctx.src(path.at_segment.name.range);
             let name = ctx.name(path.at_segment.name.id);
             err::path_not_expected(&mut ctx.emit, src, None, name, "value", "module");

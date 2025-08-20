@@ -1,3 +1,4 @@
+#![allow(dead_code)] //@remove when rework is complete
 use crate::ast;
 use crate::hir::{BinOp, CastKind, UnOp};
 use crate::support::Arena;

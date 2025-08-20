@@ -109,10 +109,10 @@ fn match_cov_int(ctx: &mut HirCtx, check: &CheckContext, int_ty: hir::IntType) {
             for value in not_covered {
                 match value.display() {
                     RangeIncDisplay::Collapsed(value) => {
-                        let _ = write!(&mut msg, "- `{}`\n", value);
+                        let _ = writeln!(&mut msg, "- `{}`", value);
                     }
                     RangeIncDisplay::Range(range) => {
-                        let _ = write!(&mut msg, "- `{}..={}`\n", range.start, range.end);
+                        let _ = writeln!(&mut msg, "- `{}..={}`", range.start, range.end);
                     }
                 }
             }

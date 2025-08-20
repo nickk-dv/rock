@@ -35,7 +35,6 @@ impl PackageGraph {
         &self.packages
     }
 
-    #[inline]
     pub fn find_package_dep(&self, package_id: PackageID, dep_name: NameID) -> Option<PackageID> {
         let package = self.package(package_id);
         package.deps.iter().copied().find(|&dep_id| {
@@ -44,17 +43,14 @@ impl PackageGraph {
         })
     }
 
-    #[must_use]
     pub(super) fn next_id(&self) -> PackageID {
         PackageID(self.packages.len() as u32)
     }
 
-    #[inline]
     pub(super) fn get_unique(&self, root_dir: &PathBuf) -> Option<PackageID> {
         self.unique.get(root_dir).copied()
     }
 
-    #[must_use]
     pub(super) fn add(&mut self, package: Package, root_dir: &PathBuf) -> PackageID {
         let package_id = PackageID(self.packages.len() as u32);
         assert!(self.packages.insert(package_id, package).is_none());

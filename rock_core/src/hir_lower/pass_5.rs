@@ -2498,8 +2498,8 @@ fn typecheck_try<'hir, 'ast>(
     range: TextRange,
 ) -> TypeResult<'hir> {
     let return_type = ctx.scope.local.return_expect.inner_type().unwrap();
-    let mut try_enum_id;
-    let mut ret_enum_poly;
+    let try_enum_id;
+    let ret_enum_poly;
 
     let try_expect = match return_type {
         hir::Type::Error => return TypeResult::error(),
@@ -4617,7 +4617,7 @@ fn check_call_direct<'hir, 'ast>(
             hir::ParamKind::Variadic => {
                 let offset = ctx.cache.exprs.start();
                 let offset_ty = ctx.cache.types.start();
-                while let Some(expr) = args.next() {
+                for expr in args.by_ref() {
                     let expr_res = typecheck_expr(ctx, Expectation::None, expr);
                     ctx.cache.exprs.push(expr_res.expr);
                     ctx.cache.types.push(expr_res.ty);
@@ -4735,7 +4735,7 @@ fn check_call_indirect<'hir, 'ast>(
             hir::ParamKind::Variadic => {
                 let offset = ctx.cache.exprs.start();
                 let offset_ty = ctx.cache.types.start();
-                while let Some(expr) = args.next() {
+                for expr in args.by_ref() {
                     let expr_res = typecheck_expr(ctx, Expectation::None, expr);
                     ctx.cache.exprs.push(expr_res.expr);
                     ctx.cache.types.push(expr_res.ty);

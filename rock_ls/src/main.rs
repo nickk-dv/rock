@@ -643,15 +643,14 @@ fn goto_definition_location(
         origin_id = target_id;
     }
 
-    let kind = match symbol {
+    match symbol {
         Symbol::Module(_) => return None,
-        Symbol::Defined(kind) => kind,
-        Symbol::Imported(import_id, kind) => {
+        Symbol::Defined(_) => {}
+        Symbol::Imported(import_id, _) => {
             if origin_id != module_id {
-                return None;
+                return None; //imported from another module
             }
             origin_id = import_id;
-            kind
         }
     };
 
@@ -676,10 +675,7 @@ fn goto_definition_location(
     let target = server.session.module.get(origin_id);
     let tree = target.tree.as_ref().unwrap();
 
-    let Some(variants) = item.variant_list(tree) else {
-        return None;
-    };
-    for variant in variants.variants(tree) {
+    for variant in item.variant_list(tree)?.variants(tree) {
         if let Some(vname) = variant.name(tree) {
             let vname_name = &target.file.source[vname.0.range.as_usize()];
             if variant_name == vname_name {
@@ -845,15 +841,15 @@ fn compile_project(server: &mut ServerContext) {
     }
 }
 
-fn handle_file_create(server: &mut ServerContext, p: lsp::CreateFilesParams) {
+fn handle_file_create(_: &mut ServerContext, p: lsp::CreateFilesParams) {
     debug_eprintln!("[file create] {:?}", p);
 }
 
-fn handle_file_delete(server: &mut ServerContext, p: lsp::DeleteFilesParams) {
+fn handle_file_delete(_: &mut ServerContext, p: lsp::DeleteFilesParams) {
     debug_eprintln!("[file delete] {:?}", p);
 }
 
-fn handle_file_rename(server: &mut ServerContext, p: lsp::RenameFilesParams) {
+fn handle_file_rename(_: &mut ServerContext, p: lsp::RenameFilesParams) {
     debug_eprintln!("[file rename] {:?}", p);
 }
 

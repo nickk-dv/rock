@@ -217,7 +217,7 @@ fn default_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
 pub fn create_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
     let mut session = default_session(config)?;
     let core_dir = session.curr_exe_dir.join("core");
-    process_package(&mut session, &core_dir, None, true, false)?;
+    let _ = process_package(&mut session, &core_dir, None, true, false)?;
     let root_dir = session.curr_work_dir.clone();
     if root_dir != core_dir {
         session.root_id = process_package(&mut session, &root_dir, None, false, false)?;

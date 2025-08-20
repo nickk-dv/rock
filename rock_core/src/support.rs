@@ -340,12 +340,10 @@ macro_rules! define_id {
 
         #[allow(unused)]
         impl $name {
-            #[must_use]
             #[inline(always)]
             $vis fn new(index: usize) -> $name {
                 $name(index as u32)
             }
-            #[must_use]
             #[inline(always)]
             $vis fn dummy() -> $name {
                 $name(u32::MAX)
@@ -360,12 +358,10 @@ macro_rules! define_id {
             $vis fn index(self) -> usize {
                 self.0 as usize
             }
-            #[must_use]
             #[inline(always)]
             $vis fn inc(self) -> $name {
                 $name(self.0 + 1)
             }
-            #[must_use]
             #[inline(always)]
             $vis fn dec(self) -> $name {
                 assert!(self.0 != 0);

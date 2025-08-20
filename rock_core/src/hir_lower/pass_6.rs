@@ -40,9 +40,9 @@ pub fn check_entry_point(ctx: &mut HirCtx) {
 pub fn check_unused_items(ctx: &mut HirCtx) {
     for proc_id in ctx.registry.proc_ids() {
         let data = ctx.registry.proc_data(proc_id);
-        if !data.flag_set.contains(hir::ProcFlag::WasUsed)
-            && !data.flag_set.contains(hir::ProcFlag::EntryPoint)
-            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        if !(data.flag_set.contains(hir::ProcFlag::WasUsed)
+            || data.flag_set.contains(hir::ProcFlag::EntryPoint)
+            || data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
             err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "procedure");
@@ -51,8 +51,8 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
 
     for enum_id in ctx.registry.enum_ids() {
         let data = ctx.registry.enum_data(enum_id);
-        if !data.flag_set.contains(hir::EnumFlag::WasUsed)
-            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        if !(data.flag_set.contains(hir::EnumFlag::WasUsed)
+            || data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
             err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "enum");
@@ -61,8 +61,8 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
 
     for struct_id in ctx.registry.struct_ids() {
         let data = ctx.registry.struct_data(struct_id);
-        if !data.flag_set.contains(hir::StructFlag::WasUsed)
-            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        if !(data.flag_set.contains(hir::StructFlag::WasUsed)
+            || data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
             err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "struct");
@@ -71,8 +71,8 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
 
     for const_id in ctx.registry.const_ids() {
         let data = ctx.registry.const_data(const_id);
-        if !data.flag_set.contains(hir::ConstFlag::WasUsed)
-            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        if !(data.flag_set.contains(hir::ConstFlag::WasUsed)
+            || data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
             err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "const");
@@ -81,8 +81,8 @@ pub fn check_unused_items(ctx: &mut HirCtx) {
 
     for global_id in ctx.registry.global_ids() {
         let data = ctx.registry.global_data(global_id);
-        if !data.flag_set.contains(hir::GlobalFlag::WasUsed)
-            && !(data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
+        if !(data.flag_set.contains(hir::GlobalFlag::WasUsed)
+            || data.vis == hir::Vis::Public && module_is_library(ctx, data.origin_id))
         {
             let name = ctx.name(data.name.id);
             err::scope_unused_symbol(&mut ctx.emit, data.src(), name, "global");

@@ -1,7 +1,6 @@
 use crate::ansi::AnsiStyle;
 use crate::command::{Command, CommandBuild, CommandCheck, CommandNew, CommandRun};
 use crate::error_print;
-use rock_codegen;
 use rock_core::error::Error;
 use rock_core::errors as err;
 use rock_core::hir;
@@ -21,8 +20,14 @@ pub fn command(command: Command) -> Result<(), Error> {
         Command::Build(data) => build(data),
         Command::Run(data) => run(data),
         Command::Fmt => fmt(),
-        Command::Help => Ok(help()),
-        Command::Version => Ok(version()),
+        Command::Help => {
+            help();
+            Ok(())
+        }
+        Command::Version => {
+            version();
+            Ok(())
+        }
     }
 }
 
