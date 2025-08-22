@@ -162,23 +162,21 @@ proc test_match_bool_coverage() void {
 
 //#entry "match_bool_exhaust"
 //#expect
-//error: patterns not covered:
-//- `false`
+//error: pattern not covered: false
 //  │
 //3 │     match v {
 //  │     ^^^^^
 //  └─ src/test.rock:3:5
 //
-//error: patterns not covered:
-//- `true`
+//error: pattern not covered: true
 //  │
 //6 │     match v {
 //  │     ^^^^^
 //  └─ src/test.rock:6:5
 //
 //error: patterns not covered:
-//- `true`
-//- `false`
+//true
+//false
 //  │
 //9 │     match v {}
 //  │     ^^^^^
@@ -305,22 +303,19 @@ proc test_match_string_coverage() void {
 
 //#entry(check) "match_string_exhaust"
 //#expect
-//error: patterns not covered:
-//- `_`
+//error: pattern not covered: _
 //  │
 //3 │     match v {
 //  │     ^^^^^
 //  └─ src/test.rock:3:5
 //
-//error: patterns not covered:
-//- `_`
+//error: pattern not covered: _
 //  │
 //6 │     match v {
 //  │     ^^^^^
 //  └─ src/test.rock:6:5
 //
-//error: patterns not covered:
-//- `_`
+//error: pattern not covered: _
 //   │
 //10 │     match v {}
 //   │     ^^^^^

@@ -780,6 +780,25 @@ pub fn tycheck_cannot_match_on_ty(emit: &mut impl ErrorSink, src: SourceRange, t
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_match_not_covered(emit: &mut impl ErrorSink, src: SourceRange, patterns: &str) {
+    let msg = if patterns.contains('\n') {
+        format!("patterns not covered:\n{patterns}")
+    } else {
+        format!("pattern not covered: {patterns}")
+    };
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_match_already_covered(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "pattern already covered";
+    emit.error(Error::new(msg, src, None));
+}
+
+pub fn tycheck_match_partially_covered(emit: &mut impl ErrorSink, src: SourceRange) {
+    let msg = "pattern partially covered";
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_pat_const_field_access(emit: &mut impl ErrorSink, src: SourceRange) {
     let msg = "cannot access fields in patterns";
     emit.error(Error::new(msg, src, None));
@@ -1267,15 +1286,4 @@ pub fn backend_link_failed(output: std::process::Output, args: Vec<String>) -> E
     msg.pop();
 
     Error::message(msg)
-}
-
-//==================== INTERNAL ====================
-
-pub fn internal_not_implemented(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    feature: &'static str,
-) {
-    let msg = format!("internal: {feature} is not implemented");
-    emit.error(Error::new(msg, src, None));
 }

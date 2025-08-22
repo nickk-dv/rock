@@ -1,7 +1,7 @@
 use super::context::HirCtx;
 use super::pass_5::Expectation;
 use crate::ast;
-use crate::error::{Error, ErrorSink};
+use crate::error::ErrorSink;
 use crate::errors as err;
 use crate::hir;
 use crate::intern::LitID;
@@ -102,91 +102,90 @@ pub fn match_cov(ctx: &mut HirCtx, kind: hir::MatchKind, check: &CheckContext, e
 fn match_cov_int(ctx: &mut HirCtx, check: &CheckContext, int_ty: hir::IntType) {
     pat_cov(ctx, check, int_ty, pat_cov_int);
 
-    if let Some(match_kw) = check.match_kw {
-        let not_covered = ctx.pat.cov_int.not_covered(int_ty.min_128(), int_ty.max_128());
-        if !not_covered.is_empty() {
-            let mut msg = String::from("patterns not covered:\n");
-            for value in not_covered {
-                match value.display() {
-                    RangeIncDisplay::Collapsed(value) => {
-                        let _ = writeln!(&mut msg, "- `{}`", value);
-                    }
-                    RangeIncDisplay::Range(range) => {
-                        let _ = writeln!(&mut msg, "- `{}..={}`", range.start, range.end);
-                    }
-                }
+    let Some(match_kw) = check.match_kw else { return };
+    let not_covered = ctx.pat.cov_int.not_covered(int_ty.min_128(), int_ty.max_128());
+    if not_covered.is_empty() {
+        return;
+    };
+
+    for value in not_covered {
+        match value.display() {
+            RangeIncDisplay::Collapsed(value) => {
+                let _ = writeln!(&mut ctx.pat.errbuf, "{}", value);
             }
-            let src = ctx.src(match_kw);
-            ctx.emit.error(Error::new(msg, src, None));
+            RangeIncDisplay::Range(range) => {
+                let _ = writeln!(&mut ctx.pat.errbuf, "{}..={}", range.start, range.end);
+            }
         }
     }
+    ctx.pat.errbuf.pop();
+    let src = ctx.src(match_kw);
+    err::tycheck_match_not_covered(&mut ctx.emit, src, &ctx.pat.errbuf);
+    ctx.pat.errbuf.clear();
 }
 
 fn match_cov_bool(ctx: &mut HirCtx, check: &CheckContext) {
     pat_cov(ctx, check, (), pat_cov_bool);
 
-    if let Some(match_kw) = check.match_kw {
-        let not_covered = ctx.pat.cov_bool.not_covered();
-        if !not_covered.is_empty() {
-            let mut msg = String::from("patterns not covered:\n");
-            for &value in not_covered {
-                if value {
-                    msg.push_str("- `true`\n");
-                } else {
-                    msg.push_str("- `false`\n");
-                }
-            }
-            msg.pop();
-            let src = ctx.src(match_kw);
-            ctx.emit.error(Error::new(msg, src, None));
+    let Some(match_kw) = check.match_kw else { return };
+    let not_covered = ctx.pat.cov_bool.not_covered();
+    if not_covered.is_empty() {
+        return;
+    };
+
+    for &value in not_covered {
+        if value {
+            ctx.pat.errbuf.push_str("true\n");
+        } else {
+            ctx.pat.errbuf.push_str("false\n");
         }
     }
+    ctx.pat.errbuf.pop();
+    let src = ctx.src(match_kw);
+    err::tycheck_match_not_covered(&mut ctx.emit, src, &ctx.pat.errbuf);
+    ctx.pat.errbuf.clear();
 }
 
 fn match_cov_char(ctx: &mut HirCtx, check: &CheckContext) {
     pat_cov(ctx, check, (), pat_cov_char);
 
-    if let Some(match_kw) = check.match_kw {
-        if ctx.pat.cov_char.not_covered() {
-            let msg = "patterns not covered:\n- `_`";
-            let src = ctx.src(match_kw);
-            ctx.emit.error(Error::new(msg, src, None));
-        }
+    let Some(match_kw) = check.match_kw else { return };
+    if ctx.pat.cov_char.not_covered() {
+        let src = ctx.src(match_kw);
+        err::tycheck_match_not_covered(&mut ctx.emit, src, "_");
     }
 }
 
 fn match_cov_string(ctx: &mut HirCtx, check: &CheckContext) {
     pat_cov(ctx, check, (), pat_cov_string);
 
-    if let Some(match_kw) = check.match_kw {
-        if ctx.pat.cov_string.not_covered() {
-            let msg = "patterns not covered:\n- `_`";
-            let src = ctx.src(match_kw);
-            ctx.emit.error(Error::new(msg, src, None));
-        }
+    let Some(match_kw) = check.match_kw else { return };
+    if ctx.pat.cov_string.not_covered() {
+        let src = ctx.src(match_kw);
+        err::tycheck_match_not_covered(&mut ctx.emit, src, "_");
     }
 }
 
 fn match_cov_enum(ctx: &mut HirCtx, check: &CheckContext, enum_id: hir::EnumID) {
     pat_cov(ctx, check, enum_id, pat_cov_enum);
 
-    if let Some(match_kw) = check.match_kw {
-        let data = ctx.registry.enum_data(enum_id);
-        let variant_count = data.variants.len();
-        let not_covered = ctx.pat.cov_enum.not_covered(variant_count);
-
-        if !not_covered.is_empty() {
-            let mut msg = String::from("patterns not covered:\n");
-
-            for variant_id in not_covered {
-                let variant = data.variant(*variant_id);
-                let name = ctx.session.intern_name.get(variant.name.id);
-                msg.push_str(&format!("- `.{name}`\n"));
-            }
-            let src = ctx.src(match_kw);
-            ctx.emit.error(Error::new(msg, src, None));
-        }
+    let Some(match_kw) = check.match_kw else { return };
+    let data = ctx.registry.enum_data(enum_id);
+    let variant_count = data.variants.len();
+    let not_covered = ctx.pat.cov_enum.not_covered(variant_count);
+    if not_covered.is_empty() {
+        return;
     }
+
+    for variant_id in not_covered.iter().copied() {
+        let variant = data.variant(variant_id);
+        let name = ctx.session.intern_name.get(variant.name.id);
+        let _ = writeln!(&mut ctx.pat.errbuf, ".{}", name);
+    }
+    ctx.pat.errbuf.pop();
+    let src = ctx.src(match_kw);
+    err::tycheck_match_not_covered(&mut ctx.emit, src, &ctx.pat.errbuf);
+    ctx.pat.errbuf.clear();
 }
 
 fn pat_cov<F, D>(ctx: &mut HirCtx, check: &CheckContext, data: D, cov_fn: F)
@@ -221,7 +220,7 @@ fn pat_cov_int(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, int_ty: hi
         }
         _ => unreachable!(),
     };
-    check_pat_cov_result(ctx, pat_range, result);
+    check_coverage_result(ctx, pat_range, result);
 }
 
 fn pat_cov_bool(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
@@ -230,7 +229,7 @@ fn pat_cov_bool(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
         hir::Pat::Lit(hir::ConstValue::Bool { val, .. }) => ctx.pat.cov_bool.cover(val),
         _ => unreachable!(),
     };
-    check_pat_cov_result(ctx, pat_range, result);
+    check_coverage_result(ctx, pat_range, result);
 }
 
 fn pat_cov_char(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
@@ -241,7 +240,7 @@ fn pat_cov_char(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
         }
         _ => unreachable!(),
     };
-    check_pat_cov_result(ctx, pat_range, result);
+    check_coverage_result(ctx, pat_range, result);
 }
 
 fn pat_cov_string(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) {
@@ -250,7 +249,7 @@ fn pat_cov_string(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, _: ()) 
         hir::Pat::Lit(hir::ConstValue::String { val, .. }) => ctx.pat.cov_string.cover(val),
         _ => unreachable!(),
     };
-    check_pat_cov_result(ctx, pat_range, result);
+    check_coverage_result(ctx, pat_range, result);
 }
 
 fn pat_cov_enum(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, enum_id: hir::EnumID) {
@@ -262,17 +261,15 @@ fn pat_cov_enum(ctx: &mut HirCtx, pat: hir::Pat, pat_range: TextRange, enum_id: 
         hir::Pat::Variant(_, variant_id, _) => ctx.pat.cov_enum.cover(variant_id, variant_count),
         _ => unreachable!(),
     };
-    check_pat_cov_result(ctx, pat_range, result);
+    check_coverage_result(ctx, pat_range, result);
 }
 
-fn check_pat_cov_result(ctx: &mut HirCtx, pat_range: TextRange, result: Result<(), PatCovError>) {
-    if let Err(error) = result {
-        let msg = match error {
-            PatCovError::CoverFull => "pattern already covered",
-            PatCovError::CoverPartial => "pattern partially covered",
-        };
-        let src = ctx.src(pat_range);
-        ctx.emit.error(Error::new(msg, src, None));
+fn check_coverage_result(ctx: &mut HirCtx, range: TextRange, result: Result<(), PatCovError>) {
+    let Err(error) = result else { return };
+    let src = ctx.src(range);
+    match error {
+        PatCovError::CoverFull => err::tycheck_match_already_covered(&mut ctx.emit, src),
+        PatCovError::CoverPartial => err::tycheck_match_partially_covered(&mut ctx.emit, src),
     }
 }
 
@@ -293,6 +290,7 @@ impl<'a> CheckContext<'a> {
 }
 
 pub struct PatCov {
+    errbuf: String,
     cov_int: PatCovInt<i128>,
     cov_bool: PatCovBool,
     cov_char: PatCovChar,
@@ -330,6 +328,7 @@ enum PatCovError {
 impl PatCov {
     pub fn new() -> PatCov {
         PatCov {
+            errbuf: String::new(),
             cov_int: PatCovInt::new(),
             cov_bool: PatCovBool::new(),
             cov_char: PatCovChar::new(),
