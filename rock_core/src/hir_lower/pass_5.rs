@@ -473,7 +473,6 @@ struct BlockResult<'hir> {
     ty: hir::Type<'hir>,
     block: hir::Block<'hir>,
     tail_range: Option<TextRange>,
-    diverges: bool, //@temp fix: used in for loop gen to not generate incrementing code
 }
 
 impl<'hir> TypeResult<'hir> {
@@ -511,9 +510,8 @@ impl<'hir> BlockResult<'hir> {
         ty: hir::Type<'hir>,
         block: hir::Block<'hir>,
         tail_range: Option<TextRange>,
-        diverges: bool,
     ) -> BlockResult<'hir> {
-        BlockResult { ty, block, tail_range, diverges }
+        BlockResult { ty, block, tail_range }
     }
 }
 
@@ -1432,8 +1430,6 @@ fn typecheck_index<'hir, 'ast>(
         offset: target.range.end(),
     };
 
-    //@indexing const core Array should not be allowed, current const index check is not enough,
-    // temp ArrayCore guard to prevent constfold from running.
     if !ctx.emit.did_error(error_count) && !matches!(kind, hir::IndexKind::ArrayCore) {
         if let hir::Expr::Const(target, target_id) = target_res.expr {
             if let hir::Expr::Const(index, _) = index_res.expr {
@@ -3612,7 +3608,7 @@ fn typecheck_block<'hir, 'ast>(
 
     //type expectation is delegated to tail expression, instead of the block itself
     let block_result = if let Some(block_ty) = block_tail_ty {
-        BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
+        BlockResult::new(block_ty, hir_block, block_tail_range)
     } else {
         let range = if block.stmts.is_empty() {
             block.range
@@ -3621,7 +3617,7 @@ fn typecheck_block<'hir, 'ast>(
         };
         let block_ty = if diverges { hir::Type::Never } else { hir::Type::Void };
         type_expectation_check(ctx, range, block_ty, expect);
-        BlockResult::new(block_ty, hir_block, block_tail_range, diverges)
+        BlockResult::new(block_ty, hir_block, block_tail_range)
     };
 
     ctx.scope.local.exit_block();
@@ -3985,7 +3981,7 @@ fn typecheck_for<'hir, 'ast>(
                         stmt_for_block,
                     ]),
                 }
-            } else if block_res.diverges {
+            } else if block_res.ty.is_never() {
                 hir::Block {
                     stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_value_local, stmt_for_block]),
                 }
@@ -4186,7 +4182,7 @@ fn typecheck_for<'hir, 'ast>(
             let expr_for_block = hir::Expr::Block { block: block_res.block };
             let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
 
-            let loop_block = if block_res.diverges {
+            let loop_block = if block_res.ty.is_never() {
                 hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_for_block]) }
             } else {
                 hir::Block {

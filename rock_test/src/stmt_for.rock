@@ -78,3 +78,23 @@ proc test_for_range() void {
 
 //#entry "for_pattern"
 proc test_for_pattern() void {}
+
+//#entry "for_element_diverges"
+//#expect(no_endl)
+//entered unreachable code at src/test.rock:3:9
+//#!
+proc test_for_element_diverges() void {
+    for _ in [0, 1, 2] {
+        unreachable();
+    }
+}
+
+//#entry "for_range_diverges"
+//#expect(no_endl)
+//entered unreachable code at src/test.rock:3:9
+//#!
+proc test_for_range_diverges() void {
+    for _ in 0..<10 {
+        unreachable();
+    }
+}
