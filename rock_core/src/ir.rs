@@ -64,6 +64,10 @@ pub enum StmtKind {
 }
 
 pub enum ExprKind {
+    Error,
+    Block,
+    SliceField,
+    Slice,
     Cast,
     Param,
     Local,
@@ -87,6 +91,31 @@ pub enum LocalInit {
 pub enum AssignOp {
     Assign,
     Binary(BinOp, Option<u32>),
+}
+
+#[derive(Copy, Clone)]
+pub struct SliceFieldAccess {
+    pub deref: Option<ast::Mut>,
+    pub field: SliceField,
+}
+
+#[derive(Copy, Clone)]
+pub enum SliceField {
+    Ptr,
+    Len,
+}
+
+#[derive(Copy, Clone)]
+pub struct SliceAccess {
+    pub deref: Option<ast::Mut>,
+    pub kind: SliceKind,
+    pub op_call: ExprID,
+}
+
+#[derive(Copy, Clone)]
+pub enum SliceKind {
+    Slice(ast::Mut),
+    Array,
 }
 
 const LOCAL_INIT_ZEROED: u32 = u32::MAX - 1;
@@ -165,6 +194,21 @@ impl Body<'_> {
 
     pub fn block(&self, id: ExprID) -> &[StmtID] {
         self.read_block(id.index() + 1)
+    }
+    pub fn slice_field(&self, id: ExprID) -> (ExprID, SliceFieldAccess) {
+        let tag = self.expr_data[id.index()];
+        let deref = read_value_bits!(tag, 8, Option<ast::Mut>, u8);
+        let field = read_value_bits!(tag, 16, SliceField, u8);
+        let target = ExprID(self.expr_data[id.index() + 1]);
+        (target, SliceFieldAccess { deref, field })
+    }
+    pub fn slice(&self, id: ExprID) -> (ExprID, SliceAccess) {
+        let tag = self.expr_data[id.index()];
+        let deref = read_value_bits!(tag, 8, Option<ast::Mut>, u8);
+        let kind = read_value_bits!(tag, 16, SliceKind, u8);
+        let target = ExprID(self.expr_data[id.index() + 1]);
+        let op_call = ExprID(self.expr_data[id.index() + 2]);
+        (target, SliceAccess { deref, kind, op_call })
     }
     pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
         let tag = self.expr_data[id.index()];
@@ -325,6 +369,39 @@ impl Writer {
         id
     }
 
+    pub fn error(&mut self) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::Error as u32);
+        id
+    }
+    pub fn block(&mut self, block: &[StmtID]) -> StmtID {
+        let id = StmtID(self.expr_data.len() as u32);
+        self.expr_data.push(ExprKind::Block as u32);
+        self.expr_data.push(block.len() as u32);
+        for stmt in block.iter().copied() {
+            self.expr_data.push(stmt.0);
+        }
+        id
+    }
+    pub fn slice_field(&mut self, target: ExprID, access: SliceFieldAccess) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        let deref: u8 = unsafe { mem::transmute(access.deref) };
+        let field: u8 = unsafe { mem::transmute(access.field) };
+        let tag = ExprKind::SliceField as u32 | (deref as u32) << 8 | (field as u32) << 16;
+        self.expr_data.push(tag);
+        self.expr_data.push(target.0);
+        id
+    }
+    pub fn slice(&mut self, target: ExprID, access: SliceAccess) -> ExprID {
+        let id = ExprID(self.expr_data.len() as u32);
+        let deref: u8 = unsafe { mem::transmute(access.deref) };
+        let kind: u8 = unsafe { mem::transmute(access.kind) };
+        let tag = ExprKind::Slice as u32 | (deref as u32) << 8 | (kind as u32) << 16;
+        self.expr_data.push(tag);
+        self.expr_data.push(target.0);
+        self.expr_data.push(access.op_call.0);
+        id
+    }
     pub fn cast(&mut self, target: ExprID, into: TypeID, kind: CastKind) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::Cast as u32 | ((kind as u32) << 8));
