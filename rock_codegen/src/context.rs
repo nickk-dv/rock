@@ -56,7 +56,7 @@ pub struct LoopInfo {
 #[derive(Copy, Clone)]
 pub enum Expect {
     Value(Option<TailValueID>),
-    Pointer(bool),
+    Pointer(Option<TailValueID>, bool),
     Store(llvm::ValuePtr),
 }
 

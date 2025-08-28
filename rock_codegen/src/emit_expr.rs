@@ -10,10 +10,6 @@ use rock_core::intern::LitID;
 use rock_core::support::TempOffset;
 use rock_core::text::TextRange;
 
-pub fn codegen_expr_discard<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
-    codegen_expr(cg, expr, Expect::Value(None));
-}
-
 pub fn codegen_expr_value<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) -> llvm::Value {
     let value_id = cg.proc.add_tail_value();
     if let Some(value) = codegen_expr(cg, expr, Expect::Value(Some(value_id))) {
@@ -39,40 +35,32 @@ pub fn codegen_expr_value_opt<'c>(
     }
 }
 
-pub fn codegen_expr_tail<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, expr: &hir::Expr<'c>) {
-    if let Some(value) = codegen_expr(cg, expr, expect) {
-        match expect {
-            Expect::Value(Some(value_id)) => {
-                if let Some(tail) = cg.proc.tail_value(value_id) {
-                    cg.build.store(value, tail.value_ptr);
-                } else {
-                    let value_ty = llvm::typeof_value(value);
-                    let value_ptr = cg.entry_alloca(value_ty, "tail_ptr");
-                    cg.proc.set_tail_value(value_id, value_ptr, value_ty);
-                    cg.build.store(value, value_ptr);
-                }
-            }
-            Expect::Value(None) => {}
-            Expect::Pointer(_) => unreachable!(),
-            Expect::Store(ptr_val) => {
-                let _ = cg.build.store(value, ptr_val);
-            }
-        }
-    }
-}
-
 pub fn codegen_expr_pointer<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expr: &hir::Expr<'c>,
 ) -> llvm::ValuePtr {
-    codegen_expr(cg, expr, Expect::Pointer(false)).unwrap().into_ptr()
+    let value_id = cg.proc.add_tail_value();
+    if let Some(value) = codegen_expr(cg, expr, Expect::Pointer(Some(value_id), false)) {
+        value.into_ptr()
+    } else if let Some(tail) = cg.proc.tail_value(value_id) {
+        tail.value_ptr
+    } else {
+        unreachable!();
+    }
 }
 
 pub fn codegen_expr_pointer_to_expr_value<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     expr: &hir::Expr<'c>,
 ) -> llvm::ValuePtr {
-    codegen_expr(cg, expr, Expect::Pointer(true)).unwrap().into_ptr()
+    let value_id = cg.proc.add_tail_value();
+    if let Some(value) = codegen_expr(cg, expr, Expect::Pointer(Some(value_id), true)) {
+        value.into_ptr()
+    } else if let Some(tail) = cg.proc.tail_value(value_id) {
+        tail.value_ptr //@is this right?
+    } else {
+        unreachable!();
+    }
 }
 
 pub fn codegen_expr_store<'c>(
@@ -85,9 +73,40 @@ pub fn codegen_expr_store<'c>(
     }
 }
 
+pub fn codegen_expr_discard<'c>(cg: &mut Codegen<'c, '_, '_>, expr: &hir::Expr<'c>) {
+    codegen_expr(cg, expr, Expect::Value(None));
+}
+
+pub fn codegen_expr_tail<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, expr: &hir::Expr<'c>) {
+    let expect_fix = match expect {
+        Expect::Pointer(Some(value_id), _) => Expect::Value(Some(value_id)),
+        _ => expect,
+    };
+    let Some(value) = codegen_expr(cg, expr, expect_fix) else { return };
+
+    let value_id = match expect {
+        Expect::Value(Some(value_id)) => value_id,
+        Expect::Pointer(Some(value_id), _) => value_id,
+        Expect::Value(None) => return,
+        Expect::Pointer(None, _) => return,
+        Expect::Store(ptr_val) => {
+            cg.build.store(value, ptr_val);
+            return;
+        }
+    };
+    if let Some(tail) = cg.proc.tail_value(value_id) {
+        cg.build.store(value, tail.value_ptr);
+    } else {
+        let value_ty = llvm::typeof_value(value);
+        let value_ptr = cg.entry_alloca(value_ty, "tail_ptr");
+        cg.proc.set_tail_value(value_id, value_ptr, value_ty);
+        cg.build.store(value, value_ptr);
+    }
+}
+
 pub fn maybe_alloc_copy(cg: &mut Codegen, expect: Expect, value: llvm::Value) -> llvm::Value {
     match expect {
-        Expect::Pointer(_) => {
+        Expect::Pointer(_, _) => {
             let temp_ptr = cg.entry_alloca(llvm::typeof_value(value), "copy.temp");
             cg.build.store(value, temp_ptr);
             temp_ptr.as_val()
@@ -750,7 +769,7 @@ fn codegen_struct_field<'c>(
             let field_ty = cg.ty(access.field_ty);
             cg.build.load(field_ty, field_ptr, "field_val")
         }
-        Expect::Pointer(_) => field_ptr.as_val(),
+        Expect::Pointer(_, _) => field_ptr.as_val(),
     }
 }
 
@@ -777,7 +796,7 @@ fn codegen_slice_field<'c>(
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => cg.build.load(field_ty, field_ptr, value_name),
-        Expect::Pointer(_) => field_ptr.as_val(),
+        Expect::Pointer(_, _) => field_ptr.as_val(),
     }
 }
 
@@ -913,7 +932,7 @@ fn codegen_index<'c>(
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => cg.build.load(elem_ty, elem_ptr, "elem_val"),
-        Expect::Pointer(_) => elem_ptr.as_val(),
+        Expect::Pointer(_, _) => elem_ptr.as_val(),
     }
 }
 
@@ -978,7 +997,7 @@ fn codegen_param_var(cg: &mut Codegen, expect: Expect, param_id: hir::ParamID) -
             let ptr_ty = cg.ty(param.ty);
             cg.build.load(ptr_ty, param_ptr, "param_val")
         }
-        Expect::Pointer(_) => param_ptr.as_val(),
+        Expect::Pointer(_, _) => param_ptr.as_val(),
     }
 }
 
@@ -991,7 +1010,7 @@ fn codegen_variable(cg: &mut Codegen, expect: Expect, var_id: hir::VariableID) -
             let var_ty = cg.ty(var.ty);
             cg.build.load(var_ty, var_ptr, "var_val")
         }
-        Expect::Pointer(_) => var_ptr.as_val(),
+        Expect::Pointer(_, _) => var_ptr.as_val(),
     }
 }
 
@@ -1004,7 +1023,7 @@ fn codegen_global_var(cg: &mut Codegen, expect: Expect, global_id: hir::GlobalID
             let global_ty = cg.ty(data.ty);
             cg.build.load(global_ty, global_ptr, "global_val")
         }
-        Expect::Pointer(_) => global_ptr.as_val(),
+        Expect::Pointer(_, _) => global_ptr.as_val(),
     }
 }
 
@@ -1052,7 +1071,7 @@ fn codegen_variant<'c>(
         Expect::Value(_) | Expect::Store(_) => {
             Some(cg.build.load(enum_ty.as_ty(), enum_ptr, "enum_value"))
         }
-        Expect::Pointer(_) => Some(enum_ptr.as_val()),
+        Expect::Pointer(_, _) => Some(enum_ptr.as_val()),
     }
 }
 
@@ -1078,7 +1097,7 @@ pub fn codegen_call_direct<'c>(
 
     if is_external && emit_mod::win_x64_parameter_type(cg, data_return_ty).by_pointer {
         let ptr = match expect {
-            Expect::Value(_) | Expect::Pointer(_) => {
+            Expect::Value(_) | Expect::Pointer(_, _) => {
                 let alloc_ty = cg.ty(data_return_ty);
                 cg.entry_alloca(alloc_ty, "c_call_sret")
             }
@@ -1135,7 +1154,7 @@ pub fn codegen_call_direct<'c>(
 
     if let Some(ptr) = ret_ptr {
         return match expect {
-            Expect::Pointer(_) => Some(ptr.as_val()),
+            Expect::Pointer(_, _) => Some(ptr.as_val()),
             _ => {
                 let ptr_ty = cg.ty(data.return_ty);
                 Some(cg.build.load(ptr_ty, ptr, "c_call_ptr_ret_val"))
@@ -1163,7 +1182,7 @@ fn codegen_call_indirect<'c>(
 
     if is_external && emit_mod::win_x64_parameter_type(cg, proc_ty.return_ty).by_pointer {
         let ptr = match expect {
-            Expect::Value(_) | Expect::Pointer(_) => {
+            Expect::Value(_) | Expect::Pointer(_, _) => {
                 let alloc_ty = cg.ty(proc_ty.return_ty);
                 cg.entry_alloca(alloc_ty, "c_call_sret")
             }
@@ -1217,7 +1236,7 @@ fn codegen_call_indirect<'c>(
 
     if let Some(ptr) = ret_ptr {
         return match expect {
-            Expect::Pointer(_) => Some(ptr.as_val()),
+            Expect::Pointer(_, _) => Some(ptr.as_val()),
             _ => {
                 let ptr_ty = cg.ty(proc_ty.return_ty);
                 Some(cg.build.load(ptr_ty, ptr, "c_call_ret_val"))
@@ -1506,7 +1525,7 @@ fn codegen_struct_init<'c>(
         Expect::Value(_) | Expect::Store(_) => {
             Some(cg.build.load(struct_ty.as_ty(), struct_ptr, "struct_val"))
         }
-        Expect::Pointer(_) => Some(struct_ptr.as_val()),
+        Expect::Pointer(_, _) => Some(struct_ptr.as_val()),
     }
 }
 
@@ -1530,7 +1549,7 @@ fn codegen_array_init<'c>(
         Expect::Value(_) | Expect::Store(_) => {
             Some(cg.build.load(array_ty, array_ptr, "array_val"))
         }
-        Expect::Pointer(_) => Some(array_ptr.as_val()),
+        Expect::Pointer(_, _) => Some(array_ptr.as_val()),
     }
 }
 
@@ -1542,7 +1561,7 @@ fn codegen_array_repeat<'c>(
     let elem_ty = cg.ty(array.elem_ty);
     let array_ty = llvm::array_type(elem_ty, array.len);
     let array_ptr = match expect {
-        Expect::Value(_) | Expect::Pointer(_) => cg.entry_alloca(array_ty, "array_repeat"),
+        Expect::Value(_) | Expect::Pointer(_, _) => cg.entry_alloca(array_ty, "array_repeat"),
         Expect::Store(ptr_val) => ptr_val,
     };
 
@@ -1579,7 +1598,7 @@ fn codegen_array_repeat<'c>(
 
     match expect {
         Expect::Value(_) => Some(cg.build.load(array_ty, array_ptr, "array_val")),
-        Expect::Pointer(_) => Some(array_ptr.as_val()),
+        Expect::Pointer(_, _) => Some(array_ptr.as_val()),
         Expect::Store(_) => None,
     }
 }
@@ -1597,7 +1616,7 @@ fn codegen_deref<'c>(
             let ptr_ty = cg.ty(ref_ty);
             cg.build.load(ptr_ty, ptr_val, "deref_val")
         }
-        Expect::Pointer(_) => ptr_val.as_val(),
+        Expect::Pointer(_, _) => ptr_val.as_val(),
     }
 }
 
@@ -1608,7 +1627,7 @@ fn codegen_address<'c>(
 ) -> llvm::Value {
     let address = codegen_expr_pointer(cg, rhs).as_val();
     match expect {
-        Expect::Pointer(true) => maybe_alloc_copy(cg, expect, address),
+        Expect::Pointer(_, true) => maybe_alloc_copy(cg, expect, address),
         _ => address,
     }
 }
@@ -1710,7 +1729,7 @@ pub fn codegen_array_binary_op<'c>(
         Expect::Value(_) | Expect::Store(_) => {
             Some(cg.build.load(array_ty, array_ptr, "array_val"))
         }
-        Expect::Pointer(_) => Some(array_ptr.as_val()),
+        Expect::Pointer(_, _) => Some(array_ptr.as_val()),
     }
 }
 
