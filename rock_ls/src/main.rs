@@ -885,9 +885,9 @@ use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax;
 use rock_core::text::{self, TextOffset, TextRange};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn module_id_from_path(session: &Session, path: &PathBuf) -> Option<ModuleID> {
+fn module_id_from_path(session: &Session, path: &Path) -> Option<ModuleID> {
     session.module.path_to_id(path)
 }
 

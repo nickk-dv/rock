@@ -3,7 +3,7 @@ use crate::errors as err;
 use crate::intern::{InternPool, NameID};
 use crate::session::{Package, PackageID};
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct PackageGraph {
     unique: FxHashMap<PathBuf, PackageID>,
@@ -51,10 +51,10 @@ impl PackageGraph {
         self.unique.get(root_dir).copied()
     }
 
-    pub(super) fn add(&mut self, package: Package, root_dir: &PathBuf) -> PackageID {
+    pub(super) fn add(&mut self, package: Package, root_dir: &Path) -> PackageID {
         let package_id = PackageID(self.packages.len() as u32);
         assert!(self.packages.insert(package_id, package).is_none());
-        assert!(self.unique.insert(root_dir.clone(), package_id).is_none());
+        assert!(self.unique.insert(root_dir.to_path_buf(), package_id).is_none());
         package_id
     }
 
@@ -63,7 +63,7 @@ impl PackageGraph {
         from: PackageID,
         to: PackageID,
         intern_name: &InternPool<'_, NameID>,
-        manifest_path: &PathBuf,
+        manifest_path: &Path,
     ) -> Result<(), Error> {
         let mut path = vec![from];
 

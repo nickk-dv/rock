@@ -151,11 +151,9 @@ impl<'s> Modules<'s> {
     pub fn get_mut(&mut self, module_id: ModuleID) -> &mut Module<'s> {
         &mut self.modules[module_id.index()]
     }
-    #[must_use]
     pub fn path_to_id<P: AsRef<Path>>(&self, p: P) -> Option<ModuleID> {
         self.paths.get(p.as_ref()).copied()
     }
-    #[must_use]
     fn add(&mut self, module: Module<'s>) -> ModuleID {
         let module_id = ModuleID(self.modules.len() as u32);
         self.modules.push(module);
@@ -236,7 +234,7 @@ pub fn format_session<'s>(config: config::Config) -> Result<Session<'s>, Error> 
 
 fn process_package(
     session: &mut Session,
-    root_dir: &PathBuf,
+    root_dir: &Path,
     dep_from: Option<PackageID>,
     is_core: bool,
     format: bool,
@@ -279,7 +277,7 @@ fn process_package(
     // disallow core lib from having any dependencies
     assert!(!is_core || manifest.dependencies.is_empty());
     let deps = if is_core { vec![] } else { vec![CORE_PACKAGE_ID] };
-    let package = Package { root_dir: root_dir.clone(), name_id, src, manifest, deps };
+    let package = Package { root_dir: root_dir.to_path_buf(), name_id, src, manifest, deps };
     let package_deps = package.manifest.dependencies.clone();
     let package_id = session.graph.add(package, root_dir);
 

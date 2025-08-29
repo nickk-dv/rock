@@ -408,7 +408,6 @@ impl<'hir> LocalScope<'hir> {
         self.blocks.pop();
     }
 
-    #[must_use]
     pub fn add_variable(&mut self, var: hir::Variable<'hir>) -> hir::VariableID {
         let var_id = hir::VariableID::new(self.variables.len());
         self.variables.push(var);
@@ -424,7 +423,6 @@ impl<'hir> LocalScope<'hir> {
         self.current_block_mut().defer_count += 1;
     }
 
-    #[must_use]
     pub fn find_variable(
         &mut self,
         name_id: NameID,

@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::support::AsStr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifest {
@@ -75,7 +75,7 @@ pub fn serialize(manifest: &Manifest) -> Result<String, Error> {
     })
 }
 
-pub fn deserialize(manifest: &str, manifest_path: &PathBuf) -> Result<Manifest, Error> {
+pub fn deserialize(manifest: &str, manifest_path: &Path) -> Result<Manifest, Error> {
     basic_toml::from_str(manifest).map_err(|error| {
         Error::message(format!(
             "failed to parse manifest file: `{}`\nreason: {}",
@@ -93,7 +93,7 @@ pub fn index_serialize(manifest: &IndexManifest) -> Result<String, Error> {
 
 pub fn index_deserialize(
     manifest: String,
-    manifest_path: &PathBuf,
+    manifest_path: &Path,
 ) -> Result<Vec<IndexManifest>, Error> {
     let mut manifests = Vec::with_capacity(manifest.lines().count());
     for line in manifest.lines() {

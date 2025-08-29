@@ -11,7 +11,7 @@ use rock_core::session::{self, BuildStats, Session};
 use rock_core::support::{os, AsStr, Timer};
 use rock_core::syntax::{self, format};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 pub fn command(command: Command) -> Result<(), Error> {
     match command {
@@ -230,8 +230,8 @@ fn print_build_finished(session: &Session, style: &AnsiStyle) {
     );
 }
 
-fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &PathBuf) {
-    let run_path = bin_path.strip_prefix(&session.curr_work_dir).unwrap_or_else(|_| bin_path);
+fn print_build_running(session: &Session, style: &AnsiStyle, bin_path: &Path) {
+    let run_path = bin_path.strip_prefix(&session.curr_work_dir).unwrap_or(bin_path);
     let g = style.out.green_bold;
     let r = style.out.reset;
     println!("   {g}Running{r} {}\n", run_path.to_string_lossy());

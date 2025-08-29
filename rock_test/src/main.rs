@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 struct RockTestFile {
     name: String,
@@ -57,7 +57,7 @@ fn parse_tests() -> Vec<RockTestFile> {
     test_files
 }
 
-fn parse_test_file(path: &PathBuf, test_set: &mut HashSet<String>, text: String) -> RockTestFile {
+fn parse_test_file(path: &Path, test_set: &mut HashSet<String>, text: String) -> RockTestFile {
     let mut tests = Vec::with_capacity(32);
     let mut lines = text.lines().peekable();
 

@@ -608,7 +608,7 @@ fn add_expr_deps<'ast>(
                     if data.flag_set.contains(hir::ProcFlag::Intrinsic) {
                         let name = ctx.name(data.name.id);
                         if let "size_of" | "align_of" = name {
-                            if let Some(Some(ty)) = poly_types.map(|p| p.get(0).copied()) {
+                            if let Some(Some(ty)) = poly_types.map(|p| p.first().copied()) {
                                 add_type_size_deps(ctx, tree, parent_id, ty, &[])?;
                             }
                         }

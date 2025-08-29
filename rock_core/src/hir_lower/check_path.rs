@@ -229,8 +229,8 @@ pub fn path_resolve_type<'hir, 'ast>(
     ty
 }
 
-pub fn path_resolve_enum_opt<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
+pub fn path_resolve_enum_opt<'ast>(
+    ctx: &mut HirCtx<'_, 'ast, '_>,
     path: &ast::Path<'ast>,
     const_eval_len: bool,
 ) -> Option<hir::EnumID> {
@@ -242,30 +242,24 @@ pub fn path_resolve_enum_opt<'hir, 'ast>(
         set_symbol_used_flag(ctx, symbol_id);
     }
 
-    let enum_id = match path.kind {
-        PathResolvedKind::Symbol(symbol_id) => match symbol_id {
-            SymbolID::Enum(enum_id) => {
-                let data = ctx.registry.enum_data(enum_id);
-                let _ = resolve_type_poly_args(
-                    ctx,
-                    path.at_segment,
-                    data.poly_params,
-                    true,
-                    const_eval_len,
-                    data.name,
-                    "enum",
-                );
-                Some(enum_id)
-            }
-            _ => return None,
-        },
-        _ => return None,
+    let PathResolvedKind::Symbol(SymbolID::Enum(enum_id)) = path.kind else {
+        return None;
     };
+    let data = ctx.registry.enum_data(enum_id);
+    let _ = resolve_type_poly_args(
+        ctx,
+        path.at_segment,
+        data.poly_params,
+        true,
+        const_eval_len,
+        data.name,
+        "enum",
+    );
 
     if check_unexpected_segments(ctx, path.segments, "enum type").is_err() {
         return None;
     }
-    enum_id
+    Some(enum_id)
 }
 
 fn resolve_type_poly_args<'hir, 'ast>(

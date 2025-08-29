@@ -1,5 +1,5 @@
 use crate::error::{Error, ErrorSink, Info, SourceRange, Warning, WarningSink};
-use std::path::PathBuf;
+use std::path::Path;
 
 //==================== WARNINGS ====================
 
@@ -31,55 +31,55 @@ pub fn os_dir_get_current_working(io_error: String) -> Error {
     Error::message(msg)
 }
 
-pub fn os_dir_set_current_working(io_error: String, path: &PathBuf) -> Error {
+pub fn os_dir_set_current_working(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to set current working directory: `{path}`\nreason: {io_error}",);
     Error::message(msg)
 }
 
-pub fn os_dir_create(io_error: String, path: &PathBuf) -> Error {
+pub fn os_dir_create(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to create directory: `{path}`\nreason: {io_error}");
     Error::message(msg)
 }
 
-pub fn os_dir_read(io_error: String, path: &PathBuf) -> Error {
+pub fn os_dir_read(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to read directory: `{path}`\nreason: {io_error}");
     Error::message(msg)
 }
 
-pub fn os_dir_entry_read(io_error: String, path: &PathBuf) -> Error {
+pub fn os_dir_entry_read(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to read directory entry in: `{path}`\nreason: {io_error}");
     Error::message(msg)
 }
 
-pub fn os_file_create(io_error: String, path: &PathBuf) -> Error {
+pub fn os_file_create(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to create file: `{path}`\nreason: {io_error}");
     Error::message(msg)
 }
 
-pub fn os_file_read(io_error: String, path: &PathBuf) -> Error {
+pub fn os_file_read(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to read file: `{path}`\nreason: {io_error}");
     Error::message(msg)
 }
 
-pub fn os_filename_missing(path: &PathBuf) -> Error {
+pub fn os_filename_missing(path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("filename is missing in: `{path}`");
     Error::message(msg)
 }
 
-pub fn os_filename_non_utf8(path: &PathBuf) -> Error {
+pub fn os_filename_non_utf8(path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("filename is not valid UTF-8: `{path}`");
     Error::message(msg)
 }
 
-pub fn os_canonicalize(io_error: String, path: &PathBuf) -> Error {
+pub fn os_canonicalize(io_error: String, path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("failed to canonicalize path: `{path}`\nreason: {io_error}");
     Error::message(msg)
@@ -144,7 +144,7 @@ pub fn cmd_cannot_run_lib_package() -> Error {
 
 //==================== SESSION ====================
 
-pub fn session_pkg_not_found(path: &PathBuf) -> Error {
+pub fn session_pkg_not_found(path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!(
         "could not find dependency package in `{path}`
@@ -154,13 +154,13 @@ currently dependecy packages must be placed in `<rock_install>/packages`"
     Error::message(msg)
 }
 
-pub fn session_manifest_not_found(path: &PathBuf) -> Error {
+pub fn session_manifest_not_found(path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("could not find `Rock.toml` manifest in `{path}`");
     Error::message(msg)
 }
 
-pub fn session_src_not_found(path: &PathBuf) -> Error {
+pub fn session_src_not_found(path: &Path) -> Error {
     let path = path.to_string_lossy();
     let msg = format!("could not find `src` directory in `{path}`");
     Error::message(msg)
@@ -171,7 +171,7 @@ pub fn session_dep_on_bin(dep_path: &str, dep_name: &str, pkg_name: &str) -> Err
     Error::message(msg)
 }
 
-pub fn session_pkg_dep_cycle(relation: String, manifest_path: &PathBuf) -> Error {
+pub fn session_pkg_dep_cycle(relation: String, manifest_path: &Path) -> Error {
     let msg = format!(
         "package dependency cycle detected\nfrom package manifest in `{}`\n{relation}",
         manifest_path.to_string_lossy()
@@ -1249,13 +1249,13 @@ pub fn backend_emit_object_failed(error: String) -> Error {
     Error::message(msg)
 }
 
-pub fn backend_link_command_failed(error: String, linker_path: &PathBuf) -> Error {
+pub fn backend_link_command_failed(error: String, linker_path: &Path) -> Error {
     let path = linker_path.to_string_lossy();
     let msg = format!("link command failed, expected linker path: `{path}`\nreason: {error}");
     Error::message(msg)
 }
 
-pub fn backend_run_command_failed(error: String, bin_path: &PathBuf) -> Error {
+pub fn backend_run_command_failed(error: String, bin_path: &Path) -> Error {
     let path = bin_path.to_string_lossy();
     let msg = format!("run command failed, expected binary path: `{path}`\nreason: {error}");
     Error::message(msg)

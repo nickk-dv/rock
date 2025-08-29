@@ -252,40 +252,40 @@ pub mod os {
             .map_err(|io_error| err::os_dir_get_current_working(io_error.to_string()))
     }
 
-    pub fn dir_set_current_working(path: &PathBuf) -> Result<(), Error> {
+    pub fn dir_set_current_working(path: &Path) -> Result<(), Error> {
         std::env::set_current_dir(path)
             .map_err(|io_error| err::os_dir_set_current_working(io_error.to_string(), path))
     }
 
-    pub fn dir_create(path: &PathBuf, force: bool) -> Result<(), Error> {
+    pub fn dir_create(path: &Path, force: bool) -> Result<(), Error> {
         if !force && path.exists() {
             return Ok(());
         }
         std::fs::create_dir(path).map_err(|io_error| err::os_dir_create(io_error.to_string(), path))
     }
 
-    pub fn dir_read(path: &PathBuf) -> Result<std::fs::ReadDir, Error> {
+    pub fn dir_read(path: &Path) -> Result<std::fs::ReadDir, Error> {
         std::fs::read_dir(path).map_err(|io_error| err::os_dir_read(io_error.to_string(), path))
     }
 
     pub fn dir_entry_read(
-        origin: &PathBuf,
+        origin: &Path,
         entry_result: Result<std::fs::DirEntry, std::io::Error>,
     ) -> Result<std::fs::DirEntry, Error> {
         entry_result.map_err(|io_error| err::os_dir_entry_read(io_error.to_string(), origin))
     }
 
-    pub fn file_create(path: &PathBuf, text: &str) -> Result<(), Error> {
+    pub fn file_create(path: &Path, text: &str) -> Result<(), Error> {
         std::fs::write(path, text)
             .map_err(|io_error| err::os_file_create(io_error.to_string(), path))
     }
 
-    pub fn file_read(path: &PathBuf) -> Result<String, Error> {
+    pub fn file_read(path: &Path) -> Result<String, Error> {
         std::fs::read_to_string(path)
             .map_err(|io_error| err::os_file_read(io_error.to_string(), path))
     }
 
-    pub fn file_read_with_sentinel(path: &PathBuf) -> Result<String, Error> {
+    pub fn file_read_with_sentinel(path: &Path) -> Result<String, Error> {
         fn inner(path: &Path) -> std::io::Result<String> {
             let mut file = std::fs::File::open(path)?;
             let size = file.metadata().map(|m| m.len() as usize).ok();
@@ -295,20 +295,20 @@ pub mod os {
             string.push('\0');
             Ok(string)
         }
-        inner(path.as_ref()).map_err(|io_error| err::os_file_read(io_error.to_string(), path))
+        inner(path).map_err(|io_error| err::os_file_read(io_error.to_string(), path))
     }
 
-    pub fn filename(path: &PathBuf) -> Result<&str, Error> {
+    pub fn filename(path: &Path) -> Result<&str, Error> {
         let file_stem = path.file_stem().ok_or(err::os_filename_missing(path))?;
         file_stem.to_str().ok_or(err::os_filename_non_utf8(path))
     }
 
-    pub fn file_extension(path: &PathBuf) -> Option<&str> {
+    pub fn file_extension(path: &Path) -> Option<&str> {
         let extension = path.extension()?;
         extension.to_str()
     }
 
-    pub fn canonicalize(path: &PathBuf) -> Result<PathBuf, Error> {
+    pub fn canonicalize(path: &Path) -> Result<PathBuf, Error> {
         let path = path
             .canonicalize()
             .map_err(|io_error| err::os_canonicalize(io_error.to_string(), path))?;
@@ -376,7 +376,7 @@ where
     Self: Sized + 'static,
 {
     const ALL: &[Self];
-    fn as_str(self) -> &'static str;
+    fn as_str(&self) -> &'static str;
     fn from_str(string: &str) -> Option<Self>;
 }
 
@@ -404,7 +404,7 @@ macro_rules! enum_as_str {
             const ALL: &[$Enum] = &[
                 $($Enum::$variant,)+
             ];
-            fn as_str(self) -> &'static str {
+            fn as_str(&self) -> &'static str {
                 match self {
                     $($Enum::$variant => $string,)+
                 }

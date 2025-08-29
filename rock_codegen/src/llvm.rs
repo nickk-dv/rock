@@ -232,7 +232,9 @@ impl IRModule {
             sys::LLVMUnnamedAddr::LLVMNoUnnamedAddr
         };
         unsafe {
-            value.map(|v| core::LLVMSetInitializer(global, v.0));
+            if let Some(v) = value {
+                core::LLVMSetInitializer(global, v.0);
+            }
             core::LLVMSetGlobalConstant(global, constant as i32);
             core::LLVMSetUnnamedAddress(global, unnamed_addr);
             core::LLVMSetLinkage(global, Linkage::LLVMInternalLinkage);

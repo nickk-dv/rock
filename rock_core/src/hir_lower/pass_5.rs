@@ -1972,8 +1972,8 @@ fn typecheck_item<'hir, 'ast>(
     }
 }
 
-pub fn check_item_procedure<'hir, 'ast>(
-    ctx: &mut HirCtx<'hir, 'ast, '_>,
+pub fn check_item_procedure<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
     expect: Expectation<'hir>,
     proc_id: hir::ProcID,
     poly_types: Option<&'hir [hir::Type<'hir>]>,
@@ -4441,10 +4441,7 @@ fn infer_enum_type<'hir>(
     enum_id
 }
 
-fn infer_enum_poly_types<'hir>(
-    enum_id: hir::EnumID,
-    expect: Expectation<'hir>,
-) -> Option<&'hir [hir::Type<'hir>]> {
+fn infer_enum_poly_types(enum_id: hir::EnumID, expect: Expectation) -> Option<&[hir::Type]> {
     match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {
@@ -4480,10 +4477,7 @@ fn infer_struct_type<'hir>(
     struct_res
 }
 
-fn infer_struct_poly_types<'hir>(
-    struct_id: hir::StructID,
-    expect: Expectation<'hir>,
-) -> Option<&'hir [hir::Type<'hir>]> {
+fn infer_struct_poly_types(struct_id: hir::StructID, expect: Expectation) -> Option<&[hir::Type]> {
     match expect {
         Expectation::None => None,
         Expectation::HasType(ty, _) => match ty {

@@ -84,10 +84,8 @@ impl<'src> Parser<'src> {
     }
 
     pub fn expect(&mut self, token: Token) {
-        if !self.eat(token) {
-            if self.errors.errors.is_empty() {
-                self.error(format!("expected `{}`", token.as_str()));
-            }
+        if !self.eat(token) && self.errors.errors.is_empty() {
+            self.error(format!("expected `{}`", token.as_str()));
         }
     }
 

@@ -423,30 +423,20 @@ pub fn type_resolve<'hir, 'ast>(
             let elem_ty = type_resolve(ctx, array.elem_ty, const_eval_len);
 
             if let Some(enum_id) = enum_id {
-                return if !check_enumerated_array_type(ctx, enum_id, array.len.0.range) {
-                    hir::Type::Error
-                } else if elem_ty.is_error() {
-                    hir::Type::Error
-                } else {
+                let valid = check_enumerated_array_type(ctx, enum_id, array.len.0.range);
+                return if valid && !elem_ty.is_error() {
                     let array = hir::ArrayEnumerated { enum_id, elem_ty };
                     hir::Type::ArrayEnumerated(ctx.arena.alloc(array))
+                } else {
+                    hir::Type::Error
                 };
             }
 
             let len = if const_eval_len {
                 //@temp hack to immediately resolve some expression
                 //will avoid hash/eq != between same array types in codegen
-                if let ast::ExprKind::Lit { lit } = array.len.0.kind {
-                    if let ast::Lit::Int(value) = lit {
-                        hir::ArrayStaticLen::Immediate(value)
-                    } else {
-                        let eval_id = ctx.registry.add_const_eval(
-                            array.len,
-                            ctx.scope.origin,
-                            ctx.scope.poly,
-                        );
-                        hir::ArrayStaticLen::ConstEval(eval_id)
-                    }
+                if let ast::ExprKind::Lit { lit: ast::Lit::Int(value) } = array.len.0.kind {
+                    hir::ArrayStaticLen::Immediate(value)
                 } else {
                     let eval_id =
                         ctx.registry.add_const_eval(array.len, ctx.scope.origin, ctx.scope.poly);

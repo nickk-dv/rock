@@ -1258,7 +1258,7 @@ pub fn codegen_call_intrinsic<'c>(
     const ACQREL: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingAcquireRelease;
     const SEQCST: llvm::Ordering = llvm::Ordering::LLVMAtomicOrderingSequentiallyConsistent;
 
-    let ty = if let Some(ty) = poly_types.get(0) { *ty } else { hir::Type::Error };
+    let ty = if let Some(ty) = poly_types.first() { *ty } else { hir::Type::Error };
     let data = cg.hir.proc_data(proc_id);
 
     match cg.session.intern_name.get(data.name.id) {
