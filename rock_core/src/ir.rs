@@ -1,40 +1,92 @@
 #![allow(dead_code)] //@remove when rework is complete
 use crate::ast;
-use crate::hir::{BinOp, CastKind, UnOp};
-use crate::support::Arena;
+use crate::hir::{self, BinOp, UnOp, Vis};
+use crate::intern::{InternID, InternPool};
+use crate::session::ModuleID;
+use crate::support::{Arena, BitSet};
+use crate::text::TextRange;
 use std::mem;
 
-struct IR<'ir> {
-    procs: Vec<ProcData<'ir>>,
-    enums: Vec<EnumData<'ir>>,
-    structs: Vec<StructData<'ir>>,
+pub struct IR<'ir> {
+    pub arena: Arena<'ir>,
+    pub types: InternPool<'ir, TypeID>,
+    pub procs: Vec<ProcData<'ir>>,
+    pub enums: Vec<EnumData<'ir>>,
+    pub structs: Vec<StructData<'ir>>,
 }
 
-struct ProcData<'ir> {
-    poly: Option<&'ir [ast::Name]>,
-    params: &'ir [Param],
+pub struct ProcData<'ir> {
+    pub origin: ModuleID,
+    pub flags: BitSet<hir::ProcFlag>,
+    pub vis: Vis,
+    pub name: ast::Name,
+    pub poly: Option<&'ir [ast::Name]>,
+    pub params: &'ir [Param],
+    pub return_ty: TypeID,
+    pub variables: &'ir [Variable],
+    pub body: Body<'ir>,
 }
 
-struct Param {}
-
-struct EnumData<'ir> {
-    poly: Option<&'ir [ast::Name]>,
-    variants: &'ir [Variant],
+#[derive(Copy, Clone)]
+pub struct Param {
+    pub mutt: ast::Mut,
+    pub name: ast::Name,
+    pub ty: TypeID,
+    pub ty_range: TextRange,
+    pub was_used: bool,
+    pub kind: hir::ParamKind,
 }
 
-struct Variant {}
-
-struct StructData<'ir> {
-    poly: Option<&'ir [ast::Name]>,
-    fields: &'ir [Field],
+#[derive(Copy, Clone)]
+pub struct Variable {
+    pub mutt: ast::Mut,
+    pub name: ast::Name,
+    pub ty: TypeID,
+    pub was_used: bool,
 }
 
-struct Field {}
+pub struct EnumData<'ir> {
+    pub origin: ModuleID,
+    pub flags: BitSet<hir::EnumFlag>,
+    pub vis: Vis,
+    pub name: ast::Name,
+    pub poly: Option<&'ir [ast::Name]>,
+    pub variants: &'ir [Variant<'ir>],
+}
 
-struct Writer {
+#[derive(Copy, Clone)]
+pub struct Variant<'ir> {
+    pub name: ast::Name,
+    pub kind: hir::VariantKind,
+    pub fields: &'ir [VariantField],
+}
+
+#[derive(Copy, Clone)]
+pub struct VariantField {
+    pub ty: TypeID,
+    pub ty_range: TextRange,
+}
+
+pub struct StructData<'ir> {
+    pub origin: ModuleID,
+    pub flags: BitSet<hir::EnumFlag>,
+    pub vis: Vis,
+    pub name: ast::Name,
+    pub poly: Option<&'ir [ast::Name]>,
+    pub fields: &'ir [Field],
+}
+
+pub struct Field {
+    pub vis: Vis,
+    pub name: ast::Name,
+    pub ty: TypeID,
+    pub ty_range: TextRange,
+}
+
+pub struct Writer {
     expr_data: Vec<u32>,
 }
-struct Body<'ir> {
+pub struct Body<'ir> {
     expr_data: &'ir [u32],
 }
 
@@ -51,6 +103,17 @@ crate::define_id!(pub StmtID);
 crate::define_id!(pub ExprID);
 crate::define_id!(pub TypeID);
 crate::define_id!(pub VariantID);
+
+impl InternID for TypeID {
+    #[inline(always)]
+    fn from_usize(val: usize) -> Self {
+        TypeID::new(val)
+    }
+    #[inline(always)]
+    fn into_usize(self) -> usize {
+        self.0 as usize
+    }
+}
 
 pub enum StmtKind {
     Break,
@@ -210,9 +273,9 @@ impl Body<'_> {
         let op_call = ExprID(self.expr_data[id.index() + 2]);
         (target, SliceAccess { deref, kind, op_call })
     }
-    pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, CastKind) {
+    pub fn cast(&self, id: ExprID) -> (ExprID, TypeID, hir::CastKind) {
         let tag = self.expr_data[id.index()];
-        let kind = read_value_bits!(tag, 8, CastKind, u8);
+        let kind = read_value_bits!(tag, 8, hir::CastKind, u8);
         let target = ExprID(self.expr_data[id.index() + 1]);
         let into = TypeID(self.expr_data[id.index() + 2]);
         (target, into, kind)
@@ -402,7 +465,7 @@ impl Writer {
         self.expr_data.push(access.op_call.0);
         id
     }
-    pub fn cast(&mut self, target: ExprID, into: TypeID, kind: CastKind) -> ExprID {
+    pub fn cast(&mut self, target: ExprID, into: TypeID, kind: hir::CastKind) -> ExprID {
         let id = ExprID(self.expr_data.len() as u32);
         self.expr_data.push(ExprKind::Cast as u32 | ((kind as u32) << 8));
         self.expr_data.push(target.0);
