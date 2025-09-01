@@ -1,7 +1,7 @@
 #![allow(dead_code)] //@remove when rework is complete
 use crate::ast;
 use crate::hir::{self, BinOp, UnOp, Vis};
-use crate::intern::{InternID, InternPool};
+use crate::intern::InternPool;
 use crate::session::ModuleID;
 use crate::support::{Arena, BitSet};
 use crate::text::TextRange;
@@ -9,7 +9,7 @@ use std::mem;
 
 pub struct IR<'ir> {
     pub arena: Arena<'ir>,
-    pub types: InternPool<'ir, TypeID>,
+    pub types: InternPool<TypeID, Type<'ir>>,
     pub procs: Vec<ProcData<'ir>>,
     pub enums: Vec<EnumData<'ir>>,
     pub structs: Vec<StructData<'ir>>,
@@ -83,6 +83,52 @@ pub struct Field {
     pub ty_range: TextRange,
 }
 
+#[must_use]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum Type<'hir> {
+    Error,
+    Unknown,
+    Char,
+    Void,
+    Never,
+    Rawptr,
+    UntypedChar,
+    Int(hir::IntType),
+    Float(hir::FloatType),
+    Bool(hir::BoolType),
+    String(hir::StringType),
+    PolyProc(ProcID, usize),
+    PolyEnum(EnumID, usize),
+    PolyStruct(StructID, usize),
+    Enum(EnumID, &'hir [TypeID]),
+    Struct(StructID, &'hir [TypeID]),
+    Reference(ast::Mut, TypeID),
+    MultiReference(ast::Mut, TypeID),
+    Procedure(&'hir ProcType<'hir>),
+    ArraySlice(ast::Mut, TypeID),
+    ArrayStatic(ArrayLen, TypeID),
+    ArrayEnumerated(EnumID, TypeID),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub struct ProcType<'hir> {
+    pub flags: BitSet<hir::ProcFlag>,
+    pub params: &'hir [ProcTypeParam],
+    pub return_ty: TypeID,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub struct ProcTypeParam {
+    pub ty: TypeID,
+    pub kind: hir::ParamKind,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum ArrayLen {
+    Immediate(u64),
+    ConstEval(hir::ConstEvalID),
+}
+
 pub struct Writer {
     expr_data: Vec<u32>,
 }
@@ -103,17 +149,6 @@ crate::define_id!(pub StmtID);
 crate::define_id!(pub ExprID);
 crate::define_id!(pub TypeID);
 crate::define_id!(pub VariantID);
-
-impl InternID for TypeID {
-    #[inline(always)]
-    fn from_usize(val: usize) -> Self {
-        TypeID::new(val)
-    }
-    #[inline(always)]
-    fn into_usize(self) -> usize {
-        self.0 as usize
-    }
-}
 
 pub enum StmtKind {
     Break,

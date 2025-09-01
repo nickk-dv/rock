@@ -6,7 +6,7 @@ use crate::ast::Ast;
 use crate::error::{
     DiagnosticData, Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer, Warning, WarningSink,
 };
-use crate::intern::{InternPool, LitID, NameID};
+use crate::intern::{LitID, NameID, StringPool};
 use crate::support::os;
 use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::tree::SyntaxTree;
@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 pub struct Session<'s> {
     pub curr_exe_dir: PathBuf,
     pub curr_work_dir: PathBuf,
-    pub intern_lit: InternPool<'s, LitID>,
-    pub intern_name: InternPool<'s, NameID>,
+    pub intern_lit: StringPool<'s, LitID>,
+    pub intern_name: StringPool<'s, NameID>,
     pub graph: graph::PackageGraph,
     pub module: Modules<'s>,
     pub stats: BuildStats,
@@ -200,8 +200,8 @@ fn default_session<'s>(config: config::Config) -> Result<Session<'s>, Error> {
     Ok(Session {
         curr_exe_dir: os::current_exe_path()?,
         curr_work_dir: os::dir_get_current_working()?,
-        intern_lit: InternPool::new(512),
-        intern_name: InternPool::new(1024),
+        intern_lit: StringPool::new(512),
+        intern_name: StringPool::new(1024),
         graph: graph::PackageGraph::new(8),
         module: Modules::new(64),
         stats: BuildStats::default(),

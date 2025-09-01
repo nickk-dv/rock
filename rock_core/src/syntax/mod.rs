@@ -10,7 +10,7 @@ pub mod token;
 pub mod tree;
 
 use crate::error::{ErrorBuffer, ErrorSink};
-use crate::intern::{InternPool, LitID};
+use crate::intern::{LitID, StringPool};
 use crate::session::{ModuleID, Session};
 use parser::Parser;
 use tree::SyntaxTree;
@@ -82,7 +82,7 @@ pub fn parse_all_lsp(session: &mut Session) -> Result<(), ()> {
 pub fn parse_tree(
     source: &str,
     module_id: ModuleID,
-    intern_lit: &mut InternPool<'_, LitID>,
+    intern_lit: &mut StringPool<'_, LitID>,
 ) -> (SyntaxTree, ErrorBuffer) {
     let (tokens, lex_errors) = lexer::lex(source, module_id, intern_lit);
 
@@ -101,7 +101,7 @@ pub fn parse_tree(
 pub fn parse_tree_complete(
     source: &str,
     module_id: ModuleID,
-    intern_lit: &mut InternPool<'_, LitID>,
+    intern_lit: &mut StringPool<'_, LitID>,
 ) -> Result<SyntaxTree, ErrorBuffer> {
     let (tokens, mut lex_errors) = lexer::lex(source, module_id, intern_lit);
 

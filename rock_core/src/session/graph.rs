@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::errors as err;
-use crate::intern::{InternPool, NameID};
+use crate::intern::{NameID, StringPool};
 use crate::session::{Package, PackageID};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::path::{Path, PathBuf};
@@ -62,7 +62,7 @@ impl PackageGraph {
         &mut self,
         from: PackageID,
         to: PackageID,
-        intern_name: &InternPool<'_, NameID>,
+        intern_name: &StringPool<'_, NameID>,
         manifest_path: &Path,
     ) -> Result<(), Error> {
         let mut path = vec![from];
@@ -97,7 +97,7 @@ impl PackageGraph {
     fn cycle_relation_msg(
         &self,
         path: &[PackageID],
-        intern_name: &InternPool<'_, NameID>,
+        intern_name: &StringPool<'_, NameID>,
     ) -> String {
         let mut msg = String::with_capacity(128);
         let relation_count = path.len() - 1;

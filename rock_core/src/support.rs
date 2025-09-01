@@ -368,6 +368,17 @@ macro_rules! define_id {
                 $name(self.0 - 1)
             }
         }
+
+        impl From<usize> for $name {
+            fn from(index: usize) -> $name {
+                $name(index as u32)
+            }
+        }
+        impl Into<usize> for $name {
+            fn into(self: $name) -> usize {
+                self.0 as usize
+            }
+        }
     }
 }
 

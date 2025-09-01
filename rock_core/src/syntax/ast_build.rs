@@ -1,7 +1,7 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::tree::SyntaxTree;
 use crate::ast;
-use crate::intern::{InternPool, LitID, NameID};
+use crate::intern::{LitID, NameID, StringPool};
 use crate::support::{Arena, TempBuffer};
 use crate::text::TextRange;
 
@@ -9,7 +9,7 @@ struct AstBuild<'s, 'sref> {
     arena: Arena<'s>,
     tree: &'sref SyntaxTree,
     source: &'sref str,
-    intern: &'sref mut InternPool<'s, NameID>,
+    intern: &'sref mut StringPool<'s, NameID>,
     s: &'sref mut AstBuildState<'s>,
 }
 
@@ -64,7 +64,7 @@ impl<'ast> AstBuildState<'ast> {
 pub fn ast<'s, 'sref>(
     tree: &'sref SyntaxTree,
     source: &'sref str,
-    intern: &'sref mut InternPool<'s, NameID>,
+    intern: &'sref mut StringPool<'s, NameID>,
     s: &'sref mut AstBuildState<'s>,
 ) -> ast::Ast<'s> {
     let mut ctx = AstBuild { arena: Arena::new(), tree, source, intern, s };

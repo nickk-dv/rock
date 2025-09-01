@@ -1,14 +1,14 @@
 use super::token::{self, Token, TokenList, Trivia, T};
 use crate::error::{ErrorBuffer, SourceRange};
 use crate::errors as err;
-use crate::intern::{InternPool, LitID};
+use crate::intern::{LitID, StringPool};
 use crate::session::ModuleID;
 use crate::text::{TextOffset, TextRange};
 
 pub fn lex<'sref>(
     source: &'sref str,
     module_id: ModuleID,
-    intern_lit: &'sref mut InternPool<LitID>,
+    intern_lit: &'sref mut StringPool<LitID>,
 ) -> (TokenList, ErrorBuffer) {
     let mut lex = Lexer {
         cursor: 0,
@@ -30,7 +30,7 @@ struct Lexer<'s, 'sref> {
     buffer: String,
     source: &'sref str,
     module_id: ModuleID,
-    intern_lit: &'sref mut InternPool<'s, LitID>,
+    intern_lit: &'sref mut StringPool<'s, LitID>,
 }
 
 impl Lexer<'_, '_> {

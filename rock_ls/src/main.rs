@@ -5,7 +5,7 @@ mod text_ops;
 use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use message::{Action, Message, MessageBuffer, Notification, Request};
-use rock_core::intern::{InternPool, NameID};
+use rock_core::intern::{NameID, StringPool};
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::token::{SemanticToken, Token, Trivia};
@@ -447,7 +447,7 @@ fn name_id(
     name: cst::Name,
     tree: &SyntaxTree,
     file: &session::FileData,
-    intern: &mut InternPool<NameID>,
+    intern: &mut StringPool<NameID>,
 ) -> NameID {
     let text = &file.source[name.ident(tree).as_usize()];
     intern.intern(text)
@@ -457,7 +457,7 @@ fn name_id_opt(
     name: cst::Name,
     tree: &SyntaxTree,
     file: &session::FileData,
-    intern: &InternPool<NameID>,
+    intern: &StringPool<NameID>,
 ) -> Option<NameID> {
     let text = &file.source[name.ident(tree).as_usize()];
     intern.get_id(text)
@@ -972,7 +972,7 @@ struct SemanticTokenBuilder<'s_ref, 's> {
     tree: &'s_ref SyntaxTree,
     file: &'s_ref session::FileData,
     modules: &'s_ref [ModuleData],
-    intern_name: &'s_ref mut InternPool<'s, NameID>,
+    intern_name: &'s_ref mut StringPool<'s, NameID>,
 }
 
 impl SemanticTokenBuilder<'_, '_> {
