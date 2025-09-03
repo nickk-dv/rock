@@ -107,21 +107,21 @@ impl Session<'_> {
 
     pub fn move_errors(&mut self, errors: Vec<Error>, warnings: Vec<Warning>) {
         for e in errors {
-            let origin = match e.diagnostic().data() {
+            let origin = match &e.diagnostic().data {
                 DiagnosticData::Message => {
                     self.errors.error(e);
                     continue;
                 }
-                DiagnosticData::Context { main, .. } => main.src().module_id(),
-                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+                DiagnosticData::Context { main, .. } => main.src.module_id,
+                DiagnosticData::ContextVec { main, .. } => main.src.module_id,
             };
             self.module.get_mut(origin).check_errors.error(e);
         }
         for w in warnings {
-            let origin = match w.diagnostic().data() {
+            let origin = match &w.diagnostic().data {
                 DiagnosticData::Message => unreachable!(),
-                DiagnosticData::Context { main, .. } => main.src().module_id(),
-                DiagnosticData::ContextVec { main, .. } => main.src().module_id(),
+                DiagnosticData::Context { main, .. } => main.src.module_id,
+                DiagnosticData::ContextVec { main, .. } => main.src.module_id,
             };
             self.module.get_mut(origin).check_errors.warning(w);
         }

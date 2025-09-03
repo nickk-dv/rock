@@ -1,5 +1,16 @@
 //#prelude
 
+//#entry "poly_codegen_same_array_type"
+struct SameArray(T) {
+    value: T,
+}
+proc test_poly_codegen_same_array_type() void {
+    let v = SameArray.{ value: [0, 0] };
+    take_array(v);
+}
+//late resolved array len results in different type hash
+proc take_array(v: SameArray([1 + 1]s32)) void {}
+
 //#entry "poly_proc_error_propagation"
 //#expect
 //error: name `Error` is not found in this scope

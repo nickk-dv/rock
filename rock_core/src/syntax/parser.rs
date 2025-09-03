@@ -1,7 +1,8 @@
 use super::token::{Token, TokenID, TokenList, TokenSet};
 use super::tree::SyntaxKind;
-use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange, StringOrStr};
+use crate::error::{Error, ErrorBuffer, ErrorSink, SourceRange};
 use crate::session::ModuleID;
+use std::borrow::Cow;
 use std::cell::Cell;
 
 pub struct Parser<'src> {
@@ -107,7 +108,7 @@ impl<'src> Parser<'src> {
 
     pub fn error_recover(
         &mut self,
-        msg: impl Into<StringOrStr>,
+        msg: impl Into<Cow<'static, str>>,
         recovery: TokenSet,
     ) -> MarkerClosed {
         self.error(msg);
@@ -118,7 +119,7 @@ impl<'src> Parser<'src> {
         m.complete(self, SyntaxKind::ERROR)
     }
 
-    pub fn error(&mut self, msg: impl Into<StringOrStr>) {
+    pub fn error(&mut self, msg: impl Into<Cow<'static, str>>) {
         if self.errors.errors.is_empty() {
             let cursor = if self.at(Token::Eof) { self.cursor.dec() } else { self.cursor };
             let range = self.tokens.token_range(cursor);

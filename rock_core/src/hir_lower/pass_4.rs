@@ -872,7 +872,7 @@ pub fn resolve_const_expr<'hir, 'ast>(
                 if let "size_of" | "align_of" = name {
                     let ty = pass_5::type_format(ctx, input.1[0]);
                     let src = ctx.src(expr.0.range);
-                    err::tycheck_const_poly_dep(&mut ctx.emit, src, ty.as_str(), name);
+                    err::tycheck_const_poly_dep(&mut ctx.emit, src, &ty, name);
                     return (Err(()), expr_res.ty);
                 }
             }

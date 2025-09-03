@@ -214,7 +214,7 @@ fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
     let session = match session::create_session(config) {
         Ok(value) => value,
         Err(error) => {
-            let message = error.diagnostic().msg().as_str().to_string();
+            let message = error.diagnostic().msg.to_string();
             let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
             send_notification::<lsp::notification::ShowMessage>(conn, params);
             return Err(());
@@ -835,7 +835,7 @@ fn compile_project(server: &mut ServerContext) {
         send_notification::<lsp::notification::PublishDiagnostics>(server.conn, publish);
     }
     for error in &server.session.errors.errors {
-        let message = error.diagnostic().msg().as_str().to_string();
+        let message = error.diagnostic().msg.to_string();
         let params = lsp::ShowMessageParams { typ: lsp::MessageType::ERROR, message };
         send_notification::<lsp::notification::ShowMessage>(server.conn, params);
     }
@@ -896,15 +896,15 @@ fn create_diagnostic(
     diagnostic: &Diagnostic,
     severity: Severity,
 ) -> Option<lsp::Diagnostic> {
-    let (main, related_info) = match diagnostic.data() {
+    let (main, related_info) = match &diagnostic.data {
         DiagnosticData::Message => return None,
         DiagnosticData::Context { main, info } => {
             if let Some(info) = info {
-                let info_range = source_to_range(session, info.context().src());
-                let info_path = source_to_path(session, info.context().src());
+                let info_range = source_to_range(session, info.context().src);
+                let info_path = source_to_path(session, info.context().src);
                 let related_info = lsp::DiagnosticRelatedInformation {
                     location: lsp::Location::new(url_from_path(info_path), info_range),
-                    message: info.context().msg().to_string(),
+                    message: info.context().msg.to_string(),
                 };
                 (main, Some(vec![related_info]))
             } else {
@@ -914,11 +914,11 @@ fn create_diagnostic(
         DiagnosticData::ContextVec { main, info_vec } => {
             let mut related_infos = Vec::with_capacity(info_vec.len());
             for info in info_vec {
-                let info_range = source_to_range(session, info.context().src());
-                let info_path = source_to_path(session, info.context().src());
+                let info_range = source_to_range(session, info.context().src);
+                let info_path = source_to_path(session, info.context().src);
                 let related_info = lsp::DiagnosticRelatedInformation {
                     location: lsp::Location::new(url_from_path(info_path), info_range),
-                    message: info.context().msg().to_string(),
+                    message: info.context().msg.to_string(),
                 };
                 related_infos.push(related_info);
             }
@@ -926,14 +926,14 @@ fn create_diagnostic(
         }
     };
 
-    let mut message = diagnostic.msg().as_str().to_string();
-    if !main.msg().is_empty() {
+    let mut message = diagnostic.msg.to_string();
+    if !main.msg.is_empty() {
         message.push('\n');
-        message += main.msg();
+        message += &main.msg;
     }
 
     let diagnostic = lsp::Diagnostic::new(
-        source_to_range(session, main.src()),
+        source_to_range(session, main.src),
         severity_convert(severity),
         None,
         None,
@@ -946,13 +946,13 @@ fn create_diagnostic(
 }
 
 fn source_to_path<'s, 'sref: 's>(session: &'sref Session<'s>, source: SourceRange) -> &'s PathBuf {
-    let module = session.module.get(source.module_id());
+    let module = session.module.get(source.module_id);
     &module.file.path
 }
 
 fn source_to_range(session: &Session, source: SourceRange) -> lsp::Range {
-    let module = session.module.get(source.module_id());
-    text_ops::range_utf8_to_range_utf16(&module.file, source.range())
+    let module = session.module.get(source.module_id);
+    text_ops::range_utf8_to_range_utf16(&module.file, source.range)
 }
 
 fn severity_convert(severity: Severity) -> Option<lsp::DiagnosticSeverity> {

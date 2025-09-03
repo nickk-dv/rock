@@ -37,7 +37,7 @@ pub fn match_kind<'hir>(
     if kind.is_none() {
         let src = ctx.src(range);
         let ty = super::pass_5::type_format(ctx, ty);
-        err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, ty.as_str());
+        err::tycheck_cannot_match_on_ty(&mut ctx.emit, src, &ty);
     }
     kind
 }

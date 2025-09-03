@@ -1,13 +1,14 @@
 use crate::session::ModuleID;
 use crate::text::TextRange;
+use std::borrow::Cow;
 
 pub struct Error(Diagnostic);
 pub struct Warning(Diagnostic);
 pub struct Info(DiagnosticContext);
 
 pub struct Diagnostic {
-    msg: StringOrStr,
-    data: DiagnosticData,
+    pub msg: Cow<'static, str>,
+    pub data: DiagnosticData,
 }
 
 pub enum DiagnosticData {
@@ -17,19 +18,14 @@ pub enum DiagnosticData {
 }
 
 pub struct DiagnosticContext {
-    msg: StringOrStr,
-    src: SourceRange,
-}
-
-pub enum StringOrStr {
-    String(String),
-    Str(&'static str),
+    pub msg: Cow<'static, str>,
+    pub src: SourceRange,
 }
 
 #[derive(Copy, Clone)]
 pub struct SourceRange {
-    range: TextRange,
-    module_id: ModuleID,
+    pub range: TextRange,
+    pub module_id: ModuleID,
 }
 
 #[derive(Copy, Clone)]
@@ -40,30 +36,29 @@ pub enum Severity {
 }
 
 impl Info {
-    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange) -> Option<Info> {
+    pub fn new(msg: impl Into<Cow<'static, str>>, src: SourceRange) -> Option<Info> {
         Some(Info(DiagnosticContext::new(msg, src)))
     }
-    pub fn new_val(msg: impl Into<StringOrStr>, src: SourceRange) -> Info {
+    pub fn new_val(msg: impl Into<Cow<'static, str>>, src: SourceRange) -> Info {
         Info(DiagnosticContext::new(msg, src))
     }
-
     pub fn context(&self) -> &DiagnosticContext {
         &self.0
     }
 }
 
 impl Error {
-    pub fn message(msg: impl Into<StringOrStr>) -> Error {
+    pub fn message(msg: impl Into<Cow<'static, str>>) -> Error {
         let data = DiagnosticData::Message;
         Error(Diagnostic::new(msg, data))
     }
-    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Error {
+    pub fn new(msg: impl Into<Cow<'static, str>>, src: SourceRange, info: Option<Info>) -> Error {
         let data = DiagnosticData::Context { main: DiagnosticContext::new_empty(src), info };
         Error(Diagnostic::new(msg, data))
     }
     pub fn new_info_vec(
-        msg: impl Into<StringOrStr>,
-        ctx_msg: impl Into<StringOrStr>,
+        msg: impl Into<Cow<'static, str>>,
+        ctx_msg: impl Into<Cow<'static, str>>,
         src: SourceRange,
         info_vec: Vec<Info>,
     ) -> Error {
@@ -71,82 +66,39 @@ impl Error {
             DiagnosticData::ContextVec { main: DiagnosticContext::new(ctx_msg, src), info_vec };
         Error(Diagnostic::new(msg, data))
     }
-
     pub fn diagnostic(&self) -> &Diagnostic {
         &self.0
     }
 }
 
 impl Warning {
-    pub fn new(msg: impl Into<StringOrStr>, src: SourceRange, info: Option<Info>) -> Warning {
+    pub fn new(msg: impl Into<Cow<'static, str>>, src: SourceRange, info: Option<Info>) -> Warning {
         let data = DiagnosticData::Context { main: DiagnosticContext::new_empty(src), info };
         Warning(Diagnostic::new(msg, data))
     }
-
     pub fn diagnostic(&self) -> &Diagnostic {
         &self.0
     }
 }
 
 impl Diagnostic {
-    fn new(msg: impl Into<StringOrStr>, data: DiagnosticData) -> Diagnostic {
+    fn new(msg: impl Into<Cow<'static, str>>, data: DiagnosticData) -> Diagnostic {
         Diagnostic { msg: msg.into(), data }
-    }
-
-    pub fn msg(&self) -> &StringOrStr {
-        &self.msg
-    }
-    pub fn data(&self) -> &DiagnosticData {
-        &self.data
     }
 }
 
 impl DiagnosticContext {
-    fn new(msg: impl Into<StringOrStr>, src: SourceRange) -> DiagnosticContext {
+    fn new(msg: impl Into<Cow<'static, str>>, src: SourceRange) -> DiagnosticContext {
         DiagnosticContext { msg: msg.into(), src }
     }
     fn new_empty(src: SourceRange) -> DiagnosticContext {
-        DiagnosticContext { msg: StringOrStr::Str(""), src }
-    }
-
-    pub fn msg(&self) -> &str {
-        self.msg.as_str()
-    }
-    pub fn src(&self) -> SourceRange {
-        self.src
+        DiagnosticContext { msg: "".into(), src }
     }
 }
 
 impl SourceRange {
     pub fn new(module_id: ModuleID, range: TextRange) -> SourceRange {
         SourceRange { range, module_id }
-    }
-    pub fn range(&self) -> TextRange {
-        self.range
-    }
-    pub fn module_id(&self) -> ModuleID {
-        self.module_id
-    }
-}
-
-impl StringOrStr {
-    pub fn as_str(&self) -> &str {
-        match self {
-            StringOrStr::Str(string) => string,
-            StringOrStr::String(string) => string,
-        }
-    }
-}
-
-impl From<&'static str> for StringOrStr {
-    fn from(value: &'static str) -> StringOrStr {
-        StringOrStr::Str(value)
-    }
-}
-
-impl From<String> for StringOrStr {
-    fn from(value: String) -> StringOrStr {
-        StringOrStr::String(value)
     }
 }
 

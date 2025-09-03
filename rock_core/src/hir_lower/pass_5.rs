@@ -7,7 +7,7 @@ use super::pass_4;
 use super::scope::{self, BlockStatus, Diverges, InferContext, PolyScope};
 use super::types;
 use crate::ast;
-use crate::error::{ErrorSink, SourceRange, StringOrStr};
+use crate::error::{ErrorSink, SourceRange};
 use crate::errors as err;
 use crate::hir::{self, BoolType, CmpPred, FloatType, IntType, StringType};
 use crate::support::{AsStr, TempOffset};
@@ -144,7 +144,7 @@ fn type_matches(ctx: &HirCtx, ty: hir::Type, ty2: hir::Type) -> bool {
     }
 }
 
-pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
+pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> std::borrow::Cow<'static, str> {
     match ty {
         hir::Type::Error => "<error>".into(),
         hir::Type::Unknown => "<unknown>".into(),
@@ -184,7 +184,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                     }
                     first = false;
                     let gen_fmt = type_format(ctx, *gen_type);
-                    format.push_str(gen_fmt.as_str());
+                    format.push_str(&gen_fmt);
                 }
                 format.push(')');
                 format.into()
@@ -207,7 +207,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                     }
                     first = false;
                     let gen_fmt = type_format(ctx, *gen_type);
-                    format.push_str(gen_fmt.as_str());
+                    format.push_str(&gen_fmt);
                 }
                 format.push(')');
                 format.into()
@@ -221,7 +221,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 ast::Mut::Immutable => "",
             };
             let ref_ty_format = type_format(ctx, *ref_ty);
-            let format = format!("&{mut_str}{}", ref_ty_format.as_str());
+            let format = format!("&{mut_str}{}", ref_ty_format);
             format.into()
         }
         hir::Type::MultiReference(mutt, ref_ty) => {
@@ -230,7 +230,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 ast::Mut::Immutable => "",
             };
             let ref_ty_format = type_format(ctx, *ref_ty);
-            let format = format!("[&{mut_str}]{}", ref_ty_format.as_str());
+            let format = format!("[&{mut_str}]{}", ref_ty_format);
             format.into()
         }
         hir::Type::Procedure(proc_ty) => {
@@ -243,7 +243,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 match param.kind {
                     hir::ParamKind::Normal => {
                         let param_ty = type_format(ctx, param.ty);
-                        format.push_str(param_ty.as_str());
+                        format.push_str(&param_ty);
                     }
                     hir::ParamKind::Variadic => format.push_str("#variadic"),
                     hir::ParamKind::CallerLocation => format.push_str("#caller_location"),
@@ -257,7 +257,7 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
             }
             format.push_str(") ");
             let return_ty = type_format(ctx, proc_ty.return_ty);
-            format.push_str(return_ty.as_str());
+            format.push_str(&return_ty);
             format.into()
         }
         hir::Type::ArraySlice(slice) => {
@@ -266,21 +266,21 @@ pub fn type_format(ctx: &HirCtx, ty: hir::Type) -> StringOrStr {
                 ast::Mut::Immutable => "",
             };
             let elem_format = type_format(ctx, slice.elem_ty);
-            let format = format!("[{}]{}", mut_str, elem_format.as_str());
+            let format = format!("[{}]{}", mut_str, elem_format);
             format.into()
         }
         hir::Type::ArrayStatic(array) => {
             let elem_format = type_format(ctx, array.elem_ty);
             let format = match ctx.array_len(array.len) {
-                Ok(len) => format!("[{}]{}", len, elem_format.as_str()),
-                Err(()) => format!("[<unknown>]{}", elem_format.as_str()),
+                Ok(len) => format!("[{}]{}", len, elem_format),
+                Err(()) => format!("[<unknown>]{}", elem_format),
             };
             format.into()
         }
         hir::Type::ArrayEnumerated(array) => {
             let elem_format = type_format(ctx, array.elem_ty);
             let enum_name = ctx.name(ctx.registry.enum_data(array.enum_id).name.id);
-            format!("[{enum_name}]{}", elem_format.as_str()).into()
+            format!("[{enum_name}]{}", elem_format).into()
         }
     }
 }
@@ -417,13 +417,7 @@ pub fn type_expectation_check(
     let src = ctx.src(from_range);
     let expected_ty = type_format(ctx, expect_ty);
     let found_ty = type_format(ctx, found_ty);
-    err::tycheck_type_mismatch(
-        &mut ctx.emit,
-        src,
-        expect_src,
-        expected_ty.as_str(),
-        found_ty.as_str(),
-    );
+    err::tycheck_type_mismatch(&mut ctx.emit, src, expect_src, &expected_ty, &found_ty);
 }
 
 fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
@@ -432,7 +426,7 @@ fn check_expect_integer(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
         _ => {
             let src = ctx.src(range);
             let ty = type_format(ctx, ty);
-            err::tycheck_expected_integer(&mut ctx.emit, src, ty.as_str());
+            err::tycheck_expected_integer(&mut ctx.emit, src, &ty);
         }
     }
 }
@@ -443,7 +437,7 @@ fn check_expect_boolean(ctx: &mut HirCtx, range: TextRange, ty: hir::Type) {
         _ => {
             let src = ctx.src(range);
             let ty = type_format(ctx, ty);
-            err::tycheck_expected_boolean(&mut ctx.emit, src, ty.as_str());
+            err::tycheck_expected_boolean(&mut ctx.emit, src, &ty);
         }
     }
 }
@@ -1156,7 +1150,7 @@ fn check_field_from_type<'hir>(
             let src = ctx.src(name.range);
             let field_name = ctx.name(name.id);
             let ty_fmt = type_format(ctx, ty);
-            err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, ty_fmt.as_str());
+            err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, &ty_fmt);
             FieldResult::error()
         }
     }
@@ -1410,7 +1404,7 @@ fn typecheck_index<'hir, 'ast>(
         Err(()) => {
             let src = ctx.src(range);
             let ty_fmt = type_format(ctx, target_res.ty);
-            err::tycheck_cannot_index_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
+            err::tycheck_cannot_index_on_ty(&mut ctx.emit, src, &ty_fmt);
             return TypeResult::error();
         }
     };
@@ -1499,14 +1493,14 @@ fn typecheck_slice<'hir, 'ast>(
             CollectionKind::Multi(_) => {
                 let src = ctx.src(target.range);
                 let ty_fmt = type_format(ctx, target_res.ty);
-                err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+                err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, &ty_fmt);
                 return TypeResult::error();
             }
         },
         Err(()) => {
             let src = ctx.src(expr_range);
             let ty_fmt = type_format(ctx, target_res.ty);
-            err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+            err::tycheck_cannot_slice_on_type(&mut ctx.emit, src, &ty_fmt);
             return TypeResult::error();
         }
     };
@@ -1802,7 +1796,7 @@ fn typecheck_cast<'hir, 'ast>(
         let src = ctx.src(range);
         let from_ty = type_format(ctx, from);
         let into_ty = type_format(ctx, into);
-        err::tycheck_cast_invalid(&mut ctx.emit, src, from_ty.as_str(), into_ty.as_str());
+        err::tycheck_cast_invalid(&mut ctx.emit, src, &from_ty, &into_ty);
         TypeResult::error()
     } else {
         if let hir::Expr::Const(target, _) = *target_res.expr {
@@ -2647,7 +2641,7 @@ fn typecheck_deref<'hir, 'ast>(
         _ => {
             let src = ctx.src(range);
             let ty_fmt = type_format(ctx, rhs_res.ty);
-            err::tycheck_cannot_deref_on_ty(&mut ctx.emit, src, ty_fmt.as_str());
+            err::tycheck_cannot_deref_on_ty(&mut ctx.emit, src, &ty_fmt);
             TypeResult::error()
         }
     }
@@ -2714,7 +2708,7 @@ fn typecheck_unary<'hir, 'ast>(
     } else {
         let src = ctx.src(op_range);
         let rhs_ty = type_format(ctx, rhs_res.ty);
-        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), rhs_ty.as_str());
+        err::tycheck_un_op_cannot_apply(&mut ctx.emit, src, op.as_str(), &rhs_ty);
         TypeResult::error()
     }
 }
@@ -2965,7 +2959,7 @@ fn check_binary_op<'hir>(
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
         let lhs_ty = type_format(ctx, lhs.ty);
         let rhs_ty = type_format(ctx, rhs.ty);
-        err::tycheck_bin_type_mismatch(&mut ctx.emit, src, lhs_ty.as_str(), rhs_ty.as_str());
+        err::tycheck_bin_type_mismatch(&mut ctx.emit, src, &lhs_ty, &rhs_ty);
         return Err(());
     }
 
@@ -3163,13 +3157,7 @@ fn check_binary_op<'hir>(
         let src = ctx.src(TextRange::new(op_start, op_start + op_len.into()));
         let lhs_ty = type_format(ctx, lhs.ty);
         let rhs_ty = type_format(ctx, rhs.ty);
-        err::tycheck_bin_cannot_apply(
-            &mut ctx.emit,
-            src,
-            op.as_str(),
-            lhs_ty.as_str(),
-            rhs_ty.as_str(),
-        );
+        err::tycheck_bin_cannot_apply(&mut ctx.emit, src, op.as_str(), &lhs_ty, &rhs_ty);
     }
 
     hir_op.map(|hir_op| (hir_op, array))
@@ -3770,14 +3758,14 @@ fn typecheck_for<'hir, 'ast>(
                     | CollectionKind::ArrayCore => {
                         let src = ctx.src(header.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
-                        err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+                        err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, &ty_fmt);
                         return None;
                     }
                 },
                 Err(()) => {
                     let src = ctx.src(header.expr.range);
                     let ty_fmt = type_format(ctx, expr_res.ty);
-                    err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, ty_fmt.as_str());
+                    err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, &ty_fmt);
                     return None;
                 }
             };
@@ -4697,7 +4685,7 @@ fn check_call_indirect<'hir, 'ast>(
         _ => {
             let src = ctx.src(target_range);
             let ty_fmt = type_format(ctx, target_res.ty);
-            err::tycheck_cannot_call_value_of_type(&mut ctx.emit, src, ty_fmt.as_str());
+            err::tycheck_cannot_call_value_of_type(&mut ctx.emit, src, &ty_fmt);
             default_check_arg_list(ctx, arg_list);
             return TypeResult::error();
         }
@@ -4816,12 +4804,12 @@ fn check_call_intrinsic<'hir>(
 
             if types::has_poly_layout_dep(from_ty) {
                 let ty = type_format(ctx, from_ty);
-                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, &ty);
                 return Some(TypeResult::error());
             }
             if types::has_poly_layout_dep(into_ty) {
                 let ty = type_format(ctx, into_ty);
-                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, ty.as_str());
+                err::tycheck_transmute_poly_dep(&mut ctx.emit, src, &ty);
                 return Some(TypeResult::error());
             }
 
@@ -4843,9 +4831,9 @@ fn check_call_intrinsic<'hir>(
                 &mut ctx.emit,
                 src,
                 subject,
-                from_ty.as_str(),
+                &from_ty,
                 from_val,
-                into_ty.as_str(),
+                &into_ty,
                 into_val,
             );
             Some(TypeResult::error())

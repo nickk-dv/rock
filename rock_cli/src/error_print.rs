@@ -81,7 +81,7 @@ impl<'src> ContextFmt<'src> {
         context: &'src DiagnosticContext,
         severity: Severity,
     ) -> ContextFmt<'src> {
-        let module = session.module.get(context.src().module_id());
+        let module = session.module.get(context.src.module_id);
         let source = module.file.source.as_str();
         let path = module
             .file
@@ -89,7 +89,7 @@ impl<'src> ContextFmt<'src> {
             .strip_prefix(&session.curr_work_dir)
             .unwrap_or_else(|_| &module.file.path);
 
-        let range = context.src().range();
+        let range = context.src.range;
         let location = text::find_text_location(source, range.start(), &module.file.line_ranges);
         let line_num = location.line().to_string();
         let line_range = module.file.line_ranges[location.line_index()];
@@ -97,7 +97,7 @@ impl<'src> ContextFmt<'src> {
         ContextFmt {
             source,
             path,
-            message: context.msg(),
+            message: &context.msg,
             range,
             location,
             line_range,
@@ -122,10 +122,10 @@ fn print_diagnostic<'src>(
         "{}{}: {wb}{}{r}",
         severity_color(&state.style, severity),
         severity_name(severity),
-        diagnostic.msg().as_str(),
+        diagnostic.msg,
     );
 
-    match diagnostic.data() {
+    match &diagnostic.data {
         DiagnosticData::Message => {
             let _ = writeln!(handle);
             return;

@@ -111,6 +111,12 @@ pub enum Type<'hir> {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+pub enum ArrayLen {
+    Immediate(u64),
+    ConstEval(hir::ConstEvalID),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub struct ProcType<'hir> {
     pub flags: BitSet<hir::ProcFlag>,
     pub params: &'hir [ProcTypeParam],
@@ -121,12 +127,6 @@ pub struct ProcType<'hir> {
 pub struct ProcTypeParam {
     pub ty: TypeID,
     pub kind: hir::ParamKind,
-}
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
-pub enum ArrayLen {
-    Immediate(u64),
-    ConstEval(hir::ConstEvalID),
 }
 
 pub struct Writer {

@@ -3,7 +3,6 @@ pub use bitset::BitSet;
 pub use temp_buffer::{TempBuffer, TempOffset};
 pub use timer::Timer;
 
-#[allow(unsafe_code)]
 mod arena {
     use std::alloc;
     use std::marker::PhantomData;
@@ -24,6 +23,7 @@ mod arena {
         prev: Option<&'arena Block<'arena>>,
     }
 
+    #[allow(unsafe_code)]
     impl<'arena> Arena<'arena> {
         pub fn new() -> Arena<'arena> {
             Arena { offset: 0, block: Block::alloc(PAGE_SIZE), phantom: PhantomData }
@@ -94,6 +94,7 @@ mod arena {
         }
     }
 
+    #[allow(unsafe_code)]
     impl<'arena> Block<'arena> {
         fn alloc(size: usize) -> Block<'arena> {
             let layout = alloc::Layout::from_size_align(size, PAGE_SIZE).unwrap();
