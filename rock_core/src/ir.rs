@@ -13,6 +13,7 @@ pub struct IR<'ir> {
     pub procs: Vec<ProcData<'ir>>,
     pub enums: Vec<EnumData<'ir>>,
     pub structs: Vec<StructData<'ir>>,
+    pub globals: Vec<GlobalData>,
 }
 
 pub struct ProcData<'ir> {
@@ -76,11 +77,41 @@ pub struct StructData<'ir> {
     pub fields: &'ir [Field],
 }
 
+#[derive(Copy, Clone)]
 pub struct Field {
     pub vis: Vis,
     pub name: ast::Name,
     pub ty: TypeID,
     pub ty_range: TextRange,
+}
+
+pub struct ConstData {
+    pub origin: ModuleID,
+    pub flags: BitSet<hir::ConstFlag>,
+    pub vis: Vis,
+    pub name: ast::Name,
+    pub ty: Option<TypeID>,
+    pub value: hir::ConstEvalID,
+}
+
+pub struct GlobalData {
+    pub origin: ModuleID,
+    pub flags: BitSet<hir::GlobalFlag>,
+    pub vis: Vis,
+    pub mutt: ast::Mut,
+    pub name: ast::Name,
+    pub ty: TypeID,
+    pub init: GlobalInit,
+}
+
+#[derive(Copy, Clone)]
+pub enum GlobalInit {
+    Init(hir::ConstEvalID),
+    Zeroed,
+}
+
+pub struct ImportData {
+    pub origin: ModuleID,
 }
 
 #[must_use]
