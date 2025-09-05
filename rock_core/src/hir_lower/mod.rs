@@ -19,6 +19,11 @@ use context::HirCtx;
 pub fn check<'hir>(session: &mut Session) -> Result<hir::Hir<'hir>, ()> {
     let mut ctx = HirCtx::new(session);
     pass_1::populate_scopes(&mut ctx);
+    if pass_1::find_core_items(&mut ctx).is_err() {
+        let (errors, warnings) = ctx.emit.collect();
+        ctx.session.move_errors(errors, warnings);
+        return Err(());
+    }
     pass_2::resolve_imports(&mut ctx);
     pass_3::process_items(&mut ctx);
     pass_4::resolve_const_dependencies(&mut ctx);

@@ -21,6 +21,7 @@ pub struct Hir<'hir> {
     pub core: CoreItems,
 }
 
+#[derive(Default)]
 pub struct CoreItems {
     pub start: ProcID,
     pub index_out_of_bounds: ProcID,
@@ -28,13 +29,13 @@ pub struct CoreItems {
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
     pub from_raw_parts: ProcID,
-    pub range_bound: Option<EnumID>,
+    pub range_bound: EnumID,
     pub array: StructID,
     pub values: ProcID,
     pub values_mut: ProcID,
     pub option: EnumID,
     pub result: EnumID,
-    pub any: Option<StructID>,
+    pub any: StructID,
     pub type_info: EnumID,
     pub int_ty: EnumID,
     pub float_ty: EnumID,
@@ -49,7 +50,7 @@ pub struct CoreItems {
     pub type_info_procedure: StructID,
     pub type_info_array_slice: StructID,
     pub type_info_array_static: StructID,
-    pub source_loc: Option<StructID>,
+    pub source_loc: StructID,
     pub exchange_res: StructID,
 }
 

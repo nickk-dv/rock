@@ -370,6 +370,11 @@ macro_rules! define_id {
             }
         }
 
+        impl Default for $name {
+            fn default() -> $name {
+                $name::dummy()
+            }
+        }
         impl From<usize> for $name {
             fn from(index: usize) -> $name {
                 $name(index as u32)

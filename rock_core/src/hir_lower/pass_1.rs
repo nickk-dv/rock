@@ -28,39 +28,43 @@ pub fn populate_scopes(ctx: &mut HirCtx) {
             }
         }
     }
+}
 
-    ctx.core.start = scope::find_core_proc(ctx, "runtime", "start");
-    ctx.core.index_out_of_bounds = scope::find_core_proc(ctx, "runtime", "index_out_of_bounds");
-    ctx.core.slice_range = scope::find_core_proc(ctx, "ops", "slice_range");
-    ctx.core.string_equals = scope::find_core_proc(ctx, "ops", "string_equals");
-    ctx.core.cstring_equals = scope::find_core_proc(ctx, "ops", "cstring_equals");
-    ctx.core.from_raw_parts = scope::find_core_proc(ctx, "mem", "from_raw_parts");
-    ctx.core.range_bound = scope::find_core_enum_opt(ctx, "ops", "RangeBound");
-    ctx.core.array = scope::find_core_struct(ctx, "array", "Array");
-    ctx.core.values = scope::find_core_proc(ctx, "array", "values");
-    ctx.core.values_mut = scope::find_core_proc(ctx, "array", "values_mut");
-    ctx.core.option = scope::find_core_enum(ctx, "option", "Option");
-    ctx.core.result = scope::find_core_enum(ctx, "result", "Result");
+pub fn find_core_items(ctx: &mut HirCtx) -> Result<(), ()> {
+    ctx.core = hir::CoreItems {
+        start: scope::find_core_proc(ctx, "runtime", "start")?,
+        index_out_of_bounds: scope::find_core_proc(ctx, "runtime", "index_out_of_bounds")?,
+        slice_range: scope::find_core_proc(ctx, "ops", "slice_range")?,
+        string_equals: scope::find_core_proc(ctx, "ops", "string_equals")?,
+        cstring_equals: scope::find_core_proc(ctx, "ops", "cstring_equals")?,
+        from_raw_parts: scope::find_core_proc(ctx, "mem", "from_raw_parts")?,
+        range_bound: scope::find_core_enum(ctx, "ops", "RangeBound")?,
+        array: scope::find_core_struct(ctx, "array", "Array")?,
+        values: scope::find_core_proc(ctx, "array", "values")?,
+        values_mut: scope::find_core_proc(ctx, "array", "values_mut")?,
+        option: scope::find_core_enum(ctx, "option", "Option")?,
+        result: scope::find_core_enum(ctx, "result", "Result")?,
 
-    ctx.core.any = scope::find_core_struct_opt(ctx, "type", "Any");
-    ctx.core.type_info = scope::find_core_enum(ctx, "type", "TypeInfo");
-    ctx.core.int_ty = scope::find_core_enum(ctx, "type", "IntType");
-    ctx.core.float_ty = scope::find_core_enum(ctx, "type", "FloatType");
-    ctx.core.bool_ty = scope::find_core_enum(ctx, "type", "BoolType");
-    ctx.core.string_ty = scope::find_core_enum(ctx, "type", "StringType");
-    ctx.core.type_info_enum = scope::find_core_struct(ctx, "type", "TypeInfo_Enum");
-    ctx.core.type_info_variant = scope::find_core_struct(ctx, "type", "TypeInfo_Variant");
-    ctx.core.type_info_variant_field =
-        scope::find_core_struct(ctx, "type", "TypeInfo_VariantField");
-    ctx.core.type_info_struct = scope::find_core_struct(ctx, "type", "TypeInfo_Struct");
-    ctx.core.type_info_field = scope::find_core_struct(ctx, "type", "TypeInfo_Field");
-    ctx.core.type_info_reference = scope::find_core_struct(ctx, "type", "TypeInfo_Reference");
-    ctx.core.type_info_procedure = scope::find_core_struct(ctx, "type", "TypeInfo_Procedure");
-    ctx.core.type_info_array_slice = scope::find_core_struct(ctx, "type", "TypeInfo_ArraySlice");
-    ctx.core.type_info_array_static = scope::find_core_struct(ctx, "type", "TypeInfo_ArrayStatic");
+        any: scope::find_core_struct(ctx, "type", "Any")?,
+        type_info: scope::find_core_enum(ctx, "type", "TypeInfo")?,
+        int_ty: scope::find_core_enum(ctx, "type", "IntType")?,
+        float_ty: scope::find_core_enum(ctx, "type", "FloatType")?,
+        bool_ty: scope::find_core_enum(ctx, "type", "BoolType")?,
+        string_ty: scope::find_core_enum(ctx, "type", "StringType")?,
+        type_info_enum: scope::find_core_struct(ctx, "type", "TypeInfo_Enum")?,
+        type_info_variant: scope::find_core_struct(ctx, "type", "TypeInfo_Variant")?,
+        type_info_variant_field: scope::find_core_struct(ctx, "type", "TypeInfo_VariantField")?,
+        type_info_struct: scope::find_core_struct(ctx, "type", "TypeInfo_Struct")?,
+        type_info_field: scope::find_core_struct(ctx, "type", "TypeInfo_Field")?,
+        type_info_reference: scope::find_core_struct(ctx, "type", "TypeInfo_Reference")?,
+        type_info_procedure: scope::find_core_struct(ctx, "type", "TypeInfo_Procedure")?,
+        type_info_array_slice: scope::find_core_struct(ctx, "type", "TypeInfo_ArraySlice")?,
+        type_info_array_static: scope::find_core_struct(ctx, "type", "TypeInfo_ArrayStatic")?,
 
-    ctx.core.source_loc = scope::find_core_struct_opt(ctx, "runtime", "SourceLocation");
-    ctx.core.exchange_res = scope::find_core_struct(ctx, "atomic", "ExchangeResult");
+        source_loc: scope::find_core_struct(ctx, "runtime", "SourceLocation")?,
+        exchange_res: scope::find_core_struct(ctx, "atomic", "ExchangeResult")?,
+    };
+    Ok(())
 }
 
 fn add_proc_item<'ast>(

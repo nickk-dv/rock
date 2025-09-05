@@ -1604,7 +1604,6 @@ fn typecheck_slice<'hir, 'ast>(
     };
 
     // range bound
-    let enum_id = ctx.core.range_bound.unwrap_or(hir::EnumID::dummy());
     let (variant_id, input) = if let Some((kind, end)) = range.end {
         let variant_id = match kind {
             ast::RangeKind::Exclusive => hir::VariantID::new(1),
@@ -1623,6 +1622,7 @@ fn typecheck_slice<'hir, 'ast>(
     } else {
         (hir::VariantID::new(0), ctx.arena.alloc_slice(&[]))
     };
+    let enum_id = ctx.core.range_bound;
     let bound = hir::Expr::Variant { enum_id, variant_id, input: ctx.arena.alloc((input, &[])) };
     let bound = ctx.arena.alloc(bound);
 
@@ -4608,16 +4608,12 @@ fn check_call_direct<'hir, 'ast>(
                 break;
             }
             hir::ParamKind::CallerLocation => {
-                let expr = if let Some(struct_id) = ctx.core.source_loc {
-                    let values = hir::source_location(ctx.session, ctx.scope.origin, range.start());
-                    let values = ctx.arena.alloc_slice(&values);
-                    let struct_ = hir::ConstStruct { values, poly_types: &[] };
-                    let struct_ = ctx.arena.alloc(struct_);
-                    let value = hir::ConstValue::Struct { struct_id, struct_ };
-                    ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()))
-                } else {
-                    &hir::Expr::Error
-                };
+                let values = hir::source_location(ctx.session, ctx.scope.origin, range.start());
+                let values = ctx.arena.alloc_slice(&values);
+                let struct_ = hir::ConstStruct { values, poly_types: &[] };
+                let struct_ = ctx.arena.alloc(struct_);
+                let value = hir::ConstValue::Struct { struct_id: ctx.core.source_loc, struct_ };
+                let expr = ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()));
                 ctx.cache.exprs.push(expr);
             }
         }
@@ -4726,17 +4722,13 @@ fn check_call_indirect<'hir, 'ast>(
                 break;
             }
             hir::ParamKind::CallerLocation => {
-                let expr = if let Some(struct_id) = ctx.core.source_loc {
-                    let values =
-                        hir::source_location(ctx.session, ctx.scope.origin, target_range.start());
-                    let values = ctx.arena.alloc_slice(&values);
-                    let struct_ = hir::ConstStruct { values, poly_types: &[] };
-                    let struct_ = ctx.arena.alloc(struct_);
-                    let value = hir::ConstValue::Struct { struct_id, struct_ };
-                    ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()))
-                } else {
-                    &hir::Expr::Error
-                };
+                let values =
+                    hir::source_location(ctx.session, ctx.scope.origin, target_range.start());
+                let values = ctx.arena.alloc_slice(&values);
+                let struct_ = hir::ConstStruct { values, poly_types: &[] };
+                let struct_ = ctx.arena.alloc(struct_);
+                let value = hir::ConstValue::Struct { struct_id: ctx.core.source_loc, struct_ };
+                let expr = ctx.arena.alloc(hir::Expr::Const(value, hir::ConstID::dummy()));
                 ctx.cache.exprs.push(expr);
             }
         }

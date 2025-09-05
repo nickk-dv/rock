@@ -487,7 +487,7 @@ fn codegen_type_info(cg: &mut Codegen) {
     init_type_info_global!(cg, fields, type_info_field, fields_id);
     init_type_info_global!(cg, param_types, type_info_param_types, param_types_id);
 
-    let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
+    let any_ty = cg.structs[cg.hir.core.any.index()];
     let type_info = cg.ty(hir::Type::Enum(cg.hir.core.type_info, &[]));
     let type_info_arr = llvm::array_type(type_info, cg.info.types.len() as u64);
     let type_info_ptr = cg.globals[cg.info.types_id.index()].as_ptr();

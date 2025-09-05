@@ -627,56 +627,34 @@ impl LocalVariableID {
     }
 }
 
-pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> hir::ProcID {
-    find_core_proc_opt(ctx, module, name).unwrap_or(hir::ProcID::dummy())
-}
-pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> hir::EnumID {
-    find_core_enum_opt(ctx, module, name).unwrap_or(hir::EnumID::dummy())
-}
-pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> hir::StructID {
-    find_core_struct_opt(ctx, module, name).unwrap_or(hir::StructID::dummy())
-}
-
-pub fn find_core_proc_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::ProcID> {
-    let module_id = find_core_module(ctx, module)?;
-
-    let name_id = ctx.session.intern_name.get_id(name);
-    if name_id.is_none() {
-        err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
-    }
-    let proc_id = ctx.scope.global.find_defined_proc(module_id, name_id?);
+pub fn find_core_proc(ctx: &mut HirCtx, module: &str, name: &str) -> Result<hir::ProcID, ()> {
+    let module_id = find_core_module(ctx, module).ok_or(())?;
+    let name_id = ctx.session.intern_name.intern(name);
+    let proc_id = ctx.scope.global.find_defined_proc(module_id, name_id);
     if proc_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "procedure");
     }
-    proc_id
+    proc_id.ok_or(())
 }
 
-pub fn find_core_enum_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::EnumID> {
-    let module_id = find_core_module(ctx, module)?;
-
-    let name_id = ctx.session.intern_name.get_id(name);
-    if name_id.is_none() {
-        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
-    }
-    let enum_id = ctx.scope.global.find_defined_enum(module_id, name_id?);
+pub fn find_core_enum(ctx: &mut HirCtx, module: &str, name: &str) -> Result<hir::EnumID, ()> {
+    let module_id = find_core_module(ctx, module).ok_or(())?;
+    let name_id = ctx.session.intern_name.intern(name);
+    let enum_id = ctx.scope.global.find_defined_enum(module_id, name_id);
     if enum_id.is_none() {
-        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
+        err::scope_core_symbol_not_found(&mut ctx.emit, name, "enum");
     }
-    enum_id
+    enum_id.ok_or(())
 }
 
-pub fn find_core_struct_opt(ctx: &mut HirCtx, module: &str, name: &str) -> Option<hir::StructID> {
-    let module_id = find_core_module(ctx, module)?;
-
-    let name_id = ctx.session.intern_name.get_id(name);
-    if name_id.is_none() {
-        err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
-    }
-    let struct_id = ctx.scope.global.find_defined_struct(module_id, name_id?);
+pub fn find_core_struct(ctx: &mut HirCtx, module: &str, name: &str) -> Result<hir::StructID, ()> {
+    let module_id = find_core_module(ctx, module).ok_or(())?;
+    let name_id = ctx.session.intern_name.intern(name);
+    let struct_id = ctx.scope.global.find_defined_struct(module_id, name_id);
     if struct_id.is_none() {
         err::scope_core_symbol_not_found(&mut ctx.emit, name, "struct");
     }
-    struct_id
+    struct_id.ok_or(())
 }
 
 fn find_core_module(ctx: &mut HirCtx, name: &str) -> Option<ModuleID> {

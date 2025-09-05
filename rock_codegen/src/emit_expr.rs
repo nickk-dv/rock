@@ -877,7 +877,7 @@ fn codegen_index<'c>(
         cg.build.cond_br(cond, check_bb, exit_bb);
         cg.build.position_at_end(check_bb);
 
-        let struct_id = cg.hir.core.source_loc.unwrap();
+        let struct_id = cg.hir.core.source_loc;
         let proc_data = cg.hir.proc_data(cg.proc.proc_id);
         let fields = hir::source_location(cg.session, proc_data.origin_id, access.offset);
         let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
@@ -1483,7 +1483,7 @@ fn codegen_variadic_arg<'c>(
     cg: &mut Codegen<'c, '_, '_>,
     arg: &hir::VariadicArg<'c>,
 ) -> llvm::Value {
-    let any_ty = cg.structs[cg.hir.core.any.unwrap().index()];
+    let any_ty = cg.structs[cg.hir.core.any.index()];
     let array_ty = llvm::array_type(any_ty.as_ty(), arg.exprs.len() as u64);
     let array_ptr = cg.entry_alloca(array_ty, "any_array");
 

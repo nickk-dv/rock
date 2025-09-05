@@ -145,7 +145,7 @@ pub fn check_param_directive<'hir>(
                 return None;
             }
             flag_set.set(hir::ProcFlag::Variadic);
-            let elem_ty = ctx.core.any.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
+            let elem_ty = hir::Type::Struct(ctx.core.any, &[]);
             let slice = hir::ArraySlice { mutt: ast::Mut::Immutable, elem_ty };
             Some((hir::Type::ArraySlice(ctx.arena.alloc(slice)), hir::ParamKind::Variadic))
         }
@@ -169,8 +169,7 @@ pub fn check_param_directive<'hir>(
             None
         }
         DirectiveKind::CallerLocation => {
-            let ty = ctx.core.source_loc.map_or(hir::Type::Error, |id| hir::Type::Struct(id, &[]));
-            Some((ty, hir::ParamKind::CallerLocation))
+            Some((hir::Type::Struct(ctx.core.source_loc, &[]), hir::ParamKind::CallerLocation))
         }
         _ => {
             let src = ctx.src(directive.range);

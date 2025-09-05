@@ -46,38 +46,6 @@ pub struct Cache<'hir> {
 
 impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
     pub fn new(session: &'sref mut Session<'s>) -> HirCtx<'hir, 's, 'sref> {
-        let core = hir::CoreItems {
-            start: hir::ProcID::dummy(),
-            index_out_of_bounds: hir::ProcID::dummy(),
-            slice_range: hir::ProcID::dummy(),
-            string_equals: hir::ProcID::dummy(),
-            cstring_equals: hir::ProcID::dummy(),
-            from_raw_parts: hir::ProcID::dummy(),
-            range_bound: None,
-            array: hir::StructID::dummy(),
-            values: hir::ProcID::dummy(),
-            values_mut: hir::ProcID::dummy(),
-            option: hir::EnumID::dummy(),
-            result: hir::EnumID::dummy(),
-            any: None,
-            type_info: hir::EnumID::dummy(),
-            int_ty: hir::EnumID::dummy(),
-            float_ty: hir::EnumID::dummy(),
-            bool_ty: hir::EnumID::dummy(),
-            string_ty: hir::EnumID::dummy(),
-            type_info_enum: hir::StructID::dummy(),
-            type_info_variant: hir::StructID::dummy(),
-            type_info_variant_field: hir::StructID::dummy(),
-            type_info_struct: hir::StructID::dummy(),
-            type_info_field: hir::StructID::dummy(),
-            type_info_reference: hir::StructID::dummy(),
-            type_info_procedure: hir::StructID::dummy(),
-            type_info_array_slice: hir::StructID::dummy(),
-            type_info_array_static: hir::StructID::dummy(),
-            source_loc: None,
-            exchange_res: hir::StructID::dummy(),
-        };
-
         let cache = Cache {
             proc_params: Vec::with_capacity(32),
             enum_variants: Vec::with_capacity(256),
@@ -105,7 +73,7 @@ impl<'hir, 's, 'sref> HirCtx<'hir, 's, 'sref> {
             enum_tag_set: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
             session,
             pat: PatCov::new(),
-            core,
+            core: hir::CoreItems::default(),
             cache,
             entry_point: None,
             enum_layout: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
