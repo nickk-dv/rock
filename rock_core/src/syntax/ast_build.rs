@@ -833,6 +833,7 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> 
 
             ast::PatKind::Lit { expr }
         }
+        cst::Pat::Range(_) => ast::PatKind::Wild, //@implement
         cst::Pat::Item(pat) => {
             let path = path(ctx, pat.path(ctx.tree).unwrap());
             let bind_list = pat.bind_list(ctx.tree).map(|bl| bind_list(ctx, bl));

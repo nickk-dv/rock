@@ -1026,6 +1026,7 @@ fn pat<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::Pat<'syn>) {
     match pat {
         cst::Pat::Wild(_) => fmt.write('_'),
         cst::Pat::Lit(pat) => pat_lit(fmt, pat),
+        cst::Pat::Range(pat) => pat_range(fmt, pat),
         cst::Pat::Item(pat) => pat_item(fmt, pat),
         cst::Pat::Variant(pat) => pat_variant(fmt, pat),
         cst::Pat::Or(pat) => pat_or(fmt, pat),
@@ -1037,6 +1038,18 @@ fn pat_lit(fmt: &mut Formatter, pat: cst::PatLit) {
         fmt.write_str(un_op.as_str());
     }
     lit(fmt, pat.lit(fmt.tree).unwrap())
+}
+
+fn pat_range(fmt: &mut Formatter, pat: cst::PatRange) {
+    if pat.t_exclusive(fmt.tree).is_some() {
+        pat_lit(fmt, pat.start_exclusive(fmt.tree).unwrap());
+        fmt.write_str("..<");
+        pat_lit(fmt, pat.end_exclusive(fmt.tree).unwrap());
+    } else {
+        pat_lit(fmt, pat.start_inclusive(fmt.tree).unwrap());
+        fmt.write_str("..=");
+        pat_lit(fmt, pat.end_inclusive(fmt.tree).unwrap());
+    }
 }
 
 fn pat_item<'syn>(fmt: &mut Formatter<'syn, '_>, pat: cst::PatItem<'syn>) {

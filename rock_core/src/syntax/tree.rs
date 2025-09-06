@@ -127,6 +127,7 @@ pub enum SyntaxKind {
 
     PAT_WILD,
     PAT_LIT,
+    PAT_RANGE,
     PAT_ITEM,
     PAT_VARIANT,
     PAT_OR,

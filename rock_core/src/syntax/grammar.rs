@@ -988,17 +988,17 @@ fn expr_address(p: &mut Parser) -> MarkerClosed {
 //==================== PAT ====================
 
 fn pat(p: &mut Parser) {
-    let mc = primary_pat(p);
+    let mc = pat_primary(p);
     if p.at(T![|]) {
         let m = p.start_before(mc);
         while p.eat(T![|]) {
-            primary_pat(p);
+            pat_primary(p);
         }
         m.complete(p, SyntaxKind::PAT_OR);
     }
 }
 
-fn primary_pat(p: &mut Parser) -> MarkerClosed {
+fn pat_primary(p: &mut Parser) -> MarkerClosed {
     match p.peek() {
         T![_] => {
             let m = p.start();
@@ -1009,7 +1009,6 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
         | T![null]
         | T![true]
         | T![false]
-        | T![int_lit]
         | T![float_lit]
         | T![char_lit]
         | T![string_lit] => {
@@ -1017,17 +1016,20 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
             lit(p);
             m.complete(p, SyntaxKind::PAT_LIT)
         }
+        T![int_lit] => {
+            let m = p.start();
+            lit(p);
+            let mc = m.complete(p, SyntaxKind::PAT_LIT);
+            pat_int_range(p, mc)
+        }
         T![-] => {
             let m = p.start();
             p.bump(T![-]);
-            if p.at(T![int_lit]) {
-                let ml = p.start();
-                p.bump(T![int_lit]);
-                ml.complete(p, SyntaxKind::LIT_INT);
-            } else {
-                p.error("expected integer literal");
-            }
-            m.complete(p, SyntaxKind::PAT_LIT)
+            let ml = p.start();
+            p.expect(T![int_lit]);
+            ml.complete(p, SyntaxKind::LIT_INT);
+            let mc = m.complete(p, SyntaxKind::PAT_LIT);
+            pat_int_range(p, mc)
         }
         T![ident] => {
             let m = p.start();
@@ -1048,6 +1050,31 @@ fn primary_pat(p: &mut Parser) -> MarkerClosed {
         }
         _ => p.error_recover("expected pattern", TokenSet::empty()),
     }
+}
+
+fn pat_int_range(p: &mut Parser, lhs: MarkerClosed) -> MarkerClosed {
+    let m = match p.peek() {
+        T!["..<"] => {
+            let m = p.start_before(lhs);
+            p.bump(T!["..<"]);
+            m
+        }
+        T!["..="] => {
+            let m = p.start_before(lhs);
+            p.bump(T!["..="]);
+            m
+        }
+        _ => return lhs,
+    };
+
+    let rhs = p.start();
+    p.eat(T![-]);
+    let ml = p.start();
+    p.expect(T![int_lit]);
+    ml.complete(p, SyntaxKind::LIT_INT);
+    rhs.complete(p, SyntaxKind::PAT_LIT);
+
+    m.complete(p, SyntaxKind::PAT_RANGE)
 }
 
 fn lit(p: &mut Parser) -> MarkerClosed {

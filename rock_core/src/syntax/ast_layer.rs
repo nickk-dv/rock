@@ -472,6 +472,7 @@ ast_node_impl!(ExprBinary, SyntaxKind::EXPR_BINARY);
 
 ast_node_impl!(PatWild, SyntaxKind::PAT_WILD);
 ast_node_impl!(PatLit, SyntaxKind::PAT_LIT);
+ast_node_impl!(PatRange, SyntaxKind::PAT_RANGE);
 ast_node_impl!(PatItem, SyntaxKind::PAT_ITEM);
 ast_node_impl!(PatVariant, SyntaxKind::PAT_VARIANT);
 ast_node_impl!(PatOr, SyntaxKind::PAT_OR);
@@ -740,6 +741,7 @@ impl<'syn> AstNode<'syn> for Branch<'syn> {
 pub enum Pat<'syn> {
     Wild(PatWild<'syn>),
     Lit(PatLit<'syn>),
+    Range(PatRange<'syn>),
     Item(PatItem<'syn>),
     Variant(PatVariant<'syn>),
     Or(PatOr<'syn>),
@@ -750,6 +752,7 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
         match node.kind {
             SyntaxKind::PAT_WILD => Some(Pat::Wild(PatWild(node))),
             SyntaxKind::PAT_LIT => Some(Pat::Lit(PatLit(node))),
+            SyntaxKind::PAT_RANGE => Some(Pat::Range(PatRange(node))),
             SyntaxKind::PAT_ITEM => Some(Pat::Item(PatItem(node))),
             SyntaxKind::PAT_VARIANT => Some(Pat::Variant(PatVariant(node))),
             SyntaxKind::PAT_OR => Some(Pat::Or(PatOr(node))),
@@ -760,6 +763,7 @@ impl<'syn> AstNode<'syn> for Pat<'syn> {
         match self {
             Pat::Wild(pat) => pat.0.range,
             Pat::Lit(pat) => pat.0.range,
+            Pat::Range(pat) => pat.0.range,
             Pat::Item(pat) => pat.0.range,
             Pat::Variant(pat) => pat.0.range,
             Pat::Or(pat) => pat.0.range,
@@ -1202,6 +1206,15 @@ impl PatWild<'_> {}
 impl<'syn> PatLit<'syn> {
     token_find_predicate!(un_op, Token::as_un_op, ast::UnOp);
     node_find!(lit, Lit);
+}
+
+impl<'syn> PatRange<'syn> {
+    token_find!(t_exclusive, T!["..<"]);
+    token_find!(t_inclusive, T!["..="]);
+    node_before_token!(start_exclusive, PatLit, T!["..<"]);
+    node_before_token!(start_inclusive, PatLit, T!["..="]);
+    node_after_token!(end_exclusive, PatLit, T!["..<"]);
+    node_after_token!(end_inclusive, PatLit, T!["..="]);
 }
 
 impl<'syn> PatItem<'syn> {
