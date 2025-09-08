@@ -69,10 +69,10 @@ pub struct TailValue {
 
 pub struct CodegenCache<'c> {
     int_1: llvm::Type,
-    int_8: llvm::Type,
-    int_16: llvm::Type,
-    int_32: llvm::Type,
-    int_64: llvm::Type,
+    pub int_8: llvm::Type,
+    pub int_16: llvm::Type,
+    pub int_32: llvm::Type,
+    pub int_64: llvm::Type,
     float_32: llvm::Type,
     float_64: llvm::Type,
     void_type: llvm::Type,
@@ -238,9 +238,15 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 let opaque = self.context.struct_named_create(&self.namebuf);
                 self.enums_poly.insert(key, opaque);
 
-                //@always 1 align, probably generating unaligned memory ops?
                 let layout = self.enum_layout(key);
-                let array_ty = llvm::array_type(self.cache.int_8, layout.size);
+                let elem_ty = match layout.align {
+                    1 => self.cache.int_8,
+                    2 => self.cache.int_16,
+                    4 => self.cache.int_32,
+                    8 => self.cache.int_64,
+                    _ => unreachable!(),
+                };
+                let array_ty = llvm::array_type(elem_ty, layout.size / layout.align);
                 self.context.struct_named_set_body(opaque, &[array_ty], false);
                 opaque.as_ty()
             }

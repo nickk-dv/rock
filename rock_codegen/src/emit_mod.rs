@@ -59,8 +59,14 @@ fn codegen_enum_types(cg: &mut Codegen) {
             let data = cg.hir.enum_data(enum_id);
             if data.poly_params.is_none() {
                 let layout = data.layout.resolved_unwrap();
-                let elem_ty = cg.int_type(hir::IntType::U8);
-                let array_ty = llvm::array_type(elem_ty, layout.size);
+                let elem_ty = match layout.align {
+                    1 => cg.cache.int_8,
+                    2 => cg.cache.int_16,
+                    4 => cg.cache.int_32,
+                    8 => cg.cache.int_64,
+                    _ => unreachable!(),
+                };
+                let array_ty = llvm::array_type(elem_ty, layout.size / layout.align);
                 cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
             }
             enum_ty
@@ -105,7 +111,7 @@ fn codegen_globals(cg: &mut Codegen) {
             hir::GlobalInit::Init(eval_id) => {
                 let value = cg.hir.const_eval_values[eval_id.index()];
                 if emit_expr::const_has_variant_with_ptrs(value, false) {
-                    emit_expr::const_writer(cg, value)
+                    emit_expr::const_write_packed(cg, value)
                 } else {
                     emit_expr::codegen_const(cg, value)
                 }
@@ -471,7 +477,7 @@ fn codegen_type_info(cg: &mut Codegen) {
 
     let array = hir::ConstArray { values: cg.hir.arena.alloc_slice(&cg.info.types) };
     let array = hir::ConstValue::Array { array: cg.hir.arena.alloc(array) };
-    let value = emit_expr::const_writer(cg, array);
+    let value = emit_expr::const_write_packed(cg, array);
     let global_ty = llvm::typeof_value(value);
     let global = cg.module.add_global("TYPE_INFO", Some(value), global_ty, true, false);
     cg.globals[cg.info.types_id.index()] = global;

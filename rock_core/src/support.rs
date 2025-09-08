@@ -153,6 +153,13 @@ mod temp_buffer {
         pub fn push(&mut self, value: T) {
             self.buffer.push(value);
         }
+        #[inline]
+        pub fn extend(&mut self, values: &[T])
+        where
+            T: Copy,
+        {
+            self.buffer.extend(values.iter().copied());
+        }
 
         #[inline]
         pub fn view(&self, offset: TempOffset<T>) -> &[T] {

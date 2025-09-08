@@ -638,6 +638,10 @@ impl ValueFn {
     pub fn as_val(self) -> Value {
         Value(self.0)
     }
+    #[inline]
+    pub fn as_ptr(self) -> ValuePtr {
+        ValuePtr(self.0)
+    }
     pub fn entry_bb(&self) -> BasicBlock {
         BasicBlock(unsafe { core::LLVMGetEntryBasicBlock(self.0) })
     }
