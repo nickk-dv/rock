@@ -3543,10 +3543,10 @@ fn typecheck_block<'hir, 'ast>(
 
                 if let hir::Stmt::Continue = stmt_res {
                     let curr_block = ctx.scope.local.current_block();
-                    if let Some((var_id, op)) = curr_block.for_idx_change {
+                    if let Some((var_id, int_ty, op)) = curr_block.for_idx_change {
                         let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
                         let expr_one = ctx.arena.alloc(hir::Expr::Const(
-                            hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
+                            hir::ConstValue::Int { val: 1, neg: false, int_ty },
                             hir::ConstID::dummy(),
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
@@ -3752,10 +3752,10 @@ fn typecheck_for<'hir, 'ast>(
             let collection = match type_as_collection(ctx, expr_res.ty) {
                 Ok(None) => return None,
                 Ok(Some(collection)) => match collection.kind {
-                    CollectionKind::Slice(_) | CollectionKind::Array(_) => collection,
-                    CollectionKind::Multi(_)
-                    | CollectionKind::ArrayEnum(_)
-                    | CollectionKind::ArrayCore => {
+                    CollectionKind::Slice(_)
+                    | CollectionKind::Array(_)
+                    | CollectionKind::ArrayEnum(_) => collection,
+                    CollectionKind::Multi(_) | CollectionKind::ArrayCore => {
                         let src = ctx.src(header.expr.range);
                         let ty_fmt = type_format(ctx, expr_res.ty);
                         err::tycheck_cannot_iter_on_type(&mut ctx.emit, src, &ty_fmt);
@@ -3794,10 +3794,14 @@ fn typecheck_for<'hir, 'ast>(
                 ty: value_ty,
                 was_used: false,
             };
+            let index_ty = match collection.kind {
+                CollectionKind::ArrayEnum(array) => hir::Type::Enum(array.enum_id, &[]),
+                _ => hir::Type::Int(IntType::U64),
+            };
             let index_var = hir::Variable {
                 mutt: ast::Mut::Immutable,
                 name: header.index.unwrap_or(name_dummy),
-                ty: hir::Type::Int(IntType::U64),
+                ty: index_ty,
                 was_used: false,
             };
 
@@ -3830,12 +3834,19 @@ fn typecheck_for<'hir, 'ast>(
             };
 
             let curr_block = ctx.scope.local.current_block_mut();
-            let index_change_op = if header.reverse {
-                hir::BinOp::Sub_Int(IntType::U64)
-            } else {
-                hir::BinOp::Add_Int(IntType::U64)
+            let index_int_ty = match collection.kind {
+                CollectionKind::ArrayEnum(array) => {
+                    let data = ctx.registry.enum_data(array.enum_id);
+                    data.tag_ty.resolved().unwrap_or(IntType::Untyped)
+                }
+                _ => IntType::U64,
             };
-            curr_block.for_idx_change = Some((index_id, index_change_op));
+            let index_change_op = if header.reverse {
+                hir::BinOp::Sub_Int(index_int_ty)
+            } else {
+                hir::BinOp::Add_Int(index_int_ty)
+            };
+            curr_block.for_idx_change = Some((index_id, index_int_ty, index_change_op)); //@use defer instead of this hack?
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
@@ -3871,8 +3882,14 @@ fn typecheck_for<'hir, 'ast>(
                     let len_value = hir::ConstValue::Int {
                         val: ctx.array_len(array.len).unwrap_or(0),
                         neg: false,
-                        int_ty: IntType::U64,
+                        int_ty: index_int_ty,
                     };
+                    ctx.arena.alloc(hir::Expr::Const(len_value, hir::ConstID::dummy()))
+                }
+                CollectionKind::ArrayEnum(array) => {
+                    let val = ctx.registry.enum_data(array.enum_id).variants.len();
+                    let len_value =
+                        hir::ConstValue::Int { val: val as u64, neg: false, int_ty: index_int_ty };
                     ctx.arena.alloc(hir::Expr::Const(len_value, hir::ConstID::dummy()))
                 }
                 //always doing deref since `iter` stores &slice
@@ -3883,23 +3900,21 @@ fn typecheck_for<'hir, 'ast>(
                         field: hir::SliceField::Len,
                     },
                 }),
-                CollectionKind::Multi(_)
-                | CollectionKind::ArrayEnum(_)
-                | CollectionKind::ArrayCore => unreachable!(),
+                CollectionKind::Multi(_) | CollectionKind::ArrayCore => unreachable!(),
             };
-            let expr_zero_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 },
+            let expr_zero = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 0, neg: false, int_ty: index_int_ty },
                 hir::ConstID::dummy(),
             ));
-            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
+            let expr_one = ctx.arena.alloc(hir::Expr::Const(
+                hir::ConstValue::Int { val: 1, neg: false, int_ty: index_int_ty },
                 hir::ConstID::dummy(),
             ));
 
             // index local:
             // forward: let idx = 0;
             // reverse: let idx = iter.len;
-            let index_init = if header.reverse { expr_iter_len } else { expr_zero_usize };
+            let index_init = if header.reverse { expr_iter_len } else { expr_zero };
             let index_local =
                 hir::Local { var_id: index_id, init: hir::LocalInit::Init(index_init) };
             let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
@@ -3908,7 +3923,7 @@ fn typecheck_for<'hir, 'ast>(
             let expr_index_var = ctx.arena.alloc(hir::Expr::Variable { var_id: index_id });
 
             // conditional loop break:
-            let cond_rhs = if header.reverse { expr_zero_usize } else { expr_iter_len };
+            let cond_rhs = if header.reverse { expr_zero } else { expr_iter_len };
             let cond_op = if header.reverse {
                 hir::BinOp::Cmp_Int(CmpPred::Eq, BoolType::Bool, IntType::U64)
             } else {
@@ -3923,11 +3938,10 @@ fn typecheck_for<'hir, 'ast>(
 
             // index expression:
             let index_kind = match collection.kind {
-                CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
                 CollectionKind::Slice(slice) => hir::IndexKind::Slice(slice.mutt),
-                CollectionKind::Multi(_)
-                | CollectionKind::ArrayEnum(_)
-                | CollectionKind::ArrayCore => unreachable!(),
+                CollectionKind::Array(array) => hir::IndexKind::Array(array.len),
+                CollectionKind::ArrayEnum(array) => hir::IndexKind::ArrayEnum(array.enum_id),
+                CollectionKind::Multi(_) | CollectionKind::ArrayCore => unreachable!(),
             };
             let index_access = hir::IndexAccess {
                 //always doing deref since `iter` stores &collection
@@ -3954,7 +3968,7 @@ fn typecheck_for<'hir, 'ast>(
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(index_change_op, None),
                 lhs: expr_index_var,
-                rhs: expr_one_usize,
+                rhs: expr_one,
             }));
 
             let expr_for_block = hir::Expr::Block { block: block_res.block };
@@ -4103,7 +4117,8 @@ fn typecheck_for<'hir, 'ast>(
             let end_id = ctx.scope.local.add_variable(end_var);
 
             let curr_block = ctx.scope.local.current_block_mut();
-            curr_block.for_idx_change = Some((index_id, hir::BinOp::Add_Int(IntType::U64)));
+            curr_block.for_idx_change =
+                Some((index_id, IntType::U64, hir::BinOp::Add_Int(IntType::U64)));
             curr_block.for_value_change = Some((start_id, int_ty));
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);

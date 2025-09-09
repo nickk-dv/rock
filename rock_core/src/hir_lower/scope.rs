@@ -76,7 +76,7 @@ pub struct BlockData {
     defer_count: u32,
     status: BlockStatus,
     diverges: Diverges,
-    pub for_idx_change: Option<(hir::VariableID, hir::BinOp)>,
+    pub for_idx_change: Option<(hir::VariableID, hir::IntType, hir::BinOp)>,
     pub for_value_change: Option<(hir::VariableID, hir::IntType)>,
 }
 
