@@ -169,6 +169,28 @@ impl SyntaxTree {
             end: node.content_idx + node.content_len,
         }
     }
+    pub fn visit<T, F>(&self, ctx: &T, node: &Node, visitor: F)
+    where
+        F: Copy + Fn(&T, &SyntaxTree, &Node),
+    {
+        for not in self.content(node) {
+            let NodeOrToken::Node(node_id) = not else { continue };
+            let child = self.node(node_id);
+            visitor(ctx, self, child);
+            self.visit(ctx, child, visitor);
+        }
+    }
+    pub fn visit_mut<T, F>(&self, ctx: &mut T, node: &Node, visitor: F)
+    where
+        F: Copy + Fn(&mut T, &SyntaxTree, &Node),
+    {
+        for not in self.content(node) {
+            let NodeOrToken::Node(node_id) = not else { continue };
+            let child = self.node(node_id);
+            visitor(ctx, self, child);
+            self.visit_mut(ctx, child, visitor);
+        }
+    }
 }
 
 impl NodeOrTokenID {

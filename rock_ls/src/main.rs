@@ -6,6 +6,7 @@ use lsp_server::{Connection, RequestId};
 use lsp_types as lsp;
 use message::{Action, Message, MessageBuffer, Notification, Request};
 use rock_core::intern::{NameID, StringPool};
+use rock_core::support::AsStr;
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
 use rock_core::syntax::token::{SemanticToken, Token, Trivia};
@@ -198,6 +199,7 @@ fn send_notification<N: lsp::notification::Notification>(
 struct ServerContext<'s> {
     conn: &'s Connection,
     session: Session<'s>,
+    last_ir: Option<hir::Hir<'s>>,
     modules: Vec<ModuleData>,
     fmt_cache: FormatterCache,
 }
@@ -227,7 +229,8 @@ fn initialize_server(conn: &Connection) -> Result<ServerContext, ()> {
         modules.push(data);
     }
 
-    let server = ServerContext { conn, session, modules, fmt_cache: FormatterCache::new() };
+    let server =
+        ServerContext { conn, session, last_ir: None, modules, fmt_cache: FormatterCache::new() };
     Ok(server)
 }
 
@@ -508,48 +511,113 @@ fn handle_semantic_tokens(server: &mut ServerContext, id: RequestId, path: PathB
     send_response(server.conn, id, lsp::SemanticTokens { result_id: None, data });
 }
 
+struct InlayContext<'s> {
+    server: &'s ServerContext<'s>,
+    module: &'s session::Module<'s>,
+    proc_id: hir::ProcID,
+    hints: Vec<lsp::InlayHint>,
+}
+
+fn visit_inlay_hints(ctx: &mut InlayContext, tree: &SyntaxTree, node: &Node) {
+    let Some(local) = cst::StmtLocal::cast(node) else { return };
+    let true = local.ty(tree).is_none() else { return };
+    let Some(bind) = local.bind(tree) else { return };
+    let Some(name) = bind.name(tree) else { return };
+    let var_name = &ctx.module.file.source[name.ident(tree).as_usize()];
+
+    let ir = ctx.server.last_ir.as_ref().unwrap();
+    let data = ir.proc_data(ctx.proc_id);
+    let mut ty = None;
+
+    for var in data.variables {
+        if var.name.range.start() != name.range().start() {
+            continue; //@temp way to identify variables
+        }
+        ty = Some(var.ty);
+    }
+    let Some(ty) = ty else { return };
+
+    let type_format = match ty {
+        hir::Type::Error => "<error>",
+        hir::Type::Unknown => "<unknown>",
+        hir::Type::Char => "char",
+        hir::Type::Void => "void",
+        hir::Type::Never => "never",
+        hir::Type::Rawptr => "rawptr",
+        hir::Type::UntypedChar => "untyped char",
+        hir::Type::Int(int_type) => int_type.as_str(),
+        hir::Type::Float(float_type) => float_type.as_str(),
+        hir::Type::Bool(bool_type) => bool_type.as_str(),
+        hir::Type::String(string_type) => string_type.as_str(),
+        hir::Type::PolyProc(_, _) => "<todo poly>",
+        hir::Type::PolyEnum(_, _) => "<todo poly>",
+        hir::Type::PolyStruct(_, _) => "<todo poly>",
+        hir::Type::Enum(_, _) => "<todo enum>",
+        hir::Type::Struct(_, _) => "<todo struct>",
+        hir::Type::Reference(_, _) => "<todo &>",
+        hir::Type::MultiReference(_, _) => "<todo [&]>",
+        hir::Type::Procedure(_) => "<todo proc>",
+        hir::Type::ArraySlice(_) => "<todo slice>",
+        hir::Type::ArrayStatic(_) => "<todo array>",
+        hir::Type::ArrayEnumerated(_) => "<todo array enum>",
+    };
+
+    ctx.hints.push(lsp::InlayHint {
+        position: text_ops::offset_utf8_to_position_utf16(&ctx.module.file, name.0.range.end()),
+        label: lsp::InlayHintLabel::String(format!(": {type_format}")),
+        kind: Some(lsp::InlayHintKind::TYPE),
+        text_edits: None,
+        tooltip: None,
+        padding_left: None,
+        padding_right: None,
+        data: None,
+    });
+}
+
 fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, range: lsp::Range) {
     debug_eprintln!("[inlay_hints] path: {}, {:?}", path.to_string_lossy(), range);
-    let session = &mut server.session;
-    let module_id = match module_id_from_path(session, &path) {
+    let Some(last_ir) = server.last_ir.as_ref() else {
+        return send_response(server.conn, id.clone(), serde_json::Value::Null);
+    };
+    let module_id = match module_id_from_path(&server.session, &path) {
         Some(module_id) => module_id,
         None => return send_response(server.conn, id, serde_json::Value::Null),
     };
 
-    update_syntax_tree(session, module_id);
+    update_syntax_tree(&mut server.session, module_id);
 
-    //@rework search & scoping, use previous Hir type info.
-    /*
-    let mut hints = Vec::with_capacity(64);
-    let module = session.module.get(module_id);
+    let module = server.session.module.get(module_id);
     let tree = module.tree.as_ref().unwrap();
+    let mut ctx = InlayContext {
+        server,
+        module,
+        proc_id: hir::ProcID::dummy(),
+        hints: Vec::with_capacity(64),
+    };
 
-    for node in tree.nodes() {
-        let Some(local) = cst::StmtLocal::cast(node) else {
-            continue;
-        };
-        if local.ty(tree).is_some() {
-            continue;
+    for item in tree.source_file().items(tree) {
+        let cst::Item::Proc(proc) = item else { continue };
+        let Some(block) = proc.block(tree) else { continue };
+        let Some(name) = proc.name(tree) else { continue };
+
+        let proc_name = &ctx.module.file.source[name.ident(tree).as_usize()];
+        let mut proc_id = None;
+
+        for (idx, data) in last_ir.procs.iter().enumerate() {
+            if data.origin_id == module_id
+                && proc_name == server.session.intern_name.get(data.name.id)
+            {
+                proc_id = Some(hir::ProcID::new(idx));
+                break;
+            }
         }
-        let Some(bind) = local.bind(tree) else {
-            continue;
-        };
-
-        hints.push(lsp::InlayHint {
-            position: text_ops::offset_utf8_to_position_utf16(&module.file, bind.0.range.end()),
-            label: lsp::InlayHintLabel::String(": <unknown>".to_string()),
-            kind: Some(lsp::InlayHintKind::TYPE),
-            text_edits: None,
-            tooltip: None,
-            padding_left: None,
-            padding_right: None,
-            data: None,
-        });
+        if let Some(proc_id) = proc_id {
+            ctx.proc_id = proc_id;
+            tree.visit_mut(&mut ctx, block.0, visit_inlay_hints);
+        }
     }
-    send_response(server.conn, id, hints)
-    */
 
-    send_response(server.conn, id, serde_json::Value::Null)
+    send_response(server.conn, id, ctx.hints)
 }
 
 fn chain_node_nth<'syn, T: AstNode<'syn>>(
@@ -787,12 +855,11 @@ fn compile_project(server: &mut ServerContext) {
     }
 
     let mut timer = Instant::now();
-    fn check_impl(session: &mut Session) -> Result<(), ()> {
+    fn check_impl<'s>(session: &mut Session<'s>) -> Result<hir::Hir<'s>, ()> {
         syntax::parse_all_lsp(session)?;
-        hir_lower::check(session)?;
-        Ok(())
+        hir_lower::check(session)
     }
-    let _ = check_impl(session);
+    server.last_ir = check_impl(session).ok();
     let check_ms = timer.elapsed().as_secs_f64() * 1000.0;
     timer = Instant::now();
 
@@ -881,10 +948,10 @@ fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocument
 }
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
-use rock_core::hir_lower;
 use rock_core::session::{self, ModuleID, Session};
 use rock_core::syntax;
 use rock_core::text::{self, TextOffset, TextRange};
+use rock_core::{hir, hir_lower};
 use std::path::{Path, PathBuf};
 
 fn module_id_from_path(session: &Session, path: &Path) -> Option<ModuleID> {
