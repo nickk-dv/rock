@@ -537,34 +537,10 @@ fn visit_inlay_hints(ctx: &mut InlayContext, tree: &SyntaxTree, node: &Node) {
     }
     let Some(ty) = ty else { return };
 
-    let type_format = match ty {
-        hir::Type::Error => "<error>",
-        hir::Type::Unknown => "<unknown>",
-        hir::Type::Char => "char",
-        hir::Type::Void => "void",
-        hir::Type::Never => "never",
-        hir::Type::Rawptr => "rawptr",
-        hir::Type::UntypedChar => "untyped char",
-        hir::Type::Int(int_type) => int_type.as_str(),
-        hir::Type::Float(float_type) => float_type.as_str(),
-        hir::Type::Bool(bool_type) => bool_type.as_str(),
-        hir::Type::String(string_type) => string_type.as_str(),
-        hir::Type::PolyProc(_, _) => "<todo poly>",
-        hir::Type::PolyEnum(_, _) => "<todo poly>",
-        hir::Type::PolyStruct(_, _) => "<todo poly>",
-        hir::Type::Enum(_, _) => "<todo enum>",
-        hir::Type::Struct(_, _) => "<todo struct>",
-        hir::Type::Reference(_, _) => "<todo &>",
-        hir::Type::MultiReference(_, _) => "<todo [&]>",
-        hir::Type::Procedure(_) => "<todo proc>",
-        hir::Type::ArraySlice(_) => "<todo slice>",
-        hir::Type::ArrayStatic(_) => "<todo array>",
-        hir::Type::ArrayEnumerated(_) => "<todo array enum>",
-    };
-
+    let format = type_format(&ctx.server.session, ir, ty);
     ctx.hints.push(lsp::InlayHint {
         position: text_ops::offset_utf8_to_position_utf16(&ctx.module.file, name.0.range.end()),
-        label: lsp::InlayHintLabel::String(format!(": {type_format}")),
+        label: lsp::InlayHintLabel::String(format!(": {format}",)),
         kind: Some(lsp::InlayHintKind::TYPE),
         text_edits: None,
         tooltip: None,
@@ -572,6 +548,155 @@ fn visit_inlay_hints(ctx: &mut InlayContext, tree: &SyntaxTree, node: &Node) {
         padding_right: None,
         data: None,
     });
+}
+
+//@dedup with pass_5 in check stage
+//@always store Hir even if it had errors
+pub fn type_format(
+    session: &Session,
+    ctx: &hir::Hir,
+    ty: hir::Type,
+) -> std::borrow::Cow<'static, str> {
+    match ty {
+        hir::Type::Error => "<error>".into(),
+        hir::Type::Unknown => "<unknown>".into(),
+        hir::Type::Char => "char".into(),
+        hir::Type::Void => "void".into(),
+        hir::Type::Never => "never".into(),
+        hir::Type::Rawptr => "rawptr".into(),
+        hir::Type::UntypedChar => "untyped char".into(),
+        hir::Type::Int(int_ty) => int_ty.as_str().into(),
+        hir::Type::Float(float_ty) => float_ty.as_str().into(),
+        hir::Type::Bool(bool_ty) => bool_ty.as_str().into(),
+        hir::Type::String(string_ty) => string_ty.as_str().into(),
+        hir::Type::PolyProc(id, poly_idx) => {
+            let name = ctx.proc_data(id).poly_params.unwrap()[poly_idx];
+            session.intern_name.get(name.id).to_string().into()
+        }
+        hir::Type::PolyEnum(id, poly_idx) => {
+            let name = ctx.enum_data(id).poly_params.unwrap()[poly_idx];
+            session.intern_name.get(name.id).to_string().into()
+        }
+        hir::Type::PolyStruct(id, poly_idx) => {
+            let name = ctx.struct_data(id).poly_params.unwrap()[poly_idx];
+            session.intern_name.get(name.id).to_string().into()
+        }
+        hir::Type::Enum(id, poly_types) => {
+            let name = session.intern_name.get(ctx.enum_data(id).name.id);
+
+            if !poly_types.is_empty() {
+                let mut format = String::with_capacity(64);
+                let mut first = true;
+                format.push_str(name);
+                format.push('(');
+                for gen_type in poly_types {
+                    if !first {
+                        format.push(',');
+                        format.push(' ');
+                    }
+                    first = false;
+                    let gen_fmt = type_format(session, ctx, *gen_type);
+                    format.push_str(&gen_fmt);
+                }
+                format.push(')');
+                format.into()
+            } else {
+                name.to_string().into()
+            }
+        }
+        hir::Type::Struct(id, poly_types) => {
+            let name = session.intern_name.get(ctx.struct_data(id).name.id);
+
+            if !poly_types.is_empty() {
+                let mut format = String::with_capacity(64);
+                let mut first = true;
+                format.push_str(name);
+                format.push('(');
+                for gen_type in poly_types {
+                    if !first {
+                        format.push(',');
+                        format.push(' ');
+                    }
+                    first = false;
+                    let gen_fmt = type_format(session, ctx, *gen_type);
+                    format.push_str(&gen_fmt);
+                }
+                format.push(')');
+                format.into()
+            } else {
+                name.to_string().into()
+            }
+        }
+        hir::Type::Reference(mutt, ref_ty) => {
+            let mut_str = match mutt {
+                ast::Mut::Mutable => "mut ",
+                ast::Mut::Immutable => "",
+            };
+            let ref_ty_format = type_format(session, ctx, *ref_ty);
+            let format = format!("&{mut_str}{}", ref_ty_format);
+            format.into()
+        }
+        hir::Type::MultiReference(mutt, ref_ty) => {
+            let mut_str = match mutt {
+                ast::Mut::Mutable => "mut",
+                ast::Mut::Immutable => "",
+            };
+            let ref_ty_format = type_format(session, ctx, *ref_ty);
+            let format = format!("[&{mut_str}]{}", ref_ty_format);
+            format.into()
+        }
+        hir::Type::Procedure(proc_ty) => {
+            let mut format = String::from("proc");
+            if proc_ty.flag_set.contains(hir::ProcFlag::External) {
+                format.push_str(" #c_call");
+            }
+            format.push('(');
+            for (idx, param) in proc_ty.params.iter().enumerate() {
+                match param.kind {
+                    hir::ParamKind::Normal => {
+                        let param_ty = type_format(session, ctx, param.ty);
+                        format.push_str(&param_ty);
+                    }
+                    hir::ParamKind::Variadic => format.push_str("#variadic"),
+                    hir::ParamKind::CallerLocation => format.push_str("#caller_location"),
+                }
+                if proc_ty.params.len() != idx + 1 {
+                    format.push_str(", ");
+                }
+            }
+            if proc_ty.flag_set.contains(hir::ProcFlag::CVariadic) {
+                format.push_str(", #c_variadic");
+            }
+            format.push_str(") ");
+            let return_ty = type_format(session, ctx, proc_ty.return_ty);
+            format.push_str(&return_ty);
+            format.into()
+        }
+        hir::Type::ArraySlice(slice) => {
+            let mut_str = match slice.mutt {
+                ast::Mut::Mutable => "mut",
+                ast::Mut::Immutable => "",
+            };
+            let elem_format = type_format(session, ctx, slice.elem_ty);
+            let format = format!("[{}]{}", mut_str, elem_format);
+            format.into()
+        }
+        hir::Type::ArrayStatic(array) => {
+            let elem_format = type_format(session, ctx, array.elem_ty);
+            let len = match array.len {
+                hir::ArrayStaticLen::Immediate(len) => len,
+                hir::ArrayStaticLen::ConstEval(eval_id) => {
+                    ctx.const_eval_values[eval_id.index()].into_int_u64()
+                }
+            };
+            format!("[{}]{}", len, elem_format).into()
+        }
+        hir::Type::ArrayEnumerated(array) => {
+            let elem_format = type_format(session, ctx, array.elem_ty);
+            let enum_name = session.intern_name.get(ctx.enum_data(array.enum_id).name.id);
+            format!("[{enum_name}]{}", elem_format).into()
+        }
+    }
 }
 
 fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, range: lsp::Range) {
@@ -949,8 +1074,8 @@ fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocument
 
 use rock_core::error::{Diagnostic, DiagnosticData, Severity, SourceRange};
 use rock_core::session::{self, ModuleID, Session};
-use rock_core::syntax;
 use rock_core::text::{self, TextOffset, TextRange};
+use rock_core::{ast, syntax};
 use rock_core::{hir, hir_lower};
 use std::path::{Path, PathBuf};
 
