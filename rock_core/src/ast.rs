@@ -270,9 +270,7 @@ pub struct ForHeaderRange<'ast> {
     pub value: Option<Name>,
     pub index: Option<Name>,
     pub reverse_start: Option<TextOffset>,
-    pub start: &'ast Expr<'ast>,
-    pub end: &'ast Expr<'ast>,
-    pub kind: RangeKind,
+    pub range: Range<'ast>,
 }
 
 #[derive(Copy, Clone)]
@@ -381,12 +379,6 @@ pub struct SliceRange<'ast> {
 }
 
 #[derive(Copy, Clone)]
-pub enum RangeKind {
-    Exclusive,
-    Inclusive,
-}
-
-#[derive(Copy, Clone)]
 pub struct StructInit<'ast> {
     pub path: Option<&'ast Path<'ast>>,
     pub input: &'ast [FieldInit<'ast>],
@@ -418,6 +410,7 @@ pub struct Pat<'ast> {
 pub enum PatKind<'ast> {
     Wild,
     Lit       { expr: &'ast Expr<'ast> },
+    Range     { range: &'ast Range<'ast> },
     Item      { path: &'ast Path<'ast>, bind_list: Option<&'ast BindingList<'ast>> },
     Variant   { name: Name, bind_list: Option<&'ast BindingList<'ast>> },
     Or        { pats: &'ast [Pat<'ast>] },
@@ -481,6 +474,19 @@ pub struct PolymorphArgs<'ast> {
 pub struct PolymorphParams<'ast> {
     pub names: &'ast [Name],
     pub range: TextRange,
+}
+
+#[derive(Copy, Clone)]
+pub struct Range<'ast> {
+    pub start: &'ast Expr<'ast>,
+    pub end: &'ast Expr<'ast>,
+    pub kind: RangeKind,
+}
+
+#[derive(Copy, Clone)]
+pub enum RangeKind {
+    Exclusive,
+    Inclusive,
 }
 
 //==================== ENUMS ====================

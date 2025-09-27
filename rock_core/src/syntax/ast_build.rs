@@ -547,8 +547,8 @@ fn stmt_for<'ast>(ctx: &mut AstBuild<'ast, '_>, for_: cst::StmtFor) -> &'ast ast
         let start = expr(ctx, start);
         let end = expr(ctx, end);
 
-        let header =
-            ast::ForHeaderRange { ref_start, value, index, reverse_start, start, end, kind };
+        let range = ast::Range { start, end, kind };
+        let header = ast::ForHeaderRange { ref_start, value, index, reverse_start, range };
         ast::ForHeader::Range(ctx.arena.alloc(header))
     } else if let Some(header) = for_.header_pat(ctx.tree) {
         let pat = pat(ctx, header.pat(ctx.tree).unwrap());

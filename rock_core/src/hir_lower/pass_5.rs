@@ -877,6 +877,7 @@ fn typecheck_pat<'hir, 'ast>(
     let mut pat_res = match pat.kind {
         ast::PatKind::Wild => PatResult::new(hir::Pat::Wild, hir::Type::Error),
         ast::PatKind::Lit { expr } => typecheck_pat_lit(ctx, expect, expr),
+        ast::PatKind::Range { range } => unimplemented!(), //@implement
         ast::PatKind::Item { path, bind_list } => {
             typecheck_pat_item(ctx, expect, path, bind_list, ref_mut, in_or_pat, pat.range)
         }
@@ -4019,14 +4020,12 @@ fn typecheck_for<'hir, 'ast>(
                 err::tycheck_for_range_reverse(&mut ctx.emit, src);
             }
 
-            let mut start_res = typecheck_expr_untyped(ctx, Expectation::None, header.start);
-            check_expect_integer(ctx, header.start.range, start_res.ty);
-            let mut end_res = typecheck_expr_untyped(ctx, Expectation::None, header.end);
-            check_expect_integer(ctx, header.end.range, end_res.ty);
+            let mut start_res = typecheck_expr_untyped(ctx, Expectation::None, header.range.start);
+            let mut end_res = typecheck_expr_untyped(ctx, Expectation::None, header.range.end);
 
             let start_promote = promote_untyped(
                 ctx,
-                header.start.range,
+                header.range.start.range,
                 *start_res.expr,
                 &mut start_res.ty,
                 Some(end_res.ty),
@@ -4034,12 +4033,15 @@ fn typecheck_for<'hir, 'ast>(
             );
             let end_promote = promote_untyped(
                 ctx,
-                header.end.range,
+                header.range.end.range,
                 *end_res.expr,
                 &mut end_res.ty,
                 Some(start_res.ty),
                 true,
             );
+
+            check_expect_integer(ctx, header.range.start.range, start_res.ty);
+            check_expect_integer(ctx, header.range.end.range, end_res.ty);
 
             if let Some(Ok((v, id))) = start_promote {
                 start_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
@@ -4048,23 +4050,25 @@ fn typecheck_for<'hir, 'ast>(
                 end_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
             }
 
-            let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) =
-                (start_res.ty, end_res.ty)
-            {
-                if lhs != rhs {
-                    let range = TextRange::new(header.start.range.start(), header.end.range.end());
-                    let src = ctx.src(range);
-                    err::tycheck_for_range_type_mismatch(
-                        &mut ctx.emit,
-                        src,
-                        lhs.as_str(),
-                        rhs.as_str(),
-                    );
-                }
-                lhs //default
-            } else {
-                IntType::S32 //default
-            };
+            let int_ty =
+                if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) = (start_res.ty, end_res.ty) {
+                    if lhs != rhs {
+                        let range = TextRange::new(
+                            header.range.start.range.start(),
+                            header.range.end.range.end(),
+                        );
+                        let src = ctx.src(range);
+                        err::tycheck_for_range_type_mismatch(
+                            &mut ctx.emit,
+                            src,
+                            lhs.as_str(),
+                            rhs.as_str(),
+                        );
+                    }
+                    lhs //default
+                } else {
+                    IntType::S32 //default
+                };
 
             let discard_id = ctx.session.intern_name.intern("_");
             let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
@@ -4142,7 +4146,7 @@ fn typecheck_for<'hir, 'ast>(
             let expr_end_var = ctx.arena.alloc(hir::Expr::Variable { var_id: end_id });
             let expr_index_var = ctx.arena.alloc(hir::Expr::Variable { var_id: index_id });
 
-            let cond_op = match header.kind {
+            let cond_op = match header.range.kind {
                 ast::RangeKind::Exclusive => {
                     hir::BinOp::Cmp_Int(CmpPred::Less, BoolType::Bool, int_ty)
                 }
