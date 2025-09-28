@@ -587,6 +587,127 @@ fn typecheck_expr_impl<'hir, 'ast>(
     expr_res.into_expr_result(ctx)
 }
 
+fn promote_untyped<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    range: TextRange,
+    expr: hir::Expr<'hir>,
+    expr_ty: &mut hir::Type<'hir>,
+    with: Option<hir::Type<'hir>>,
+    default: bool,
+) -> Option<Result<(hir::ConstValue<'hir>, hir::ConstID), ()>> {
+    let (value, const_id) = match expr {
+        hir::Expr::Const(value, const_id) => (value, const_id),
+        _ => return None,
+    };
+    let src = ctx.src(range);
+
+    let promoted = match value {
+        hir::ConstValue::Null => {
+            if let Some(with) = with {
+                match with {
+                    hir::Type::Reference(_, _)
+                    | hir::Type::MultiReference(_, _)
+                    | hir::Type::Procedure(_) => *expr_ty = with,
+                    _ => (),
+                }
+            }
+            return None; //ConstValue::Null remains the same
+        }
+        hir::ConstValue::Int { val, neg, int_ty } => {
+            if int_ty != IntType::Untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
+                    *expr_ty = hir::Type::Int(with);
+                    int_range_check(ctx, src, value.into_int(), with)
+                }
+                Some(hir::Type::Float(with)) => {
+                    *expr_ty = hir::Type::Float(with);
+                    let val = if neg { -(val as f64) } else { val as f64 };
+                    Ok(hir::ConstValue::Float { val, float_ty: with })
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::Int(IntType::S32);
+                    int_range_check(ctx, src, value.into_int(), IntType::S32)
+                }
+                _ => return None,
+            }
+        }
+        hir::ConstValue::Float { val, float_ty } => {
+            if float_ty != FloatType::Untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::Float(with)) if with != FloatType::Untyped => {
+                    *expr_ty = hir::Type::Float(with);
+                    Ok(hir::ConstValue::Float { val, float_ty: with })
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::Float(FloatType::F64);
+                    Ok(hir::ConstValue::Float { val, float_ty: FloatType::F64 })
+                }
+                _ => return None,
+            }
+        }
+        hir::ConstValue::Bool { val, bool_ty } => {
+            if bool_ty != BoolType::Untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::Bool(with)) if with != BoolType::Untyped => {
+                    *expr_ty = hir::Type::Bool(with);
+                    Ok(hir::ConstValue::Bool { val, bool_ty: with })
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::Bool(BoolType::Bool);
+                    Ok(hir::ConstValue::Bool { val, bool_ty: BoolType::Bool })
+                }
+                _ => return None,
+            }
+        }
+        hir::ConstValue::Char { val, untyped } => {
+            if !untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::Char) => {
+                    *expr_ty = hir::Type::Char;
+                    Ok(hir::ConstValue::Char { val, untyped: false })
+                }
+                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
+                    *expr_ty = hir::Type::Int(with);
+                    int_range_check(ctx, src, val as i128, with)
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::Char;
+                    Ok(hir::ConstValue::Char { val, untyped: false })
+                }
+                _ => return None,
+            }
+        }
+        hir::ConstValue::String { val, string_ty } => {
+            if string_ty != StringType::Untyped {
+                return None;
+            }
+            match with {
+                Some(hir::Type::String(with)) if with != StringType::Untyped => {
+                    *expr_ty = hir::Type::String(with);
+                    Ok(hir::ConstValue::String { val, string_ty: with })
+                }
+                _ if default => {
+                    *expr_ty = hir::Type::String(StringType::String);
+                    Ok(hir::ConstValue::String { val, string_ty: StringType::String })
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+
+    Some(promoted.map(|v| (v, const_id)))
+}
+
 fn typecheck_lit<'hir>(lit: ast::Lit) -> TypeResult<'hir> {
     let (ty, value) = match lit {
         ast::Lit::Void => (hir::Type::Void, hir::ConstValue::Void),
@@ -2746,128 +2867,6 @@ fn constfold_unary<'hir>(
     }
 }
 
-#[must_use]
-fn promote_untyped<'hir>(
-    ctx: &mut HirCtx<'hir, '_, '_>,
-    range: TextRange,
-    expr: hir::Expr<'hir>,
-    expr_ty: &mut hir::Type<'hir>,
-    with: Option<hir::Type<'hir>>,
-    default: bool,
-) -> Option<Result<(hir::ConstValue<'hir>, hir::ConstID), ()>> {
-    let (value, const_id) = match expr {
-        hir::Expr::Const(value, const_id) => (value, const_id),
-        _ => return None,
-    };
-    let src = ctx.src(range);
-
-    let promoted = match value {
-        hir::ConstValue::Null => {
-            if let Some(with) = with {
-                match with {
-                    hir::Type::Reference(_, _)
-                    | hir::Type::MultiReference(_, _)
-                    | hir::Type::Procedure(_) => *expr_ty = with,
-                    _ => (),
-                }
-            }
-            return None; //ConstValue::Null remains the same
-        }
-        hir::ConstValue::Int { val, neg, int_ty } => {
-            if int_ty != IntType::Untyped {
-                return None;
-            }
-            match with {
-                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
-                    *expr_ty = hir::Type::Int(with);
-                    int_range_check(ctx, src, value.into_int(), with)
-                }
-                Some(hir::Type::Float(with)) => {
-                    *expr_ty = hir::Type::Float(with);
-                    let val = if neg { -(val as f64) } else { val as f64 };
-                    Ok(hir::ConstValue::Float { val, float_ty: with })
-                }
-                _ if default => {
-                    *expr_ty = hir::Type::Int(IntType::S32);
-                    int_range_check(ctx, src, value.into_int(), IntType::S32)
-                }
-                _ => return None,
-            }
-        }
-        hir::ConstValue::Float { val, float_ty } => {
-            if float_ty != FloatType::Untyped {
-                return None;
-            }
-            match with {
-                Some(hir::Type::Float(with)) if with != FloatType::Untyped => {
-                    *expr_ty = hir::Type::Float(with);
-                    Ok(hir::ConstValue::Float { val, float_ty: with })
-                }
-                _ if default => {
-                    *expr_ty = hir::Type::Float(FloatType::F64);
-                    Ok(hir::ConstValue::Float { val, float_ty: FloatType::F64 })
-                }
-                _ => return None,
-            }
-        }
-        hir::ConstValue::Bool { val, bool_ty } => {
-            if bool_ty != BoolType::Untyped {
-                return None;
-            }
-            match with {
-                Some(hir::Type::Bool(with)) if with != BoolType::Untyped => {
-                    *expr_ty = hir::Type::Bool(with);
-                    Ok(hir::ConstValue::Bool { val, bool_ty: with })
-                }
-                _ if default => {
-                    *expr_ty = hir::Type::Bool(BoolType::Bool);
-                    Ok(hir::ConstValue::Bool { val, bool_ty: BoolType::Bool })
-                }
-                _ => return None,
-            }
-        }
-        hir::ConstValue::Char { val, untyped } => {
-            if !untyped {
-                return None;
-            }
-            match with {
-                Some(hir::Type::Char) => {
-                    *expr_ty = hir::Type::Char;
-                    Ok(hir::ConstValue::Char { val, untyped: false })
-                }
-                Some(hir::Type::Int(with)) if with != IntType::Untyped => {
-                    *expr_ty = hir::Type::Int(with);
-                    int_range_check(ctx, src, val as i128, with)
-                }
-                _ if default => {
-                    *expr_ty = hir::Type::Char;
-                    Ok(hir::ConstValue::Char { val, untyped: false })
-                }
-                _ => return None,
-            }
-        }
-        hir::ConstValue::String { val, string_ty } => {
-            if string_ty != StringType::Untyped {
-                return None;
-            }
-            match with {
-                Some(hir::Type::String(with)) if with != StringType::Untyped => {
-                    *expr_ty = hir::Type::String(with);
-                    Ok(hir::ConstValue::String { val, string_ty: with })
-                }
-                _ if default => {
-                    *expr_ty = hir::Type::String(StringType::String);
-                    Ok(hir::ConstValue::String { val, string_ty: StringType::String })
-                }
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-
-    Some(promoted.map(|v| (v, const_id)))
-}
-
 fn typecheck_binary<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
@@ -4020,55 +4019,8 @@ fn typecheck_for<'hir, 'ast>(
                 err::tycheck_for_range_reverse(&mut ctx.emit, src);
             }
 
-            let mut start_res = typecheck_expr_untyped(ctx, Expectation::None, header.range.start);
-            let mut end_res = typecheck_expr_untyped(ctx, Expectation::None, header.range.end);
-
-            let start_promote = promote_untyped(
-                ctx,
-                header.range.start.range,
-                *start_res.expr,
-                &mut start_res.ty,
-                Some(end_res.ty),
-                true,
-            );
-            let end_promote = promote_untyped(
-                ctx,
-                header.range.end.range,
-                *end_res.expr,
-                &mut end_res.ty,
-                Some(start_res.ty),
-                true,
-            );
-
-            check_expect_integer(ctx, header.range.start.range, start_res.ty);
-            check_expect_integer(ctx, header.range.end.range, end_res.ty);
-
-            if let Some(Ok((v, id))) = start_promote {
-                start_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
-            }
-            if let Some(Ok((v, id))) = end_promote {
-                end_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
-            }
-
-            let int_ty =
-                if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) = (start_res.ty, end_res.ty) {
-                    if lhs != rhs {
-                        let range = TextRange::new(
-                            header.range.start.range.start(),
-                            header.range.end.range.end(),
-                        );
-                        let src = ctx.src(range);
-                        err::tycheck_for_range_type_mismatch(
-                            &mut ctx.emit,
-                            src,
-                            lhs.as_str(),
-                            rhs.as_str(),
-                        );
-                    }
-                    lhs //default
-                } else {
-                    IntType::S32 //default
-                };
+            let (start, end, int_ty) =
+                typecheck_range(ctx, Expectation::None, &header.range, false);
 
             let discard_id = ctx.session.intern_name.intern("_");
             let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
@@ -4129,11 +4081,10 @@ fn typecheck_for<'hir, 'ast>(
             ctx.scope.local.exit_block();
 
             // start, end, index locals:
-            let start_local =
-                hir::Local { var_id: start_id, init: hir::LocalInit::Init(start_res.expr) };
+            let start_local = hir::Local { var_id: start_id, init: hir::LocalInit::Init(start) };
             let stmt_start = hir::Stmt::Local(ctx.arena.alloc(start_local));
 
-            let end_local = hir::Local { var_id: end_id, init: hir::LocalInit::Init(end_res.expr) };
+            let end_local = hir::Local { var_id: end_id, init: hir::LocalInit::Init(end) };
             let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
 
             let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 };
@@ -4248,6 +4199,67 @@ fn typecheck_for<'hir, 'ast>(
             Some(hir::Stmt::Loop(block))
         }
     }
+}
+
+fn typecheck_range<'hir, 'ast>(
+    ctx: &mut HirCtx<'hir, 'ast, '_>,
+    expect: Expectation<'hir>,
+    range: &ast::Range<'ast>,
+    constant: bool,
+) -> (&'hir hir::Expr<'hir>, &'hir hir::Expr<'hir>, hir::IntType) {
+    let mut start_res = typecheck_expr_untyped(ctx, expect, range.start);
+    let mut end_res = typecheck_expr_untyped(ctx, expect, range.end);
+
+    let start_promote = promote_untyped(
+        ctx,
+        range.start.range,
+        *start_res.expr,
+        &mut start_res.ty,
+        Some(end_res.ty),
+        true,
+    );
+    let end_promote = promote_untyped(
+        ctx,
+        range.end.range,
+        *end_res.expr,
+        &mut end_res.ty,
+        Some(start_res.ty),
+        true,
+    );
+
+    if let Some(Ok((v, id))) = start_promote {
+        start_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
+    }
+    if let Some(Ok((v, id))) = end_promote {
+        end_res.expr = ctx.arena.alloc(hir::Expr::Const(v, id));
+    }
+
+    check_expect_integer(ctx, range.start.range, start_res.ty);
+    check_expect_integer(ctx, range.end.range, end_res.ty);
+
+    if constant {
+        if !matches!(start_res.expr, hir::Expr::Error | hir::Expr::Const(_, _)) {
+            let src = ctx.src(range.start.range);
+            err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+        }
+        if !matches!(end_res.expr, hir::Expr::Error | hir::Expr::Const(_, _)) {
+            let src = ctx.src(range.end.range);
+            err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
+        }
+    }
+
+    let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) = (start_res.ty, end_res.ty) {
+        if lhs != rhs {
+            let range = TextRange::new(range.start.range.start(), range.end.range.end());
+            let src = ctx.src(range);
+            err::tycheck_for_range_type_mismatch(&mut ctx.emit, src, lhs.as_str(), rhs.as_str());
+        }
+        lhs
+    } else {
+        IntType::S32
+    };
+
+    (start_res.expr, end_res.expr, int_ty)
 }
 
 enum LocalResult<'hir> {
