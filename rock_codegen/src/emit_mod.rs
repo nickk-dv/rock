@@ -58,15 +58,7 @@ fn codegen_enum_types(cg: &mut Codegen) {
 
             let data = cg.hir.enum_data(enum_id);
             if data.poly_params.is_none() {
-                let layout = data.layout.resolved_unwrap();
-                let elem_ty = match layout.align {
-                    1 => cg.cache.int_8,
-                    2 => cg.cache.int_16,
-                    4 => cg.cache.int_32,
-                    8 => cg.cache.int_64,
-                    _ => unreachable!(),
-                };
-                let array_ty = llvm::array_type(elem_ty, layout.size / layout.align);
+                let array_ty = cg.array_aligned(data.layout.resolved_unwrap());
                 cg.context.struct_named_set_body(enum_ty, &[array_ty], false);
             }
             enum_ty
@@ -95,12 +87,17 @@ fn codegen_struct_types(cg: &mut Codegen) {
             continue;
         }
 
-        field_types.clear();
-        for field in data.fields {
-            field_types.push(cg.ty(field.ty));
-        }
         let opaque = cg.structs[struct_id.index()];
-        cg.context.struct_named_set_body(opaque, &field_types, false)
+        if data.flag_set.contains(hir::StructFlag::Union) {
+            let array_ty = cg.array_aligned(data.layout.resolved_unwrap());
+            cg.context.struct_named_set_body(opaque, &[array_ty], false);
+        } else {
+            field_types.clear();
+            for field in data.fields {
+                field_types.push(cg.ty(field.ty));
+            }
+            cg.context.struct_named_set_body(opaque, &field_types, false);
+        }
     }
 }
 

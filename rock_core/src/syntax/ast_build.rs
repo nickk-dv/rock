@@ -347,6 +347,7 @@ fn directive<'ast>(
                 "variadic" => ast::DirectiveKind::Variadic,
                 "c_variadic" => ast::DirectiveKind::CVariadic,
                 "caller_location" => ast::DirectiveKind::CallerLocation,
+                "union" => ast::DirectiveKind::Union,
                 "scope_public" => ast::DirectiveKind::ScopePublic,
                 "scope_package" => ast::DirectiveKind::ScopePackage,
                 "scope_private" => ast::DirectiveKind::ScopePrivate,

@@ -774,15 +774,14 @@ fn codegen_struct_field<'c>(
     target: &hir::Expr<'c>,
     access: &hir::StructFieldAccess<'c>,
 ) -> llvm::Value {
-    let target_ptr = codegen_expr_pointer(cg, target);
-    let target_ptr = if access.deref.is_some() {
-        cg.build.load(cg.ptr_type(), target_ptr, "deref_ptr").into_ptr()
-    } else {
-        target_ptr
+    let mut field_ptr = codegen_expr_pointer(cg, target);
+    if access.deref.is_some() {
+        field_ptr = cg.build.load(cg.ptr_type(), field_ptr, "deref_ptr").into_ptr();
+    }
+    if !cg.hir.struct_data(access.struct_id).flag_set.contains(hir::StructFlag::Union) {
+        let struct_ty = cg.ty(hir::Type::Struct(access.struct_id, access.poly_types)).as_st();
+        field_ptr = cg.build.gep_struct(struct_ty, field_ptr, access.field_id.raw(), "field_ptr");
     };
-
-    let struct_ty = cg.ty(hir::Type::Struct(access.struct_id, access.poly_types)).as_st();
-    let field_ptr = cg.build.gep_struct(struct_ty, target_ptr, access.field_id.raw(), "field_ptr");
 
     match expect {
         Expect::Value(_) | Expect::Store(_) => {
@@ -1534,11 +1533,16 @@ fn codegen_struct_init<'c>(
     input: &[&'c hir::Expr<'c>],
     poly_types: &'c [hir::Type<'c>],
 ) -> Option<llvm::Value> {
+    let union = cg.hir.struct_data(struct_id).flag_set.contains(hir::StructFlag::Union);
     let struct_ty = cg.ty(hir::Type::Struct(struct_id, poly_types)).as_st();
     let struct_ptr = cg.entry_alloca(struct_ty.as_ty(), "struct_init");
 
     for (idx, expr) in input.iter().copied().enumerate() {
-        let field_ptr = cg.build.gep_struct(struct_ty, struct_ptr, idx as u32, "field_ptr");
+        let field_ptr = if union {
+            struct_ptr
+        } else {
+            cg.build.gep_struct(struct_ty, struct_ptr, idx as u32, "field_ptr")
+        };
         codegen_expr_store(cg, expr, field_ptr);
     }
 

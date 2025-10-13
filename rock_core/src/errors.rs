@@ -920,6 +920,16 @@ pub fn tycheck_field_already_initialized(
     emit.error(Error::new(msg, src, info));
 }
 
+pub fn tycheck_expect_union_initializer(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    struct_src: SourceRange,
+) {
+    let msg = "expected single union member initializer";
+    let info = Info::new("union defined here", struct_src);
+    emit.error(Error::new(msg, src, info));
+}
+
 pub fn tycheck_missing_field_initializers(
     emit: &mut impl ErrorSink,
     src: SourceRange,

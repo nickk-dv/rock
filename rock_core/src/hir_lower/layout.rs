@@ -164,7 +164,11 @@ pub fn resolve_struct_layout<'hir>(
     let src = SourceRange::new(data.origin_id, data.name.range);
 
     let types = data.fields.iter().map(|f| f.ty);
-    resolve_aggregate_layout(ctx, src, types, poly_types)
+    if data.flag_set.contains(hir::StructFlag::Union) {
+        resolve_union_layout(ctx, src, types, poly_types)
+    } else {
+        resolve_aggregate_layout(ctx, src, types, poly_types)
+    }
 }
 
 fn resolve_variant_layout<'hir>(
@@ -223,6 +227,48 @@ fn resolve_aggregate_layout<'hir>(
 
     let aligned = aligned_size(size, align);
     ctx.u8s().push((aligned - size) as u8);
+    size = aligned;
+
+    let total = hir::Layout::new(size, align);
+    let field_pad = ctx.take_u8s(offset_u8);
+    let field_offset = ctx.take_u64s(offset_u64);
+    let layout = hir::StructLayout { total, field_pad, field_offset };
+    Ok(layout)
+}
+
+fn resolve_union_layout<'hir>(
+    ctx: &mut impl LayoutContext<'hir>,
+    src: SourceRange,
+    types: impl Iterator<Item = hir::Type<'hir>>,
+    poly_types: &[hir::Type<'hir>],
+) -> Result<hir::StructLayout<'hir>, ()> {
+    let offset_u8 = ctx.u8s().start();
+    let offset_u64 = ctx.u64s().start();
+
+    let mut size: u64 = 0;
+    let mut align: u64 = 1;
+
+    for (field_idx, ty) in types.enumerate() {
+        let layout = match type_layout(ctx, ty, poly_types, src) {
+            Ok(layout) => layout,
+            Err(_) => {
+                ctx.u8s().pop_view(offset_u8);
+                ctx.u64s().pop_view(offset_u64);
+                return Err(());
+            }
+        };
+
+        ctx.u64s().push(0);
+        if field_idx != 0 {
+            ctx.u8s().push(0);
+        }
+
+        size = size.max(layout.size);
+        align = align.max(layout.align);
+    }
+
+    let aligned = aligned_size(size, align);
+    ctx.u8s().push(0);
     size = aligned;
 
     let total = hir::Layout::new(size, align);

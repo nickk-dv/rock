@@ -2240,6 +2240,8 @@ fn typecheck_struct_init<'hir, 'ast>(
     };
 
     let data = ctx.registry.struct_data(struct_id);
+    let struct_src = SourceRange::new(data.origin_id, data.name.range);
+    let union = data.flag_set.contains(hir::StructFlag::Union);
     let field_count = data.fields.len();
     let (infer, is_poly) = ctx.scope.infer.start_context(data.poly_params);
 
@@ -2300,7 +2302,12 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
     }
 
-    if init_count < field_count {
+    if union && init_count != 1 && field_count > 0 {
+        let src = ctx.src(error_range(struct_init, expr_range));
+        err::tycheck_expect_union_initializer(&mut ctx.emit, src, struct_src);
+    }
+
+    if !union && init_count < field_count {
         let data = ctx.registry.struct_data(struct_id);
         let missing_count = field_count - init_count;
         let mut mentioned = 0_usize;
@@ -2332,9 +2339,10 @@ fn typecheck_struct_init<'hir, 'ast>(
         }
 
         let src = ctx.src(error_range(struct_init, expr_range));
-        let struct_src = SourceRange::new(data.origin_id, data.name.range);
         err::tycheck_missing_field_initializers(&mut ctx.emit, src, struct_src, message);
-    } else if !ctx.emit.did_error(error_count) {
+    }
+
+    if !union && !ctx.emit.did_error(error_count) {
         if let Some(idx) = out_of_order_init {
             let data = ctx.registry.struct_data(struct_id);
             let field_init = struct_init.input[idx];

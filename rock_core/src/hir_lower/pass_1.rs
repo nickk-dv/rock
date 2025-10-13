@@ -144,7 +144,7 @@ fn add_struct_item<'ast>(
     item: &'ast ast::StructItem,
     scope_vis: hir::Vis,
 ) {
-    let config = check_directive::check_expect_config(ctx, item.dir_list, "structs");
+    let (config, flag_set) = check_directive::check_struct_directives(ctx, item);
     if config.disabled() {
         return;
     }
@@ -160,7 +160,7 @@ fn add_struct_item<'ast>(
     let origin_id = ctx.scope.origin;
     let data = hir::StructData {
         origin_id,
-        flag_set: BitSet::empty(),
+        flag_set,
         vis: scope_vis,
         name: item.name,
         poly_params: None,

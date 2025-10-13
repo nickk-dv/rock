@@ -122,6 +122,40 @@ pub fn check_enum_directives(
     (config, flag_set)
 }
 
+pub fn check_struct_directives(
+    ctx: &mut HirCtx,
+    item: &ast::StructItem,
+) -> (ConfigState, BitSet<hir::StructFlag>) {
+    let mut config = ConfigState(true);
+    let mut flag_set = BitSet::empty();
+
+    for directive in item.dir_list.map_or([].as_slice(), |l| l.directives) {
+        if try_check_error_directive(ctx, directive) {
+            continue;
+        }
+        if try_check_config_directive(ctx, &mut config, directive) {
+            continue;
+        }
+        let new_flag = match directive.kind {
+            DirectiveKind::Union => hir::StructFlag::Union,
+            _ => {
+                let src = ctx.src(directive.range);
+                let name = directive.kind.as_str();
+                err::directive_cannot_apply(&mut ctx.emit, src, name, "structs");
+                continue;
+            }
+        };
+        if flag_set.contains(new_flag) {
+            let src = ctx.src(directive.range);
+            err::directive_duplicate(&mut ctx.emit, src, directive.kind.as_str());
+        } else {
+            flag_set.set(new_flag);
+        }
+    }
+
+    (config, flag_set)
+}
+
 pub fn check_param_directive<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     param_idx: usize,

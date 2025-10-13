@@ -239,14 +239,7 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 self.enums_poly.insert(key, opaque);
 
                 let layout = self.enum_layout(key);
-                let elem_ty = match layout.align {
-                    1 => self.cache.int_8,
-                    2 => self.cache.int_16,
-                    4 => self.cache.int_32,
-                    8 => self.cache.int_64,
-                    _ => unreachable!(),
-                };
-                let array_ty = llvm::array_type(elem_ty, layout.size / layout.align);
+                let array_ty = self.array_aligned(layout);
                 self.context.struct_named_set_body(opaque, &[array_ty], false);
                 opaque.as_ty()
             }
@@ -268,14 +261,20 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 self.structs_poly.insert(key, opaque);
 
                 let data = self.hir.struct_data(struct_id);
-                let offset = self.cache.types.start();
-                for field in data.fields {
-                    let ty = self.ty_impl(field.ty, key.1);
-                    self.cache.types.push(ty);
+                if data.flag_set.contains(hir::StructFlag::Union) {
+                    let layout = self.struct_layout(key);
+                    let array_ty = self.array_aligned(layout.total);
+                    self.context.struct_named_set_body(opaque, &[array_ty], false);
+                } else {
+                    let offset = self.cache.types.start();
+                    for field in data.fields {
+                        let ty = self.ty_impl(field.ty, key.1);
+                        self.cache.types.push(ty);
+                    }
+                    let field_types = self.cache.types.view(offset);
+                    self.context.struct_named_set_body(opaque, field_types, false);
+                    self.cache.types.pop_view(offset);
                 }
-                let field_types = self.cache.types.view(offset);
-                self.context.struct_named_set_body(opaque, field_types, false);
-                self.cache.types.pop_view(offset);
                 opaque.as_ty()
             }
             hir::Type::Reference(_, _) => self.cache.ptr_type,
@@ -369,6 +368,17 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 }
             }
         }
+    }
+
+    pub fn array_aligned(&self, layout: hir::Layout) -> llvm::Type {
+        let elem_ty = match layout.align {
+            1 => self.cache.int_8,
+            2 => self.cache.int_16,
+            4 => self.cache.int_32,
+            8 => self.cache.int_64,
+            _ => unreachable!(),
+        };
+        llvm::array_type(elem_ty, layout.size / layout.align)
     }
 
     #[inline]

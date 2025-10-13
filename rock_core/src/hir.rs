@@ -702,6 +702,7 @@ crate::enum_as_str! {
     #[derive(Copy, Clone)]
     pub enum StructFlag {
         WasUsed "was used",
+        Union "union",
     }
 }
 crate::enum_as_str! {
