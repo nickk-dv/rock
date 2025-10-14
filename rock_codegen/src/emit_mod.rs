@@ -421,10 +421,14 @@ fn codegen_type_info(cg: &mut Codegen) {
             register_type_info(cg, hir::Type::String(ty));
         }
     }
+
     for idx in 0..cg.info.var_args.len() {
         for ty in cg.info.var_args[idx].1.iter().copied() {
             register_type_info(cg, ty);
         }
+    }
+    for idx in 0..cg.info.type_infos.len() {
+        register_type_info(cg, cg.info.type_infos[idx].1);
     }
 
     macro_rules! add_type_info_global {
@@ -516,6 +520,18 @@ fn codegen_type_info(cg: &mut Codegen) {
             );
             cg.build.store(info_ptr.as_val(), type_ptr);
         }
+    }
+
+    for (var_ptr, ty) in cg.info.type_infos.iter().copied() {
+        let _ = cg.position_after(var_ptr.as_inst());
+        let type_id = *cg.info.type_ids.get(&ty).unwrap();
+        let info_ptr = cg.build.gep_inbounds(
+            type_info_arr,
+            type_info_ptr,
+            &[cg.const_u64(0), cg.const_u64(type_id)],
+            "type_info",
+        );
+        cg.build.store(info_ptr.as_val(), var_ptr.into_ptr());
     }
 }
 

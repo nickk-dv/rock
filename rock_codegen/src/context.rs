@@ -96,6 +96,7 @@ pub struct CodegenCache<'c> {
 
 pub struct CodegenTypeInfo<'c> {
     pub var_args: Vec<(llvm::Value, &'c [hir::Type<'c>])>,
+    pub type_infos: Vec<(llvm::Value, hir::Type<'c>)>,
     pub type_ids: FxHashMap<hir::Type<'c>, u64>,
     pub types: Vec<hir::ConstValue<'c>>,
     pub enums: Vec<hir::ConstValue<'c>>,
@@ -548,6 +549,7 @@ impl<'c> CodegenTypeInfo<'c> {
     fn new() -> CodegenTypeInfo<'c> {
         CodegenTypeInfo {
             var_args: Vec::with_capacity(256),
+            type_infos: Vec::with_capacity(32),
             type_ids: FxHashMap::with_capacity_and_hasher(256, FxBuildHasher),
             types: Vec::with_capacity(256),
             enums: Vec::with_capacity(64),

@@ -1282,6 +1282,12 @@ pub fn codegen_call_intrinsic<'c>(
     let data = cg.hir.proc_data(proc_id);
 
     match cg.session.intern_name.get(data.name.id) {
+        "info_of" => {
+            let info_ptr = cg.entry_alloca(cg.ptr_type(), "type_info_var");
+            let info_ty = context::substitute_type(cg, ty, [].as_slice());
+            cg.info.type_infos.push((info_ptr.as_val(), info_ty));
+            Some(cg.build.load(cg.ptr_type(), info_ptr, "type_info_val"))
+        }
         "size_of" => {
             let origin = cg.hir.proc_data(cg.proc.proc_id).origin_id;
             let src = SourceRange::new(origin, TextRange::zero());
