@@ -218,9 +218,10 @@ pub fn check_field_directives(
     ctx: &mut HirCtx,
     dir_list: Option<&ast::DirectiveList>,
     struct_vis: hir::Vis,
+    field_vis: hir::Vis,
 ) -> (ConfigState, hir::Vis) {
     let mut config = ConfigState(true);
-    let mut vis = struct_vis;
+    let mut vis = field_vis;
 
     let directives = if let Some(dir_list) = dir_list {
         dir_list.directives

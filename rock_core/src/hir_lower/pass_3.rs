@@ -238,10 +238,12 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
 
     let item = ctx.registry.struct_item(id);
     let struct_vis = ctx.registry.struct_data(id).vis;
+    let mut field_vis = struct_vis;
 
     for field in item.fields.iter() {
         let (config, vis) =
-            check_directive::check_field_directives(ctx, field.dir_list, struct_vis);
+            check_directive::check_field_directives(ctx, field.dir_list, struct_vis, field_vis);
+        field_vis = vis;
         if config.disabled() {
             continue;
         }
@@ -256,7 +258,7 @@ fn process_struct_data(ctx: &mut HirCtx, id: hir::StructID) {
         }
 
         let field = hir::Field {
-            vis,
+            vis: field_vis,
             name: field.name,
             ty: type_resolve(ctx, field.ty, true),
             ty_range: field.ty.range,
