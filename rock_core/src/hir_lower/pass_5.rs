@@ -4394,7 +4394,14 @@ pub fn int_range_check<'hir>(
 //==================== UNUSED ====================
 
 fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRange) {
-    fn unused_return_type(ty: hir::Type, kind: &'static str) -> Option<&'static str> {
+    fn unused_return_type<'hir>(
+        mut ty: hir::Type<'hir>,
+        kind: &'static str,
+        poly_types: &[hir::Type<'hir>],
+    ) -> Option<&'static str> {
+        if let hir::Type::PolyProc(_, idx) = ty {
+            ty = poly_types[idx];
+        }
         match ty {
             hir::Type::Error | hir::Type::Void | hir::Type::Never => None,
             _ => Some(kind),
@@ -4418,15 +4425,15 @@ fn check_unused_expr_semi(ctx: &mut HirCtx, expr: &hir::Expr, expr_range: TextRa
         hir::Expr::Variant { .. } => Some("variant value"),
         hir::Expr::CallDirect { proc_id, .. } => {
             let ty = ctx.registry.proc_data(proc_id).return_ty;
-            unused_return_type(ty, "procedure return value")
+            unused_return_type(ty, "procedure return value", &[])
         }
-        hir::Expr::CallDirectPoly { proc_id, .. } => {
+        hir::Expr::CallDirectPoly { proc_id, input } => {
             let ty = ctx.registry.proc_data(proc_id).return_ty;
-            unused_return_type(ty, "procedure return value")
+            unused_return_type(ty, "procedure return value", input.1)
         }
         hir::Expr::CallIndirect { indirect, .. } => {
             let ty = indirect.proc_ty.return_ty;
-            unused_return_type(ty, "indirect call return value")
+            unused_return_type(ty, "indirect call return value", &[])
         }
         hir::Expr::VariadicArg { .. } => None,
         hir::Expr::StructInit { .. } | hir::Expr::StructInitPoly { .. } => Some("struct value"),
