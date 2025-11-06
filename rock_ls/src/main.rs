@@ -110,6 +110,7 @@ fn initialize_handshake(conn: &Connection) {
 
     let server_caps = lsp::ServerCapabilities {
         text_document_sync: Some(lsp::TextDocumentSyncCapability::Options(document_sync)),
+        hover_provider: Some(lsp::HoverProviderCapability::Simple(true)),
         definition_provider: Some(lsp::OneOf::Left(true)),
         document_formatting_provider: Some(lsp::OneOf::Left(true)),
         workspace: Some(lsp::WorkspaceServerCapabilities {
@@ -253,6 +254,7 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
                 Request::Format(path) => handle_format(server, id, path),
                 Request::SemanticTokens(path) => handle_semantic_tokens(server, id, path),
                 Request::InlayHints(path, range) => handle_inlay_hints(server, id, path, range),
+                Request::Hover(path, pos) => handle_hover(server, id, path, pos),
                 Request::GotoDefinition(path, pos) => handle_goto_definition(server, id, path, pos),
                 Request::ShowSyntaxTree(path) => handle_show_syntax_tree(server, id, path),
             },
@@ -743,6 +745,19 @@ fn handle_inlay_hints(server: &mut ServerContext, id: RequestId, path: PathBuf, 
     }
 
     send_response(server.conn, id, ctx.hints)
+}
+
+fn handle_hover(server: &mut ServerContext, id: RequestId, path: PathBuf, pos: lsp::Position) {
+    debug_eprintln!("[hover] path: {}, {:?}", path.to_string_lossy(), pos);
+    let module_id = match module_id_from_path(&server.session, &path) {
+        Some(module_id) => module_id,
+        None => return send_response(server.conn, id, serde_json::Value::Null),
+    };
+
+    update_syntax_tree(&mut server.session, module_id);
+    update_module_symbols(server, module_id, SymbolUpdate::All);
+
+    send_response(server.conn, id, serde_json::Value::Null);
 }
 
 fn chain_node_nth<'syn, T: AstNode<'syn>>(

@@ -22,6 +22,7 @@ pub enum Request {
     Format(PathBuf),
     SemanticTokens(PathBuf),
     InlayHints(PathBuf, lsp::Range),
+    Hover(PathBuf, lsp::Position),
     GotoDefinition(PathBuf, lsp::Position),
     ShowSyntaxTree(PathBuf),
 }
@@ -111,6 +112,11 @@ fn parse_request(req: lsr::Request) -> Option<Message> {
         r::InlayHintRequest::METHOD => {
             let params = cast_req::<r::InlayHintRequest>(req);
             Request::InlayHints(super::uri_to_path(&params.text_document.uri), params.range)
+        }
+        r::HoverRequest::METHOD => {
+            let params = cast_req::<r::HoverRequest>(req);
+            let doc = &params.text_document_position_params;
+            Request::Hover(super::uri_to_path(&doc.text_document.uri), doc.position)
         }
         r::GotoDefinition::METHOD => {
             let params = cast_req::<r::GotoDefinition>(req);
