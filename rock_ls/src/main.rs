@@ -9,7 +9,7 @@ use rock_core::intern::{NameID, StringPool};
 use rock_core::support::AsStr;
 use rock_core::syntax::ast_layer::{self as cst, AstNode};
 use rock_core::syntax::format::FormatterCache;
-use rock_core::syntax::token::{SemanticToken, Token, Trivia};
+use rock_core::syntax::token::{SemanticToken, Token, TokenID, Trivia};
 use rock_core::syntax::tree::{Node, NodeID, NodeOrToken, SyntaxKind, SyntaxTree};
 use rustc_hash::FxHashMap;
 
@@ -757,7 +757,57 @@ fn handle_hover(server: &mut ServerContext, id: RequestId, path: PathBuf, pos: l
     update_syntax_tree(&mut server.session, module_id);
     update_module_symbols(server, module_id, SymbolUpdate::All);
 
-    send_response(server.conn, id, serde_json::Value::Null);
+    let module = server.session.module.get(module_id);
+    let tree = module.tree.as_ref().unwrap();
+    let offset = text_ops::position_utf16_to_offset_utf8(&module.file, pos);
+
+    if let Some(token_id) = token_at_offset(tree, offset) {
+        use rock_core::T;
+        let (token, range) = tree.tokens.token_and_range(token_id);
+
+        let x = 10.0;
+        let hover_text = match token {
+            T![int_lit] => {
+                let value = tree.tokens.int(token_id);
+                format!("integer literal value: `{0}`\n\nhex: `0x{0:X}` bin: `0b{0:b}`", value)
+            }
+            T![float_lit] => {
+                let value = tree.tokens.float(token_id);
+                format!("float literal value: `{value}`\n\nbits: `0x{:X}`", value.to_bits())
+            }
+            T![char_lit] => {
+                let value = tree.tokens.char(token_id);
+                format!(
+                    "char literal value: `{value:?}`\n\nunicode: `U+{0:X}` decimal: `{0}`",
+                    value as u32,
+                )
+            }
+            T![string_lit] => {
+                let value_id = tree.tokens.string(token_id);
+                let value = server.session.intern_lit.get(value_id);
+                let lines = value.chars().filter(|&v| v == '\n').count() + 1;
+                format!(
+                    "string literal value: `{value:?}`\n\nlen: `{}` lines: `{lines}`",
+                    value.len()
+                )
+            }
+            _ => {
+                send_response(server.conn, id, serde_json::Value::Null);
+                return;
+            }
+        };
+
+        let hover = lsp::Hover {
+            contents: lsp::HoverContents::Markup(lsp::MarkupContent {
+                kind: lsp::MarkupKind::Markdown,
+                value: hover_text,
+            }),
+            range: Some(text_ops::range_utf8_to_range_utf16(&module.file, range)),
+        };
+        send_response(server.conn, id, hover);
+    } else {
+        send_response(server.conn, id, serde_json::Value::Null);
+    }
 }
 
 fn chain_node_nth<'syn, T: AstNode<'syn>>(
@@ -967,6 +1017,35 @@ fn node_chain(tree: &SyntaxTree, offset: TextOffset) -> Vec<NodeID> {
         }
     }
     chain
+}
+
+fn token_at_offset(tree: &SyntaxTree, offset: TextOffset) -> Option<TokenID> {
+    let mut target = tree.root();
+
+    while target.range.contains_inclusive(offset) {
+        let mut progress = false;
+        for not in tree.content(target) {
+            if let NodeOrToken::Node(node_id) = not {
+                let node = tree.node(node_id);
+                if node.range.contains_inclusive(offset) {
+                    target = node;
+                    progress = true;
+                    break;
+                }
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
+    for not in tree.content(target) {
+        if let NodeOrToken::Token(token_id) = not {
+            if tree.tokens.token_range(token_id).contains_inclusive(offset) {
+                return Some(token_id);
+            }
+        }
+    }
+    None
 }
 
 fn handle_show_syntax_tree(server: &mut ServerContext, id: RequestId, path: PathBuf) {
