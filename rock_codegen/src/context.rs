@@ -1,3 +1,4 @@
+use super::emit_mod;
 use super::llvm;
 use rock_core::error::ErrorBuffer;
 use rock_core::hir_lower::layout;
@@ -346,11 +347,27 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
 
     pub fn proc_type(&mut self, proc_ty: &hir::ProcType<'c>) -> llvm::TypeFn {
         let offset = self.cache.types.start();
-        for param in proc_ty.params {
-            let ty = self.ty(param.ty);
-            self.cache.types.push(ty);
+        let is_external = proc_ty.flag_set.contains(hir::ProcFlag::External);
+        let sret =
+            is_external && emit_mod::win_x64_parameter_type(self, proc_ty.return_ty).by_pointer;
+
+        if sret {
+            self.cache.types.push(self.ptr_type());
         }
-        let return_ty = self.ty(proc_ty.return_ty);
+        for param in proc_ty.params {
+            if is_external {
+                let abi = emit_mod::win_x64_parameter_type(self, param.ty);
+                if abi.by_pointer {
+                    self.cache.types.push(self.ptr_type());
+                } else {
+                    self.cache.types.push(abi.pass_ty);
+                }
+            } else {
+                let ty = self.ty(param.ty);
+                self.cache.types.push(ty);
+            }
+        }
+        let return_ty = if sret { self.void_type() } else { self.ty(proc_ty.return_ty) };
         let is_variadic = proc_ty.flag_set.contains(hir::ProcFlag::CVariadic);
 
         let param_types = self.cache.types.view(offset);
