@@ -5136,6 +5136,8 @@ struct AddrResult {
 enum AddrBase {
     Unknown,
     Temporary,
+    ReturnRef,
+    ReturnSlice,
     SliceField,
     Constant(SourceRange),
     Variable(ast::Mut, SourceRange),
@@ -5259,6 +5261,25 @@ fn resolve_expr_addressability(ctx: &HirCtx, expr: &hir::Expr) -> AddrResult {
                 expr = rhs;
                 continue;
             }
+            hir::Expr::CallDirect { proc_id, .. } => {
+                let data = ctx.registry.proc_data(proc_id);
+                match data.return_ty {
+                    hir::Type::Reference(_, _) => AddrBase::ReturnRef,
+                    hir::Type::MultiReference(_, _) => AddrBase::ReturnRef,
+                    hir::Type::ArraySlice(_) => AddrBase::ReturnSlice,
+                    _ => AddrBase::Temporary,
+                }
+            }
+            //@concrete T can be reference or slice itself!
+            hir::Expr::CallDirectPoly { proc_id, .. } => {
+                let data = ctx.registry.proc_data(proc_id);
+                match data.return_ty {
+                    hir::Type::Reference(_, _) => AddrBase::ReturnRef,
+                    hir::Type::MultiReference(_, _) => AddrBase::ReturnRef,
+                    hir::Type::ArraySlice(_) => AddrBase::ReturnSlice,
+                    _ => AddrBase::Temporary,
+                }
+            }
             _ => AddrBase::Temporary,
         };
 
@@ -5321,7 +5342,7 @@ fn check_address_addressability(
     match addr_res.base {
         AddrBase::Unknown => {}
         AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
-        AddrBase::Temporary => {
+        AddrBase::Temporary | AddrBase::ReturnRef | AddrBase::ReturnSlice => {
             if mutt == ast::Mut::Mutable {
                 check_address_mut_constraint(ctx, addr_res, src, action)
             }
@@ -5382,6 +5403,13 @@ fn check_assign_addressability(ctx: &mut HirCtx, addr_res: &AddrResult, expr_ran
         AddrBase::Unknown => {}
         AddrBase::SliceField => err::tycheck_addr(&mut ctx.emit, src, action, "slice field"),
         AddrBase::Temporary => err::tycheck_addr(&mut ctx.emit, src, action, "temporary value"),
+        AddrBase::ReturnRef | AddrBase::ReturnSlice => {
+            if let AddrConstraint::None = addr_res.constraint {
+                err::tycheck_addr(&mut ctx.emit, src, action, "temporary value")
+            } else {
+                check_address_mut_constraint(ctx, addr_res, src, action);
+            }
+        }
         AddrBase::Constant(const_src) => {
             err::tycheck_addr_const(&mut ctx.emit, src, const_src, action);
         }
