@@ -1335,6 +1335,41 @@ pub fn codegen_call_intrinsic<'c>(
             let len = codegen_expr_value(cg, input[1]);
             Some(codegen_from_raw_parts(cg, ptr, len))
         }
+
+        "swap_bytes" => {
+            let ty = [cg.ty(ty)];
+            let arg = codegen_expr_value(cg, input[0]);
+            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.bswap", &ty);
+            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
+        }
+        "reverse_bits" => {
+            let ty = [cg.ty(ty)];
+            let arg = codegen_expr_value(cg, input[0]);
+            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.bitreverse", &ty);
+            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
+        }
+        "count_ones" => {
+            let ty = [cg.ty(ty)];
+            let arg = codegen_expr_value(cg, input[0]);
+            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.ctpop", &ty);
+            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
+        }
+        //@todo "count_zeroes" => {}
+        "leading_zeroes" => {
+            let ty = [cg.ty(ty)];
+            let arg = codegen_expr_value(cg, input[0]);
+            let zero_is_poison = codegen_const_bool(cg, false, hir::BoolType::Bool);
+            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.ctlz", &ty);
+            cg.build.call(fn_ty, fn_val, &[arg, zero_is_poison], "intrisic.ret")
+        }
+        "trailing_zeroes" => {
+            let ty = [cg.ty(ty)];
+            let arg = codegen_expr_value(cg, input[0]);
+            let zero_is_poison = codegen_const_bool(cg, false, hir::BoolType::Bool);
+            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.cttz", &ty);
+            cg.build.call(fn_ty, fn_val, &[arg, zero_is_poison], "intrisic.ret")
+        }
+
         "load_relaxed" => atomic_load(cg, input, poly_types, RELAXED),
         "load_acquire" => atomic_load(cg, input, poly_types, ACQUIRE),
         "load_seqcst" => atomic_load(cg, input, poly_types, SEQCST),

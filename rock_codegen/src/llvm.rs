@@ -246,6 +246,22 @@ impl IRModule {
         unsafe { core::LLVMSetInitializer(global.0, value.0) }
     }
 
+    pub fn get_intrinsic(
+        &self,
+        ctx: &IRContext,
+        name: &str,
+        param_types: &[Type],
+    ) -> (ValueFn, TypeFn) {
+        unsafe {
+            let id = core::LLVMLookupIntrinsicID(name.as_ptr() as *const i8, name.len());
+            let params = param_types.as_ptr() as *mut LLVMTypeRef;
+            let count = param_types.len();
+            let fn_val = core::LLVMGetIntrinsicDeclaration(self.module, id, params, count);
+            let fn_ty = core::LLVMIntrinsicGetType(ctx.context, id, params, count);
+            (ValueFn(fn_val), TypeFn(fn_ty))
+        }
+    }
+
     pub fn to_string(&self) -> String {
         let llvm_str = unsafe { core::LLVMPrintModuleToString(self.module) };
         llvm_string_to_owned(llvm_str)

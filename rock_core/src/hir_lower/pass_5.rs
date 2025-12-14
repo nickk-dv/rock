@@ -4876,6 +4876,16 @@ fn check_call_intrinsic<'hir>(
             );
             Some(TypeResult::error())
         }
+        //@todo swap_bytes must be % 16 == 0
+        "swap_bytes" | "reverse_bits" | "count_ones" | "count_zeroes" | "leading_zeroes"
+        | "trailing_zeroes" => {
+            if !matches!(poly_types[0], hir::Type::Int(_)) {
+                let found_ty = type_format(ctx, poly_types[0]);
+                err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "integer", &found_ty);
+                return Some(TypeResult::error());
+            }
+            None
+        }
         _ => None,
     }
 }

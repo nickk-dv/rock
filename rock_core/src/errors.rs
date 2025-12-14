@@ -909,6 +909,16 @@ pub fn tycheck_transmute_mismatch(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_type_mismatch_intrinsic(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    expect_ty: &str,
+    found_ty: &str,
+) {
+    let msg = format!("type mismatch in intrinsic call: expected {expect_ty}, found {found_ty}");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_field_already_initialized(
     emit: &mut impl ErrorSink,
     src: SourceRange,
