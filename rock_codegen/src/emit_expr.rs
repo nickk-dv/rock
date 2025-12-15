@@ -1336,39 +1336,27 @@ pub fn codegen_call_intrinsic<'c>(
             Some(codegen_from_raw_parts(cg, ptr, len))
         }
 
-        "swap_bytes" => {
-            let ty = [cg.ty(ty)];
-            let arg = codegen_expr_value(cg, input[0]);
-            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.bswap", &ty);
-            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
+        "sin" => intrinsic_one_arg(cg, "llvm.sin", ty, input),
+        "cos" => intrinsic_one_arg(cg, "llvm.cos", ty, input),
+        "tan" => intrinsic_one_arg(cg, "llvm.tan", ty, input),
+        "sinh" => intrinsic_one_arg(cg, "llvm.sinh", ty, input),
+        "cosh" => intrinsic_one_arg(cg, "llvm.cosh", ty, input),
+        "tanh" => intrinsic_one_arg(cg, "llvm.tanh", ty, input),
+        "asin" => intrinsic_one_arg(cg, "llvm.asin", ty, input),
+        "acos" => intrinsic_one_arg(cg, "llvm.acos", ty, input),
+        "atan" => intrinsic_one_arg(cg, "llvm.atan", ty, input),
+
+        "swap_bytes" => intrinsic_one_arg(cg, "llvm.bswap", ty, input),
+        "reverse_bits" => intrinsic_one_arg(cg, "llvm.bitreverse", ty, input),
+        "count_ones" => intrinsic_one_arg(cg, "llvm.ctpop", ty, input),
+        "count_zeroes" => {
+            let bitsize = layout::int_layout(ty.unwrap_int()).size * 8;
+            let bitsize = llvm::const_int(cg.ty(ty), bitsize, false);
+            let ones = intrinsic_one_arg(cg, "llvm.ctpop", ty, input).unwrap();
+            Some(cg.build.bin_op(llvm::OpCode::LLVMSub, bitsize, ones, "intrisic.val"))
         }
-        "reverse_bits" => {
-            let ty = [cg.ty(ty)];
-            let arg = codegen_expr_value(cg, input[0]);
-            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.bitreverse", &ty);
-            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
-        }
-        "count_ones" => {
-            let ty = [cg.ty(ty)];
-            let arg = codegen_expr_value(cg, input[0]);
-            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.ctpop", &ty);
-            cg.build.call(fn_ty, fn_val, &[arg], "intrisic.ret")
-        }
-        //@todo "count_zeroes" => {}
-        "leading_zeroes" => {
-            let ty = [cg.ty(ty)];
-            let arg = codegen_expr_value(cg, input[0]);
-            let zero_is_poison = codegen_const_bool(cg, false, hir::BoolType::Bool);
-            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.ctlz", &ty);
-            cg.build.call(fn_ty, fn_val, &[arg, zero_is_poison], "intrisic.ret")
-        }
-        "trailing_zeroes" => {
-            let ty = [cg.ty(ty)];
-            let arg = codegen_expr_value(cg, input[0]);
-            let zero_is_poison = codegen_const_bool(cg, false, hir::BoolType::Bool);
-            let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, "llvm.cttz", &ty);
-            cg.build.call(fn_ty, fn_val, &[arg, zero_is_poison], "intrisic.ret")
-        }
+        "leading_zeroes" => intrinsic_one_arg_flag(cg, "llvm.ctlz", ty, input, false),
+        "trailing_zeroes" => intrinsic_one_arg_flag(cg, "llvm.cttz", ty, input, false),
 
         "load_relaxed" => atomic_load(cg, input, poly_types, RELAXED),
         "load_acquire" => atomic_load(cg, input, poly_types, ACQUIRE),
@@ -1456,6 +1444,45 @@ pub fn codegen_call_intrinsic<'c>(
         "compare_exchange_seqcst_seqcst_weak" => cmpxchg(cg, input, ty, SEQCST, SEQCST, true),
         _ => unreachable!(),
     }
+}
+
+fn intrinsic_one_arg<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    name: &str,
+    poly_ty: hir::Type<'c>,
+    input: &[&hir::Expr<'c>],
+) -> Option<llvm::Value> {
+    let types = [cg.ty(poly_ty)];
+    let arg = codegen_expr_value(cg, input[0]);
+    let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, name, &types);
+    cg.build.call(fn_ty, fn_val, &[arg], "intrisic.val")
+}
+
+fn intrinsic_one_arg_flag<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    name: &str,
+    poly_ty: hir::Type<'c>,
+    input: &[&hir::Expr<'c>],
+    flag: bool,
+) -> Option<llvm::Value> {
+    let types = [cg.ty(poly_ty)];
+    let arg = codegen_expr_value(cg, input[0]);
+    let flag = codegen_const_bool(cg, flag, hir::BoolType::Bool);
+    let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, name, &types);
+    cg.build.call(fn_ty, fn_val, &[arg, flag], "intrisic.val")
+}
+
+fn intrinsic_two_arg<'c>(
+    cg: &mut Codegen<'c, '_, '_>,
+    name: &str,
+    poly_ty: hir::Type<'c>,
+    input: &[&hir::Expr<'c>],
+) -> Option<llvm::Value> {
+    let types = [cg.ty(poly_ty)];
+    let arg = codegen_expr_value(cg, input[0]);
+    let arg2 = codegen_expr_value(cg, input[1]);
+    let (fn_val, fn_ty) = cg.module.get_intrinsic(&cg.context, name, &types);
+    cg.build.call(fn_ty, fn_val, &[arg, arg2], "intrisic.val")
 }
 
 fn codegen_from_raw_parts(cg: &mut Codegen, ptr: llvm::Value, len: llvm::Value) -> llvm::Value {

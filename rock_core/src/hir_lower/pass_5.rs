@@ -4876,18 +4876,73 @@ fn check_call_intrinsic<'hir>(
             );
             Some(TypeResult::error())
         }
-        //@todo swap_bytes must be % 16 == 0
-        "swap_bytes" | "reverse_bits" | "count_ones" | "count_zeroes" | "leading_zeroes"
-        | "trailing_zeroes" => {
-            if !matches!(poly_types[0], hir::Type::Int(_)) {
-                let found_ty = type_format(ctx, poly_types[0]);
-                err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "integer", &found_ty);
-                return Some(TypeResult::error());
-            }
-            None
+        "sin" | "cos" | "tan" | "sinh" | "cosh" | "tanh" | "asin" | "acos" | "atan" => {
+            check_intrinsic_float(ctx, poly_types, range)
+        }
+        "swap_bytes" => check_intrinsic_integer_multi_byte(ctx, poly_types, range),
+        "reverse_bits" | "count_ones" | "count_zeroes" | "leading_zeroes" | "trailing_zeroes" => {
+            check_intrinsic_integer(ctx, poly_types, range)
         }
         _ => None,
     }
+}
+
+fn check_intrinsic_integer<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    poly_types: &'hir [hir::Type<'hir>],
+    range: TextRange,
+) -> Option<TypeResult<'hir>> {
+    if matches!(poly_types[0], hir::Type::Int(_)) {
+        return None;
+    }
+    let src = ctx.src(range);
+    let found_ty = type_format(ctx, poly_types[0]);
+    err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "integer", &found_ty);
+    Some(TypeResult::error())
+}
+
+fn check_intrinsic_integer_multi_byte<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    poly_types: &'hir [hir::Type<'hir>],
+    range: TextRange,
+) -> Option<TypeResult<'hir>> {
+    if matches!(poly_types[0], hir::Type::Int(_))
+        && !matches!(poly_types[0], hir::Type::Int(IntType::S8 | IntType::U8))
+    {
+        return None;
+    }
+    let src = ctx.src(range);
+    let found_ty = type_format(ctx, poly_types[0]);
+    err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "multi-byte integer", &found_ty);
+    Some(TypeResult::error())
+}
+
+fn check_intrinsic_float<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    poly_types: &'hir [hir::Type<'hir>],
+    range: TextRange,
+) -> Option<TypeResult<'hir>> {
+    if matches!(poly_types[0], hir::Type::Float(_)) {
+        return None;
+    }
+    let src = ctx.src(range);
+    let found_ty = type_format(ctx, poly_types[0]);
+    err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "float", &found_ty);
+    Some(TypeResult::error())
+}
+
+fn check_intrinsic_integer_or_float<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    poly_types: &'hir [hir::Type<'hir>],
+    range: TextRange,
+) -> Option<TypeResult<'hir>> {
+    if matches!(poly_types[0], hir::Type::Int(_) | hir::Type::Float(_)) {
+        return None;
+    }
+    let src = ctx.src(range);
+    let found_ty = type_format(ctx, poly_types[0]);
+    err::tycheck_type_mismatch_intrinsic(&mut ctx.emit, src, "integer or float", &found_ty);
+    Some(TypeResult::error())
 }
 
 fn check_call_arg_count(
