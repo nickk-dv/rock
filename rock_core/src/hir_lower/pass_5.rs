@@ -4876,6 +4876,7 @@ fn check_call_intrinsic<'hir>(
             );
             Some(TypeResult::error())
         }
+        "min" | "max" | "abs" => check_intrinsic_integer_or_float(ctx, poly_types, range),
         "sin" | "cos" | "tan" | "sinh" | "cosh" | "tanh" | "asin" | "acos" | "atan" => {
             check_intrinsic_float(ctx, poly_types, range)
         }

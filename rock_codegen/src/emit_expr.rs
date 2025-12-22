@@ -1336,6 +1336,34 @@ pub fn codegen_call_intrinsic<'c>(
             Some(codegen_from_raw_parts(cg, ptr, len))
         }
 
+        "min" => match ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    intrinsic_two_arg(cg, "llvm.smin", ty, input)
+                } else {
+                    intrinsic_two_arg(cg, "llvm.umin", ty, input)
+                }
+            }
+            hir::Type::Float(_) => intrinsic_two_arg(cg, "llvm.minnum", ty, input),
+            _ => unreachable!(),
+        },
+        "max" => match ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    intrinsic_two_arg(cg, "llvm.smax", ty, input)
+                } else {
+                    intrinsic_two_arg(cg, "llvm.umax", ty, input)
+                }
+            }
+            hir::Type::Float(_) => intrinsic_two_arg(cg, "llvm.maxnum", ty, input),
+            _ => unreachable!(),
+        },
+        "abs" => match ty {
+            hir::Type::Int(_) => intrinsic_one_arg_flag(cg, "llvm.abs", ty, input, false),
+            hir::Type::Float(_) => intrinsic_one_arg(cg, "llvm.fabs", ty, input),
+            _ => unreachable!(),
+        },
+
         "sin" => intrinsic_one_arg(cg, "llvm.sin", ty, input),
         "cos" => intrinsic_one_arg(cg, "llvm.cos", ty, input),
         "tan" => intrinsic_one_arg(cg, "llvm.tan", ty, input),
