@@ -66,6 +66,7 @@ pub fn check_proc_directives(
                     continue;
                 }
             }
+            DirectiveKind::NoBoundsCheck => hir::ProcFlag::NoBoundsCheck,
             _ => {
                 let src = ctx.src(directive.range);
                 let name = directive.kind.as_str();

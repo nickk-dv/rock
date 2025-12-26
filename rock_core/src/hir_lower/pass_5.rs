@@ -31,7 +31,8 @@ fn typecheck_proc(ctx: &mut HirCtx, proc_id: hir::ProcID) {
     ctx.scope.origin = data.origin_id;
     ctx.scope.poly = PolyScope::Proc(proc_id);
     ctx.scope.local.reset();
-    ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect);
+    let no_bounds_check = data.flag_set.contains(hir::ProcFlag::NoBoundsCheck);
+    ctx.scope.local.set_proc_context(Some(proc_id), data.params, expect, no_bounds_check);
 
     let block_res = typecheck_block(ctx, expect, block, BlockStatus::None);
     let variables = ctx.arena.alloc_slice(ctx.scope.local.end_proc_context());
@@ -1408,6 +1409,7 @@ fn emit_field_expr<'hir>(
                         hir::ConstID::dummy(),
                     )),
                     offset: name_start,
+                    no_bounds_check: ctx.scope.local.no_bounds_check(),
                 };
                 let expr = hir::Expr::Index { target, access: ctx.arena.alloc(access) };
                 TypeResult::new(field_res.field_ty, expr)
@@ -1544,6 +1546,7 @@ fn typecheck_index<'hir, 'ast>(
         kind,
         index: index_res.expr,
         offset: target.range.end(),
+        no_bounds_check: ctx.scope.local.no_bounds_check(),
     };
 
     if !ctx.emit.did_error(error_count) && !matches!(kind, hir::IndexKind::ArrayCore) {
@@ -1761,7 +1764,12 @@ fn typecheck_slice<'hir, 'ast>(
             hir::SliceKind::Array
         }
     };
-    let access = hir::SliceAccess { deref: collection.deref, kind, op_call };
+    let access = hir::SliceAccess {
+        deref: collection.deref,
+        kind,
+        op_call,
+        no_bounds_check: ctx.scope.local.no_bounds_check(),
+    };
     let access = ctx.arena.alloc(access);
     let expr = hir::Expr::Slice { target: target_res.expr, access };
     TypeResult::new(return_ty, expr)
@@ -3958,6 +3966,7 @@ fn typecheck_for<'hir, 'ast>(
                 kind: index_kind,
                 index: expr_index_var,
                 offset: header.expr.range.end(),
+                no_bounds_check: ctx.scope.local.no_bounds_check(),
             };
             let access = ctx.arena.alloc(index_access);
             let iter_index_expr =

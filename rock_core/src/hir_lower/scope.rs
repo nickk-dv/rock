@@ -57,6 +57,7 @@ pub struct LocalScope<'hir> {
     pub return_expect: Expectation<'hir>,
     params: &'hir [hir::Param<'hir>],
     pub params_was_used: Vec<bool>,
+    no_bounds_check: bool,
     blocks: Vec<BlockData>,
     variables: Vec<hir::Variable<'hir>>,
     variables_in_scope: Vec<hir::VariableID>,
@@ -76,6 +77,7 @@ pub struct BlockData {
     defer_count: u32,
     status: BlockStatus,
     diverges: Diverges,
+    no_bounds_check: bool,
     pub for_idx_change: Option<(hir::VariableID, hir::IntType, hir::BinOp)>,
     pub for_value_change: Option<(hir::VariableID, hir::IntType)>,
 }
@@ -122,7 +124,7 @@ impl<'hir> Scope<'hir> {
         Scope {
             origin: ModuleID::dummy(),
             global: GlobalScope::new(session),
-            local: LocalScope::new(discard_id),
+            local: LocalScope::new(discard_id, false),
             poly: PolyScope::None,
             infer: InferScope::new(),
         }
@@ -343,12 +345,13 @@ impl GlobalScope {
 }
 
 impl<'hir> LocalScope<'hir> {
-    fn new(discard_id: NameID) -> LocalScope<'hir> {
+    fn new(discard_id: NameID, no_bounds_check: bool) -> LocalScope<'hir> {
         LocalScope {
             proc_id: None,
             return_expect: Expectation::None,
             params: &[],
             params_was_used: Vec::with_capacity(32),
+            no_bounds_check,
             blocks: Vec::with_capacity(32),
             variables: Vec::with_capacity(128),
             variables_in_scope: Vec::with_capacity(128),
@@ -362,6 +365,7 @@ impl<'hir> LocalScope<'hir> {
         self.return_expect = Expectation::None;
         self.params = &[];
         self.params_was_used.clear();
+        self.no_bounds_check = false;
         self.blocks.clear();
         self.variables.clear();
         self.variables_in_scope.clear();
@@ -373,11 +377,13 @@ impl<'hir> LocalScope<'hir> {
         proc_id: Option<hir::ProcID>,
         params: &'hir [hir::Param<'hir>],
         return_expect: Expectation<'hir>,
+        no_bounds_check: bool,
     ) {
         self.proc_id = proc_id;
         self.return_expect = return_expect;
         self.params = params;
         self.params_was_used.resize(params.len(), false);
+        self.no_bounds_check = no_bounds_check;
     }
 
     pub fn end_proc_context(&self) -> &[hir::Variable<'hir>] {
@@ -391,6 +397,8 @@ impl<'hir> LocalScope<'hir> {
             defer_count: 0,
             status,
             diverges,
+            no_bounds_check: self.no_bounds_check
+                || self.blocks.last().map(|b| b.no_bounds_check).unwrap_or(false),
             for_idx_change: self.blocks.last().map(|b| b.for_idx_change).unwrap_or(None),
             for_value_change: self.blocks.last().map(|b| b.for_value_change).unwrap_or(None),
         };
@@ -520,6 +528,10 @@ impl<'hir> LocalScope<'hir> {
     #[inline]
     pub fn diverges_set(&mut self, diverges: Diverges) {
         self.current_block_mut().diverges = diverges;
+    }
+    #[inline]
+    pub fn no_bounds_check(&mut self) -> bool {
+        self.no_bounds_check || self.current_block().no_bounds_check
     }
 }
 

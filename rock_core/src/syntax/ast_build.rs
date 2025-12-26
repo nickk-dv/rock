@@ -343,6 +343,7 @@ fn directive<'ast>(
                 "c_call" => ast::DirectiveKind::CCall,
                 "inline_never" => ast::DirectiveKind::InlineNever,
                 "inline_always" => ast::DirectiveKind::InlineAlways,
+                "no_bounds_check" => ast::DirectiveKind::NoBoundsCheck,
                 "intrinsic" => ast::DirectiveKind::Intrinsic,
                 "variadic" => ast::DirectiveKind::Variadic,
                 "c_variadic" => ast::DirectiveKind::CVariadic,

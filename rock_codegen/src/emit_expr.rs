@@ -848,7 +848,7 @@ fn codegen_index<'c>(
         );
     }
 
-    let bound = match access.kind {
+    let mut bound = match access.kind {
         // never bounds checked:
         hir::IndexKind::Multi(_) => None,
         hir::IndexKind::Slice(_) => {
@@ -883,6 +883,11 @@ fn codegen_index<'c>(
             Some(cg.build.load(cg.int_type(hir::IntType::U64), len_ptr, "array.len"))
         }
     };
+    if access.no_bounds_check {
+        if let rock_core::session::config::Build::Release = cg.session.config.build {
+            bound = None;
+        }
+    }
 
     if let Some(bound) = bound {
         let check_bb = cg.append_bb("bounds_check_err");

@@ -439,6 +439,7 @@ pub struct IndexAccess<'hir> {
     pub kind: IndexKind,
     pub index: &'hir Expr<'hir>,
     pub offset: TextOffset,
+    pub no_bounds_check: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -455,6 +456,7 @@ pub struct SliceAccess<'hir> {
     pub deref: Option<ast::Mut>,
     pub kind: SliceKind,
     pub op_call: Expr<'hir>,
+    pub no_bounds_check: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -681,6 +683,7 @@ crate::enum_as_str! {
         // directives
         InlineNever "inline_never",
         InlineAlways "inline_always",
+        NoBoundsCheck "no_bounds_check",
         Intrinsic "intrinsic",
         // compile-time flags
         WasUsed "was used",
