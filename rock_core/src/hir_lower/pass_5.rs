@@ -1751,7 +1751,11 @@ fn typecheck_slice<'hir, 'ast>(
     let bound = hir::Expr::Variant { enum_id, variant_id, input: ctx.arena.alloc((input, &[])) };
     let bound = ctx.arena.alloc(bound);
 
-    let proc_id = ctx.core.slice_range;
+    let proc_id = if ctx.scope.local.no_bounds_check() {
+        ctx.core.slice_unchecked
+    } else {
+        ctx.core.slice_range
+    };
     let input = ctx.arena.alloc_slice(&[slice, start, bound]);
     let poly_types = ctx.arena.alloc_slice(&[collection.elem_ty]);
     let input = ctx.arena.alloc((input, poly_types));
@@ -4886,9 +4890,8 @@ fn check_call_intrinsic<'hir>(
             Some(TypeResult::error())
         }
         "min" | "max" | "abs" => check_intrinsic_integer_or_float(ctx, poly_types, range),
-        "sin" | "cos" | "tan" | "sinh" | "cosh" | "tanh" | "asin" | "acos" | "atan" => {
-            check_intrinsic_float(ctx, poly_types, range)
-        }
+        "sqrt" | "floor" | "ceil" | "round" | "trunc" | "sin" | "cos" | "tan" | "sinh" | "cosh"
+        | "tanh" | "asin" | "acos" | "atan" => check_intrinsic_float(ctx, poly_types, range),
         "swap_bytes" => check_intrinsic_integer_multi_byte(ctx, poly_types, range),
         "reverse_bits" | "count_ones" | "count_zeroes" | "leading_zeroes" | "trailing_zeroes" => {
             check_intrinsic_integer(ctx, poly_types, range)

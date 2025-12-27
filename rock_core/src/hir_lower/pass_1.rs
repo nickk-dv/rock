@@ -35,6 +35,7 @@ pub fn find_core_items(ctx: &mut HirCtx) -> Result<(), ()> {
         start: scope::find_core_proc(ctx, "runtime", "start")?,
         index_out_of_bounds: scope::find_core_proc(ctx, "runtime", "index_out_of_bounds")?,
         slice_range: scope::find_core_proc(ctx, "ops", "slice_range")?,
+        slice_unchecked: scope::find_core_proc(ctx, "ops", "slice_unchecked")?,
         string_equals: scope::find_core_proc(ctx, "ops", "string_equals")?,
         cstring_equals: scope::find_core_proc(ctx, "ops", "cstring_equals")?,
         from_raw_parts: scope::find_core_proc(ctx, "mem", "from_raw_parts")?,

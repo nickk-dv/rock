@@ -1369,6 +1369,12 @@ pub fn codegen_call_intrinsic<'c>(
             _ => unreachable!(),
         },
 
+        "sqrt" => intrinsic_one_arg(cg, "llvm.sqrt", ty, input),
+        "floor" => intrinsic_one_arg(cg, "llvm.floor", ty, input),
+        "ceil" => intrinsic_one_arg(cg, "llvm.ceil", ty, input),
+        "round" => intrinsic_one_arg(cg, "llvm.round", ty, input),
+        "trunc" => intrinsic_one_arg(cg, "llvm.trunc", ty, input),
+
         "sin" => intrinsic_one_arg(cg, "llvm.sin", ty, input),
         "cos" => intrinsic_one_arg(cg, "llvm.cos", ty, input),
         "tan" => intrinsic_one_arg(cg, "llvm.tan", ty, input),

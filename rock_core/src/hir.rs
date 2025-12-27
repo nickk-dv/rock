@@ -26,6 +26,7 @@ pub struct CoreItems {
     pub start: ProcID,
     pub index_out_of_bounds: ProcID,
     pub slice_range: ProcID,
+    pub slice_unchecked: ProcID,
     pub string_equals: ProcID,
     pub cstring_equals: ProcID,
     pub from_raw_parts: ProcID,
