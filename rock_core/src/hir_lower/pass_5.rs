@@ -371,6 +371,12 @@ impl<'hir> Expectation<'hir> {
             },
         }
     }
+    fn expects_non_void_type(&self) -> bool {
+        match self {
+            Expectation::None => false,
+            Expectation::HasType(ty, _) => !ty.is_void(),
+        }
+    }
 }
 
 fn type_substitute<'hir>(
@@ -751,6 +757,7 @@ fn typecheck_if<'hir, 'ast>(
     if_: &ast::If<'ast>,
     expr_range: TextRange,
 ) -> TypeResult<'hir> {
+    let expected_non_void = expect.expects_non_void_type();
     let mut if_type = hir::Type::Never;
 
     let offset = ctx.cache.branches.start();
@@ -833,14 +840,13 @@ fn typecheck_if<'hir, 'ast>(
         None => None,
     };
 
-    if else_block.is_none() && if_type.is_never() {
+    if else_block.is_none() {
         if_type = hir::Type::Void;
+        if expected_non_void {
+            let src = ctx.src(TextRange::new(expr_range.start(), expr_range.start() + 2.into()));
+            err::tycheck_if_missing_else(&mut ctx.emit, src);
+        }
     }
-    if else_block.is_none() && !if_type.is_error() && !if_type.is_void() && !if_type.is_never() {
-        let src = ctx.src(TextRange::new(expr_range.start(), expr_range.start() + 2.into()));
-        err::tycheck_if_missing_else(&mut ctx.emit, src);
-    }
-
     let if_ = ctx.arena.alloc(hir::If { branches, else_block });
     TypeResult::new_ignore(if_type, hir::Expr::If { if_ })
 }
