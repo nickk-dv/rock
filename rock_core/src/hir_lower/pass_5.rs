@@ -3748,6 +3748,9 @@ fn typecheck_for<'hir, 'ast>(
 ) -> Option<hir::Stmt<'hir>> {
     match for_.header {
         ast::ForHeader::Loop => {
+            let curr_block = ctx.scope.local.current_block_mut();
+            curr_block.for_idx_change = None; //@hack
+            curr_block.for_value_change = None; //@hack
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
             let block = ctx.arena.alloc(block_res.block);
@@ -3756,6 +3759,10 @@ fn typecheck_for<'hir, 'ast>(
         ast::ForHeader::Cond(cond) => {
             let cond_res = typecheck_expr(ctx, Expectation::None, cond);
             check_expect_boolean(ctx, cond.range, cond_res.ty);
+
+            let curr_block = ctx.scope.local.current_block_mut();
+            curr_block.for_idx_change = None; //@hack
+            curr_block.for_value_change = None; //@hack
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
 
             let branch_cond =
@@ -3873,6 +3880,7 @@ fn typecheck_for<'hir, 'ast>(
                 hir::BinOp::Add_Int(index_int_ty)
             };
             curr_block.for_idx_change = Some((index_id, index_int_ty, index_change_op)); //@use defer instead of this hack?
+            curr_block.for_value_change = None; //@hack
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
@@ -4195,6 +4203,9 @@ fn typecheck_for<'hir, 'ast>(
 
             ctx.scope.local.start_block(BlockStatus::None);
             let pat = typecheck_pat(ctx, pat_expect, &header.pat, ref_mut, false);
+            let curr_block = ctx.scope.local.current_block_mut();
+            curr_block.for_idx_change = None; //@hack
+            curr_block.for_value_change = None; //@hack
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
 
