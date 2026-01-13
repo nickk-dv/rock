@@ -37,15 +37,6 @@ crate::enum_as_str! {
 }
 
 crate::enum_as_str! {
-    #[allow(non_camel_case_types)]
-    #[derive(Copy, Clone, PartialEq)]
-    pub enum TargetPtrWidth {
-        Bit_32 "32",
-        Bit_64 "64",
-    }
-}
-
-crate::enum_as_str! {
     #[derive(Copy, Clone, PartialEq)]
     pub enum Build {
         Debug "debug",
@@ -94,24 +85,6 @@ impl TargetTriple {
             return TargetTriple::Arm_64_pc_windows_msvc;
             #[cfg(all(target_vendor = "unknown", target_os = "linux", target_env = "gnu"))]
             return TargetTriple::Arm_64_unknown_linux_gnu;
-        }
-    }
-}
-
-impl TargetArch {
-    pub fn ptr_width(self) -> TargetPtrWidth {
-        match self {
-            TargetArch::x86_64 => TargetPtrWidth::Bit_64,
-            TargetArch::Arm_64 => TargetPtrWidth::Bit_64,
-        }
-    }
-}
-
-impl TargetPtrWidth {
-    pub fn ptr_size(self) -> u64 {
-        match self {
-            TargetPtrWidth::Bit_32 => 4,
-            TargetPtrWidth::Bit_64 => 8,
         }
     }
 }

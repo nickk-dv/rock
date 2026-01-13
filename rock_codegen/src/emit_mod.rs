@@ -184,7 +184,13 @@ fn codegen_function_value<'c>(
                     abi.pass_ty
                 }
             } else {
-                cg.ty(data.return_ty)
+                //convert to true void instead of void struct for polymorphic case
+                let ret_ty = cg.ty(data.return_ty);
+                if llvm::type_equals(ret_ty, cg.void_val_type().as_ty()) {
+                    cg.void_type()
+                } else {
+                    ret_ty
+                }
             }
         }
     };
