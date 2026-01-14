@@ -1730,8 +1730,7 @@ fn typecheck_slice<'hir, 'ast>(
         }
         bound
     } else {
-        let zero_usize = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 };
-        ctx.arena.alloc(hir::Expr::Const(zero_usize, hir::ConstID::dummy()))
+        hir::ZERO_U64
     };
 
     // range bound
@@ -3569,6 +3568,32 @@ fn typecheck_block<'hir, 'ast>(
 
                 if let hir::Stmt::Continue = stmt_res {
                     let curr_block = ctx.scope.local.current_block();
+                    if let Some((var_id, int_ty, end_id, kind)) = curr_block.for_value_change {
+                        if let ast::RangeKind::Inclusive = kind {
+                            let expr_start_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
+                            let expr_end_var =
+                                ctx.arena.alloc(hir::Expr::Variable { var_id: end_id });
+                            let break_cond = hir::Expr::Binary {
+                                op: hir::BinOp::Cmp_Int(CmpPred::GreaterEq, BoolType::Bool, int_ty),
+                                lhs: expr_start_var,
+                                rhs: expr_end_var,
+                            };
+                            let break_check = make_break_cond(ctx, break_cond);
+                            ctx.cache.stmts.push(break_check);
+                        }
+
+                        let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
+                        let expr_one = ctx.arena.alloc(hir::Expr::Const(
+                            hir::ConstValue::Int { val: 1, neg: false, int_ty },
+                            hir::ConstID::dummy(),
+                        ));
+                        let value_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
+                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
+                            lhs: expr_var,
+                            rhs: expr_one,
+                        }));
+                        ctx.cache.stmts.push(value_change);
+                    }
                     if let Some((var_id, int_ty, op)) = curr_block.for_idx_change {
                         let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
                         let expr_one = ctx.arena.alloc(hir::Expr::Const(
@@ -3577,19 +3602,6 @@ fn typecheck_block<'hir, 'ast>(
                         ));
                         let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                             op: hir::AssignOp::Bin(op, None),
-                            lhs: expr_var,
-                            rhs: expr_one,
-                        }));
-                        ctx.cache.stmts.push(index_change);
-                    }
-                    if let Some((var_id, int_ty)) = curr_block.for_value_change {
-                        let expr_var = ctx.arena.alloc(hir::Expr::Variable { var_id });
-                        let expr_one = ctx.arena.alloc(hir::Expr::Const(
-                            hir::ConstValue::Int { val: 1, neg: false, int_ty },
-                            hir::ConstID::dummy(),
-                        ));
-                        let index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
-                            op: hir::AssignOp::Bin(hir::BinOp::Add_Int(int_ty), None),
                             lhs: expr_var,
                             rhs: expr_one,
                         }));
@@ -3740,6 +3752,35 @@ fn typecheck_defer<'ast>(
     let block_res = typecheck_block(ctx, Expectation::VOID, block, BlockStatus::Defer(kw_range));
     ctx.scope.local.add_defer_block(block_res.block);
     valid
+}
+
+fn make_local<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    var_id: hir::VariableID,
+    init: &'hir hir::Expr,
+) -> hir::Stmt<'hir> {
+    let local = hir::Local { var_id, init: hir::LocalInit::Init(init) };
+    hir::Stmt::Local(ctx.arena.alloc(local))
+}
+
+fn make_break_cond<'hir>(ctx: &mut HirCtx<'hir, '_, '_>, cond: hir::Expr<'hir>) -> hir::Stmt<'hir> {
+    let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
+    let branch = hir::Branch { cond: ctx.arena.alloc(cond), block: branch_block };
+    let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+    let expr_if = hir::Expr::If { if_: ctx.arena.alloc(expr_if) };
+    hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if))
+}
+
+fn make_checked_stmt<'hir>(
+    ctx: &mut HirCtx<'hir, '_, '_>,
+    cond: hir::Expr<'hir>,
+    stmt: hir::Stmt<'hir>,
+) -> hir::Stmt<'hir> {
+    let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[stmt]) };
+    let branch = hir::Branch { cond: ctx.arena.alloc(cond), block: branch_block };
+    let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
+    let expr_if = hir::Expr::If { if_: ctx.arena.alloc(expr_if) };
+    hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if))
 }
 
 fn typecheck_for<'hir, 'ast>(
@@ -4110,48 +4151,39 @@ fn typecheck_for<'hir, 'ast>(
             let curr_block = ctx.scope.local.current_block_mut();
             curr_block.for_idx_change =
                 Some((index_id, IntType::U64, hir::BinOp::Add_Int(IntType::U64)));
-            curr_block.for_value_change = Some((start_id, int_ty));
+            curr_block.for_value_change = Some((start_id, int_ty, end_id, header.range.kind));
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
             ctx.scope.local.exit_block();
 
-            // start, end, index locals:
-            let start_local = hir::Local { var_id: start_id, init: hir::LocalInit::Init(start) };
-            let stmt_start = hir::Stmt::Local(ctx.arena.alloc(start_local));
-
-            let end_local = hir::Local { var_id: end_id, init: hir::LocalInit::Init(end) };
-            let stmt_end = hir::Stmt::Local(ctx.arena.alloc(end_local));
-
-            let zero = hir::ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 };
-            let zero = ctx.arena.alloc(hir::Expr::Const(zero, hir::ConstID::dummy()));
-            let index_local = hir::Local { var_id: index_id, init: hir::LocalInit::Init(zero) };
-            let stmt_index = hir::Stmt::Local(ctx.arena.alloc(index_local));
-
             // loop body block:
+            //exclusive loop
+            //let mut start = 10; //start_expression
+            //let end = 20; //end_expression
+            //loop {
+            //    if start >= end {
+            //        break;
+            //    }
+            //    //code block
+            //    start += 1;
+            //}
+
+            //inclusive loop
+            //let mut start = 10; //start_expression
+            //let end = 20; //end_expression
+            //if start <= end {
+            //    loop {
+            //        //code block
+            //        if start >= end {
+            //            break;
+            //        }
+            //        start += 1;
+            //    }
+            //}
+
             let expr_start_var = ctx.arena.alloc(hir::Expr::Variable { var_id: start_id });
             let expr_end_var = ctx.arena.alloc(hir::Expr::Variable { var_id: end_id });
             let expr_index_var = ctx.arena.alloc(hir::Expr::Variable { var_id: index_id });
-
-            let cond_op = match header.range.kind {
-                ast::RangeKind::Exclusive => {
-                    hir::BinOp::Cmp_Int(CmpPred::Less, BoolType::Bool, int_ty)
-                }
-                ast::RangeKind::Inclusive => {
-                    hir::BinOp::Cmp_Int(CmpPred::LessEq, BoolType::Bool, int_ty)
-                }
-            };
-            let continue_cond = ctx.arena.alloc(hir::Expr::Binary {
-                op: cond_op,
-                lhs: expr_start_var,
-                rhs: expr_end_var,
-            });
-            let break_cond =
-                hir::Expr::Unary { op: hir::UnOp::LogicNot(BoolType::Bool), rhs: continue_cond };
-            let branch_block = hir::Block { stmts: ctx.arena.alloc_slice(&[hir::Stmt::Break]) };
-            let branch = hir::Branch { cond: ctx.arena.alloc(break_cond), block: branch_block };
-            let expr_if = hir::If { branches: ctx.arena.alloc_slice(&[branch]), else_block: None };
-            let expr_if = hir::Expr::If { if_: ctx.arena.alloc(expr_if) };
-            let stmt_cond = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_if));
 
             let expr_one_iter = ctx.arena.alloc(hir::Expr::Const(
                 hir::ConstValue::Int { val: 1, neg: false, int_ty },
@@ -4162,35 +4194,64 @@ fn typecheck_for<'hir, 'ast>(
                 lhs: expr_start_var,
                 rhs: expr_one_iter,
             }));
-            let expr_one_usize = ctx.arena.alloc(hir::Expr::Const(
-                hir::ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 },
-                hir::ConstID::dummy(),
-            ));
             let stmt_index_change = hir::Stmt::Assign(ctx.arena.alloc(hir::Assign {
                 op: hir::AssignOp::Bin(hir::BinOp::Add_Int(IntType::U64), None),
                 lhs: expr_index_var,
-                rhs: expr_one_usize,
+                rhs: hir::ONE_U64,
             }));
 
-            let expr_for_block = hir::Expr::Block { block: block_res.block };
-            let stmt_for_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_for_block));
+            let break_cond = hir::Expr::Binary {
+                op: hir::BinOp::Cmp_Int(CmpPred::GreaterEq, BoolType::Bool, int_ty),
+                lhs: expr_start_var,
+                rhs: expr_end_var,
+            };
+            let break_check = make_break_cond(ctx, break_cond);
+            let code_block =
+                hir::Stmt::ExprSemi(ctx.arena.alloc(hir::Expr::Block { block: block_res.block }));
 
-            let loop_block = if block_res.ty.is_never() {
-                hir::Block { stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_for_block]) }
-            } else {
-                hir::Block {
-                    stmts: ctx.arena.alloc_slice(&[
-                        stmt_cond,
-                        stmt_for_block,
-                        stmt_value_change,
-                        stmt_index_change,
-                    ]),
+            let loop_stmts = match header.range.kind {
+                ast::RangeKind::Exclusive => {
+                    if block_res.ty.is_never() {
+                        ctx.arena.alloc_slice(&[break_check, code_block])
+                    } else {
+                        ctx.arena.alloc_slice(&[
+                            break_check,
+                            code_block,
+                            stmt_value_change,
+                            stmt_index_change,
+                        ])
+                    }
+                }
+                ast::RangeKind::Inclusive => {
+                    if block_res.ty.is_never() {
+                        ctx.arena.alloc_slice(&[code_block])
+                    } else {
+                        ctx.arena.alloc_slice(&[
+                            code_block,
+                            break_check,
+                            stmt_value_change,
+                            stmt_index_change,
+                        ])
+                    }
                 }
             };
-            let stmt_loop = hir::Stmt::Loop(ctx.arena.alloc(loop_block));
+
+            let mut stmt_loop = hir::Stmt::Loop(ctx.arena.alloc(hir::Block { stmts: loop_stmts }));
+            if let ast::RangeKind::Inclusive = header.range.kind {
+                let entry_cond = hir::Expr::Binary {
+                    op: hir::BinOp::Cmp_Int(CmpPred::LessEq, BoolType::Bool, int_ty),
+                    lhs: expr_start_var,
+                    rhs: expr_end_var,
+                };
+                stmt_loop = make_checked_stmt(ctx, entry_cond, stmt_loop);
+            }
 
             // overall block for entire loop:
+            let stmt_start = make_local(ctx, start_id, start);
+            let stmt_end = make_local(ctx, end_id, end);
+            let stmt_index = make_local(ctx, index_id, hir::ZERO_U64);
             let stmts = ctx.arena.alloc_slice(&[stmt_start, stmt_end, stmt_index, stmt_loop]);
+
             let expr_overall_block = hir::Expr::Block { block: hir::Block { stmts } };
             let overall_block = hir::Stmt::ExprSemi(ctx.arena.alloc(expr_overall_block));
             Some(overall_block)

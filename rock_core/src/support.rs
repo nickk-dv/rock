@@ -353,7 +353,7 @@ macro_rules! define_id {
                 $name(index as u32)
             }
             #[inline(always)]
-            $vis fn dummy() -> $name {
+            $vis const fn dummy() -> $name {
                 $name(u32::MAX)
             }
             #[must_use]

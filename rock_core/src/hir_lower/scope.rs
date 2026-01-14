@@ -79,7 +79,7 @@ pub struct BlockData {
     diverges: Diverges,
     no_bounds_check: bool,
     pub for_idx_change: Option<(hir::VariableID, hir::IntType, hir::BinOp)>,
-    pub for_value_change: Option<(hir::VariableID, hir::IntType)>,
+    pub for_value_change: Option<(hir::VariableID, hir::IntType, hir::VariableID, ast::RangeKind)>,
 }
 
 #[derive(Copy, Clone)]

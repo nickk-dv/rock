@@ -750,6 +750,11 @@ impl Into<u32> for GlobalFlag {
 
 //==================== HIR IMPL ====================
 
+pub const ZERO_U64: &'static Expr<'static> =
+    &Expr::Const(ConstValue::Int { val: 0, neg: false, int_ty: IntType::U64 }, ConstID::dummy());
+pub const ONE_U64: &'static Expr<'static> =
+    &Expr::Const(ConstValue::Int { val: 1, neg: false, int_ty: IntType::U64 }, ConstID::dummy());
+
 impl<'hir> Hir<'hir> {
     pub fn proc_data(&self, id: ProcID) -> &ProcData<'hir> {
         &self.procs[id.index()]
