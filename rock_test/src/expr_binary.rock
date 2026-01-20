@@ -4,46 +4,65 @@ import core:runtime as _.{assert}
 //#entry "add_int"
 proc test_add_int() void {
     let a = 10;
-    let b = -24;
+    let b = -20;
+    let result = -10;
 
-    assert(10 + -24 == -14);
-    assert(a + b == -14);
+    assert(a + b == result);
+    assert(10 + -20 == result);
+}
+
+//#entry "add_int_wrapping"
+proc test_add_int_wrapping() void {
+    let a: u8 = 255;
+    let b: u8 = 1;
+    assert(a + b == 0);
 }
 
 //#entry "add_float"
 proc test_add_float() void {
     let a = 10.0;
-    let b = -24.0;
+    let b = -20.0;
+    let result = -10.0;
 
-    assert(10.0 + -24.0 == -14.0);
-    assert(a + b == -14.0);
+    assert(a + b == result);
+    assert(10.0 + -20.0 == result);
 }
 
 //#entry "sub_int"
 proc test_sub_int() void {
     let a = 10;
-    let b = -24;
+    let b = -20;
+    let result = 30;
 
-    assert(10 - -24 == 34);
-    assert(a - b == 34);
+    assert(a - b == result);
+    assert(10 - -20 == result);
+}
+
+//#entry "sub_int_wrapping"
+proc test_sub_int_wrapping() void {
+    let a: u8 = 0;
+    let b: u8 = 1;
+    assert(a - b == 255);
 }
 
 //#entry "sub_float"
 proc test_sub_float() void {
     let a = 10.0;
-    let b = -24.0;
+    let b = -20.0;
+    let result = 30.0;
 
-    assert(10.0 - -24.0 == 34.0);
-    assert(a - b == 34.0);
+    assert(a - b == result);
+    assert(10.0 - -20.0 == result);
 }
 
 //#entry "mul_int"
 proc test_mul_int() void {
     let a = 10;
     let b = -24;
+    let result = -240;
 
-    assert(10 * -24 == -240);
-    assert(a * b == -240);
+    assert(a * b == result);
+    assert(10 * -24 == result);
 }
 
 //#entry "mul_float"

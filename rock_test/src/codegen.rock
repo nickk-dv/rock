@@ -9,7 +9,7 @@ import core:runtime as _.{assert}
 proc test_expr_if_condition() void {
     let x = 0;
     if x < 100 {
-        fmt.print_string("x < 100");
+        fmt.print("x < 100");
     }
 }
 
