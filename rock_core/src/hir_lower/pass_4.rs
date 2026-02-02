@@ -126,7 +126,13 @@ fn mark_error_up_to_root(ctx: &mut HirCtx, tree: &Tree, from_id: TreeNodeID) {
             ConstDependency::EnumLayout(id) => {
                 ctx.registry.enum_data_mut(id).layout = hir::Eval::ResolvedError;
             }
+            ConstDependency::EnumLayoutPoly(id) => {
+                ctx.registry.enum_data_mut(id).layout = hir::Eval::ResolvedError;
+            }
             ConstDependency::StructLayout(id) => {
+                ctx.registry.struct_data_mut(id).layout = hir::Eval::ResolvedError;
+            }
+            ConstDependency::StructLayoutPoly(id) => {
                 ctx.registry.struct_data_mut(id).layout = hir::Eval::ResolvedError;
             }
             ConstDependency::Const(id) => {
@@ -212,7 +218,19 @@ fn dependency_decs(ctx: &HirCtx, dep: ConstDependency, desc: &mut String) -> Sou
             let _ = write!(desc, "layout of `{}` enum", ctx.name(data.name.id));
             data.src()
         }
+        //@change message?
+        ConstDependency::EnumLayoutPoly(id) => {
+            let data = ctx.registry.enum_data(id);
+            let _ = write!(desc, "layout of `{}` enum", ctx.name(data.name.id));
+            data.src()
+        }
         ConstDependency::StructLayout(id) => {
+            let data = ctx.registry.struct_data(id);
+            let _ = write!(desc, "layout of `{}` struct", ctx.name(data.name.id));
+            data.src()
+        }
+        //@change message?
+        ConstDependency::StructLayoutPoly(id) => {
             let data = ctx.registry.struct_data(id);
             let _ = write!(desc, "layout of `{}` struct", ctx.name(data.name.id));
             data.src()
@@ -329,7 +347,7 @@ fn add_variant_tag_deps(
 fn add_enum_size_deps<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
-    parent_id: TreeNodeID,
+    mut parent_id: TreeNodeID,
     enum_id: hir::EnumID,
     poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
@@ -340,7 +358,11 @@ fn add_enum_size_deps<'hir>(
         resolved_error_return!(data.layout, parent_id);
     }
 
-    let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::EnumLayout(enum_id))?;
+    parent_id = if data.poly_params.is_none() {
+        add_dep(ctx, tree, parent_id, ConstDependency::EnumLayout(enum_id))?
+    } else {
+        add_dep(ctx, tree, parent_id, ConstDependency::EnumLayoutPoly(enum_id))?
+    };
     for variant in ctx.registry.enum_data(enum_id).variants {
         for field in variant.fields {
             add_type_size_deps(ctx, tree, parent_id, field.ty, poly_set)?;
@@ -352,7 +374,7 @@ fn add_enum_size_deps<'hir>(
 fn add_struct_size_deps<'hir>(
     ctx: &mut HirCtx<'hir, '_, '_>,
     tree: &mut Tree,
-    parent_id: TreeNodeID,
+    mut parent_id: TreeNodeID,
     struct_id: hir::StructID,
     poly_set: &'hir [hir::Type<'hir>],
 ) -> Result<(), TreeNodeID> {
@@ -363,7 +385,11 @@ fn add_struct_size_deps<'hir>(
         resolved_error_return!(data.layout, parent_id);
     }
 
-    let parent_id = add_dep(ctx, tree, parent_id, ConstDependency::StructLayout(struct_id))?;
+    parent_id = if data.poly_params.is_none() {
+        add_dep(ctx, tree, parent_id, ConstDependency::StructLayout(struct_id))?
+    } else {
+        add_dep(ctx, tree, parent_id, ConstDependency::StructLayoutPoly(struct_id))?
+    };
     for field in ctx.registry.struct_data(struct_id).fields {
         add_type_size_deps(ctx, tree, parent_id, field.ty, poly_set)?;
     }
@@ -765,26 +791,26 @@ fn resolve_dependency_tree(ctx: &mut HirCtx, tree: &Tree) {
                 }
             }
             ConstDependency::EnumLayout(id) => {
-                if ctx.registry.enum_data(id).poly_params.is_some() {
-                    //placeholder for polymorphic type, signals no cycles
-                    let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
-                    ctx.registry.enum_data_mut(id).layout = layout;
-                } else {
-                    let layout_res = layout::resolve_enum_layout(ctx, id, &[]);
-                    let layout = hir::Eval::from_res(layout_res);
-                    ctx.registry.enum_data_mut(id).layout = layout;
-                }
+                assert!(ctx.registry.enum_data(id).poly_params.is_none());
+                let layout_res = layout::resolve_enum_layout(ctx, id, &[]);
+                let layout = hir::Eval::from_res(layout_res);
+                ctx.registry.enum_data_mut(id).layout = layout;
+            }
+            ConstDependency::EnumLayoutPoly(id) => {
+                assert!(ctx.registry.enum_data(id).poly_params.is_some());
+                let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
+                ctx.registry.enum_data_mut(id).layout = layout;
             }
             ConstDependency::StructLayout(id) => {
-                if ctx.registry.struct_data(id).poly_params.is_some() {
-                    //placeholder for polymorphic type, signals no cycles
-                    let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
-                    ctx.registry.struct_data_mut(id).layout = layout;
-                } else {
-                    let layout_res = layout::resolve_struct_layout(ctx, id, &[]);
-                    let layout = hir::Eval::from_res(layout_res.map(|l| l.total));
-                    ctx.registry.struct_data_mut(id).layout = layout;
-                }
+                assert!(ctx.registry.struct_data(id).poly_params.is_none());
+                let layout_res = layout::resolve_struct_layout(ctx, id, &[]);
+                let layout = hir::Eval::from_res(layout_res.map(|l| l.total));
+                ctx.registry.struct_data_mut(id).layout = layout;
+            }
+            ConstDependency::StructLayoutPoly(id) => {
+                assert!(ctx.registry.struct_data(id).poly_params.is_some());
+                let layout = hir::Eval::from_res(Ok(hir::Layout::equal(0)));
+                ctx.registry.struct_data_mut(id).layout = layout;
             }
             ConstDependency::Const(id) => {
                 let data = ctx.registry.const_data(id);
@@ -889,7 +915,9 @@ enum ConstDependency {
     Root,
     VariantTag(hir::EnumID, hir::VariantID),
     EnumLayout(hir::EnumID),
+    EnumLayoutPoly(hir::EnumID),
     StructLayout(hir::StructID),
+    StructLayoutPoly(hir::StructID),
     Const(hir::ConstID),
     Global(hir::GlobalID),
     ArrayLen(hir::ConstEvalID),
@@ -930,6 +958,12 @@ impl Tree {
 
         while let Some(parent_id) = node.parent {
             node = self.node(parent_id);
+            //@hack, skip these when checking for a cycle, better to not use them at all.
+            if let ConstDependency::EnumLayoutPoly(_) | ConstDependency::StructLayoutPoly(_) =
+                node.value
+            {
+                continue;
+            }
             if node.value == value {
                 return Some(parent_id);
             }
