@@ -1,8 +1,6 @@
 use super::parser::Event;
 use super::token::{TokenID, TokenList, Trivia, TriviaID};
-use crate::error::{ErrorBuffer, ErrorSink, SourceRange};
-use crate::errors as err;
-use crate::session::ModuleID;
+use crate::error::{ErrorBuffer, ErrorSink};
 use crate::support::{TempBuffer, TempOffset};
 use crate::text::TextRange;
 
@@ -302,7 +300,6 @@ struct SyntaxTreeBuild<'src> {
     source: &'src str,
     tokens: TokenList,
     events: Vec<Event>,
-    module_id: ModuleID,
     errors: ErrorBuffer,
 
     nodes: Vec<Node>,
@@ -337,7 +334,6 @@ pub fn tree_build(
     source: &str,
     tokens: TokenList,
     events: Vec<Event>,
-    module_id: ModuleID,
     complete: bool,
 ) -> (SyntaxTree, ErrorBuffer) {
     let node_count = events.iter().filter(|&e| matches!(e, Event::StartNode { .. })).count();
@@ -347,7 +343,6 @@ pub fn tree_build(
         source,
         tokens,
         events,
-        module_id,
         errors: ErrorBuffer::default(),
         nodes: Vec::with_capacity(node_count),
         content: TempBuffer::new(128),
@@ -387,7 +382,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
         b.node_stack.push((offset, node_id));
 
         let source_trivia = attached_source_trivia(b);
-        eat_n_inner_trivias(b, source_trivia.n_inner);
+        eat_trivias(b, source_trivia.n_inner.0);
     }
 
     for event_idx in 1..b.events.len() - 1 {
@@ -410,7 +405,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
                 let top_kind = *b.parent_stack.last().unwrap();
                 let node_trivia = attached_node_trivia(b, top_kind);
                 let mut added_inner = false;
-                eat_n_outher_trivias(b, node_trivia.n_outher);
+                eat_trivias(b, node_trivia.n_outher.0);
 
                 while let Some(kind) = b.parent_stack.pop() {
                     let start =
@@ -431,7 +426,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
 
                     if !added_inner {
                         added_inner = true;
-                        eat_n_inner_trivias(b, node_trivia.n_inner);
+                        eat_trivias(b, node_trivia.n_inner.0);
                     }
                 }
             }
@@ -450,7 +445,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
             }
             Event::Token => {
                 let token_trivia = attached_token_trivia(b);
-                eat_n_outher_trivias(b, token_trivia.n_outher);
+                eat_trivias(b, token_trivia.n_outher.0);
 
                 b.content.push(NodeOrTokenID::encode_token(b.curr_token));
                 b.curr_token = b.curr_token.inc();
@@ -462,7 +457,7 @@ fn tree_build_impl(b: &mut SyntaxTreeBuild) {
     // SOURCE_FILE EndNode:
     {
         let n_remaining = b.tokens.trivia_count() - b.curr_trivia.index();
-        eat_n_outher_trivias(b, OutherTrivia(n_remaining));
+        eat_trivias(b, n_remaining);
 
         let (offset, node_id) = b.node_stack.pop().unwrap();
         let end = node_or_token_range(b, b.content.view_all().last().map(|id| id.decode())).end();
@@ -538,15 +533,14 @@ fn attached_node_trivia(b: &mut SyntaxTreeBuild, kind: SyntaxKind) -> NodeTrivia
                 if collect_inner {
                     inner_count += 1;
                 }
-            }
-            Trivia::DocComment => {
-                collect_inner = true;
-                inner_count += 1
-            }
-            Trivia::ModComment => {
-                collect_inner = false;
-                inner_count = 0;
-            }
+            } //@Trivia::DocComment => {
+              //    collect_inner = true;
+              //    inner_count += 1
+              //}
+              //Trivia::ModComment => {
+              //    collect_inner = false;
+              //    inner_count = 0;
+              //}
         };
     }
 
@@ -583,11 +577,11 @@ fn attached_source_trivia(b: &mut SyntaxTreeBuild) -> SourceTrivia {
                 }
             }
             Trivia::LineComment => break,
-            Trivia::DocComment => break,
-            Trivia::ModComment => {
-                mod_trivia_found = true;
-                total_count += 1;
-            }
+            //@Trivia::DocComment => break,
+            //Trivia::ModComment => {
+            //    mod_trivia_found = true;
+            //    total_count += 1;
+            //}
         }
     }
 
@@ -613,38 +607,12 @@ fn attached_token_trivia(b: &mut SyntaxTreeBuild) -> TokenTrivia {
     TokenTrivia { n_outher: OutherTrivia(total_count) }
 }
 
-/// `InnerTrivia` is always considered valid
-fn eat_n_inner_trivias(b: &mut SyntaxTreeBuild, n_inner: InnerTrivia) {
-    let trivia_ids = b.curr_trivia.index()..(b.curr_trivia.index() + n_inner.0);
+fn eat_trivias(b: &mut SyntaxTreeBuild, count: usize) {
+    let trivia_ids = b.curr_trivia.index()..(b.curr_trivia.index() + count);
     let trivia_ids = trivia_ids.map(TriviaID::new);
 
     for id in trivia_ids {
         b.curr_trivia = b.curr_trivia.inc();
         b.content.push(NodeOrTokenID::encode_trivia(id));
-    }
-}
-
-/// `OutherTrivia` will error on `Doc` or `Mod` comments
-fn eat_n_outher_trivias(b: &mut SyntaxTreeBuild, n_outher: OutherTrivia) {
-    let trivia_ids = b.curr_trivia.index()..(b.curr_trivia.index() + n_outher.0);
-    let trivia_ids = trivia_ids.map(TriviaID::new);
-
-    for id in trivia_ids {
-        b.curr_trivia = b.curr_trivia.inc();
-        b.content.push(NodeOrTokenID::encode_trivia(id));
-
-        let (trivia, range) = b.tokens.trivia_and_range(id);
-        match trivia {
-            Trivia::Whitespace => {}
-            Trivia::LineComment => {}
-            Trivia::DocComment => {
-                let src = SourceRange::new(b.module_id, range);
-                err::syntax_invalid_doc_comment(&mut b.errors, src);
-            }
-            Trivia::ModComment => {
-                let src = SourceRange::new(b.module_id, range);
-                err::syntax_invalid_mod_comment(&mut b.errors, src);
-            }
-        };
     }
 }

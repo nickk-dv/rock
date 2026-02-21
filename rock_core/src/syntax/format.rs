@@ -1404,7 +1404,7 @@ fn content_empty(fmt: &mut Formatter, node: &Node) -> bool {
                 let trivia = fmt.tree.tokens.trivia(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => return false,
+                    Trivia::LineComment => return false,
                 }
             }
         }
@@ -1426,7 +1426,7 @@ fn trivia_lift(fmt: &mut Formatter, node: &Node, halt: SyntaxSet) {
                 let (trivia, range) = fmt.tree.tokens.trivia_and_range(trivia_id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
+                    Trivia::LineComment => {
                         fmt.tab_depth();
                         let _ = fmt.write_comment(range);
                         fmt.new_line();
@@ -1600,7 +1600,6 @@ fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
                                     not_iter.next();
                                     break;
                                 }
-                                Trivia::DocComment | Trivia::ModComment => break,
                             }
                         }
                     }
@@ -1630,7 +1629,7 @@ fn interleaved_node_list<'syn, N: AstNode<'syn> + InterleaveFormat<'syn>>(
                             new_line = true;
                         }
                     }
-                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
+                    Trivia::LineComment => {
                         if new_line {
                             new_line = false;
                             fmt.new_line();

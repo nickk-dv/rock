@@ -160,8 +160,6 @@ impl TokenList {
 pub enum Trivia {
     Whitespace,
     LineComment,
-    DocComment,
-    ModComment,
 }
 
 #[derive(Copy, Clone)]

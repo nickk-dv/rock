@@ -765,7 +765,6 @@ fn handle_hover(server: &mut ServerContext, id: RequestId, path: PathBuf, pos: l
         use rock_core::T;
         let (token, range) = tree.tokens.token_and_range(token_id);
 
-        let x = 10.0;
         let hover_text = match token {
             T![int_lit] => {
                 let value = tree.tokens.int(token_id);
@@ -1385,9 +1384,7 @@ fn semantic_visit_node(
                 let (trivia, range) = b.tree.tokens.trivia_and_range(id);
                 match trivia {
                     Trivia::Whitespace => {}
-                    Trivia::LineComment | Trivia::DocComment | Trivia::ModComment => {
-                        semantic_token_add(b, SemanticToken::Comment, range)
-                    }
+                    Trivia::LineComment => semantic_token_add(b, SemanticToken::Comment, range),
                 };
             }
         }
