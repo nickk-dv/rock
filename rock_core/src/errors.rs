@@ -820,21 +820,22 @@ pub fn tycheck_field_not_found_ty(
     emit.error(Error::new(msg, src, None));
 }
 
+pub fn tycheck_field_not_found_string(
+    emit: &mut impl ErrorSink,
+    src: SourceRange,
+    field_name: &str,
+) {
+    let msg =
+        format!("no field `{field_name}` exists on string type\ndid you mean `ptr` or `len`?");
+    emit.error(Error::new(msg, src, None));
+}
+
 pub fn tycheck_field_not_found_slice(
     emit: &mut impl ErrorSink,
     src: SourceRange,
     field_name: &str,
 ) {
     let msg = format!("no field `{field_name}` exists on slice type\ndid you mean `ptr` or `len`?");
-    emit.error(Error::new(msg, src, None));
-}
-
-pub fn tycheck_field_not_found_string(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    field_name: &str,
-) {
-    let msg = format!("no field `{field_name}` exists on string type\ndid you mean `len`?");
     emit.error(Error::new(msg, src, None));
 }
 

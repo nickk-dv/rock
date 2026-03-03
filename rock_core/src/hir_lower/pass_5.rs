@@ -1224,21 +1224,19 @@ fn check_field_from_type<'hir>(
 
     match ty {
         hir::Type::Error => FieldResult::error(),
-        hir::Type::String(StringType::String | StringType::Untyped) => {
-            let field_name = ctx.name(name.id);
-            match field_name {
-                "len" => {
-                    let kind = FieldKind::ArraySlice { field: hir::SliceField::Len };
-                    let field_ty = hir::Type::Int(IntType::U64);
-                    FieldResult::new(deref, kind, field_ty)
-                }
-                _ => {
-                    let src = ctx.src(name.range);
-                    err::tycheck_field_not_found_string(&mut ctx.emit, src, field_name);
-                    FieldResult::error()
-                }
+        hir::Type::String(string_ty) => match check_field_from_string(ctx, name, string_ty) {
+            Some(field) => {
+                let kind = FieldKind::ArraySlice { field };
+                let field_ty = match field {
+                    hir::SliceField::Ptr => {
+                        hir::Type::Reference(ast::Mut::Immutable, &hir::Type::Int(IntType::U8))
+                    }
+                    hir::SliceField::Len => hir::Type::Int(IntType::U64),
+                };
+                FieldResult::new(deref, kind, field_ty)
             }
-        }
+            None => FieldResult::error(),
+        },
         hir::Type::Struct(struct_id, poly_types) => {
             match scope::check_find_struct_field(ctx, struct_id, name) {
                 Some(field_id) => {
@@ -1281,6 +1279,24 @@ fn check_field_from_type<'hir>(
             let ty_fmt = type_format(ctx, ty);
             err::tycheck_field_not_found_ty(&mut ctx.emit, src, field_name, &ty_fmt);
             FieldResult::error()
+        }
+    }
+}
+
+fn check_field_from_string(
+    ctx: &mut HirCtx,
+    name: ast::Name,
+    string_ty: hir::StringType,
+) -> Option<hir::SliceField> {
+    let field_name = ctx.name(name.id);
+    match (field_name, string_ty) {
+        ("ptr", hir::StringType::String) => Some(hir::SliceField::Ptr),
+        ("len", hir::StringType::String | hir::StringType::Untyped) => Some(hir::SliceField::Len),
+        _ => {
+            let src = ctx.src(name.range);
+            //@use more general error, this one only mentions cstring not cstring or untyped string.
+            err::tycheck_field_not_found_string(&mut ctx.emit, src, field_name);
+            None
         }
     }
 }
@@ -1378,18 +1394,20 @@ fn emit_field_expr<'hir>(
             TypeResult::new(field_res.field_ty, hir::Expr::StructField { target, access })
         }
         FieldKind::ArraySlice { field } => {
-            if let hir::Expr::Const(value, _) = target {
-                let field = match value {
-                    hir::ConstValue::String { val, .. } => {
-                        let len = ctx.session.intern_lit.get(*val).len();
-                        hir::ConstValue::from_u64(len as u64, IntType::U64)
-                    }
-                    _ => unreachable!(),
-                };
-                return TypeResult::new(
-                    field_res.field_ty,
-                    hir::Expr::Const(field, hir::ConstID::dummy()),
-                );
+            if let hir::SliceField::Len = field {
+                if let hir::Expr::Const(value, _) = target {
+                    let field = match value {
+                        hir::ConstValue::String { val, .. } => {
+                            let len = ctx.session.intern_lit.get(*val).len();
+                            hir::ConstValue::from_u64(len as u64, IntType::U64)
+                        }
+                        _ => unreachable!(),
+                    };
+                    return TypeResult::new(
+                        field_res.field_ty,
+                        hir::Expr::Const(field, hir::ConstID::dummy()),
+                    );
+                }
             }
             let access = hir::SliceFieldAccess { deref: field_res.deref, field };
             TypeResult::new(field_res.field_ty, hir::Expr::SliceField { target, access })
