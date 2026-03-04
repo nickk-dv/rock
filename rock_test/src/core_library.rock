@@ -1,0 +1,19 @@
+//#prelude
+import core:math;
+import core:runtime as _.{assert}
+
+//@test more edge cases, more types, same for other 2 saturating ops
+//#entry "intrinsic_math_add_saturating"
+proc test_intrinsic_math_add_saturating() void {
+    assert(math.add_saturating(255 as u8, 1) == 255);
+}
+
+//#entry "intrinsic_math_sub_saturating"
+proc test_intrinsic_math_sub_saturating() void {
+    assert(math.sub_saturating(0 as u8, 1) == 0);
+}
+
+//#entry "intrinsic_math_shl_saturating"
+proc test_intrinsic_math_shl_saturating() void {
+    assert(math.shl_saturating(255 as u8, 1) == 255);
+}

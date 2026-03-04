@@ -4989,7 +4989,8 @@ fn check_call_intrinsic<'hir>(
         "sqrt" | "floor" | "ceil" | "round" | "trunc" | "sin" | "cos" | "tan" | "sinh" | "cosh"
         | "tanh" | "asin" | "acos" | "atan" => check_intrinsic_float(ctx, poly_types, range),
         "swap_bytes" => check_intrinsic_integer_multi_byte(ctx, poly_types, range),
-        "reverse_bits" | "count_ones" | "count_zeroes" | "leading_zeroes" | "trailing_zeroes" => {
+        "add_saturating" | "sub_saturating" | "shl_saturating" | "reverse_bits" | "count_ones"
+        | "count_zeroes" | "leading_zeroes" | "trailing_zeroes" => {
             check_intrinsic_integer(ctx, poly_types, range)
         }
         _ => None,

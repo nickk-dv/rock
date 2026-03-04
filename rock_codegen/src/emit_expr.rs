@@ -1341,6 +1341,37 @@ pub fn codegen_call_intrinsic<'c>(
             Some(codegen_from_raw_parts(cg, ptr, len))
         }
 
+        "add_saturating" => match ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    intrinsic_two_arg(cg, "llvm.sadd.sat", ty, input)
+                } else {
+                    intrinsic_two_arg(cg, "llvm.uadd.sat", ty, input)
+                }
+            }
+            _ => unreachable!(),
+        },
+        "sub_saturating" => match ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    intrinsic_two_arg(cg, "llvm.ssub.sat", ty, input)
+                } else {
+                    intrinsic_two_arg(cg, "llvm.usub.sat", ty, input)
+                }
+            }
+            _ => unreachable!(),
+        },
+        "shl_saturating" => match ty {
+            hir::Type::Int(int_ty) => {
+                if int_ty.is_signed() {
+                    intrinsic_two_arg(cg, "llvm.sshl.sat", ty, input)
+                } else {
+                    intrinsic_two_arg(cg, "llvm.ushl.sat", ty, input)
+                }
+            }
+            _ => unreachable!(),
+        },
+
         "min" => match ty {
             hir::Type::Int(int_ty) => {
                 if int_ty.is_signed() {
