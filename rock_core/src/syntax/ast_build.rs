@@ -147,12 +147,8 @@ fn enum_item<'ast>(ctx: &mut AstBuild<'ast, '_>, item: cst::EnumItem) -> &'ast a
     let name = name(ctx, item.name(ctx.tree).unwrap());
     let poly_params = item.poly_params(ctx.tree).map(|poly| polymorph_params(ctx, poly));
 
-    let tag_ty = if let Some((basic, range)) = item.tag_ty(ctx.tree) {
-        let tag_ty = ast::EnumTagType { basic, range };
-        Some(ctx.arena.alloc(tag_ty))
-    } else {
-        None
-    };
+    let (basic, range) = item.tag_ty(ctx.tree).unwrap();
+    let tag_ty = ast::EnumTagType { basic, range };
 
     let offset = ctx.s.variants.start();
     let variant_list = item.variant_list(ctx.tree).unwrap();

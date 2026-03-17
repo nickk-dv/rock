@@ -11,7 +11,7 @@ import core:runtime.{assert}
 proc test_print_enum_simple() void {
     fmt.print(Enum.A, ' ', Enum.B, ' ', Enum.C);
 }
-enum Enum {
+enum Enum u8 {
     A,
     B,
     C,

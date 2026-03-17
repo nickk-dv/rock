@@ -118,7 +118,6 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
     ctx.cache.enum_variants.clear();
 
     let item = ctx.registry.enum_item(id);
-    let mut any_constant = false;
 
     for variant in item.variants.iter() {
         let config = check_directive::check_expect_config(ctx, variant.dir_list, "variants");
@@ -147,7 +146,6 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
             }
             ast::VariantKind::Constant(value) => {
                 let eval_id = ctx.registry.add_const_eval(value, ctx.scope.origin, ctx.scope.poly);
-                any_constant = true;
 
                 hir::Variant {
                     name: variant.name,
@@ -181,38 +179,16 @@ fn process_enum_data(ctx: &mut HirCtx, id: hir::EnumID) {
         ctx.cache.enum_variants.push(variant);
     }
 
-    let data = ctx.registry.enum_data(id);
-    let mut tag_ty = hir::Eval::Unresolved(());
+    // check if tag type is an integer type
+    let tag_ty = if let Some(int_ty) = hir::IntType::from_basic(item.tag_ty.basic) {
+        hir::Eval::Resolved(int_ty)
+    } else {
+        let tag_src = ctx.src(item.tag_ty.range);
+        err::item_enum_non_int_tag_ty(&mut ctx.emit, tag_src);
+        hir::Eval::ResolvedError
+    };
 
-    if let Some(tag) = item.tag_ty {
-        if let Some(int_ty) = hir::IntType::from_basic(tag.basic) {
-            tag_ty = hir::Eval::Resolved(int_ty);
-        } else {
-            let tag_src = ctx.src(tag.range);
-            err::item_enum_non_int_tag_ty(&mut ctx.emit, tag_src);
-            tag_ty = hir::Eval::ResolvedError;
-        }
-    }
-
-    // infer default enum tag size
-    if tag_ty.is_unresolved() && !any_constant {
-        let int_ty = match ctx.cache.enum_variants.len() {
-            0..=0xFF => hir::IntType::U8,
-            256..=0xFFFF => hir::IntType::U16,
-            65536..=0xFFFF_FFFF => hir::IntType::U32,
-            _ => hir::IntType::U64,
-        };
-        tag_ty = hir::Eval::Resolved(int_ty);
-    }
-
-    // force enum tag type to be specified
-    if tag_ty.is_unresolved() && any_constant {
-        let enum_src = ctx.src(data.name.range);
-        err::item_enum_unknown_tag_ty(&mut ctx.emit, enum_src);
-        tag_ty = hir::Eval::ResolvedError;
-    }
-
-    // variant tags cannot be resolved without tag_ty
+    // variant tag values cannot be resolved without tag_ty
     if !tag_ty.is_resolved_ok() {
         for variant in ctx.cache.enum_variants.iter() {
             match variant.kind {

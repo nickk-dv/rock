@@ -46,7 +46,7 @@ pub struct EnumItem<'ast> {
     pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub name: Name,
     pub poly_params: Option<&'ast PolymorphParams<'ast>>,
-    pub tag_ty: Option<&'ast EnumTagType>,
+    pub tag_ty: EnumTagType,
     pub variants: &'ast [Variant<'ast>],
 }
 

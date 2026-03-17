@@ -55,7 +55,7 @@ proc poly_proc_call(value: [1]T)(T) [1]T {
 proc test_poly_enum_error_propagation() void {
     let _: s32 = PolyEnum.Value(error);
 }
-enum PolyEnum(T) {
+enum PolyEnum(T) u8 {
     Value(T),
 }
 

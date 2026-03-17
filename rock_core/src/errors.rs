@@ -574,11 +574,6 @@ pub fn item_enum_non_int_tag_ty(emit: &mut impl ErrorSink, tag_src: SourceRange)
     emit.error(Error::new(msg, tag_src, None));
 }
 
-pub fn item_enum_unknown_tag_ty(emit: &mut impl ErrorSink, enum_src: SourceRange) {
-    let msg = "enum tag type must be specified\nadd type after the enum name";
-    emit.error(Error::new(msg, enum_src, None));
-}
-
 pub fn item_enum_duplicate_tag_value(
     emit: &mut impl ErrorSink,
     variant_src: SourceRange,

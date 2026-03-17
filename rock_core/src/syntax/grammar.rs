@@ -98,6 +98,8 @@ fn enum_item(p: &mut Parser, m: Marker) {
     }
     if p.peek().as_basic_type().is_some() {
         p.bump(p.peek());
+    } else {
+        p.error("expected enum tag type");
     }
     if p.at(T!['{']) {
         variant_list(p);

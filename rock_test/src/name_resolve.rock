@@ -2,7 +2,7 @@
 CONST = 0;
 let GLOBAL: s32 = 0;
 
-enum Enum {
+enum Enum u8 {
     A(u8, u8),
     B(u8, u8),
 }
