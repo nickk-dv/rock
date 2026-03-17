@@ -1,0 +1,431 @@
+//#prelude
+import core:mem;
+import core:math;
+import core:runtime as _.{assert}
+
+//#entry(check) "enum_valid_tag_types"
+enum Valid_S8 s8 {}
+enum Valid_S16 s16 {}
+enum Valid_S32 s32 {}
+enum Valid_S64 s64 {}
+
+enum Valid_U8 u8 {}
+enum Valid_U16 u16 {}
+enum Valid_U32 u32 {}
+enum Valid_U64 u64 {}
+
+//#entry(check) "enum_invalid_tag_types"
+//#expect
+//error: enum tag type must be an integer
+//  │
+//1 │ enum Invalid_F32 f32 {}
+//  │                  ^^^
+//  └─ src/test.rock:1:18
+//
+//error: enum tag type must be an integer
+//  │
+//2 │ enum Invalid_F64 f64 {}
+//  │                  ^^^
+//  └─ src/test.rock:2:18
+//
+//error: enum tag type must be an integer
+//  │
+//3 │ enum Invalid_Bool bool {}
+//  │                   ^^^^
+//  └─ src/test.rock:3:19
+//
+//error: enum tag type must be an integer
+//  │
+//4 │ enum Invalid_Bool16 bool16 {}
+//  │                     ^^^^^^
+//  └─ src/test.rock:4:21
+//
+//error: enum tag type must be an integer
+//  │
+//5 │ enum Invalid_Bool32 bool32 {}
+//  │                     ^^^^^^
+//  └─ src/test.rock:5:21
+//
+//error: enum tag type must be an integer
+//  │
+//6 │ enum Invalid_Bool64 bool64 {}
+//  │                     ^^^^^^
+//  └─ src/test.rock:6:21
+//
+//error: enum tag type must be an integer
+//  │
+//7 │ enum Invalid_String string {}
+//  │                     ^^^^^^
+//  └─ src/test.rock:7:21
+//
+//error: enum tag type must be an integer
+//  │
+//8 │ enum Invalid_CString cstring {}
+//  │                      ^^^^^^^
+//  └─ src/test.rock:8:22
+//
+//error: enum tag type must be an integer
+//  │
+//9 │ enum Invalid_Char char {}
+//  │                   ^^^^
+//  └─ src/test.rock:9:19
+//
+//error: enum tag type must be an integer
+//   │
+//10 │ enum Invalid_Void void {}
+//   │                   ^^^^
+//   └─ src/test.rock:10:19
+//
+//error: enum tag type must be an integer
+//   │
+//11 │ enum Invalid_Never never {}
+//   │                    ^^^^^
+//   └─ src/test.rock:11:20
+//
+//error: enum tag type must be an integer
+//   │
+//12 │ enum Invalid_Rawptr rawptr {}
+//   │                     ^^^^^^
+//   └─ src/test.rock:12:21
+//
+//#!
+enum Invalid_F32 f32 {}
+enum Invalid_F64 f64 {}
+enum Invalid_Bool bool {}
+enum Invalid_Bool16 bool16 {}
+enum Invalid_Bool32 bool32 {}
+enum Invalid_Bool64 bool64 {}
+enum Invalid_String string {}
+enum Invalid_CString cstring {}
+enum Invalid_Char char {}
+enum Invalid_Void void {}
+enum Invalid_Never never {}
+enum Invalid_Rawptr rawptr {}
+
+//#entry(check) "enum_variant_value_ranges"
+//#expect
+//error: integer constant out of range for `s8`
+//value `128` is outside `-128..=127` range
+//  │
+//6 │     Above_Max = math.MAX_S8 + 1,
+//  │                 ^^^^^^^^^^^^^^^
+//  └─ src/test.rock:6:17
+//
+//error: integer constant out of range for `s8`
+//value `-129` is outside `-128..=127` range
+//  │
+//5 │     Below_Min = math.MIN_S8 - 1,
+//  │                 ^^^^^^^^^^^^^^^
+//  └─ src/test.rock:5:17
+//
+//error: integer constant out of range for `s16`
+//value `32768` is outside `-32768..=32767` range
+//   │
+//14 │     Above_Max = math.MAX_S16 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:14:17
+//
+//error: integer constant out of range for `s16`
+//value `-32769` is outside `-32768..=32767` range
+//   │
+//13 │     Below_Min = math.MIN_S16 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:13:17
+//
+//error: integer constant out of range for `s32`
+//value `2147483648` is outside `-2147483648..=2147483647` range
+//   │
+//22 │     Above_Max = math.MAX_S32 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:22:17
+//
+//error: integer constant out of range for `s32`
+//value `-2147483649` is outside `-2147483648..=2147483647` range
+//   │
+//21 │     Below_Min = math.MIN_S32 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:21:17
+//
+//error: integer constant out of range for `s64`
+//value `9223372036854775808` is outside `-9223372036854775808..=9223372036854775807` range
+//   │
+//30 │     Above_Max = math.MAX_S64 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:30:17
+//
+//error: integer constant out of range for `s64`
+//value `-9223372036854775809` is outside `-9223372036854775808..=9223372036854775807` range
+//   │
+//29 │     Below_Min = math.MIN_S64 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:29:17
+//
+//error: integer constant out of range for `u8`
+//value `256` is outside `0..=255` range
+//   │
+//38 │     Above_Max = math.MAX_U8 + 1,
+//   │                 ^^^^^^^^^^^^^^^
+//   └─ src/test.rock:38:17
+//
+//error: integer constant out of range for `u8`
+//value `-1` is outside `0..=255` range
+//   │
+//37 │     Below_Min = math.MIN_U8 - 1,
+//   │                 ^^^^^^^^^^^^^^^
+//   └─ src/test.rock:37:17
+//
+//error: integer constant out of range for `u16`
+//value `65536` is outside `0..=65535` range
+//   │
+//46 │     Above_Max = math.MAX_U16 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:46:17
+//
+//error: integer constant out of range for `u16`
+//value `-1` is outside `0..=65535` range
+//   │
+//45 │     Below_Min = math.MIN_U16 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:45:17
+//
+//error: integer constant out of range for `u32`
+//value `4294967296` is outside `0..=4294967295` range
+//   │
+//54 │     Above_Max = math.MAX_U32 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:54:17
+//
+//error: integer constant out of range for `u32`
+//value `-1` is outside `0..=4294967295` range
+//   │
+//53 │     Below_Min = math.MIN_U32 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:53:17
+//
+//error: integer constant out of range for `untyped int`
+//value `18446744073709551616` is outside `-18446744073709551615..=18446744073709551615` range
+//   │
+//62 │     Above_Max = math.MAX_U64 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:62:17
+//
+//error: type mismatch: expected `u64`, found `untyped int`
+//   │
+//62 │     Above_Max = math.MAX_U64 + 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:62:17
+//
+//error: integer constant out of range for `u64`
+//value `-1` is outside `0..=18446744073709551615` range
+//   │
+//61 │     Below_Min = math.MIN_U64 - 1,
+//   │                 ^^^^^^^^^^^^^^^^
+//   └─ src/test.rock:61:17
+//
+//#!
+enum Range_S8 s8 {
+    Mid = 0,
+    Min = math.MIN_S8,
+    Max = math.MAX_S8,
+    Below_Min = math.MIN_S8 - 1,
+    Above_Max = math.MAX_S8 + 1,
+}
+
+enum Range_S16 s16 {
+    Mid = 0,
+    Min = math.MIN_S16,
+    Max = math.MAX_S16,
+    Below_Min = math.MIN_S16 - 1,
+    Above_Max = math.MAX_S16 + 1,
+}
+
+enum Range_S32 s32 {
+    Mid = 0,
+    Min = math.MIN_S32,
+    Max = math.MAX_S32,
+    Below_Min = math.MIN_S32 - 1,
+    Above_Max = math.MAX_S32 + 1,
+}
+
+enum Range_S64 s64 {
+    Mid = 0,
+    Min = math.MIN_S64,
+    Max = math.MAX_S64,
+    Below_Min = math.MIN_S64 - 1,
+    Above_Max = math.MAX_S64 + 1,
+}
+
+enum Range_U8 u8 {
+    Mid = 127,
+    Min = math.MIN_U8,
+    Max = math.MAX_U8,
+    Below_Min = math.MIN_U8 - 1,
+    Above_Max = math.MAX_U8 + 1,
+}
+
+enum Range_U16 u16 {
+    Mid = 32767,
+    Min = math.MIN_U16,
+    Max = math.MAX_U16,
+    Below_Min = math.MIN_U16 - 1,
+    Above_Max = math.MAX_U16 + 1,
+}
+
+enum Range_U32 u32 {
+    Mid = 2147483647,
+    Min = math.MIN_U32,
+    Max = math.MAX_U32,
+    Below_Min = math.MIN_U32 - 1,
+    Above_Max = math.MAX_U32 + 1,
+}
+
+enum Range_U64 u64 {
+    Mid = 9223372036854775807,
+    Min = math.MIN_U64,
+    Max = math.MAX_U64,
+    Below_Min = math.MIN_U64 - 1,
+    Above_Max = math.MAX_U64 + 1,
+}
+
+//#entry "enum_variant_value_default"
+enum Default_Initialized u8 {
+    A,
+    B,
+    C,
+}
+
+proc test_enum_variant_value_default() void {
+    assert(Default_Initialized.A as u8 == 0);
+    assert(Default_Initialized.B as u8 == 1);
+    assert(Default_Initialized.C as u8 == 2);
+}
+
+//#entry "enum_variant_value_constant"
+enum Constant_Initialized u8 {
+    A = 0,
+    B = 127,
+    C = 255,
+}
+
+proc test_enum_variant_value_constant() void {
+    assert(Constant_Initialized.A as u8 == 0);
+    assert(Constant_Initialized.B as u8 == 127);
+    assert(Constant_Initialized.C as u8 == 255);
+}
+
+//#entry "enum_variant_value_mixed"
+enum Mixed_Initialized u8 {
+    A,
+    B = 7,
+    C,
+    D = 41,
+    E,
+    F,
+}
+
+proc test_enum_variant_value_mixed() void {
+    assert(Mixed_Initialized.A as u8 == 0);
+    assert(Mixed_Initialized.B as u8 == 7);
+    assert(Mixed_Initialized.C as u8 == 8);
+    assert(Mixed_Initialized.D as u8 == 41);
+    assert(Mixed_Initialized.E as u8 == 42);
+    assert(Mixed_Initialized.F as u8 == 43);
+}
+
+//#entry(check) "enum_variant_value_overflow"
+//#expect
+//error: integer constant out of range for `u8`
+//value `256` is outside `0..=255` range
+//  │
+//4 │     C,
+//  │     ^
+//  └─ src/test.rock:4:5
+//
+//#!
+enum Overflow_Initialized u8 {
+    A = 254,
+    B,
+    C,
+}
+
+//#entry(check) "enum_variant_value_duplicate"
+//#expect
+//error: duplicate variant tag value
+//both `D` and `B` have the same `7` value
+//  │
+//5 │     D = 7,
+//  │     ^
+//  ├─ src/test.rock:5:5
+//  │
+//3 │     B = 7,
+//  │     ─ existing variant with the same tag
+//  └─ src/test.rock:3:5
+//
+//error: duplicate variant tag value
+//both `E` and `C` have the same `8` value
+//  │
+//6 │     E,
+//  │     ^
+//  ├─ src/test.rock:6:5
+//  │
+//4 │     C,
+//  │     ─ existing variant with the same tag
+//  └─ src/test.rock:4:5
+//
+//error: duplicate variant tag value
+//both `F` and `A` have the same `0` value
+//  │
+//7 │     F = 0,
+//  │     ^
+//  ├─ src/test.rock:7:5
+//  │
+//2 │     A,
+//  │     ─ existing variant with the same tag
+//  └─ src/test.rock:2:5
+//
+//#!
+enum Duplicate_Initialized u8 {
+    A,
+    B = 7,
+    C,
+    D = 7,
+    E,
+    F = 0,
+}
+
+//#entry "enum_memory_layout"
+enum Layout_S8 s8 {}
+enum Layout_S16 s16 {}
+enum Layout_S32 s32 {}
+enum Layout_S64 s64 {}
+
+enum Layout_U8 u8 {}
+enum Layout_U16 u16 {}
+enum Layout_U32 u32 {}
+enum Layout_U64 u64 {}
+
+proc test_enum_memory_layout() void {
+    assert(mem.size_of:(Layout_S8)() == 1);
+    assert(mem.align_of:(Layout_S8)() == 1);
+
+    assert(mem.size_of:(Layout_S16)() == 2);
+    assert(mem.align_of:(Layout_S16)() == 2);
+
+    assert(mem.size_of:(Layout_S32)() == 4);
+    assert(mem.align_of:(Layout_S32)() == 4);
+
+    assert(mem.size_of:(Layout_S64)() == 8);
+    assert(mem.align_of:(Layout_S64)() == 8);
+
+    assert(mem.size_of:(Layout_U8)() == 1);
+    assert(mem.align_of:(Layout_U8)() == 1);
+
+    assert(mem.size_of:(Layout_U16)() == 2);
+    assert(mem.align_of:(Layout_U16)() == 2);
+
+    assert(mem.size_of:(Layout_U32)() == 4);
+    assert(mem.align_of:(Layout_U32)() == 4);
+
+    assert(mem.size_of:(Layout_U64)() == 8);
+    assert(mem.align_of:(Layout_U64)() == 8);
+}
