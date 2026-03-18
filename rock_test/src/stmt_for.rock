@@ -50,9 +50,6 @@ proc test_for_condition() void {
     }
 }
 
-//#entry "for_element"
-proc test_for_element() void {}
-
 //#entry "for_range"
 //#expect(no_endl)
 //0
@@ -76,8 +73,30 @@ proc test_for_range() void {
     }
 }
 
-//#entry "for_pattern"
-proc test_for_pattern() void {}
+//#entry "for_loop_diverges"
+//#expect(no_endl)
+//thread panicked at src/test.rock:3:9
+//entered unreachable code
+//#!
+proc test_for_loop_diverges() void {
+    for {
+        unreachable();
+    }
+    print("unreachable");
+}
+
+//#entry "for_cond_diverges"
+//#expect(no_endl)
+//thread panicked at src/test.rock:4:9
+//entered unreachable code
+//#!
+proc test_for_cond_diverges() void {
+    let value = true;
+    for value {
+        unreachable();
+    }
+    print("unreachable");
+}
 
 //#entry "for_element_diverges"
 //#expect(no_endl)
@@ -85,9 +104,10 @@ proc test_for_pattern() void {}
 //entered unreachable code
 //#!
 proc test_for_element_diverges() void {
-    for _ in [0, 1, 2] {
+    for _ in [10, 20, 30] {
         unreachable();
     }
+    print("unreachable");
 }
 
 //#entry "for_range_diverges"
@@ -98,5 +118,73 @@ proc test_for_element_diverges() void {
 proc test_for_range_diverges() void {
     for _ in 0..<10 {
         unreachable();
+    }
+    print("unreachable");
+}
+
+//#entry "for_pattern_diverges"
+//#expect(no_endl)
+//thread panicked at src/test.rock:4:9
+//entered unreachable code
+//#!
+proc test_for_pattern_diverges() void {
+    let value = 0;
+    for let 0 = value {
+        unreachable();
+    }
+    print("unreachable");
+}
+
+//#entry "for_element"
+//#expect(no_endl)
+//10 0
+//20 1
+//30 2
+//#!
+proc test_for_element() void {
+    let values = [10, 20, 30];
+    for value, index in values {
+        print(value, " ", index, "\n");
+    }
+}
+
+//#entry "for_element_reverse"
+//#expect(no_endl)
+//30 2
+//20 1
+//10 0
+//#!
+proc test_for_element_reverse() void {
+    let values = [10, 20, 30];
+    for value, index in << values {
+        print(value, " ", index, "\n");
+    }
+}
+
+//#entry "for_element_continue"
+//#expect(no_endl)
+//10 0
+//20 1
+//30 2
+//#!
+proc test_for_element_continue() void {
+    let values = [10, 20, 30];
+    for value, index in values {
+        print(value, " ", index, "\n");
+        continue;
+    }
+}
+
+//#entry "for_element_reverse_continue"
+//#expect(no_endl)
+//30 2
+//20 1
+//10 0
+//#!
+proc test_for_element_reverse_continue() void {
+    let values = [10, 20, 30];
+    for value, index in << values {
+        print(value, " ", index, "\n");
+        continue;
     }
 }
