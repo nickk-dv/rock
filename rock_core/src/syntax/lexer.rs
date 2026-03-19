@@ -1,8 +1,9 @@
 use super::token::{self, Token, TokenList, Trivia, T};
+use crate::ast::LitID;
 use crate::error::{ErrorBuffer, SourceRange};
 use crate::errors as err;
-use crate::intern::{LitID, StringPool};
 use crate::session::ModuleID;
+use crate::support::StringPool;
 use crate::text::{TextOffset, TextRange};
 
 pub fn lex<'sref>(

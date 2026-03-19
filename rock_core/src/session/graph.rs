@@ -1,7 +1,8 @@
+use crate::ast::NameID;
 use crate::error::Error;
 use crate::errors as err;
-use crate::intern::{NameID, StringPool};
 use crate::session::{Package, PackageID};
+use crate::support::StringPool;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::path::{Path, PathBuf};
 

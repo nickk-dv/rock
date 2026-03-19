@@ -1,8 +1,7 @@
 use super::ast_layer::{self as cst, AstNode};
 use super::tree::SyntaxTree;
-use crate::ast;
-use crate::intern::{LitID, NameID, StringPool};
-use crate::support::{Arena, TempBuffer};
+use crate::ast::{self, LitID, NameID};
+use crate::support::{Arena, StringPool, TempBuffer};
 use crate::text::TextRange;
 
 struct AstBuild<'s, 'sref> {

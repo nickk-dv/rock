@@ -1,10 +1,9 @@
 use super::context::HirCtx;
 use super::pass_5::Expectation;
-use crate::ast;
+use crate::ast::{self, LitID};
 use crate::error::ErrorSink;
 use crate::errors as err;
 use crate::hir;
-use crate::intern::LitID;
 use crate::text::TextRange;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::fmt::Write;

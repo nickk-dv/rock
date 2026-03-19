@@ -2,12 +2,11 @@ pub mod config;
 mod graph;
 pub mod manifest;
 
-use crate::ast::Ast;
+use crate::ast::{Ast, LitID, NameID};
 use crate::error::{
     DiagnosticData, Error, ErrorBuffer, ErrorSink, ErrorWarningBuffer, Warning, WarningSink,
 };
-use crate::intern::{LitID, NameID, StringPool};
-use crate::support::os;
+use crate::support::{os, StringPool};
 use crate::syntax::ast_build::AstBuildState;
 use crate::syntax::tree::SyntaxTree;
 use crate::text::TextRange;

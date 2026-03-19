@@ -1,6 +1,5 @@
-use crate::ast;
+use crate::ast::{self, LitID, NameID};
 use crate::error::SourceRange;
-use crate::intern::{LitID, NameID};
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, AsStr, BitSet};
 use crate::text::{self, TextOffset, TextRange};

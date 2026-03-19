@@ -1,13 +1,13 @@
 use super::emit_mod;
 use super::llvm;
+use rock_core::ast::{self, LitID, NameID};
 use rock_core::error::ErrorBuffer;
+use rock_core::hir;
 use rock_core::hir_lower::layout;
 use rock_core::hir_lower::types;
-use rock_core::intern::{LitID, NameID};
 use rock_core::session::config::TargetTriple;
 use rock_core::session::{ModuleID, Session};
 use rock_core::support::{Arena, AsStr, TempBuffer, TempOffset};
-use rock_core::{ast, hir};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 pub struct Codegen<'c, 's, 'sref> {

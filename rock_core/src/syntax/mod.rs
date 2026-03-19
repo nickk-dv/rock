@@ -9,9 +9,10 @@ mod parser;
 pub mod token;
 pub mod tree;
 
+use crate::ast::LitID;
 use crate::error::{ErrorBuffer, ErrorSink};
-use crate::intern::{LitID, StringPool};
 use crate::session::{ModuleID, Session};
+use crate::support::StringPool;
 use parser::Parser;
 use tree::SyntaxTree;
 

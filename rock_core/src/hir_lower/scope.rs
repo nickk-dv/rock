@@ -1,10 +1,9 @@
 use super::context::{HirCtx, Registry};
 use super::pass_5::Expectation;
-use crate::ast;
+use crate::ast::{self, NameID};
 use crate::error::{ErrorWarningBuffer, SourceRange};
 use crate::errors as err;
 use crate::hir;
-use crate::intern::NameID;
 use crate::session::{self, ModuleID, Session};
 use crate::text::TextRange;
 use rustc_hash::{FxBuildHasher, FxHashMap};

@@ -1,9 +1,8 @@
 use super::check_match::PatCov;
 use super::scope::{PolyScope, Scope};
-use crate::ast;
+use crate::ast::{self, NameID};
 use crate::error::{ErrorSink, ErrorWarningBuffer, SourceRange};
 use crate::hir;
-use crate::intern::NameID;
 use crate::session::{ModuleID, Session};
 use crate::support::{Arena, TempBuffer, TempOffset};
 use crate::text::TextRange;

@@ -1,5 +1,4 @@
-use crate::ast::{AssignOp, BasicType, BinOp, UnOp};
-use crate::intern::LitID;
+use crate::ast::{AssignOp, BasicType, BinOp, LitID, UnOp};
 use crate::text::{TextOffset, TextRange};
 use std::mem::transmute;
 

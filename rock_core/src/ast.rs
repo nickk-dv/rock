@@ -1,4 +1,3 @@
-use crate::intern::{LitID, NameID};
 use crate::support::{Arena, AsStr};
 use crate::text::{TextOffset, TextRange};
 
@@ -430,6 +429,9 @@ pub enum Lit {
 }
 
 //==================== COMMON ====================
+
+crate::define_id!(pub LitID);
+crate::define_id!(pub NameID);
 
 #[derive(Copy, Clone)]
 pub struct Name {

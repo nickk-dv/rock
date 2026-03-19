@@ -1,5 +1,6 @@
 pub use arena::Arena;
 pub use bitset::BitSet;
+pub use intern::StringPool;
 pub use temp_buffer::{TempBuffer, TempOffset};
 pub use timer::Timer;
 
@@ -113,6 +114,49 @@ mod arena {
                 current = block.prev.copied();
                 block.dealloc();
             }
+        }
+    }
+}
+
+mod intern {
+    use super::Arena;
+    use rustc_hash::{FxBuildHasher, FxHashMap};
+
+    pub struct StringPool<'s, ID> {
+        arena: Arena<'s>,
+        values: Vec<&'s str>,
+        intern_map: FxHashMap<&'s str, ID>,
+    }
+
+    impl<'s, ID> StringPool<'s, ID>
+    where
+        ID: Copy + From<usize> + Into<usize>,
+    {
+        pub fn new(capacity: usize) -> Self {
+            StringPool {
+                arena: Arena::new(),
+                values: Vec::with_capacity(capacity),
+                intern_map: FxHashMap::with_capacity_and_hasher(capacity, FxBuildHasher),
+            }
+        }
+        pub fn intern(&mut self, value: &str) -> ID {
+            if let Some(id) = self.intern_map.get(&value).copied() {
+                return id;
+            }
+            let id = ID::from(self.values.len());
+            let string = self.arena.alloc_str(value);
+            self.values.push(string);
+            self.intern_map.insert(string, id);
+            id
+        }
+        pub fn get(&self, id: ID) -> &'s str {
+            self.values[id.into()]
+        }
+        pub fn get_all(&self) -> &[&'s str] {
+            &self.values
+        }
+        pub fn get_id(&self, value: &str) -> Option<ID> {
+            self.intern_map.get(&value).copied()
         }
     }
 }
@@ -404,7 +448,7 @@ where
     fn from_str(string: &str) -> Option<Self>;
 }
 
-/// generate enum with `AsStr` trait implementation.
+/// generate enum with `AsStr` trait implementation
 #[macro_export]
 macro_rules! enum_as_str {
     (

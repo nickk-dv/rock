@@ -3,10 +3,10 @@ use super::context::{Codegen, Expect};
 use super::emit_mod;
 use super::emit_stmt;
 use super::llvm;
+use rock_core::ast::LitID;
 use rock_core::error::SourceRange;
 use rock_core::hir::{self, CmpPred};
 use rock_core::hir_lower::layout;
-use rock_core::intern::LitID;
 use rock_core::support::TempOffset;
 use rock_core::text::TextRange;
 
