@@ -1174,8 +1174,25 @@ fn polymorph_args<'syn>(fmt: &mut Formatter<'syn, '_>, poly_args: cst::Polymorph
     single_line_comma_list(fmt, poly_args.types(fmt.tree), ty, '(', ')');
 }
 
-fn polymorph_params<'syn>(fmt: &mut Formatter<'syn, '_>, poly_params: cst::PolymorphParams<'syn>) {
-    single_line_comma_list(fmt, poly_params.names(fmt.tree), name, '(', ')');
+fn polymorph_params<'syn>(
+    fmt: &mut Formatter<'syn, '_>,
+    poly_params: cst::PolymorphParamList<'syn>,
+) {
+    single_line_comma_list(fmt, poly_params.params(fmt.tree), polymorph_param, '(', ')');
+}
+
+fn polymorph_param<'syn>(fmt: &mut Formatter<'syn, '_>, param: cst::PolymorphParam<'syn>) {
+    match param {
+        cst::PolymorphParam::Type(param) => {
+            name(fmt, param.name(fmt.tree).unwrap());
+        }
+        cst::PolymorphParam::Const(param) => {
+            name(fmt, param.name(fmt.tree).unwrap());
+            fmt.write(':');
+            fmt.space();
+            ty(fmt, param.ty(fmt.tree).unwrap());
+        }
+    }
 }
 
 struct Formatter<'syn, 'cache> {

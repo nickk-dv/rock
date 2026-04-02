@@ -1238,17 +1238,25 @@ fn polymorph_params(p: &mut Parser) {
     p.bump(T!['(']);
     while !p.at(T![')']) && !p.at(T![eof]) {
         if p.at(T![ident]) {
+            let mp = p.start();
             name(p);
+            if p.eat(T![:]) {
+                ty(p);
+                mp.complete(p, SyntaxKind::POLYMORPH_PARAM_CONST);
+            } else {
+                mp.complete(p, SyntaxKind::POLYMORPH_PARAM_TYPE);
+            }
             if !p.at(T![')']) {
                 p.expect(T![,]);
             }
         } else {
+            //@later change this to "polymorphic parameter", because it now can be type or constant?
             p.error_recover("expected type parameter", TokenSet::empty());
             break;
         }
     }
     p.expect(T![')']);
-    m.complete(p, SyntaxKind::POLYMORPH_PARAMS);
+    m.complete(p, SyntaxKind::POLYMORPH_PARAM_LIST);
 }
 
 //==================== FIRST SETS ====================

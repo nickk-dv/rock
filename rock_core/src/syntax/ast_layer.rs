@@ -492,7 +492,9 @@ ast_node_impl!(ArgsList, SyntaxKind::ARGS_LIST);
 ast_node_impl!(Path, SyntaxKind::PATH);
 ast_node_impl!(PathSegment, SyntaxKind::PATH_SEGMENT);
 ast_node_impl!(PolymorphArgs, SyntaxKind::POLYMORPH_ARGS);
-ast_node_impl!(PolymorphParams, SyntaxKind::POLYMORPH_PARAMS);
+ast_node_impl!(PolymorphParamList, SyntaxKind::POLYMORPH_PARAM_LIST);
+ast_node_impl!(PolymorphParamType, SyntaxKind::POLYMORPH_PARAM_TYPE);
+ast_node_impl!(PolymorphParamConst, SyntaxKind::POLYMORPH_PARAM_CONST);
 
 #[derive(Copy, Clone)]
 pub enum Item<'syn> {
@@ -808,6 +810,32 @@ impl<'syn> AstNode<'syn> for Lit<'syn> {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum PolymorphParam<'syn> {
+    Type(PolymorphParamType<'syn>),
+    Const(PolymorphParamConst<'syn>),
+}
+
+impl<'syn> AstNode<'syn> for PolymorphParam<'syn> {
+    fn cast(node: &'syn Node) -> Option<PolymorphParam<'syn>> {
+        match node.kind {
+            SyntaxKind::POLYMORPH_PARAM_TYPE => {
+                Some(PolymorphParam::Type(PolymorphParamType(node)))
+            }
+            SyntaxKind::POLYMORPH_PARAM_CONST => {
+                Some(PolymorphParam::Const(PolymorphParamConst(node)))
+            }
+            _ => None,
+        }
+    }
+    fn range(self) -> TextRange {
+        match self {
+            PolymorphParam::Type(param) => param.0.range,
+            PolymorphParam::Const(param) => param.0.range,
+        }
+    }
+}
+
 //==================== ITEMS ====================
 
 impl<'syn> SourceFile<'syn> {
@@ -817,7 +845,7 @@ impl<'syn> SourceFile<'syn> {
 impl<'syn> ProcItem<'syn> {
     node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
+    node_find!(poly_params, PolymorphParamList);
     node_find!(param_list, ParamList);
     node_find!(return_ty, Type);
     node_find!(block, Block);
@@ -835,7 +863,7 @@ impl<'syn> Param<'syn> {
 impl<'syn> EnumItem<'syn> {
     node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
+    node_find!(poly_params, PolymorphParamList);
     token_find_predicate!(tag_ty, Token::as_basic_type, ast::BasicType);
     node_find!(variant_list, VariantList);
 }
@@ -859,7 +887,7 @@ impl<'syn> VariantField<'syn> {
 impl<'syn> StructItem<'syn> {
     node_find!(dir_list, DirectiveList);
     node_find!(name, Name);
-    node_find!(poly_params, PolymorphParams);
+    node_find!(poly_params, PolymorphParamList);
     node_find!(field_list, FieldList);
 }
 impl<'syn> FieldList<'syn> {
@@ -1288,6 +1316,13 @@ impl<'syn> PolymorphArgs<'syn> {
     node_iter!(types, Type);
 }
 
-impl<'syn> PolymorphParams<'syn> {
-    node_iter!(names, Name);
+impl<'syn> PolymorphParamList<'syn> {
+    node_iter!(params, PolymorphParam);
+}
+impl<'syn> PolymorphParamType<'syn> {
+    node_find!(name, Name);
+}
+impl<'syn> PolymorphParamConst<'syn> {
+    node_find!(name, Name);
+    node_find!(ty, Type);
 }

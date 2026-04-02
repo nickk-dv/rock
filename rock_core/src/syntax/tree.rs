@@ -145,7 +145,9 @@ pub enum SyntaxKind {
     PATH,
     PATH_SEGMENT,
     POLYMORPH_ARGS,
-    POLYMORPH_PARAMS,
+    POLYMORPH_PARAM_LIST,
+    POLYMORPH_PARAM_TYPE,
+    POLYMORPH_PARAM_CONST,
 }
 
 #[derive(Clone, Copy)]

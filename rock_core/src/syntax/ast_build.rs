@@ -980,12 +980,17 @@ fn polymorph_args<'ast>(
 
 fn polymorph_params<'ast>(
     ctx: &mut AstBuild<'ast, '_>,
-    poly_params: cst::PolymorphParams,
+    poly_params: cst::PolymorphParamList,
 ) -> &'ast ast::PolymorphParams<'ast> {
     let offset = ctx.s.names.start();
-    for name_cst in poly_params.names(ctx.tree) {
-        let name = name(ctx, name_cst);
-        ctx.s.names.push(name);
+    for param_cst in poly_params.params(ctx.tree) {
+        match param_cst {
+            cst::PolymorphParam::Type(param) => {
+                let name = name(ctx, param.name(ctx.tree).unwrap());
+                ctx.s.names.push(name);
+            }
+            cst::PolymorphParam::Const(param) => {} //@unimplemented!("poly const")
+        }
     }
     let names = ctx.s.names.take(offset, &mut ctx.arena);
 

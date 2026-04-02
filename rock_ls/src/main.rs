@@ -1368,7 +1368,8 @@ fn semantic_visit_node(
 
                     SyntaxKind::NAME => ident_style,
                     SyntaxKind::BIND => Some(SemanticToken::Variable),
-                    SyntaxKind::POLYMORPH_PARAMS => Some(SemanticToken::Type),
+                    SyntaxKind::POLYMORPH_PARAM_TYPE => Some(SemanticToken::Type),
+                    SyntaxKind::POLYMORPH_PARAM_CONST => Some(SemanticToken::Variable),
                     _ => None,
                 };
 
