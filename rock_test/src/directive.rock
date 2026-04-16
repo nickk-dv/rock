@@ -18,7 +18,7 @@ struct Example {
 
 //#entry(check) "directive_scope_field_package"
 //#expect
-//error: field visibility must be stronger than struct's `package` visibility
+//error: field visibility must be stronger or equal to struct's `package` visibility
 //  │
 //3 │     #scope_public
 //  │     ^^^^^^^^^^^^^
@@ -44,13 +44,13 @@ struct Example2 {
 
 //#entry(check) "directive_scope_field_private"
 //#expect
-//error: field visibility must be stronger than struct's `private` visibility
+//error: field visibility must be stronger or equal to struct's `private` visibility
 //  │
 //3 │     #scope_public
 //  │     ^^^^^^^^^^^^^
 //  └─ src/test.rock:3:5
 //
-//error: field visibility must be stronger than struct's `private` visibility
+//error: field visibility must be stronger or equal to struct's `private` visibility
 //  │
 //5 │     #scope_package
 //  │     ^^^^^^^^^^^^^^

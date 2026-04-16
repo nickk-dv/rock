@@ -251,9 +251,9 @@ pub fn check_field_directives(
         if scope_vis == vis {
             let src = ctx.src(directive.range);
             err::directive_scope_vis_redundant(&mut ctx.emit, src, None, scope_vis.as_str());
-        } else if !scope_vis.stronger(struct_vis) {
+        } else if scope_vis < struct_vis {
             let src = ctx.src(directive.range);
-            err::directive_field_vis_not_stronger(&mut ctx.emit, src, struct_vis.as_str());
+            err::directive_field_vis_too_weak(&mut ctx.emit, src, struct_vis.as_str());
         } else {
             vis = scope_vis;
         }

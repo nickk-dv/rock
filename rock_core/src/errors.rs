@@ -421,12 +421,9 @@ pub fn directive_scope_vis_redundant(
     emit.error(Error::new(msg, src, info));
 }
 
-pub fn directive_field_vis_not_stronger(
-    emit: &mut impl ErrorSink,
-    src: SourceRange,
-    struct_vis: &str,
-) {
-    let msg = format!("field visibility must be stronger than struct's `{struct_vis}` visibility");
+pub fn directive_field_vis_too_weak(emit: &mut impl ErrorSink, src: SourceRange, struct_vis: &str) {
+    let msg =
+        format!("field visibility must be stronger or equal to struct's `{struct_vis}` visibility");
     emit.error(Error::new(msg, src, None));
 }
 

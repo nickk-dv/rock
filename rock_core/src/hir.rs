@@ -532,7 +532,7 @@ pub struct ArrayBinary<'hir> {
 }
 
 crate::enum_as_str! {
-    #[derive(Copy, Clone, PartialEq)]
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Vis {
         Public "public",
         Package "package",
@@ -975,16 +975,6 @@ impl<'hir> ConstValue<'hir> {
         match self {
             ConstValue::Variant { enum_id, variant_id } => (enum_id, variant_id),
             _ => unreachable!(),
-        }
-    }
-}
-
-impl Vis {
-    pub fn stronger(self, other: Vis) -> bool {
-        match self {
-            Vis::Public => false,
-            Vis::Package => matches!(other, Vis::Public),
-            Vis::Private => matches!(other, Vis::Public | Vis::Package),
         }
     }
 }
