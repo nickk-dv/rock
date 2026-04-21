@@ -811,26 +811,28 @@ fn expr_slice<'ast>(ctx: &mut AstBuild<'ast, '_>, slice: cst::ExprSlice) -> ast:
 fn pat<'ast>(ctx: &mut AstBuild<'ast, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> {
     let kind = match pat_cst {
         cst::Pat::Wild(_) => ast::PatKind::Wild,
-        cst::Pat::Lit(pat) => {
-            let lit_cst = pat.lit(ctx.tree).unwrap();
-            let lit = lit(ctx, lit_cst);
-
-            let lit_expr = ast::Expr { kind: ast::ExprKind::Lit { lit }, range: lit_cst.range() };
-            let lit_expr = ctx.arena.alloc(lit_expr);
-
-            let expr = if let Some((op, op_range)) = pat.un_op(ctx.tree) {
-                let un_expr = ast::Expr {
-                    kind: ast::ExprKind::Unary { op, op_range, rhs: lit_expr },
-                    range: pat.range(),
-                };
-                ctx.arena.alloc(un_expr)
+        cst::Pat::Lit(pat) => ast::PatKind::Lit { expr: pat_lit_to_expr(ctx, pat) },
+        cst::Pat::Range(pat) => {
+            let (start, end, kind) = if pat.t_exclusive(ctx.tree).is_some() {
+                (
+                    pat.start_exclusive(ctx.tree).unwrap(),
+                    pat.end_exclusive(ctx.tree).unwrap(),
+                    ast::RangeKind::Exclusive,
+                )
             } else {
-                lit_expr
+                (
+                    pat.start_inclusive(ctx.tree).unwrap(),
+                    pat.end_inclusive(ctx.tree).unwrap(),
+                    ast::RangeKind::Inclusive,
+                )
             };
-
-            ast::PatKind::Lit { expr }
+            let range = ast::Range {
+                start: pat_lit_to_expr(ctx, start),
+                end: pat_lit_to_expr(ctx, end),
+                kind,
+            };
+            ast::PatKind::Range { range: ctx.arena.alloc(range) }
         }
-        cst::Pat::Range(_) => ast::PatKind::Wild, //@implement
         cst::Pat::Item(pat) => {
             let path = path(ctx, pat.path(ctx.tree).unwrap());
             let bind_list = pat.bind_list(ctx.tree).map(|bl| bind_list(ctx, bl));
@@ -847,11 +849,28 @@ fn pat<'ast>(ctx: &mut AstBuild<'ast, '_>, pat_cst: cst::Pat) -> ast::Pat<'ast> 
                 let pat = pat(ctx, pat_cst);
                 ctx.s.pats.push(pat);
             }
-            let pats = ctx.s.pats.take(offset, &mut ctx.arena);
-            ast::PatKind::Or { pats }
+            ast::PatKind::Or { pats: ctx.s.pats.take(offset, &mut ctx.arena) }
         }
     };
     ast::Pat { kind, range: pat_cst.range() }
+}
+
+fn pat_lit_to_expr<'ast>(ctx: &mut AstBuild<'ast, '_>, pat: cst::PatLit) -> &'ast ast::Expr<'ast> {
+    let lit_cst = pat.lit(ctx.tree).unwrap();
+    let lit = lit(ctx, lit_cst);
+
+    let lit_expr = ast::Expr { kind: ast::ExprKind::Lit { lit }, range: lit_cst.range() };
+    let lit_expr = ctx.arena.alloc(lit_expr);
+
+    if let Some((op, op_range)) = pat.un_op(ctx.tree) {
+        let un_expr = ast::Expr {
+            kind: ast::ExprKind::Unary { op, op_range, rhs: lit_expr },
+            range: pat.range(),
+        };
+        ctx.arena.alloc(un_expr)
+    } else {
+        lit_expr
+    }
 }
 
 fn lit(ctx: &mut AstBuild, lit: cst::Lit) -> ast::Lit {

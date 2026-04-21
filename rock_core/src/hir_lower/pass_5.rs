@@ -4113,8 +4113,7 @@ fn typecheck_for<'hir, 'ast>(
                 err::tycheck_for_range_reverse(&mut ctx.emit, src);
             }
 
-            let (start, end, int_ty) =
-                typecheck_range(ctx, Expectation::None, &header.range, false);
+            let (start, end, int_ty) = typecheck_range(ctx, Expectation::None, &header.range);
 
             let discard_id = ctx.session.intern_name.intern("_");
             let name_dummy = ast::Name { id: discard_id, range: TextRange::zero() };
@@ -4322,7 +4321,6 @@ fn typecheck_range<'hir, 'ast>(
     ctx: &mut HirCtx<'hir, 'ast, '_>,
     expect: Expectation<'hir>,
     range: &ast::Range<'ast>,
-    constant: bool,
 ) -> (&'hir hir::Expr<'hir>, &'hir hir::Expr<'hir>, hir::IntType) {
     let mut start_res = typecheck_expr_untyped(ctx, expect, range.start);
     let mut end_res = typecheck_expr_untyped(ctx, expect, range.end);
@@ -4354,21 +4352,11 @@ fn typecheck_range<'hir, 'ast>(
     check_expect_integer(ctx, range.start.range, start_res.ty);
     check_expect_integer(ctx, range.end.range, end_res.ty);
 
-    if constant {
-        if !matches!(start_res.expr, hir::Expr::Error | hir::Expr::Const(_, _)) {
-            let src = ctx.src(range.start.range);
-            err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
-        }
-        if !matches!(end_res.expr, hir::Expr::Error | hir::Expr::Const(_, _)) {
-            let src = ctx.src(range.end.range);
-            err::const_cannot_use_expr(&mut ctx.emit, src, "non-constant");
-        }
-    }
-
     let int_ty = if let (hir::Type::Int(lhs), hir::Type::Int(rhs)) = (start_res.ty, end_res.ty) {
         if lhs != rhs {
             let range = TextRange::new(range.start.range.start(), range.end.range.end());
             let src = ctx.src(range);
+            //@this error is too specific, this will be used with range patterns
             err::tycheck_for_range_type_mismatch(&mut ctx.emit, src, lhs.as_str(), rhs.as_str());
         }
         lhs
