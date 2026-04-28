@@ -3938,7 +3938,14 @@ fn typecheck_for<'hir, 'ast>(
             } else {
                 hir::BinOp::Add_Int(index_int_ty)
             };
-            curr_block.for_idx_change = Some((index_id, index_int_ty, index_change_op)); //@use defer instead of this hack?
+
+            curr_block.for_idx_change = if header.reverse {
+                //@this should solve a double continue bug, prevents element skipping and undeflow in reverse loop.
+                //@stmt_index_change is already inserted at the beginning of the block, so continue doesnt need to do anything extra.
+                None
+            } else {
+                Some((index_id, index_int_ty, index_change_op)) //@use defer instead of this hack? (probably no because this code is useless on break or return)
+            };
             curr_block.for_value_change = None; //@hack
 
             let block_res = typecheck_block(ctx, Expectation::VOID, for_.block, BlockStatus::Loop);
@@ -4078,6 +4085,7 @@ fn typecheck_for<'hir, 'ast>(
                     ]),
                 }
             } else if block_res.ty.is_never() {
+                //@ this check ^ is probably a hack to not emit "double continue" code (that increments the index)
                 hir::Block {
                     stmts: ctx.arena.alloc_slice(&[stmt_cond, stmt_value_local, stmt_for_block]),
                 }
