@@ -205,7 +205,9 @@ impl GlobalScope {
             for item in ast.items {
                 symbol_count += 1;
                 if let ast::Item::Import(import) = item {
-                    symbol_count += import.symbols.len();
+                    for target in import.targets {
+                        symbol_count += target.symbols.len();
+                    }
                 }
             }
 

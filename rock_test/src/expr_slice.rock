@@ -1,6 +1,6 @@
 //#prelude
-import core:array;
-import core:runtime.{assert}
+import core:{array}
+import core:{runtime.{assert}}
 
 STRING: string = "example";
 ARRAY = [1, 2, 3, 4, 5];

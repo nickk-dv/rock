@@ -65,6 +65,7 @@ pub struct FileData {
     pub line_ranges: Vec<TextRange>,
 }
 
+#[derive(Clone)]
 pub struct Directory {
     name_id: NameID,
     modules: Vec<ModuleID>,

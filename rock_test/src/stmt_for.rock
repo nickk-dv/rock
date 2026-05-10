@@ -1,6 +1,6 @@
 //#prelude
-import core:fmt.{print}
-import core:runtime.{unreachable}
+import core:{fmt.{print}}
+import core:{runtime.{unreachable}}
 
 //#entry "for_loop"
 //#expect(no_endl)

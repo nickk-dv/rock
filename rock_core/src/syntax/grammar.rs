@@ -248,7 +248,28 @@ fn import_item(p: &mut Parser, m: Marker) {
     if p.at(T![ident]) && p.at_next(T![:]) {
         name(p);
         p.bump(T![:]);
+        p.expect(T!['{']);
+        while !p.at(T!['}']) && !p.at(T![eof]) {
+            let before = p.cursor();
+            import_target(p, false);
+            if !p.at(T!['}']) {
+                p.expect(T![,]);
+            }
+            //@hacky "stuck" detection
+            if before == p.cursor() {
+                p.error_recover("expected import target", FIRST_ITEM);
+                break;
+            }
+        }
+        p.expect(T!['}']);
+    } else {
+        import_target(p, true);
     }
+    m.complete(p, SyntaxKind::IMPORT_ITEM);
+}
+
+fn import_target(p: &mut Parser, semi: bool) {
+    let m = p.start();
     if p.at(T![ident]) {
         import_path(p);
     } else {
@@ -263,11 +284,13 @@ fn import_item(p: &mut Parser, m: Marker) {
         } else {
             p.error_recover("expected import symbol list", RECOVER_IMPORT_SYMBOL_LIST);
         }
-        p.eat(T![;]);
-    } else {
+        if semi {
+            p.eat(T![;]);
+        }
+    } else if semi {
         p.expect(T![;]);
     }
-    m.complete(p, SyntaxKind::IMPORT_ITEM);
+    m.complete(p, SyntaxKind::IMPORT_TARGET);
 }
 
 fn import_path(p: &mut Parser) {

@@ -45,6 +45,10 @@ impl<'src> Parser<'src> {
         }
     }
 
+    pub fn cursor(&self) -> usize {
+        self.cursor.index()
+    }
+
     pub fn finish(self) -> (TokenList, Vec<Event>, ErrorBuffer) {
         (self.tokens, self.events, self.errors)
     }

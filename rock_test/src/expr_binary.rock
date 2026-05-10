@@ -1,5 +1,5 @@
 //#prelude
-import core:runtime as _.{assert}
+import core:{runtime as _.{assert}}
 
 //#entry "add_int"
 proc test_add_int() void {

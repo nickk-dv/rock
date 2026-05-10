@@ -117,6 +117,11 @@ pub enum GlobalInit<'ast> {
 pub struct ImportItem<'ast> {
     pub dir_list: Option<&'ast DirectiveList<'ast>>,
     pub package: Option<Name>,
+    pub targets: &'ast [ImportTarget<'ast>],
+}
+
+#[derive(Copy, Clone)]
+pub struct ImportTarget<'ast> {
     pub import_path: &'ast [Name],
     pub rename: SymbolRename,
     pub symbols: &'ast [ImportSymbol],
@@ -574,7 +579,7 @@ crate::size_lock!(56, EnumItem);
 crate::size_lock!(48, StructItem);
 crate::size_lock!(56, ConstItem);
 crate::size_lock!(56, GlobalItem);
-crate::size_lock!(72, ImportItem);
+crate::size_lock!(40, ImportItem);
 
 crate::size_lock!(40, Param);
 crate::size_lock!(40, Variant);

@@ -1,7 +1,7 @@
 //#prelude
-import core:mem;
-import core:math;
-import core:runtime as _.{assert}
+import core:{mem}
+import core:{math}
+import core:{runtime as _.{assert}}
 
 //#entry(check) "enum_valid_tag_types"
 enum Valid_S8 s8 {}

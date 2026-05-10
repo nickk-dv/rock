@@ -1,5 +1,5 @@
 //#prelude
-import core:runtime as _.{assert}
+import core:{runtime as _.{assert}}
 
 //#entry "neg_int"
 proc test_neg_int() void {

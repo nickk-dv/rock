@@ -1,8 +1,8 @@
 //#prelude
-import core:fmt;
-import core:option.{Option}
-import core:result.{Result}
-import core:runtime.{assert}
+import core:{fmt}
+import core:{option.{Option}}
+import core:{result.{Result}}
+import core:{runtime.{assert}}
 
 //#entry "print_enum_simple"
 //#expect(no_endl)

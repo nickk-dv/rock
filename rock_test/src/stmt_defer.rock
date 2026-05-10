@@ -1,5 +1,5 @@
 //#prelude
-import core:fmt as _.{print}
+import core:{fmt as _.{print}}
 
 //#entry "defer_simple"
 //#expect(no_endl)

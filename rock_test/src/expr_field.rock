@@ -1,5 +1,5 @@
 //#prelude
-import core:runtime.{assert}
+import core:{runtime.{assert}}
 
 STRING = "example";
 EMPTY: [0]s32 = [];

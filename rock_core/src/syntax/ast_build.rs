@@ -17,6 +17,7 @@ pub struct AstBuildState<'ast> {
     params: TempBuffer<ast::Param<'ast>>,
     variants: TempBuffer<ast::Variant<'ast>>,
     fields: TempBuffer<ast::Field<'ast>>,
+    import_targets: TempBuffer<ast::ImportTarget<'ast>>,
     import_symbols: TempBuffer<ast::ImportSymbol>,
     directives: TempBuffer<ast::Directive<'ast>>,
     directive_params: TempBuffer<ast::DirectiveParam>,
@@ -41,6 +42,7 @@ impl<'ast> AstBuildState<'ast> {
             params: TempBuffer::new(16),
             variants: TempBuffer::new(64),
             fields: TempBuffer::new(32),
+            import_targets: TempBuffer::new(16),
             import_symbols: TempBuffer::new(16),
             directives: TempBuffer::new(16),
             directive_params: TempBuffer::new(16),
@@ -254,16 +256,27 @@ fn import_item<'ast>(
     let dir_list = directive_list_opt(ctx, item.dir_list(ctx.tree));
     let package = item.package(ctx.tree).map(|n| name(ctx, n));
 
+    let offset = ctx.s.import_targets.start();
+    for target in item.import_targets(ctx.tree) {
+        import_target(ctx, target);
+    }
+    let targets = ctx.s.import_targets.take(offset, &mut ctx.arena);
+
+    let import_item = ast::ImportItem { dir_list, package, targets };
+    ctx.arena.alloc(import_item)
+}
+
+fn import_target(ctx: &mut AstBuild, target: cst::ImportTarget) {
     let offset = ctx.s.names.start();
-    let import_path = item.import_path(ctx.tree).unwrap();
+    let import_path = target.import_path(ctx.tree).unwrap();
     for name_cst in import_path.names(ctx.tree) {
         let name = name(ctx, name_cst);
         ctx.s.names.push(name);
     }
     let import_path = ctx.s.names.take(offset, &mut ctx.arena);
-    let rename = import_symbol_rename(ctx, item.rename(ctx.tree));
+    let rename = import_symbol_rename(ctx, target.rename(ctx.tree));
 
-    let symbols = if let Some(symbol_list) = item.import_symbol_list(ctx.tree) {
+    let symbols = if let Some(symbol_list) = target.import_symbol_list(ctx.tree) {
         let offset = ctx.s.import_symbols.start();
         for symbol_cst in symbol_list.import_symbols(ctx.tree) {
             import_symbol(ctx, symbol_cst);
@@ -273,8 +286,8 @@ fn import_item<'ast>(
         &[]
     };
 
-    let import_item = ast::ImportItem { dir_list, package, import_path, rename, symbols };
-    ctx.arena.alloc(import_item)
+    let import_target = ast::ImportTarget { import_path, rename, symbols };
+    ctx.s.import_targets.push(import_target);
 }
 
 fn import_symbol(ctx: &mut AstBuild, import_symbol: cst::ImportSymbol) {

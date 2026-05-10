@@ -348,54 +348,58 @@ fn update_module_symbols(server: &mut ServerContext, module_id: ModuleID, update
                 }
             }
             cst::Item::Import(item) if update != SymbolUpdate::Defined => {
-                let module_name = if let Some(rename) = item.rename(tree) {
-                    rename
-                        .alias(tree)
-                        .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
-                } else if let Some(path) = item.import_path(tree) {
-                    path.names(tree)
-                        .last()
-                        .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
-                } else {
-                    None
-                };
+                for target in item.import_targets(tree) {
+                    let module_name = if let Some(rename) = target.rename(tree) {
+                        rename
+                            .alias(tree)
+                            .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
+                    } else if let Some(path) = target.import_path(tree) {
+                        path.names(tree)
+                            .last()
+                            .map(|n| name_id(n, tree, file, &mut server.session.intern_name))
+                    } else {
+                        None
+                    };
 
-                let Some(source_id) = resolve_import_module(&server.session, module_id, item)
-                else {
-                    continue;
-                };
-                if let Some(module_name) = module_name {
-                    server.modules[module_id.index()]
-                        .symbols
-                        .insert(module_name, Symbol::Module(source_id));
-                }
+                    let Some(source_id) =
+                        resolve_import_module(&server.session, module_id, item, target)
+                    else {
+                        continue;
+                    };
+                    if let Some(module_name) = module_name {
+                        server.modules[module_id.index()]
+                            .symbols
+                            .insert(module_name, Symbol::Module(source_id));
+                    }
 
-                if let Some(symbol_list) = item.import_symbol_list(tree) {
-                    for symbol in symbol_list.import_symbols(tree) {
-                        let mut import_name;
+                    if let Some(symbol_list) = target.import_symbol_list(tree) {
+                        for symbol in symbol_list.import_symbols(tree) {
+                            let mut import_name;
 
-                        let import_symbol = if let Some(name) = symbol.name(tree) {
-                            import_name = Some(name);
-                            let id = name_id(name, tree, file, &mut server.session.intern_name);
-                            server.modules[source_id.index()].symbols.get(&id).copied()
-                        } else {
-                            continue;
-                        };
-                        if let Some(rename) = symbol.rename(tree) {
-                            if rename.t_discard(tree).is_some() {
-                                continue;
-                            }
-                            if let Some(name) = rename.alias(tree) {
+                            let import_symbol = if let Some(name) = symbol.name(tree) {
                                 import_name = Some(name);
-                            }
-                        }
-                        if let Some(symbol) = import_symbol {
-                            if let Some(name) = import_name {
                                 let id = name_id(name, tree, file, &mut server.session.intern_name);
-                                if let Symbol::Defined(kind) = symbol {
-                                    server.modules[module_id.index()]
-                                        .symbols
-                                        .insert(id, Symbol::Imported(source_id, kind));
+                                server.modules[source_id.index()].symbols.get(&id).copied()
+                            } else {
+                                continue;
+                            };
+                            if let Some(rename) = symbol.rename(tree) {
+                                if rename.t_discard(tree).is_some() {
+                                    continue;
+                                }
+                                if let Some(name) = rename.alias(tree) {
+                                    import_name = Some(name);
+                                }
+                            }
+                            if let Some(symbol) = import_symbol {
+                                if let Some(name) = import_name {
+                                    let id =
+                                        name_id(name, tree, file, &mut server.session.intern_name);
+                                    if let Symbol::Defined(kind) = symbol {
+                                        server.modules[module_id.index()]
+                                            .symbols
+                                            .insert(id, Symbol::Imported(source_id, kind));
+                                    }
                                 }
                             }
                         }
@@ -412,11 +416,12 @@ fn resolve_import_module(
     session: &Session,
     origin_id: ModuleID,
     import: cst::ImportItem,
+    target: cst::ImportTarget,
 ) -> Option<ModuleID> {
     let module = session.module.get(origin_id);
     let tree = module.tree.as_ref().unwrap();
     let file = &module.file;
-    let path = import.import_path(tree)?;
+    let path = target.import_path(tree)?;
 
     let mut package_id = module.origin;
     if let Some(name) = import.package(tree) {

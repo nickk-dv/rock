@@ -1,6 +1,6 @@
 //#prelude
-import core:math;
-import core:runtime as _.{assert}
+import core:{math}
+import core:{runtime as _.{assert}}
 
 //@test more edge cases, more types, same for other 2 saturating ops
 //#entry "intrinsic_math_add_saturating"

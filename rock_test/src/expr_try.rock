@@ -1,8 +1,8 @@
 //#prelude
-import core:option.{Option}
-import core:result.{Result}
-import core:fmt.{print}
-import core:runtime.{unreachable}
+import core:{option.{Option}}
+import core:{result.{Result}}
+import core:{fmt.{print}}
+import core:{runtime.{unreachable}}
 
 //#entry "try_option"
 //#expect(no_endl)

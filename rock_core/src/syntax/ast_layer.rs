@@ -406,6 +406,7 @@ ast_node_impl!(Field, SyntaxKind::FIELD);
 ast_node_impl!(ConstItem, SyntaxKind::CONST_ITEM);
 ast_node_impl!(GlobalItem, SyntaxKind::GLOBAL_ITEM);
 ast_node_impl!(ImportItem, SyntaxKind::IMPORT_ITEM);
+ast_node_impl!(ImportTarget, SyntaxKind::IMPORT_TARGET);
 ast_node_impl!(ImportPath, SyntaxKind::IMPORT_PATH);
 ast_node_impl!(ImportSymbolList, SyntaxKind::IMPORT_SYMBOL_LIST);
 ast_node_impl!(ImportSymbol, SyntaxKind::IMPORT_SYMBOL);
@@ -918,6 +919,9 @@ impl<'syn> GlobalItem<'syn> {
 impl<'syn> ImportItem<'syn> {
     node_find!(dir_list, DirectiveList);
     node_find!(package, Name);
+    node_iter!(import_targets, ImportTarget);
+}
+impl<'syn> ImportTarget<'syn> {
     node_find!(import_path, ImportPath);
     node_find!(rename, ImportSymbolRename);
     node_find!(import_symbol_list, ImportSymbolList);
