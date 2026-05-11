@@ -176,7 +176,10 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
             let main_src = if test.check {
                 "proc main() void {}".to_string()
             } else {
-                format!("import test.{{test_{0}}}\nproc main() void {{ test_{0}(); }}", test.entry)
+                format!(
+                    "import {{test.{{test_{0}}}}}\nproc main() void {{ test_{0}(); }}",
+                    test.entry
+                )
             };
             let test_src = format!("{}{}", test.source, test_file.prelude);
 

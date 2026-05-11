@@ -33,10 +33,11 @@ fn resolve_import(ctx: &mut HirCtx, import: &ast::ImportItem) {
 
     //@all this happened because &mut ctx is passed to emit errors, and source_package as borrowed and used in the loop
     let source_package_name_id = source_package.name_id;
-    let target_dir = source_package.src.clone(); //@thank the rust language for this amazing clone operation
-    let mut target_dir = &target_dir;
+    let package_root = source_package.src.clone(); //@thank the rust language for this amazing clone operation
 
     for target in import.targets.iter().copied() {
+        let mut target_dir = &package_root;
+
         assert!(!target.import_path.is_empty());
         let directory_count = target.import_path.len() - 1;
         let directory_names = &target.import_path[0..directory_count];

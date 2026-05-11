@@ -268,6 +268,7 @@ fn import_item<'ast>(
 
 fn import_target(ctx: &mut AstBuild, target: cst::ImportTarget) {
     let offset = ctx.s.names.start();
+
     let import_path = target.import_path(ctx.tree).unwrap();
     for name_cst in import_path.names(ctx.tree) {
         let name = name(ctx, name_cst);

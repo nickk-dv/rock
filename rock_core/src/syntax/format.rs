@@ -283,21 +283,12 @@ fn import_item<'syn>(fmt: &mut Formatter<'syn, '_>, item: cst::ImportItem<'syn>)
 
     fmt.write_str("import");
     fmt.space();
-    let package = if let Some(name_cst) = item.package(fmt.tree) {
+    if let Some(name_cst) = item.package(fmt.tree) {
         name(fmt, name_cst);
         fmt.write(':');
-        true
-    } else {
-        false
-    };
-
-    if package {
-        let nodes = item.import_targets(fmt.tree);
-        flexible_break_node_list(fmt, nodes, import_target, '{', '}');
-    } else {
-        let single = item.import_targets(fmt.tree).next().unwrap();
-        import_target_with_semi(fmt, single);
     }
+    let nodes = item.import_targets(fmt.tree);
+    flexible_break_node_list(fmt, nodes, import_target, '{', '}');
 }
 
 fn import_target<'syn>(fmt: &mut Formatter<'syn, '_>, target: cst::ImportTarget<'syn>) {
@@ -308,19 +299,6 @@ fn import_target<'syn>(fmt: &mut Formatter<'syn, '_>, target: cst::ImportTarget<
     if let Some(symbol_list) = target.import_symbol_list(fmt.tree) {
         fmt.write('.');
         import_symbol_list(fmt, symbol_list);
-    }
-}
-
-fn import_target_with_semi<'syn>(fmt: &mut Formatter<'syn, '_>, target: cst::ImportTarget<'syn>) {
-    import_path(fmt, target.import_path(fmt.tree).unwrap());
-    if let Some(rename) = target.rename(fmt.tree) {
-        import_symbol_rename(fmt, rename);
-    }
-    if let Some(symbol_list) = target.import_symbol_list(fmt.tree) {
-        fmt.write('.');
-        import_symbol_list(fmt, symbol_list);
-    } else {
-        fmt.write(';');
     }
 }
 
