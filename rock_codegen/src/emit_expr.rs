@@ -45,8 +45,7 @@ pub fn codegen_expr_pointer<'c>(
     } else if let Some(tail) = cg.proc.tail_value(value_id) {
         tail.value_ptr
     } else {
-        //@should this also fallback to a null pointer like `codegen_expr_pointer_to_expr_value`?
-        unreachable!();
+        llvm::const_zeroed(cg.ptr_type()).into_ptr() //@only valid for 0 sized values
     }
 }
 
@@ -60,8 +59,7 @@ pub fn codegen_expr_pointer_to_expr_value<'c>(
     } else if let Some(tail) = cg.proc.tail_value(value_id) {
         tail.value_ptr //@is this right?
     } else {
-        //@this is only valid for 0 sized values (e.g. void returned from a proc call)
-        llvm::const_zeroed(cg.ptr_type()).into_ptr()
+        llvm::const_zeroed(cg.ptr_type()).into_ptr() //@only valid for 0 sized values
     }
 }
 
