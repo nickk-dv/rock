@@ -185,7 +185,7 @@ fn codegen_function_value<'c>(
             } else {
                 //convert to true void instead of void struct for polymorphic case
                 let ret_ty = cg.ty(data.return_ty);
-                if llvm::type_equals(ret_ty, cg.void_val_type().as_ty()) {
+                if llvm::type_equals(ret_ty, cg.void_value_type().as_ty()) {
                     cg.void_type()
                 } else {
                     ret_ty
@@ -226,16 +226,16 @@ fn codegen_function_value<'c>(
 
     let data = cg.hir.proc_data(proc_id);
     if by_pointer_ret {
-        fn_val.set_param_attr(cg.cache.sret, 1);
+        fn_val.set_param_attr(cg.attributes.sret, 1);
     }
     if data.flag_set.contains(hir::ProcFlag::InlineNever) {
-        fn_val.set_attr(cg.cache.inline_never);
+        fn_val.set_attr(cg.attributes.inline_never);
     } else if data.flag_set.contains(hir::ProcFlag::InlineAlways) {
-        fn_val.set_attr(cg.cache.inline_always);
+        fn_val.set_attr(cg.attributes.inline_always);
     }
     let return_ty = context::substitute_type(cg, data.return_ty, &[]);
     if return_ty.is_never() {
-        fn_val.set_attr(cg.cache.noreturn);
+        fn_val.set_attr(cg.attributes.noreturn);
     }
 
     cg.proc.poly_types = curr_poly;

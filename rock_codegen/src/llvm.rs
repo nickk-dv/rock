@@ -27,7 +27,7 @@ pub struct IRModule {
 pub struct IRBuilder {
     builder: LLVMBuilderRef,
     cstr_buf: CStringBuffer,
-    void_val_type: TypeStruct,
+    void_value: TypeStruct,
 }
 
 struct CStringBuffer(String);
@@ -185,10 +185,6 @@ impl IRTarget {
 
         IRTarget { target_data, target_machine }
     }
-
-    pub fn ptr_sized_int(&self, context: &IRContext) -> Type {
-        Type(unsafe { tg::LLVMIntPtrTypeInContext(context.context, self.target_data) })
-    }
 }
 
 impl Drop for IRTarget {
@@ -324,11 +320,11 @@ impl Drop for IRModule {
 }
 
 impl IRBuilder {
-    pub fn new(context: &IRContext, void_val_type: TypeStruct) -> IRBuilder {
+    pub fn new(context: &IRContext, void_value: TypeStruct) -> IRBuilder {
         IRBuilder {
             builder: unsafe { core::LLVMCreateBuilderInContext(context.context) },
             cstr_buf: CStringBuffer::new(),
-            void_val_type,
+            void_value,
         }
     }
 
@@ -350,7 +346,7 @@ impl IRBuilder {
 
     pub fn ret(&self, val: Option<Value>) {
         if let Some(val) = val {
-            if typeof_value(val).0 == self.void_val_type.0 {
+            if typeof_value(val).0 == self.void_value.0 {
                 let _ = unsafe { core::LLVMBuildRetVoid(self.builder) };
             } else {
                 let _ = unsafe { core::LLVMBuildRet(self.builder, val.0) };

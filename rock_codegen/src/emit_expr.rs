@@ -420,29 +420,29 @@ fn array_from_bytes(cg: &mut Codegen, offset: TempOffset<u8>, stride: u8) -> llv
         2 => {
             for c in bytes.chunks_exact(2) {
                 let val = u16::from_le_bytes([c[0], c[1]]);
-                cg.cache.values.push(llvm::const_int(cg.cache.int_16, val as u64, false));
+                cg.cache.values.push(llvm::const_int(cg.types.int_16, val as u64, false));
             }
-            cg.cache.int_16
+            cg.types.int_16
         }
         4 => {
             for c in bytes.chunks_exact(4) {
                 let val = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
-                cg.cache.values.push(llvm::const_int(cg.cache.int_32, val as u64, false));
+                cg.cache.values.push(llvm::const_int(cg.types.int_32, val as u64, false));
             }
-            cg.cache.int_32
+            cg.types.int_32
         }
         8 => {
             for c in bytes.chunks_exact(8) {
                 let val = u64::from_le_bytes([c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]]);
-                cg.cache.values.push(llvm::const_int(cg.cache.int_64, val, false));
+                cg.cache.values.push(llvm::const_int(cg.types.int_64, val, false));
             }
-            cg.cache.int_64
+            cg.types.int_64
         }
         _ => {
             for val in bytes.iter().copied() {
-                cg.cache.values.push(llvm::const_int(cg.cache.int_8, val as u64, false));
+                cg.cache.values.push(llvm::const_int(cg.types.int_8, val as u64, false));
             }
-            cg.cache.int_8
+            cg.types.int_8
         }
     };
 
@@ -454,7 +454,7 @@ fn array_from_bytes(cg: &mut Codegen, offset: TempOffset<u8>, stride: u8) -> llv
 
 pub fn codegen_const<'c>(cg: &mut Codegen<'c, '_, '_>, value: hir::ConstValue<'c>) -> llvm::Value {
     match value {
-        hir::ConstValue::Void => llvm::const_struct_named(cg.void_val_type(), &[]),
+        hir::ConstValue::Void => llvm::const_struct_named(cg.void_value_type(), &[]),
         hir::ConstValue::Null => llvm::const_zeroed(cg.ptr_type()),
         hir::ConstValue::Bool { val, bool_ty } => codegen_const_bool(cg, val, bool_ty),
         hir::ConstValue::Int { val, neg, int_ty } => {
@@ -694,7 +694,7 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
 
                 if !bind_ids.is_empty() {
                     let enum_layout = cg.enum_layout((enum_id, enum_poly));
-                    let bytes_ty = llvm::array_type(cg.cache.int_8, enum_layout.size);
+                    let bytes_ty = llvm::array_type(cg.types.int_8, enum_layout.size);
                     let layout = cg.variant_layout((enum_id, variant_id, enum_poly));
 
                     for (field_idx, var_id) in bind_ids.iter().copied().enumerate() {
@@ -1075,7 +1075,7 @@ fn codegen_variant<'c>(
     let poly_types = context::substitute_types(cg, poly_types, cg.proc.poly_types);
     let enum_ty = cg.ty(hir::Type::Enum(enum_id, poly_types)).as_st();
     let enum_layout = cg.enum_layout((enum_id, poly_types));
-    let bytes_ty = llvm::array_type(cg.cache.int_8, enum_layout.size);
+    let bytes_ty = llvm::array_type(cg.types.int_8, enum_layout.size);
     let layout = cg.variant_layout((enum_id, variant_id, poly_types));
 
     let enum_ptr = cg.entry_alloca(enum_ty.as_ty(), "enum_init");

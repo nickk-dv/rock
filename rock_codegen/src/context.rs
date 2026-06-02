@@ -27,6 +27,8 @@ pub struct Codegen<'c, 's, 'sref> {
     pub hir: hir::Hir<'c>,
     pub session: &'sref mut Session<'s>,
     pub namebuf: String,
+    pub types: TypeCache,
+    pub attributes: AttributeCache,
     pub cache: CodegenCache<'c>,
     pub info: CodegenTypeInfo<'c>,
     pub proc_queue: Vec<hir::ProcKey<'c>>,
@@ -68,7 +70,7 @@ pub struct TailValue {
     pub value_ty: llvm::Type,
 }
 
-pub struct CodegenCache<'c> {
+pub struct TypeCache {
     int_1: llvm::Type,
     pub int_8: llvm::Type,
     pub int_16: llvm::Type,
@@ -76,14 +78,20 @@ pub struct CodegenCache<'c> {
     pub int_64: llvm::Type,
     float_32: llvm::Type,
     float_64: llvm::Type,
-    void_type: llvm::Type,
-    ptr_type: llvm::Type,
-    slice_type: llvm::TypeStruct,
-    void_val_type: llvm::TypeStruct,
+    void: llvm::Type,
+    ptr: llvm::Type,
+    slice: llvm::TypeStruct,
+    void_value: llvm::TypeStruct,
+}
+
+pub struct AttributeCache {
     pub sret: llvm::Attribute,
     pub noreturn: llvm::Attribute,
     pub inline_never: llvm::Attribute,
     pub inline_always: llvm::Attribute,
+}
+
+pub struct CodegenCache<'c> {
     pub u8s: TempBuffer<u8>,
     pub u64s: TempBuffer<u64>,
     pub types: TempBuffer<llvm::Type>,
@@ -131,9 +139,43 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
         let mut context = llvm::IRContext::new();
         let target = llvm::IRTarget::new(triple, session.config.build);
         let module = llvm::IRModule::new(&context, &target, "rock_module");
-        let cache = CodegenCache::new(&mut context, &target);
         let info = CodegenTypeInfo::new();
-        let build = llvm::IRBuilder::new(&context, cache.void_val_type);
+
+        let types = TypeCache {
+            int_1: context.int_1(),
+            int_8: context.int_8(),
+            int_16: context.int_16(),
+            int_32: context.int_32(),
+            int_64: context.int_64(),
+            float_32: context.float_32(),
+            float_64: context.float_64(),
+            void: context.void_type(),
+            ptr: context.ptr_type(),
+            slice: context.struct_named_create("rock.slice"),
+            void_value: context.struct_named_create("rock.void"),
+        };
+        context.struct_named_set_body(types.slice, &[types.ptr, types.int_64], false);
+        context.struct_named_set_body(types.void_value, &[], false);
+
+        let attributes = AttributeCache {
+            sret: context.attr_create("sret"),
+            noreturn: context.attr_create("noreturn"),
+            inline_never: context.attr_create("noinline"),
+            inline_always: context.attr_create("alwaysinline"),
+        };
+
+        let cache = CodegenCache {
+            u8s: TempBuffer::new(32),
+            u64s: TempBuffer::new(32),
+            types: TempBuffer::new(64),
+            values: TempBuffer::new(128),
+            const_values: TempBuffer::new(128),
+            cases: TempBuffer::new(128),
+            hir_types: TempBuffer::new(32),
+            hir_proc_ty_params: TempBuffer::new(32),
+        };
+
+        let build = llvm::IRBuilder::new(&context, types.void_value);
 
         Codegen {
             proc: ProcCodegen::new(),
@@ -164,6 +206,8 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
             hir,
             session,
             namebuf: String::with_capacity(256),
+            types,
+            attributes,
             cache,
             info,
             proc_queue: Vec::with_capacity(64),
@@ -210,10 +254,10 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     fn ty_impl(&mut self, ty: hir::Type<'c>, poly_set: &[hir::Type<'c>]) -> llvm::Type {
         match ty {
             hir::Type::Error | hir::Type::Unknown => unreachable!(),
-            hir::Type::Char => self.cache.int_32,
-            hir::Type::Void => self.cache.void_val_type.as_ty(),
-            hir::Type::Never => self.cache.void_val_type.as_ty(),
-            hir::Type::Rawptr => self.cache.ptr_type,
+            hir::Type::Char => self.types.int_32,
+            hir::Type::Void => self.types.void_value.as_ty(),
+            hir::Type::Never => self.types.void_value.as_ty(),
+            hir::Type::Rawptr => self.types.ptr,
             hir::Type::UntypedChar => unreachable!(),
             hir::Type::Int(ty) => self.int_type(ty),
             hir::Type::Float(ty) => self.float_type(ty),
@@ -278,10 +322,10 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
                 }
                 opaque.as_ty()
             }
-            hir::Type::Reference(_, _) => self.cache.ptr_type,
-            hir::Type::MultiReference(_, _) => self.cache.ptr_type,
-            hir::Type::Procedure(_) => self.cache.ptr_type,
-            hir::Type::ArraySlice(_) => self.cache.slice_type.as_ty(),
+            hir::Type::Reference(_, _) => self.types.ptr,
+            hir::Type::MultiReference(_, _) => self.types.ptr,
+            hir::Type::Procedure(_) => self.types.ptr,
+            hir::Type::ArraySlice(_) => self.types.slice.as_ty(),
             hir::Type::ArrayStatic(array) => {
                 llvm::array_type(self.ty_impl(array.elem_ty, poly_set), self.array_len(array.len))
             }
@@ -293,53 +337,53 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
     }
 
     pub fn char_type(&self) -> llvm::Type {
-        self.cache.int_32
+        self.types.int_32
     }
     pub fn void_type(&self) -> llvm::Type {
-        self.cache.void_type
+        self.types.void
     }
-    pub fn void_val_type(&self) -> llvm::TypeStruct {
-        self.cache.void_val_type
+    pub fn void_value_type(&self) -> llvm::TypeStruct {
+        self.types.void_value
     }
     pub fn ptr_type(&self) -> llvm::Type {
-        self.cache.ptr_type
+        self.types.ptr
     }
     pub fn u64_type(&self) -> llvm::Type {
-        self.cache.int_64
+        self.types.int_64
     }
     pub fn slice_type(&self) -> llvm::TypeStruct {
-        self.cache.slice_type
+        self.types.slice
     }
 
     pub fn int_type(&self, int_ty: hir::IntType) -> llvm::Type {
         match int_ty {
-            hir::IntType::S8 | hir::IntType::U8 => self.cache.int_8,
-            hir::IntType::S16 | hir::IntType::U16 => self.cache.int_16,
-            hir::IntType::S32 | hir::IntType::U32 => self.cache.int_32,
-            hir::IntType::S64 | hir::IntType::U64 => self.cache.int_64,
+            hir::IntType::S8 | hir::IntType::U8 => self.types.int_8,
+            hir::IntType::S16 | hir::IntType::U16 => self.types.int_16,
+            hir::IntType::S32 | hir::IntType::U32 => self.types.int_32,
+            hir::IntType::S64 | hir::IntType::U64 => self.types.int_64,
             hir::IntType::Untyped => unreachable!(),
         }
     }
     pub fn float_type(&self, float_ty: hir::FloatType) -> llvm::Type {
         match float_ty {
-            hir::FloatType::F32 => self.cache.float_32,
-            hir::FloatType::F64 => self.cache.float_64,
+            hir::FloatType::F32 => self.types.float_32,
+            hir::FloatType::F64 => self.types.float_64,
             hir::FloatType::Untyped => unreachable!(),
         }
     }
     pub fn bool_type(&self, bool_ty: hir::BoolType) -> llvm::Type {
         match bool_ty {
-            hir::BoolType::Bool => self.cache.int_1,
-            hir::BoolType::Bool16 => self.cache.int_16,
-            hir::BoolType::Bool32 => self.cache.int_32,
-            hir::BoolType::Bool64 => self.cache.int_64,
+            hir::BoolType::Bool => self.types.int_1,
+            hir::BoolType::Bool16 => self.types.int_16,
+            hir::BoolType::Bool32 => self.types.int_32,
+            hir::BoolType::Bool64 => self.types.int_64,
             hir::BoolType::Untyped => unreachable!(),
         }
     }
     pub fn string_type(&self, string_ty: hir::StringType) -> llvm::Type {
         match string_ty {
-            hir::StringType::String => self.cache.slice_type.as_ty(),
-            hir::StringType::CString => self.cache.ptr_type,
+            hir::StringType::String => self.types.slice.as_ty(),
+            hir::StringType::CString => self.types.ptr,
             hir::StringType::Untyped => unreachable!(),
         }
     }
@@ -389,10 +433,10 @@ impl<'c, 's, 'sref> Codegen<'c, 's, 'sref> {
 
     pub fn array_aligned(&self, layout: hir::Layout) -> llvm::Type {
         let elem_ty = match layout.align {
-            1 => self.cache.int_8,
-            2 => self.cache.int_16,
-            4 => self.cache.int_32,
-            8 => self.cache.int_64,
+            1 => self.types.int_8,
+            2 => self.types.int_16,
+            4 => self.types.int_32,
+            8 => self.types.int_64,
             _ => unreachable!(),
         };
         llvm::array_type(elem_ty, layout.size / layout.align)
@@ -520,43 +564,6 @@ impl<'c> ProcCodegen<'c> {
     ) {
         let value = TailValue { value_ptr, value_ty };
         self.tail_values[value_id.index()] = Some(value);
-    }
-}
-
-impl<'c> CodegenCache<'c> {
-    fn new(context: &mut llvm::IRContext, target: &llvm::IRTarget) -> CodegenCache<'c> {
-        let ptr_type = context.ptr_type();
-        let ptr_sized_int = target.ptr_sized_int(context);
-        let slice_type = context.struct_named_create("rock.slice");
-        let void_val_type = context.struct_named_create("rock.void");
-        context.struct_named_set_body(slice_type, &[ptr_type, ptr_sized_int], false);
-        context.struct_named_set_body(void_val_type, &[], false);
-
-        CodegenCache {
-            int_1: context.int_1(),
-            int_8: context.int_8(),
-            int_16: context.int_16(),
-            int_32: context.int_32(),
-            int_64: context.int_64(),
-            float_32: context.float_32(),
-            float_64: context.float_64(),
-            void_type: context.void_type(),
-            ptr_type,
-            slice_type,
-            void_val_type,
-            sret: context.attr_create("sret"),
-            noreturn: context.attr_create("noreturn"),
-            inline_never: context.attr_create("noinline"),
-            inline_always: context.attr_create("alwaysinline"),
-            u8s: TempBuffer::new(32),
-            u64s: TempBuffer::new(32),
-            types: TempBuffer::new(64),
-            values: TempBuffer::new(128),
-            const_values: TempBuffer::new(128),
-            cases: TempBuffer::new(128),
-            hir_types: TempBuffer::new(32),
-            hir_proc_ty_params: TempBuffer::new(32),
-        }
     }
 }
 
