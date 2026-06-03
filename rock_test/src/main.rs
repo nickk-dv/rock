@@ -186,27 +186,28 @@ fn run_tests(test_env: RockTestEnv, test_files: Vec<RockTestFile>) {
             fs::write(&test_env.main_path, main_src).unwrap();
             fs::write(&test_env.test_path, test_src).unwrap();
 
-            //@pre-trim stdout, pick out or err, dont allow both?
             let output = Command::new("rock").arg("r").output().unwrap();
-            let output_out = String::from_utf8_lossy(&output.stdout).into_owned();
             let output_err = String::from_utf8_lossy(&output.stderr).into_owned();
+            let mut output_out = String::from_utf8_lossy(&output.stdout).into_owned();
 
-            //prevent stderr & stdout overlap
+            //skip compiler output lines
+            if output_out.starts_with("  Finished `") {
+                let mut lines = output_out.lines();
+                assert!(lines.next().is_some());
+                assert!(lines.next().unwrap().starts_with("   Running build"));
+                assert!(lines.next().unwrap() == "");
+                output_out = lines.collect::<Vec<_>>().join("\n");
+            }
+
+            //prevent stderr & stdout being interleaved
             if !output_out.is_empty() && !output_err.is_empty() {
                 eprintln!("expected test outputs to be either stderr or stdout, not combined:");
                 eprintln!("[stdout]:\n{output_out}");
                 eprintln!("[stderr]:\n{output_err}");
-                //@panic!("cannot verify outputs");
+                panic!("cannot verify outputs");
             }
 
-            //trim feedback from stdout
-            let output = if output_out.starts_with("  Finished") {
-                output_out.lines().skip(3).collect::<Vec<&str>>().join("\n")
-            } else if !output_out.is_empty() {
-                output_out
-            } else {
-                output_err
-            };
+            let output = if !output_out.is_empty() { output_out } else { output_err };
 
             total_count += 1;
             if output == test.expect {

@@ -1,4 +1,5 @@
 //#prelude
+import core:{runtime}
 
 //#entry(check) "address_ref_const"
 //#expect
@@ -37,3 +38,23 @@ proc test_address_slice_field(slice: []u8) void {
     &slice.ptr;
     &mut slice.len;
 }
+
+//#entry "reference_void_proc_call"
+proc test_reference_void_proc_call() void {
+    let addr = &returns_void();
+    runtime.assert(addr == null);
+}
+
+proc returns_void() void {}
+
+//#entry "variadic_void_proc_call"
+proc test_variadic_void_proc_call() void {
+    take_variadic_void(returns_void_2());
+}
+
+proc take_variadic_void(args: #variadic) void {
+    runtime.assert(args.len == 1);
+    runtime.assert(args[0].data == null);
+}
+
+proc returns_void_2() void {}
