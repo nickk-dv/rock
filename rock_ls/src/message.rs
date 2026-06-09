@@ -33,6 +33,7 @@ pub enum Notification {
     FileDelete(lsp::DeleteFilesParams),
     FileRename(lsp::RenameFilesParams),
     FileChanged(lsp::DidChangeTextDocumentParams),
+    WatchedChange(lsp::DidChangeWatchedFilesParams),
 }
 
 pub enum CustomShowSyntaxTree {}
@@ -142,6 +143,9 @@ fn parse_notification(not: lsr::Notification) -> Option<Message> {
         n::DidRenameFiles::METHOD => Notification::FileRename(cast_not::<n::DidRenameFiles>(not)),
         n::DidChangeTextDocument::METHOD => {
             Notification::FileChanged(cast_not::<n::DidChangeTextDocument>(not))
+        }
+        n::DidChangeWatchedFiles::METHOD => {
+            Notification::WatchedChange(cast_not::<n::DidChangeWatchedFiles>(not))
         }
         _ => return None,
     };

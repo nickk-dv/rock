@@ -264,6 +264,7 @@ fn handle_messages(server: &mut ServerContext, messages: Vec<Message>) {
                 Notification::FileDelete(p) => handle_file_delete(server, p),
                 Notification::FileRename(p) => handle_file_rename(server, p),
                 Notification::FileChanged(p) => handle_file_changed(server, p),
+                Notification::WatchedChange(p) => handle_watched_change(server, p),
             },
         }
     }
@@ -1167,6 +1168,14 @@ fn handle_file_changed(server: &mut ServerContext, p: lsp::DidChangeTextDocument
             file.source = change.text;
             text::find_line_ranges(&mut file.line_ranges, &file.source);
         }
+    }
+}
+
+fn handle_watched_change(server: &mut ServerContext, p: lsp::DidChangeWatchedFilesParams) {
+    debug_eprintln!("[workspace/didChangeWatchedFiles] notification:");
+    for change in p.changes {
+        let path = uri_to_path(&change.uri);
+        debug_eprintln!("path: {}, change kind: {:?}", path.to_string_lossy(), change.typ,);
     }
 }
 
