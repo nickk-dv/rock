@@ -783,19 +783,37 @@ fn handle_hover(server: &mut ServerContext, id: RequestId, path: PathBuf, pos: l
             T![char_lit] => {
                 let value = tree.tokens.char(token_id);
                 format!(
-                    "char literal value: `{value:?}`\n\nunicode: `U+{0:X}` decimal: `{0}`",
+                    "character literal value: `{value:?}`\n\nunicode: `U+{0:X}` decimal: `{0}`",
                     value as u32,
                 )
             }
             T![string_lit] => {
                 let value_id = tree.tokens.string(token_id);
                 let value = server.session.intern_lit.get(value_id);
-                let lines = value.chars().filter(|&v| v == '\n').count() + 1;
+                let lines = value.lines().count();
                 format!(
                     "string literal value: `{value:?}`\n\nlen: `{}` lines: `{lines}`",
                     value.len()
                 )
             }
+            T![s8] => "8-bit signed integer type".to_string(),
+            T![s16] => "16-bit signed integer type".to_string(),
+            T![s32] => "32-bit signed integer type".to_string(),
+            T![s64] => "64-bit signed integer type".to_string(),
+            T![u8] => "8-bit unsigned integer type".to_string(),
+            T![u16] => "16-bit unsigned integer type".to_string(),
+            T![u32] => "32-bit unsigned integer type".to_string(),
+            T![u64] => "64-bit unsigned integer type".to_string(),
+            T![bool] => "8-bit boolean type".to_string(),
+            T![bool16] => "16-bit boolean type".to_string(),
+            T![bool32] => "32-bit boolean type".to_string(),
+            T![bool64] => "64-bit boolean type".to_string(),
+            T![string] => "UTF-8 encoded byte slice".to_string(),
+            T![cstring] => "null-terminated C string".to_string(),
+            T![char] => "32-bit Unicode code point".to_string(),
+            T![void] => "zero-sized type".to_string(),
+            T![never] => "represents diverging control flow".to_string(),
+            T![rawptr] => "type-erased pointer".to_string(),
             _ => {
                 send_response(server.conn, id, serde_json::Value::Null);
                 return;
