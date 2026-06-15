@@ -804,6 +804,8 @@ fn handle_hover(server: &mut ServerContext, id: RequestId, path: PathBuf, pos: l
             T![u16] => "16-bit unsigned integer type".to_string(),
             T![u32] => "32-bit unsigned integer type".to_string(),
             T![u64] => "64-bit unsigned integer type".to_string(),
+            T![f32] => "32-bit floating-point type".to_string(),
+            T![f64] => "64-bit floating-point type".to_string(),
             T![bool] => "8-bit boolean type".to_string(),
             T![bool16] => "16-bit boolean type".to_string(),
             T![bool32] => "32-bit boolean type".to_string(),
