@@ -34,6 +34,7 @@ pub fn find_core_items(ctx: &mut HirCtx) -> Result<(), ()> {
     ctx.core = hir::CoreItems {
         start: scope::find_core_proc(ctx, "runtime", "start")?,
         index_out_of_bounds: scope::find_core_proc(ctx, "runtime", "index_out_of_bounds")?,
+        invalid_enum_tag_value: scope::find_core_proc(ctx, "runtime", "invalid_enum_tag_value")?,
         slice_range: scope::find_core_proc(ctx, "ops", "slice_range")?,
         slice_unchecked: scope::find_core_proc(ctx, "ops", "slice_unchecked")?,
         string_equals: scope::find_core_proc(ctx, "ops", "string_equals")?,

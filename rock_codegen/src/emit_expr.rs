@@ -755,6 +755,29 @@ fn codegen_match<'c>(cg: &mut Codegen<'c, '_, '_>, expect: Expect, match_: &hir:
         cg.build_br_no_term(exit_bb);
     }
 
+    if let hir::MatchKind::Enum { .. } = match_.kind {
+        if wild_bb.is_none() {
+            let arm_bb = cg.append_bb("match_bad_value");
+            cg.build.position_at_end(arm_bb);
+
+            let struct_id = cg.hir.core.source_loc;
+            let proc_data = cg.hir.proc_data(cg.proc.proc_id);
+            let fields = hir::source_location(cg.session, proc_data.origin_id, 0.into()); //@store actual offset
+            let values = cg.hir.arena.alloc_slice(&fields); //borrow checker, forced to allocate in the arena!
+            let struct_ = hir::ConstStruct { values, poly_types: &[] };
+            let struct_ = cg.hir.arena.alloc(struct_); //borrow checker, forced to allocate in the arena!
+            let value = hir::ConstValue::Struct { struct_id, struct_ };
+            let loc = codegen_expr_value(cg, &hir::Expr::Const(value, hir::ConstID::dummy()));
+
+            let (fn_val, fn_ty) =
+                emit_mod::codegen_function(cg, cg.hir.core.invalid_enum_tag_value, &[]);
+            let _ = cg.build.call(fn_ty, fn_val, &[loc], "call_val");
+            cg.build.unreachable();
+
+            wild_bb = Some(arm_bb);
+        }
+    }
+
     cg.build.position_at_end(insert_bb);
     let else_bb = wild_bb.unwrap_or(exit_bb);
 

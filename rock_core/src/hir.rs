@@ -24,6 +24,7 @@ pub struct Hir<'hir> {
 pub struct CoreItems {
     pub start: ProcID,
     pub index_out_of_bounds: ProcID,
+    pub invalid_enum_tag_value: ProcID,
     pub slice_range: ProcID,
     pub slice_unchecked: ProcID,
     pub string_equals: ProcID,
